@@ -29,6 +29,8 @@
 **/dist/**
 web/dist
 web/scripts
+!web/scripts/
+!web/scripts/check-bundle.mjs
 !internal/web/dist/.gitkeep
 **/.env*
 **/*.env

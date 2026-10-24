@@ -195,6 +195,28 @@ adjacent controls, no page overflow, and no console/page/CSP errors. API fixture
 are ready for later real user seeding, but auth/setup/business/seed APIs and their
 acceptance tests are intentionally not implemented or claimed.
 
+T0.8 adds [grid-spike.spec.ts](../web/e2e/grid-spike.spec.ts) to this same
+production-image suite. It verifies opt-in isolation, 200k logical-row
+window/cache/DOM bounds, real clipboard editing/fill, groups, frozen columns,
+locales/themes, cancellation/remount behavior and one explicit tablet touch
+observation. Mobile verifies **no grid mounted**; desktop-only clipboard and
+the duplicate tablet case in the mobile project are intentionally skipped.
+Chromium CDP records actual JS heap, shared listener inventories and touch
+input. These observations are not Firefox/WebKit, physical-device or real
+database/query acceptance. Run the smaller suite during grid work with
+`go run ./tools/ptdev e2e -- grid-spike.spec.ts --project=desktop-chromium`.
+
+Every `pnpm build` now runs [check-bundle.mjs](../web/scripts/check-bundle.mjs)
+against Vite's manifest. It includes both locales, welcome-route imports and
+CSS in a conservative initial gzip total, requires **<600,000 bytes**, and
+rejects engine chunks in that initial dependency set. The all-assets total
+includes lazy engine/optional plugin chunks; it is reported separately.
+The image-context allowlist includes only that required build script from
+`web/scripts/`; it still excludes tests, local dependencies and secrets.
+Pinned engine/adapter 4.29.1 add only two packages (MIT, no other runtime
+dependencies); the workspace records their exact-version release-age exceptions.
+Build tooling and browsers do not enter the runtime image.
+
 The direct Node wrapper receives EOF from a private parent pipe on cancellation,
 allowing Playwright to close its workers and browsers on Windows too (20 s
 forced-stop fallback). Teardown uses independent contexts: diagnostics 10 s,

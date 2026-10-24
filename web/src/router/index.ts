@@ -6,6 +6,10 @@ export const router = createRouter({
     { path: '/', redirect: '/login' },
     { path: '/login', component: () => import('../pages/LoginPage.vue') },
     {
+      path: '/_spikes/revogrid',
+      component: () => import('../pages/GridSpikePage.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       component: () => import('../pages/NotFoundPage.vue'),
     },

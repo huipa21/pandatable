@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/check-bundle.mjs",
     "lint": "eslint . --max-warnings 0 && prettier --check . && pnpm typecheck && pnpm i18n:check",
     "format": "prettier --write .",
     "typecheck": "vue-tsc --noEmit",
@@ -19,6 +19,8 @@
     "e2e:install": "playwright install chromium"
   },
   "dependencies": {
+    "@revolist/revogrid": "4.29.1",
+    "@revolist/vue3-datagrid": "4.29.1",
     "dayjs": "^1.11.13",
     "naive-ui": "^2.45.3",
     "pinia": "^3.0.3",

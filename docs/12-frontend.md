@@ -61,6 +61,47 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - Attachment cells: thumbnails; drag-drop upload onto cell; preview modal.
 - Row expand modal: all fields in a form layout, comments panel, history tab.
 
+### T0.8 feasibility lab (not the production grid)
+
+Open `/_spikes/revogrid` directly and choose **Mount prototype**. This route
+is deliberately unlinked from the welcome/table navigation. It loads the engine
+only after explicit opt-in at >=768 px; smaller viewports show a translated
+mobile-card-intent notice, not a grid or an M1 card editor. Welcome and other
+deep-route behavior remain unchanged.
+
+[DataGrid.vue](../web/src/components/grid/DataGrid.vue) owns all engine imports,
+event adaptation, source-store updates, renderer/editor, TSV and fill-down
+handling. Its external boundary accepts an engine-independent `WindowSource`
+(`total`, abortable `fetch(offset, limit, signal)`) and emits window statistics.
+The isolated [synthetic provider](../web/src/spikes/synthetic.ts) has 200,000
+logical rows, page size 100, deliberately varied 40/120 ms timers and **no
+HTTP/database calls**. The active page and its two neighbors retain at most
+300 row objects. Remaining engine slots share one immutable placeholder;
+RevoGrid still has O(N) reference/index arrays, not O(visible rows) memory.
+Page generation checks ignore out-of-order responses even from providers
+which ignore cancellation. Unmount aborts work and clears cache/edit overlays.
+Only the last 20 request records and at most 5,000 transient changed cells
+are retained.
+
+Verified built-ins: virtual scrolling, Enter/Escape editing hooks, Shift+arrow
+and drag ranges, drag fill handle, column pinning, compact light/dark themes,
+and collapsible grouping on a **separate complete 100-row read-only sample**.
+The wrapper supplies a Vue multiline note editor, a quantity renderer,
+keyboard focus after pointer input, Ctrl+D, atomic loaded-cell edits and
+quoted multiline TSV parse/format (the engine's plain TSV splitter is
+insufficient). Copy/paste bounds and invalid edits show translated errors;
+placeholder data is not copied. Clipboard is disabled for the grouped sample.
+
+D-066..D-068 confirm D-005 for further implementation. This lab does not provide
+production `FieldKind` registries, server writes, ACL, view persistence,
+flattened remote grouping/counts/aggregates, HTML clipboard, add-row confirmation
+or full keyboard/undo coverage. Built-in drag fill can extend horizontally;
+the vertical-only v1 policy still needs enforcement in T1.17. Real clipboard
+round-trips were tested in permission-granted Chromium on loopback, not inside
+Excel/Sheets or every OS/browser. Tablet touch is emulated, not physical-device
+certification. See the [exact results](progress.md#t08-verification-evidence-2026-10-24)
+and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
+
 ## 5. Mobile (< 768 px) — D-016
 
 - Sidebar becomes drawer; toolbar collapses into a "View options" bottom sheet (filter/sort/group/highlight builders are the same components in drawers).

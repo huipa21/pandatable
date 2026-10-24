@@ -1,2 +1,5 @@
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - '@revolist/revogrid@4.29.1'
+  - '@revolist/vue3-datagrid@4.29.1'

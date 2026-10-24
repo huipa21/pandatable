@@ -148,6 +148,12 @@ h1 {
   font-size: 12px;
 }
 
+.app-main:has(.grid-spike) {
+  width: min(100%, 1440px);
+  padding: 24px;
+  margin: 0 auto;
+}
+
 @media (max-width: 480px) {
   .app-header {
     justify-content: center;

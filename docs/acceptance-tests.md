@@ -40,6 +40,26 @@ Real browser failure/cancellation/partial-start cleanup and exact commands:
 [progress.md, T0.7](progress.md#t07-verification-evidence-2026-10-24).
 T0.7 remains in progress until its linked **full AT-006** passes.
 
+### T0.8 scoped evidence (2026-10-24)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-001 | Partial, preserved | Windows/Podman isolated image/Compose health in 6.414 s; real production shell plus spike suite passes. Linux/Docker still pending. |
+| AT-002 | Pass preserved | Required live PG18 integration tests and application restart/migration tests pass in `ptdev check`; T1.1's additional meta schema is not yet implemented. |
+| AT-003 | Pass preserved | Existing four desktop/mobile shell checks pass, including language and light/dark/system persistence; spike also verifies localized grid headers, light/dark styles and mobile exclusion. |
+| AT-004 | Pass preserved | New disposable image: linux/amd64, UID/GID 10001:10001, executable HEALTHCHECK, 162,373,088 bytes (<200 MB); runtime `pg_dump --version` probe succeeds. Original T0.6 release retained. |
+| AT-005 / AT-006 | Partial, unchanged | No approved server/Caddy destination or Linux/Docker runtime check. Windows `ptdev check` passes; no remote changes. |
+| AT-802 | Pass preserved | ESLint/i18n negative fixtures, strict frontend/E2E TS, Prettier and **61** matching non-empty locale keys pass. |
+| AT-305..313 / NFR-2..3 | Not claimed | Synthetic provider/window/editing/grouping/touch feasibility is not real table/query/seed, persisted editing or mobile-card acceptance. |
+
+T0.8 has no linked AT row; its explicitly scoped spike demonstrations are
+complete. `ptdev e2e` reports **8 passed, 2 intentionally skipped in 27.3 s**:
+four existing shell checks, desktop windowing, desktop interactions, mobile
+isolation and a tablet observation. Exact measurements, limits and D-005
+conclusion: [progress](progress.md#t08-verification-evidence-2026-10-24) and
+[T0.8 record](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
+M0/T0.4/T0.6/T0.7 remain in progress for their unrelated pending platform checks.
+
 ## AT-1xx Auth & Admin (M1, M3)
 
 - **AT-101 — First-run setup requires token** · M1 · Given an empty DB, visiting any page redirects to `/setup`; submitting a wrong token fails; submitting the logged token creates admin and logs in; afterwards `/setup` returns "already set up" (410).

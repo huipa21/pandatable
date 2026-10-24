@@ -13,6 +13,7 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+    manifest: true,
   },
   server: {
     host: '127.0.0.1',

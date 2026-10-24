@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@revolist/revogrid':
+        specifier: 4.29.1
+        version: 4.29.1
+      '@revolist/vue3-datagrid':
+        specifier: 4.29.1
+        version: 4.29.1
       dayjs:
         specifier: ^1.11.13
         version: 1.11.23
@@ -687,6 +693,12 @@ packages:
     resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@revolist/revogrid@4.29.1':
+    resolution: {integrity: sha512-j/m52cS6ev4aOpskj2lxIc+vP1gxNFGJ1K3hrp6vM1lw/JJctQN4iEgr+8qhzkEVrmd5VoAa163SVB00mR4c2Q==}
+
+  '@revolist/vue3-datagrid@4.29.1':
+    resolution: {integrity: sha512-X/5IjQnOW1NSwW34MPNQpzBa4DBtfjbMlVtdG2roA4n3VVrCgiYz8qJwGFsWMptvocml+ywauvkJVa/uMSetuw==}
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
@@ -2487,6 +2499,12 @@ snapshots:
   '@playwright/test@1.64.1':
     dependencies:
       playwright: 1.64.1
+
+  '@revolist/revogrid@4.29.1': {}
+
+  '@revolist/vue3-datagrid@4.29.1':
+    dependencies:
+      '@revolist/revogrid': 4.29.1
 
   '@rolldown/pluginutils@1.0.1': {}
 

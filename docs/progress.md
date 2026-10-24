@@ -7,7 +7,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | Milestone | Status | Started | Finished | Tag | Notes |
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
-| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5 done. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. T0.8 spike not started. |
+| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
 | M1 Core | ⬜ | | | v0.1.0 | |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
@@ -25,7 +25,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.5 | Web scaffold (i18n, theme toggles) | ✅ | 2026-10-24 | AT-003 passes in the real embedded production SPA; AT-802 passes lint/parity with negative fixtures. Vue/TS shell, local preferences, direct-process dev supervisor, web build/copy, ten frontend tests, real dev proxy/cleanup, ptdev check and Linux compilation verified. |
 | T0.6 | Image & deploy files | 🟨 | 2026-10-24 | Implementation verified: AT-004 image contents pass (161,964,427 bytes); isolated Windows/Podman Compose/browser/restart/persistence and gzip export/load checks pass. Full AT-001/005 await Linux/Docker and an approved real Caddy destination; not Done. |
 | T0.7 | Test harness & local gate | 🟨 | 2026-10-24 | Implementation and Windows/Podman verification complete: shared PG18 helper, four real shell E2E checks, failure/cancellation/partial-start cleanup and ptdev check pass. Linked AT-006 still requires Linux bash/Docker; not Done. |
-| T0.8 | RevoGrid spike | ⬜ | | |
+| T0.8 | RevoGrid spike | ✅ | 2026-10-24 | Scoped objectives demonstrated: opt-in lazy DataGrid, synthetic 200k window with <=300 row cache, real clipboard/editor/range/fill/group/freeze/theme and emulated tablet checks; D-066..068 confirm D-005. Windows check and image-backed E2E pass; no production query/mobile acceptance claimed. |
 | T1.1 | Meta migrations | ⬜ | | |
 | T1.2 | Auth service | ⬜ | | |
 | T1.3 | Setup flow | ⬜ | | |
@@ -92,7 +92,7 @@ Summary updated at each milestone end.
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 1 | AT-802 passes for the T0.5 scaffold: 21 matching keys, untranslated-text/attribute lint and negative fixtures. Remains a continuous local gate. |
+| AT-8xx Non-functional | 6 | 1 | AT-802 preserved through T0.8: 61 matching keys, untranslated-text/attribute lint and negative fixtures. Synthetic grid timings do not certify NFR-2/3. Remains a continuous local gate. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -109,6 +109,8 @@ Summary updated at each milestone end.
 | Date | Change |
 |---|---|
 | 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
+| 2026-10-24 | T0.8 started with a clean worktree; pinned engine/adapter APIs and isolated prototype design inspected. |
+| 2026-10-24 | T0.8 scoped spike complete: 200k window/cache, custom editor/renderer, quoted TSV and fill, grouped sample, frozen columns, translations/themes and emulated tablet demonstrated under unchanged CSP. D-066..068 confirm D-005; 20 unit tests, Windows local gate and eight image-backed browser checks pass (two intentional mobile exclusions). T1.1 handoff created; unrelated platform acceptance remains pending. |
 | 2026-10-24 | Resolved OQ-1..4: external Caddy, local Podman/Docker build + image transfer, `ptdev` tool, timezone & currency defaults. Added 14-dev-build-release.md, D-046..D-050, AT-005/006/117/326. |
 | 2026-10-24 | T0.1: Go scaffold + stdlib ptdev commands and unit tests; D-051; local gate and Podman PG18 lifecycle verified; T0.2 handoff added. Existing stopped Podman machine started. |
 | 2026-10-24 | T0.2: implementation started. |
@@ -355,3 +357,104 @@ Summary updated at each milestone end.
   reset or removed. No verification server remains.
 - Next: [T0.8 RevoGrid spike](task-prompts/T0.8.md), using the new gates and
   preserving CSP, translations, isolation and honest platform limitations.
+
+### T0.8 verification evidence (2026-10-24)
+
+- **Done for the scoped spike; D-005 confirmed by D-068.** The unlinked
+  `/_spikes/revogrid` lab requires explicit mount at >=768 px. The engine is
+  behind [DataGrid](../web/src/components/grid/DataGrid.vue); welcome and
+  unknown/deep routes remain unchanged. No auth, query/seed/business endpoints,
+  database performance results, mobile-card editor or production grid shipped.
+- Pin MIT engine/adapter **4.29.1**: exactly two added packages, no other runtime
+  dependencies. Verified installed declarations/source and official
+  [Vue API](https://rv-grid.com/guide/vue3/),
+  [editor](https://rv-grid.com/guide/vue3/editor),
+  [clipboard](https://rv-grid.com/guide/clipboard) and
+  [grouping](https://rv-grid.com/guide/row/grouping) guides before wiring.
+  The package TSV splitter does not handle quoted multiline cells; the wrapper
+  supplies a tested parser/formatter rather than changing production CSP.
+- Synthetic 200,000-row provider: 100-row requests, current page +/-1, **<=300
+  cached row objects**, one shared immutable placeholder for other slots,
+  last-20 requests, <=5,000 transient edited cells. Generation guards ignore
+  out-of-order results even if a provider ignores AbortSignal. Request timers
+  cancel on navigation/unmount; edits validate atomically, persist only in the
+  bounded mount-local overlay and survive page eviction. Engine slot/index
+  arrays are **O(N)**; this is not an O(visible rows) engine-memory claim.
+- Focused provider/TSV tests passed before the full gate. Final
+  `go run ./tools/ptdev check` PASS: lint **11.196 s**, test **21.454 s**,
+  build **11.914 s**, total **44.563 s**. Includes required live PG18
+  integration/restart tests, **20 Vitest tests in six files**, strict Vue/E2E
+  TS, ESLint/Prettier, **61-key** parity/negative fixtures and frozen build.
+  Optional `golangci-lint` is absent and was not run.
+- Final `go run ./tools/ptdev e2e` PASS: project
+  **pt-e2e-lcv32fpwafg4pxv32hn7bbthtg**, loopback **61528**, health **6.414 s**,
+  **8 passed / 2 intentional skips in 27.3 s**. All four original desktop/mobile
+  shell checks remain green. The two skips exclude desktop clipboard/fill and
+  a duplicate tablet observation from the mobile project; mobile no-grid
+  isolation is actually tested. Browser warning/error/page/CSP diagnostics are
+  empty. No inline/eval script policy relaxation.
+- Real Chromium at **1440x1000**, grid **1392x440**:
+
+  | Position | Requested zero-based ranges | Cached rows | DOM row fragments / cells / descendants | Navigation observation |
+  |---|---|---|---|---|
+  | Start | 0-99, 100-199 | 200 | 32 / 80 / 199 | First visible row after mount: 302 ms; already-loaded start check: 125 ms |
+  | Middle | 99900-99999, 100000-100099, 100100-100199 | 300 | 32 / 80 / 199 | 240 ms |
+  | End | 199800-199899, 199900-199999 | 200 | 30 / 75 / 191 | 223 ms |
+  | Return to start | 0-99, 100-199 fetched again | 200 | 32 / 80 / 199 | 226 ms |
+
+  Pinned and main row fragments represent the same visible logical rows, not
+  twice as much data. Engine source length stays 200,000 with only 201/301
+  unique object references including the shared placeholder. Observed completed
+  request durations **42.5-137.2 ms** include deliberate 40/120 ms timers and
+  browser scheduling; navigation observations include Playwright overhead.
+  These are **not NFR-2/3 or AT-312 server/query measurements**.
+- Chromium CDP JS used heap: pre-mount after GC **3,457,500 bytes**;
+  mounted retained heap after GC **9,348,768 / 9,692,588 / 9,762,312 /
+  9,795,748 bytes** at the four positions; unmounted after GC **6,134,812
+  bytes**. Warm engine modules/shared helpers remain resident. Window/document
+  listener inventories do not grow across two additional mount/unmount cycles;
+  engine process-lifetime delegated listeners are not claimed to disappear.
+  Unit tests separately verify responsive-listener removal, request/timer
+  cancellation, no callbacks after dispose, stale responses and the exact
+  cumulative 5,000-cell overlay cap.
+- Actual production-CSP interactions PASS: Vue multiline note editor with
+  Enter save/Escape cancel, quantity renderer, Shift+arrow and mouse-drag
+  rectangular selection, system clipboard Ctrl+C/V round-trip of tabs,
+  embedded newlines and doubled quotes, wrapper Ctrl+D, built-in drag fill,
+  translated oversized/unloaded-copy rejection, frozen-column position during
+  horizontal scrolling, en/zh-CN headers and light/dark grid colors/screenshots.
+  A separate **100-row read-only grouping sample** collapses both groups to
+  two headers and expands one to 52 visible items. It does not group partially
+  loaded 200k data or implement server counts/aggregates.
+- Emulated touch at **1024x1000**: tap focuses cell **(0,0)**; actual CDP
+  touch swipe moves the grid to **scrollTop 216 px**. Resizing to 700 px
+  unmounts the grid and displays the mobile notice. No page overflow; this is
+  not physical iPad/Android/Safari certification. Clipboard tests grant Chromium
+  read/write permission on loopback; browser/OS permissions and secure contexts
+  still apply, and Excel/Sheets applications were not directly automated.
+- Build gzip gate PASS: conservative initial shell (including both locales
+  and welcome imports/CSS) **135,087 bytes <600,000**; **all assets 255,685
+  bytes**, including lazy engine and optional plugin chunks. Initial shell
+  resources contain no grid chunks. No bundle-budget exception required.
+  Image-context allowlist includes the required build checker, not test tools.
+- New disposable image: **162,373,088 bytes**, linux/amd64,
+  UID/GID **10001:10001**, executable HEALTHCHECK and successful runtime
+  `pg_dump --version` probe. Startup `podman stats` snapshot: app **5.308 MB**,
+  DB **97.68 MB**; neither is a production-load/NFR-1 certification. The grid
+  runs in the browser, not in server RAM; no new Go/server dependencies.
+  AT-003/004/802 preserved.
+- The successful E2E runner removed only its named containers, volumes,
+  networks and unique image tag. Native verification server on **18088** was
+  stopped before the final gate; no verification listeners remain. Developer
+  DB/volume, original release tags/archives, shared Caddy and unrelated resources
+  were not reset/deleted. On evening continuation Podman is stopped/unreachable;
+  no engine was restarted merely to repeat inspection. Earlier successful
+  teardown is the cleanup evidence, not a new engine inspection.
+- **Remaining:** production FieldKind codecs, transactional bulk writes,
+  add-row/HTML clipboard UX, vertical-only fill policy, server-flattened group
+  rows/counts/aggregates, complete keyboard/undo behavior and full browser/device
+  matrix. No AT-305..313 pass claimed. Full AT-001/005/006 Linux/Docker/server
+  checks remain pending; T0.4/T0.6/T0.7/M0 remain in progress.
+- Full implementation, interaction matrix, caveats and next task:
+  [T0.8 completion](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
+  Next: [T1.1 Meta migrations](task-prompts/T1.1.md).
