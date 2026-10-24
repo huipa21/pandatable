@@ -1,0 +1,142 @@
+# 08 — Query Engine (Views, Filter, Sort, Group, Highlight, Formulas)
+
+All row reads go through `internal/query`, which compiles a **view config** (+ ad-hoc overrides such as quick search) into a single parameterised SQL statement. Identifiers come only from meta (`pg_name`, `pg_column`); values are always bound parameters.
+
+## 1. View config (`meta.views.config`)
+
+```jsonc
+{
+  "fields": [                         // order = display order
+    { "id": "fld_…", "visible": true, "width": 180 },
+    { "id": "fld_…", "visible": false }
+  ],
+  "frozen": 1,                         // number of frozen leading columns
+  "rowHeight": "short",                // short | medium | tall | extra
+  "filter": {                          // nested, max depth 3
+    "op": "and",
+    "items": [
+      { "field": "fld_status", "cmp": "is_any_of", "value": ["Open","Blocked"] },
+      { "op": "or", "items": [
+          { "field": "fld_due", "cmp": "before", "value": { "rel": "today" } },
+          { "field": "fld_owner", "cmp": "is", "value": { "rel": "me" } }
+      ]}
+    ]
+  },
+  "sort":  [ { "field": "fld_due", "dir": "asc" } ],
+  "group": [ { "field": "fld_status", "dir": "asc" } ],   // max 3
+  "highlight": [                                          // ordered, first match wins per target
+    { "id": "hl1", "when": { /* filter tree */ }, "target": { "type": "row" }, "color": "red-2" },
+    { "id": "hl2", "when": { /* … */ }, "target": { "type": "cells", "fields": ["fld_due"] }, "color": "amber-3" }
+  ],
+  "aggregates": { "fld_amount": "sum", "fld_id": "count" },
+  // form view
+  "form": { "title": "", "description": "", "fields": [ { "id": "…", "label": "…", "help": "…", "required": true } ], "afterSubmit": "message|new" },
+  // kanban (M4)
+  "kanban": { "groupField": "fld_status", "coverField": null },
+  // calendar (M5)
+  "calendar": { "dateField": "fld_due", "endField": null }
+}
+```
+
+The config is validated server-side against current fields; references to deleted fields are dropped silently on read and cleaned on next save. View config updates use optimistic concurrency (`version`); conflicts → client reloads and re-applies.
+
+**Personal overrides (not saved):** a user may temporarily change filter/sort in a locked or shared view without saving ("unsaved changes — save as personal view?").
+
+## 2. Filter operators
+
+| Field kinds | Operators |
+|---|---|
+| text-like (text, long_text, email, url, phone) | is, is_not, contains, not_contains, starts_with, ends_with, is_empty, is_not_empty |
+| numeric (integer, decimal, float, currency, percent, rating, autonumber) | =, ≠, <, ≤, >, ≥, between, is_empty, is_not_empty |
+| date/datetime | is, is_not, before, after, on_or_before, on_or_after, between, is_within (past/next N days, this week/month/year), is_empty, is_not_empty |
+| time, duration | =, <, >, between, is_empty |
+| checkbox | is_checked, is_not_checked |
+| single_select | is, is_not, is_any_of, is_none_of, is_empty, is_not_empty |
+| multi_select, text_array, int_array | has_any_of, has_all_of, has_none_of, is_exactly, is_empty, is_not_empty |
+| user / multi_user | is / has_any_of (incl. `{rel:"me"}`), is_empty |
+| uuid, inet, cidr | is, is_not, is_empty; inet/cidr: `contained_in` (`<<=`) |
+| json | is_empty, is_not_empty, has_key, path_equals (`#>>`) |
+| link | has_any_of (row ids), is_empty, is_not_empty, count cmp |
+| lookup / rollup / formula | operators of the result type |
+
+Relative values: `today`, `yesterday`, `tomorrow`, `me`, `n_days_ago:N`, `n_days_from_now:N`, evaluated in the **requesting user's timezone** (user setting, default app `default_timezone` = Asia/Shanghai), e.g. `today` on a datetime field → `c >= ($tz_midnight) AND c < ($tz_midnight + 1 day)` computed in Go and bound as timestamptz; `date` fields compare against the user's local date. DB sessions run in UTC (D-049).
+
+Text comparisons are case-insensitive (`ILIKE` / `lower()`), with `%`/`_` escaped.
+
+## 3. Generated SQL shape
+
+```sql
+SELECT t.id, t.c_a, t.c_b, …,
+       /* link (parent side, display values) */
+       (SELECT coalesce(jsonb_agg(jsonb_build_array(c.id, c.c_disp) ORDER BY c.id), '[]')
+          FROM b_x.t_child c WHERE c.c_fk = t.id LIMIT 50) AS f_link,
+       /* rollup */
+       (SELECT sum(c.c_amount) FROM b_x.t_child c WHERE c.c_fk = t.id) AS f_total,
+       /* formula */
+       (CASE WHEN t.c_qty > 0 THEN t.c_price * t.c_qty ELSE 0 END) AS f_formula,
+       /* highlight */
+       (CASE WHEN <hl1> THEN 0 END) AS _hl_row,
+       jsonb_build_object('fld_due', CASE WHEN <hl2> THEN 1 END) AS _hl_cells
+FROM b_x.t_main t
+WHERE <filter> AND <quick search>
+ORDER BY <group keys>, <sort keys>, t.id
+LIMIT $n OFFSET $m;
+```
+
+- Every ORDER BY ends with `t.id` for deterministic paging.
+- Paging: offset/limit, page size 100 (grid fetches visible window ± 1 page). Fine for ≤ 200k rows (D-019).
+- Total count: separate `count(*)` with the same WHERE, cached per (view, filter hash, data version) for 5 s.
+- Link cells return at most 50 display items + total count.
+
+## 4. Grouping (server-side)
+
+1. `POST /views/{id}/groups` with `path` (e.g. `[]` for top level, `["Open"]` for level-2 inside "Open") returns group buckets: `{key, count, aggregates}` using `GROUP BY` on the group expression under the full filter.
+2. Rows for an expanded leaf group are fetched with the group path added to WHERE, paginated as usual.
+3. Empty values form a `(empty)` group. Multi-select groups by the full array value (sorted) — v1 simplification.
+4. Client renders a virtual flattened list: group header rows + data rows; collapsed state stored per user in localStorage.
+
+## 5. Quick search
+
+`ILIKE '%term%'` OR'ed across visible text-like fields, `::text` cast for numbers/dates. Uses `pg_trgm` GIN index if the table is large and search is used (auto-index policy, D-020).
+
+## 6. Footer aggregates
+
+Per visible field: none, count, count_empty, count_filled, unique, sum, avg, min, max, earliest, latest, percent_checked. One `SELECT agg(...), agg(...)` with the view's WHERE.
+
+## 7. Formula language (D-018)
+
+Airtable-like, compiled to SQL (never evaluated in Go per-row).
+
+```
+{Price} * {Qty}
+IF({Status} = "Done", "✓", "")
+CONCAT({First}, " ", {Last})
+DATETIME_DIFF(NOW(), {Created at}, "days")
+```
+
+- **Lexer/parser** → AST → **type checker** (number, text, bool, date, datetime, duration, array) → **SQL compiler** emitting expression with bound literals.
+- Field refs `{Field name}` stored internally as field ids (renames safe).
+- Functions v1:
+  - Logic: `IF, AND, OR, NOT, SWITCH, BLANK, ISBLANK, COALESCE`
+  - Math: `ROUND, ROUNDUP, ROUNDDOWN, ABS, CEILING, FLOOR, MOD, POWER, SQRT, MIN, MAX, SUM, AVERAGE, INT`
+  - Text: `CONCAT, LEN, LEFT, RIGHT, MID, UPPER, LOWER, TRIM, SUBSTITUTE, FIND, REPLACE, T, VALUE, REGEX_MATCH`
+  - Date: `NOW, TODAY, YEAR, MONTH, DAY, WEEKDAY, HOUR, MINUTE, DATEADD, DATETIME_DIFF, DATETIME_FORMAT, DATE`
+  - Operators: `+ - * / % & = != < <= > >= ( )`
+- Division by zero → NULL (`NULLIF`). Errors at runtime (bad cast) are prevented by type checker; `VALUE()` uses `pg_input_is_valid` guard.
+- `NOW()`/`TODAY()`/`DATETIME_FORMAT()`/`YEAR()`… on datetimes use the requesting user's timezone (`AT TIME ZONE $tz`), so two users in different timezones may see different `TODAY()` results — intended.
+- Formulas may reference other formulas, lookups and rollups (inlined; cycle detection; max depth 8).
+- Formulas are filterable/sortable/groupable (they are just SQL expressions).
+- Why not PG18 virtual generated columns: they require immutable expressions on the same row (no `NOW()`, no lookups/rollups), and altering them is DDL; a uniform query-time approach is simpler. Revisit if performance needs it.
+
+## 8. Lookups & rollups
+
+- Compiled as correlated subqueries (shown above); for M:N via junction join.
+- Lookup returns array of values (JSON array) of the target field; filter ops of the target type applied with `EXISTS`/array semantics ("has any").
+- Rollup returns a scalar; filter/sort as a normal scalar.
+- Indexes on FK columns and junction `(child_id)` keep these fast at target scale.
+
+## 9. Writes
+
+- `PATCH` row: only provided fields; codec-validated; `updated_at/by` set; history captured via `RETURNING OLD.*, NEW.*` (PG18).
+- Bulk (paste/fill-down/import): one request, one transaction, `UPDATE … FROM (VALUES …)` / `COPY` for inserts; ≤ 5,000 cells per paste request (client splits larger).
+- Link changes: `POST /rows/{id}/links/{fieldId}` `{add:[ids], remove:[ids]}` — 1:N sets FK on child rows; 1:1 enforces uniqueness (replacing old link after confirmation); M:N inserts/deletes junction rows.
