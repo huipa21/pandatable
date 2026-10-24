@@ -20,7 +20,7 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 - `GET /healthz` returns HTTP 200, `Content-Type: application/json`, and
   `{"status":"ok"}` plus a newline. HEAD is also supported. This is process
   liveness, not a per-request database readiness check.
-- `/api/v1` is mounted but has no application endpoints yet. Unknown paths in
+- `/api/v1` includes the T1.2 auth/profile/timezone endpoints below. Unknown paths in
   `/api` return JSON 404 `ERR_NOT_FOUND`, never the SPA. Unknown `/healthz/…`
   paths also return 404; unsupported methods on `/healthz` return JSON 405
   `ERR_METHOD_NOT_ALLOWED`.
@@ -30,7 +30,9 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 - UI requests return JSON 503 `ERR_SPA_UNAVAILABLE` until built SPA assets exist.
   This is a pre-T0.5 build state, not an application API success response.
 
-Authentication, CSRF enforcement and the endpoints below are later-task work.
+T1.2 implements the auth/profile/timezone backend below. Setup, admin, ACL and
+business endpoints remain later-task work. The welcome page is still not a
+sign-in UI; browser auth/profile acceptance remains pending by explicit scope choice.
 
 ## 2. Endpoints
 
@@ -44,6 +46,70 @@ Authentication, CSRF enforcement and the endpoints below are later-task work.
 | GET | `/auth/me` | user, role, prefs, mustChangePassword |
 | POST | `/auth/password` | `{ current, new }` |
 | PATCH | `/auth/me` | `{ displayName, locale, theme, timezone }` (timezone: IANA name or `null` = app default) |
+
+#### T1.2 auth contract (D-072..D-077)
+
+- Passwords are **8-32 UTF-8 bytes**, without trimming, normalization or composition
+  rules. Login trims surrounding whitespace from the username/email only, and
+  matches username/email case-insensitively. Multiple matching legacy identities
+  fail closed. Future setup/admin creation must normalize and reject ambiguous
+  identities; no schema or account-creation service is introduced here.
+- Login returns `{ user, eventId }`; `GET /auth/me` returns the user directly;
+  profile PATCH returns `{ user, eventId }`. Logout/password success returns
+  `{ eventId }`. Password change requires the current password and a different
+  new password, clears `mustChangePassword`, revokes **all** sessions including
+  the current one, and expires the cookie. Re-login is required.
+- User DTO: `id`, `username`, nullable `email`, `displayName`, `role`,
+  `mustChangePassword`, `locale`, `theme`, nullable `timezone`,
+  `effectiveTimezone`, `avatarColor`. Password/hash/token/session metadata
+  never enter DTOs. The raw session token appears only in `Set-Cookie`.
+- Cookie `pt_session`: host-only, Path=/, HttpOnly, SameSite=Lax, Secure for
+  HTTPS. Persistent cookie expiry follows the server's sliding expiry:
+  seven days idle, capped at 30 days from creation. Successful identity/profile/
+  timezone reads refresh it; server-side validation always checks both limits.
+  Logout of a canonical already-revoked token is idempotent.
+- Literal localhost/loopback HTTP is an explicit development exception: cookie
+  omits Secure and startup logs a warning. Other HTTP auth configuration is
+  rejected. Never use this exception for production (see deployment section 9).
+- Unsafe API methods, **including login/logout**, require both `X-PT-CSRF: 1`
+  and one exact Origin matching the configured base URL's canonical scheme/
+  host/port (no path/trailing slash; default ports omitted). GET/HEAD/OPTIONS
+  are safe methods. There is no CORS or forwarded-host/proto trust.
+- Auth responses use `Cache-Control: no-store`. JSON requests require
+  `Content-Type: application/json`, a single JSON value, known fields only,
+  and at most 4096 body bytes. Handler contexts have a ten-second deadline.
+- PATCH fields are optional; omitted fields are preserved. Only timezone
+  accepts JSON null. At least one field is required. Display name must be
+  nonblank, at most 100 Unicode code points, without control characters.
+  Locale is `en|zh-CN`, theme `light|dark|system`. Timezone must exactly match
+  the PG18 `pg_timezone_names` catalog (excluding `posix/` and `right/`).
+  NULL follows `meta.settings.default_timezone`, default `Asia/Shanghai` if
+  unset. Invalid stored defaults fail explicitly; app connections use UTC.
+- `GET /meta/timezones` returns `{ items: string[] }` from that same catalog,
+  available to active authenticated users. A forced-change user can only
+  read `/auth/me`, change password or log out; profile/timezone-list access
+  returns 403 until the password changes. Future protected routes must enforce
+  this flag too. Disabled users are denied even if a session row remains;
+  future admin disable/reset must lock the user and revoke sessions atomically.
+- Ten login requests/minute/IP after CSRF/client-IP validation, including malformed
+  JSON/unsupported content types; five consecutive failures for a resolved
+  user ID cause a one-minute lock, rejecting even a correct password and shared
+  across username/email/case aliases. Bad password lengths count as failures.
+  Success/completed lock resets failures. State is single-instance in memory,
+  capped at 4096 IP/account keys; saturation fails closed, not by evicting live
+  limits. Restart resets rate state, not sessions. Same-account parallel login
+  attempts return 429; the single occupied password worker returns 503.
+- Client IP starts with the socket peer. Only configured trusted proxy peers
+  may supply X-Forwarded-For; walk right-to-left until the first untrusted hop.
+  Empty trust means ignore forwarding. Trusted chains are limited to 32 IPs /
+  4096 bytes and malformed chains fail 400. X-Real-IP and forwarded host/proto
+  are not used. Cookie/Origin policy depends only on PT_BASE_URL.
+- Typed auth errors: 400 `ERR_VALIDATION`, 401 `ERR_UNAUTHENTICATED` or
+  `ERR_INVALID_CREDENTIALS`, 403 `ERR_CSRF` or `ERR_PASSWORD_CHANGE_REQUIRED`,
+  415 `ERR_CONTENT_TYPE`, 429 `ERR_RATE_LIMITED` (`Retry-After: 60`),
+  503 `ERR_AUTH_BUSY` (`Retry-After: 1`), 500 `ERR_INTERNAL`. Internal errors
+  log only a fixed message and request ID, never driver/hash/credential content.
+  Frontend consumers must translate codes when that UI is implemented.
 
 ### Admin (role=admin)
 | Method | Path | Notes |

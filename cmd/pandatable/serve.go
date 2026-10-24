@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 
+	"pandatable/internal/auth"
 	"pandatable/internal/config"
 	"pandatable/internal/db"
 	"pandatable/internal/httpapi"
@@ -34,7 +35,13 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("open embedded web assets: %w", err)
 	}
-	handler, err := httpapi.New(logger, assets)
+	authService, err := auth.New(pool)
+	if err != nil {
+		return fmt.Errorf("configure auth service: %w", err)
+	}
+	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
+		Service: authService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)
 	}

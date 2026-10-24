@@ -2,15 +2,20 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func New(logger *slog.Logger, assets fs.FS) (http.Handler, error) {
+func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handler, error) {
+	if len(options) > 1 {
+		return nil, errors.New("only one auth configuration is supported")
+	}
 	spa, err := newSPA(logger, assets)
 	if err != nil {
 		return nil, err
@@ -34,7 +39,14 @@ func New(logger *slog.Logger, assets fs.FS) (http.Handler, error) {
 
 	api := chi.NewRouter()
 	api.NotFound(notFound)
-	api.MethodNotAllowed(methodNotAllowed)
+	api.MethodNotAllowed(apiMethodNotAllowed(api))
+	if len(options) == 1 {
+		authAPI, err := newAuthHTTP(logger, options[0])
+		if err != nil {
+			return nil, err
+		}
+		authAPI.mount(api)
+	}
 	router.Mount("/api/v1", api)
 	router.Handle("/api", http.HandlerFunc(notFound))
 	router.Handle("/api/*", http.HandlerFunc(notFound))
@@ -50,6 +62,24 @@ func notFound(w http.ResponseWriter, _ *http.Request) {
 func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Allow", "GET, HEAD")
 	writeError(w, http.StatusMethodNotAllowed, "ERR_METHOD_NOT_ALLOWED", "Method not allowed")
+}
+
+func apiMethodNotAllowed(router *chi.Mux) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if route := chi.RouteContext(r.Context()); route != nil && route.RoutePath != "" {
+			path = route.RoutePath
+		}
+		var allowed []string
+		for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+			http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace} {
+			if router.Match(chi.NewRouteContext(), method, path) {
+				allowed = append(allowed, method)
+			}
+		}
+		w.Header().Set("Allow", strings.Join(allowed, ", "))
+		writeError(w, http.StatusMethodNotAllowed, "ERR_METHOD_NOT_ALLOWED", "Method not allowed")
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

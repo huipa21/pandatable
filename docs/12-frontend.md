@@ -41,7 +41,9 @@ Routes:
 
 T0.5 implements only a separate `preferences` store for unauthenticated display
 preferences (`pandatable.locale`, `pandatable.theme` in localStorage). The auth
-store/server preference layer remains future work. `/login` is a welcome/status
+store and preference synchronization remain future work. T1.2 provides the
+auth/profile backend and mirrored [API types](../web/src/api/types.ts) only,
+by explicit user scope choice. `/login` is still a welcome/status
 surface, not a sign-in form; unknown routes have a localized not-found page.
 
 ## 4. Grid (desktop/tablet ≥ 768 px)
@@ -124,7 +126,8 @@ English is loaded once at startup for fallback/error text; Chinese is fetched
 on demand (or on startup when saved/browser-selected). The store updates
 `document.lang`, Naive UI locale/dateLocale, and dayjs together. Storage and
 locale-chunk failures log explicitly and show translated alerts; a failed
-language switch retains the active language. No server preferences exist yet.
+language switch retains the active language. Server profile preferences exist
+from T1.2, but this unauthenticated shell does not read or write them yet.
 
 ## 7. Theme
 

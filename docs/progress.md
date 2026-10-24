@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1 metadata migrations Done with live PG18/AT-002 verification; T1.2 auth is next. No auth or business services yet. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1 Done; T1.2 backend auth verified, but explicitly backend-only: browser AT-102/116 and full AT-117 remain pending. AT-103/803 pass. T1.3 setup prompt ready; no setup/ACL/admin/business services yet. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -27,7 +27,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.7 | Test harness & local gate | 🟨 | 2026-10-24 | Implementation and Windows/Podman verification complete: shared PG18 helper, four real shell E2E checks, failure/cancellation/partial-start cleanup and ptdev check pass. Linked AT-006 still requires Linux bash/Docker; not Done. |
 | T0.8 | RevoGrid spike | ✅ | 2026-10-24 | Scoped objectives demonstrated: opt-in lazy DataGrid, synthetic 200k window with <=300 row cache, real clipboard/editor/range/fill/group/freeze/theme and emulated tablet checks; D-066..068 confirm D-005. Windows check and image-backed E2E pass; no production query/mobile acceptance claimed. |
 | T1.1 | Meta migrations | ✅ | 2026-10-24 | Forward 0002 adds all 14 remaining metadata tables; 0001 unchanged. D-069..071 clarify composite FKs, identifier/name rules, polymorphic grants and history. Real PG18 catalog/default/constraint/delete/upgrade/down-up tests and AT-002 restarts pass; Windows check and 8-check image E2E pass (2 intentional mobile exclusions). T1.2 handoff recorded. |
-| T1.2 | Auth service | ⬜ | | |
+| T1.2 | Auth service | 🟨 | 2026-10-25 | Backend verified: bounded argon2id, hash-only PG sessions/expiry/revocation, auth/profile/timezone APIs, alias/IP limits, trusted proxies, CSRF/cookies. Windows check and image E2E pass; AT-103/803 pass. User chose backend-only: browser AT-102/116 and full AT-117 remain pending, so not Done. T1.3 handoff created. |
 | T1.3 | Setup flow | ⬜ | | |
 | T1.4 | ACL resolver & grants API | ⬜ | | |
 | T1.5 | Admin users | ⬜ | | |
@@ -85,14 +85,14 @@ Summary updated at each milestone end.
 | Area | Total | Passing | Notes |
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
-| AT-1xx Auth & Admin | 17 | 0 | |
+| AT-1xx Auth & Admin | 17 | 1 | AT-103 passes on real HTTP/PG18 with alias-shared lock and controllable time. AT-102/116 API evidence only; browser UI deferred by user. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
 | AT-2xx Structure & Permissions | 13 | 0 | |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 1 | AT-802 preserved through T0.8: 61 matching keys, untranslated-text/attribute lint and negative fixtures. Synthetic grid timings do not certify NFR-2/3. Remains a continuous local gate. |
+| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 61 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). No NFR-2/3 or full-load AT-801 claim. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -108,6 +108,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-25 | T1.2 backend implementation verified and handed off; D-072..077, static sqlc auth queries, API/types/testing docs and T1.3 prompt added. Windows check, required PG18 and final 8/2 image E2E pass. Kept T1.2 in progress because the user explicitly deferred auth/profile UI and full AT-117. No shared/remote deployment or unrelated task completion. |
 | 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
 | 2026-10-24 | T1.1 started with a clean worktree; required design/runtime/test docs inspected. Started the existing stopped Podman machine and retained dev DB without reset. User confirmed grant-reference and history clarifications before coding. |
 | 2026-10-24 | T1.1 Done: reversible metadata 0002, exact PG18 catalog/default/constraint/delete tests, sentinel-preserving concurrent upgrades and populated down/up, three real serve lifecycles with unchanged migration records (AT-002). Windows check, shell/spike E2E and AT-004 pass. D-069..071, data-model/testing docs, completion record and T1.2 prompt added; unrelated platform acceptance remains pending. |
@@ -560,3 +561,139 @@ Summary updated at each milestone end.
   No auth/setup/ACL/production data-grid or future acceptance passes claimed.
 - Implementation/limitations/handoff: [T1.1 record](task-prompts/T1.1.md#implementation-and-handoff-2026-10-24).
   Next: [T1.2 Auth service](task-prompts/T1.2.md).
+
+## T1.2 backend verification and handoff (2026-10-25)
+
+**Backend delivered and verified; T1.2 remains in progress, not Done.** Started
+2026-10-24. User explicitly selected backend-only scope, passwords of 8-32
+UTF-8 bytes, literal-loopback HTTP cookie exception, and all-session revocation
+after password change. No browser AT-102/116 or full AT-117 pass is claimed.
+M0/T0.4/T0.6/T0.7 and their Linux/Docker/server checks remain unchanged.
+
+### Implementation and security state
+
+- [Auth service](../internal/auth/service.go), password/token/limit helpers and
+  [HTTP handlers](../internal/httpapi/auth.go): username/email login, logout,
+  identity, password and profile preferences, plus authenticated PG timezone
+  catalog. Mirrored [API types](../web/src/api/types.ts); no auth frontend.
+  D-072..D-077 and the [API contract](09-api.md#t12-auth-contract-d-072d-077)
+  record policy, request/response/error shapes and future service obligations.
+- Argon2id m=65536 KiB,t=1,p=2, random 16-byte salts, 32-byte keys, exact bounded
+  canonical PHC validation and constant-time key comparison. A single fail-fast
+  worker bounds active KDF work; contention returns explicit 503. Added only
+  x/crypto **v0.58.0** and transitive x/sys **v0.49.0**, not an auth framework.
+- Sessions use 32 random bytes as canonical base64url; only SHA-256 of the
+  encoded token is stored. Real PG tests inspect digest/IP/user-agent/timestamps,
+  UTC connections and last_login_at. Seven-day idle and 30-day absolute expiry
+  are independently enforced even with artificially extended expires_at.
+  Monotonic conditional UPDATE cannot resurrect a revoked row.
+- Eight concurrent validators vs logout leave zero session rows. A separate
+  test observes a real blocked PG user-row lock, commits a password change and
+  revocation, then proves the already-verified old-password login cannot insert
+  a surviving session. Change-password clears must_change_password and revokes
+  all sessions atomically; the old password fails and the new one works.
+- Five bad credentials, including invalid password lengths, lock the resolved
+  account for a minute; username/email/case aliases share that ID. Correct
+  passwords are rejected during lock; deterministic deadline tests verify reset
+  at the exact boundary. Ten/minute/IP includes malformed JSON and unsupported
+  content types after CSRF/IP validation (D-077 supersedes D-075's exemption).
+  Maps cap at 4096 and fail closed rather than evicting live protection.
+- Trusted X-Forwarded-For is parsed right-to-left, stopping at an untrusted hop;
+  empty trust ignores spoofed forwarding. Both exact configured Origin and
+  X-PT-CSRF: 1 are required for unsafe requests. HTTPS cookies are host-only,
+  Path=/, HttpOnly, Secure, SameSite=Lax; only literal-local HTTP omits Secure
+  with a startup warning. Non-loopback HTTP auth configuration is rejected.
+- Typed errors, no-store responses, bounded JSON/DB contexts and accurate API
+  405 Allow headers are tested. No passwords, PHC strings, session tokens or
+  email identifiers appear in access/error logs; internal diagnostics use a
+  fixed message and request ID. Existing no-inline/no-eval-script CSP remains.
+- Profile display name/locale/theme/timezone persist across service recreation.
+  Timezone validates against real PG18 catalog; NULL follows the current team
+  default (Asia/Shanghai when absent). Invalid stored strings/JSON null/types
+  fail explicitly. Forced-change users cannot edit profile/list timezones.
+  Disabled users cannot authenticate even if a row remains; future admin
+  disable/reset must serialize and revoke in the same transaction.
+- **0001/0002 unchanged, no new migration.** Pinned development-only sqlc
+  **1.31.1** generates static typed bindings; regeneration is byte-identical.
+  Its offline timezone catalog declaration is never executed/migrated or
+  included as a runtime schema change. Build-context allowlists are unchanged.
+
+### Exact verification
+
+- Versions: Go **1.27.0 windows/amd64**, Node **24.15.0**, pnpm **11.2.2**,
+  Podman client/server **5.8.2/5.8.4**, Compose **2.40.3**, PostgreSQL **18.6**
+  (`18.6-1.pgdg13+2` dev DB), Playwright **1.64.1**, actual Chromium
+  **156.0.8078.4**, sqlc **1.31.1**. Docker/golangci-lint and an approved
+  Ubuntu/Caddy destination remain unavailable.
+- Required live PG18, uncached focused command:
+  `go test .\internal\auth .\internal\httpapi -count=1 -v`, with explicit
+  PT_TEST_DATABASE_URL and PT_TEST_DATABASE_REQUIRED=1: **PASS**.
+  Subsequent focused expiry/blocked-login tests with `-count=2` also pass;
+  fixture rows cleanly repeat in one Suite-owned database.
+- Final extra boundary command with required PG18:
+  `go test .\internal\auth .\internal\httpapi -run 'TestLoginLimitsAndAliasesPostgreSQL|TestAuthHTTPPostgreSQL|TestMalformedLoginIPLimitHTTPPostgreSQL|TestAuthInputAndInternalErrorsHTTPPostgreSQL' -v -count=1`:
+  **PASS**. Ten malformed requests with forged untrusted forwarding consume the
+  socket-IP budget; a correct eleventh request returns 429. API 405 responses
+  advertise the actual methods, not the shell's GET/HEAD-only allowance.
+- `go test .\internal\auth -run '^$' -fuzz '^FuzzParsePHC$' -fuzztime=3s -parallel=2`:
+  **PASS**, **76,057** executions, seven new interesting inputs, no crash.
+- `go test .\internal\auth -run '^$' -bench BenchmarkPasswordHash -benchtime=3x -benchmem -cpu=2`:
+  **59,977,533 ns/op**, **67,113,466 B/op**, **30 allocs/op**, three iterations
+  on local Intel i7-11850H with two Go CPUs. This is a local KDF observation,
+  not certification of full target-host load/RSS.
+- Final `go run .\tools\ptdev check`: **PASS**, lint **15.987 s**, test
+  **25.454 s**, build **12.651 s**, total **54.093 s**. Includes gofmt/vet,
+  required uncached Go/PG18 tests, AT-002 initial serve plus two restarts with
+  unchanged migration records, **20 Vitest tests / six files**, strict
+  frontend/E2E TS, ESLint/Prettier, **61** matching non-empty locale keys and
+  negative fixtures, frozen web build and native binary. Optional golangci-lint
+  was not run. Initial gzip **135,087 <600,000** bytes, all assets **255,685**;
+  no grid in the initial imports.
+- Final `go run .\tools\ptdev e2e` with GOPROXY set to the public mirror:
+  **PASS**, project **pt-e2e-kzzrsztolv6nch4wydf6rw75j6**, loopback **50236**,
+  health **8.003 s**, **8 passed / 2 intentional mobile exclusions in 34.7 s**.
+  Existing shell/spike assertions and browser/CSP diagnostics pass unchanged.
+  This suite is not auth/profile browser acceptance.
+- Supplemental read-only inspection while that owned stack was ready:
+  AT-004 image **162,627,041 bytes <200,000,000**, linux/amd64, UID/GID
+  **10001:10001**, exec-form `CMD pandatable healthcheck`; runtime pg_dump
+  **18.6** (`18.6-1.pgdg12+2`). Podman startup snapshot: **74.1 MB / 536.9 MB**
+  container memory, **4.42% CPU**, **314.591 ms CPU time**, **13 pids**.
+  This is a startup/shell observation, not AT-801's 15-minute ten-user workload.
+- Earlier pre-boundary image run also passed **8/2 in 32.5 s**, health
+  **7.25 s**, image **162,622,944 bytes**, project
+  **pt-e2e-yvbqikgte7573wtc2lcop3y4un**, loopback **52567**. The final run above
+  verifies the stricter request limit and method-header implementation.
+- Ordinary absent-URL and closed-loopback-port compatibility:
+  `go test .\internal\auth .\internal\httpapi -run 'TestSessionLifecyclePostgreSQL|TestAuthHTTPPostgreSQL' -v -count=1`
+  clearly skips the DB tests in **0.00-0.01 s**. Those skips are not integration
+  passes. Shared PostgreSQL was not stopped.
+- Failures resolved without weakening assertions: default Go proxy lookup timed
+  out, so public-module retrieval used goproxy.cn; first sqlc generation could
+  not resolve PG's timezone catalog, fixed by its generator-only declaration;
+  initial check failed only Prettier on the new API type file, fixed using the
+  existing formatter. Final complete gate and E2E both pass.
+
+### Acceptance, cleanup and next task
+
+AT-103 and AT-803 pass at their specified API surface. AT-102/116 have real
+HTTP/PG service evidence only; translated errors, login/profile UI and
+back-button/browser behavior remain pending by user scope choice. AT-117 has
+profile/catalog/default persistence evidence only; actual datetime fields,
+per-user display/filter behavior and admin default-change UI are not claimed.
+AT-002/003/004/802 are preserved. Full AT-001/005/006 Linux/Docker/approved
+server acceptance remains pending; no shared/remote deployment.
+
+TestMain dropped all owned databases: read-only verification found **zero**
+remaining pt_test_* DBs. Both named E2E projects have zero containers, volumes,
+networks or image tag; **50236/52567** have no listener. Short-lived pg_dump/
+browser-version probes exited. Dev DB remains running with pt-dev-pgdata and
+existing release images retained. No prune/reset/shared Caddy/network changes.
+Generated web assets, ignored browser results and temporary tools/logs are not
+committed.
+
+Implementation/limitations: [T1.2 record](task-prompts/T1.2.md#implementation-and-handoff-2026-10-25).
+Next prompt: **[T1.3 Setup flow](task-prompts/T1.3.md)**. It carries forward
+single-worker hashing, session/CSRF/cookie/proxy constraints, owned PG18 tests,
+unchanged migrations/CSP/resources and the requirement to record completion
+and create T1.4's prompt. T1.3 itself is not started by this handoff.

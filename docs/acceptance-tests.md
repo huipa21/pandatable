@@ -98,6 +98,24 @@ T1.1 is Done; unrelated M0/platform and future auth/business acceptance are not.
 - **AT-116 — Self profile** · M1 · alice changes display name and password; new password works, old doesn't.
 - **AT-117 — Timezone** · M1/M2 · Default timezone is Asia/Shanghai for new users; a datetime saved as 2026-01-01 00:30 by alice (Asia/Shanghai) displays as 2025-12-31 16:30 for bob after he sets Europe/London; (M2) filter `is today` uses each user's own timezone; admin changing default timezone affects users without their own setting.
 
+### T1.2 backend evidence (2026-10-25)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-102 | Partial | Real HTTP/PG18 username/email login, generic errors, logout and revoked-cookie rejection pass. User explicitly deferred auth frontend: translated errors and browser/back-button behavior remain pending. |
+| AT-103 | Pass | Five bad credentials across username/email/case aliases cause the same one-minute account lock; a correct password is rejected. Controllable-time tests cover exact expiry/reset. Ten/minute/IP also counts malformed login requests; spoofed untrusted forwarding cannot bypass it. |
+| AT-116 | Partial | Actual HTTP/PG profile/password changes persist; new password works, old fails, every session is revoked. Profile UI/browser acceptance remains pending by user choice. |
+| AT-117 | Partial | PG-catalog timezone validation, NULL/team default (Asia/Shanghai if absent), persistence and UTC DB sessions pass. No real datetime field/display/filter or admin-default UI acceptance is claimed. |
+| AT-803 | Pass | Actual auth HTTP/PG18 tests reject missing CSRF header, missing/foreign Origin; HTTPS cookie flags, no-store, CSP/nosniff and proxy boundaries pass. D-073 explicitly permits non-Secure cookies only for literal-local HTTP development and rejects other HTTP auth configuration. |
+| AT-002/003/004/802 | Pass preserved | Required PG18 migration/restart gate, unchanged shell/spike E2E, 61-key locale parity, non-root 162,627,041-byte linux/amd64 image with exec-form HEALTHCHECK and pg_dump 18.6. |
+| AT-001/005/006 | Partial, unchanged | Windows/Podman gate passes; Linux/Docker and approved Ubuntu/Caddy checks remain pending. |
+
+Final image E2E: **8 passed / 2 intentional mobile exclusions in 34.7 s**,
+health **8.003 s**, no browser/CSP errors. This is the preserved shell/spike
+suite, **not auth UI acceptance**. T1.2 remains in progress, not Done.
+Exact commands, failure corrections, CPU/memory observations and owned cleanup:
+[progress](progress.md#t12-backend-verification-and-handoff-2026-10-25).
+
 ## AT-2xx Structure & Permissions (M1)
 
 - **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`.

@@ -22,6 +22,9 @@ func TestMakePoolConfigSetsConfiguredMaxConnections(t *testing.T) {
 	if poolConfig.MaxConns != 7 {
 		t.Errorf("MaxConns = %d, want 7", poolConfig.MaxConns)
 	}
+	if poolConfig.ConnConfig.RuntimeParams["timezone"] != "UTC" {
+		t.Fatal("application database sessions must use UTC")
+	}
 }
 
 func TestMakePoolConfigRejectsInvalidConnectionLimit(t *testing.T) {

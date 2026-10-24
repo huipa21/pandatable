@@ -52,6 +52,7 @@ func makePoolConfig(cfg config.Config) (*pgxpool.Config, error) {
 		return nil, fmt.Errorf("parse PostgreSQL connection configuration: %s", redactDatabaseError(err, cfg.DatabaseURL))
 	}
 	poolConfig.MaxConns = int32(cfg.DBMaxConns)
+	poolConfig.ConnConfig.RuntimeParams["timezone"] = "UTC"
 	return poolConfig, nil
 }
 

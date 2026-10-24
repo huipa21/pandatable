@@ -274,6 +274,17 @@ CREATE TABLE meta.backups (
 
 ### Integrity and service boundaries (D-069..D-071)
 
+T1.2 auth (D-072..D-076) reuses the original users/sessions/settings with **no
+schema migration**. Session `id_hash` is SHA-256 of a canonical base64url token
+made from 32 random bytes. `expires_at` is the earlier of seven days from
+`last_seen_at` and 30 days from `created_at`; validation checks both independently,
+requires an active user, and sliding uses conditional UPDATE, never UPSERT.
+Application connections force UTC. Profile NULL timezone follows the current
+validated default setting (Asia/Shanghai when absent). Password change locks
+the user and revokes all sessions atomically; login rechecks the hash under the
+same user lock before inserting a session. Disable/reset/lifecycle services
+are still future work and must use that lock/revocation contract.
+
 - `books.pg_schema` is globally unique; table names are unique within a book,
   field columns within a table, junction names within a book, and relation FK
   columns within a child table. These reservations include trashed metadata:

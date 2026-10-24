@@ -1,0 +1,13 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema:
+      - migrations
+      - internal/auth/catalog.sql
+    queries: internal/auth/queries.sql
+    gen:
+      go:
+        package: authsql
+        out: internal/auth/authsql
+        sql_package: pgx/v5
+        omit_unused_structs: true

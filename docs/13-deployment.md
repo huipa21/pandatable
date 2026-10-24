@@ -99,7 +99,7 @@ Extensions: `pg_trgm`, `pg_stat_statements` (created by migration).
 | `PT_DATABASE_URL` | — | Postgres DSN (required) |
 | `PT_DATA_DIR` | `/data` | `files/`, `backups/`, `tmp/` |
 | `PT_LISTEN` | `:8080` | listen address |
-| `PT_BASE_URL` | — | public URL; Origin/CSRF check, cookie `Secure` when https |
+| `PT_BASE_URL` | — | public URL; Origin/CSRF check, Secure cookies for HTTPS; HTTP auth restricted to literal localhost/loopback |
 | `PT_TRUSTED_PROXIES` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | CIDRs whose `X-Forwarded-*` headers are trusted |
 | `PT_DB_MAX_CONNS` | `20` | pgx pool size |
 | `PT_LOG_LEVEL` | `info` | slog level, JSON logs to stdout |
@@ -206,3 +206,37 @@ Collected by `gopsutil` + PG queries, cached 5 s:
 - Setup token single-use; setup endpoint returns 410 after completion.
 - Login rate limits (per IP from trusted `X-Forwarded-For`, per account); session idle timeout 7 days, absolute 30 days; sessions revoked on password reset/disable.
 - Upload MIME sniffing; attachments served with `Content-Disposition: attachment` except safe image types; `X-Content-Type-Options: nosniff`; CSP on SPA.
+
+### T1.2 auth operating policy
+
+Production requires HTTPS in `PT_BASE_URL` even though Caddy's upstream socket
+is HTTP. `pt_session` is host-only, Path=/, HttpOnly, Secure and SameSite=Lax.
+Neither `X-Forwarded-Proto` nor the request socket changes these flags.
+For the existing Vite and isolated Compose development paths only, literal
+`http://localhost` / loopback-IP base URLs omit Secure and emit an explicit
+startup warning (D-073). Non-loopback HTTP auth configuration fails startup.
+Do not expose the local override as a public deployment.
+
+All unsafe API requests need **both** the exact configured Origin and
+`X-PT-CSRF: 1`, including login/logout. For Vite use its origin (normally
+`http://127.0.0.1:5173`), not the backend port; curl/API tests must set the
+Origin explicitly. A base URL path is not part of an Origin; default :80/:443
+ports are omitted. No arbitrary forwarded-host/proto trust or CORS is added.
+Prefer narrow actual proxy CIDRs; an explicitly empty trusted-proxy list
+trusts none. Trusted X-Forwarded-For chains are evaluated right-to-left and
+stop at the nearest untrusted hop, not at an attacker-supplied leftmost IP.
+
+Passwords use 8-32 UTF-8 bytes and argon2id (64 MiB, one iteration, two lanes),
+with one fail-fast KDF worker per app auth service. Busy work returns 503;
+no unbounded CPU/memory queue is created. Normal password changes revoke all
+sessions and require re-login. Future setup/admin hashing must reuse this
+worker; future disable/reset must serialize on the user row and revoke sessions
+in the same transaction. T1.2 does not implement those services.
+
+Rate limits are bounded in-memory state for the single instance (D-045/D-077);
+restart resets limits but not PG sessions. Do not use multiple app replicas.
+Sessions store only token digests, slide with conditional UPDATE (never
+recreate revoked rows), and check seven-day idle / 30-day absolute expiry
+independently of the stored expiry. All app DB connections force UTC.
+Profile timezone validation uses PG's catalog; NULL follows the current team
+default. Real datetime/filter/export timezone behavior is later work.

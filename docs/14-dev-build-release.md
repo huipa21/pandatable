@@ -181,6 +181,38 @@ logs and connection cleanup. A focused live-DB run is:
 go run ./tools/ptdev test -run "TestMetadata|TestInitialMigrationPostgreSQL|TestServePostgreSQLRestarts" -v -count=1
 ```
 
+### T1.2 backend auth checks
+
+[Auth tests](../internal/auth/service_test.go) and
+[HTTP tests](../internal/httpapi/auth_integration_test.go) each use their own
+Suite-owned PG18 database and bounded fixture cleanup. They insert real PHC
+hashes only in those owned databases, never in the developer DB. The real gate
+requires live PG18 and uncached execution; an ordinary skip is not acceptance.
+
+```text
+go run ./tools/ptdev test -run "TestSession|TestLogin|TestPassword|TestProfile|TestConcurrent|TestAuth|TestForced|TestPHC|TestRateLimit|TestLimitCapacity|TestCSRF|TestTrustedProxy|TestCookie" -v -count=1
+go test ./internal/auth -run "^$" -bench BenchmarkPasswordHash -benchtime=3x -benchmem -cpu=2
+```
+
+Rate/session tests inject a clock rather than sleeping for deadlines. A
+password-change race test waits for actual PostgreSQL lock evidence before
+committing the changed hash and revocation. Session validators race a revoke
+and verify the row cannot reappear. Expiry tests deliberately extend the stored
+expiry to prove idle/absolute limits are checked independently.
+
+Static auth queries are generated locally using pinned `sqlc` **1.31.1**:
+`sqlc generate`. Commit its Go bindings; generation must produce no diff on
+rerun. [catalog.sql](../internal/auth/catalog.sql) declares the PG timezone
+catalog only for the offline generator; no runtime SQL or migration executes it.
+The application image uses existing Go source allowlists and does not include
+the generator. Runtime additions are only `x/crypto` (argon2id) and `x/sys`.
+
+By user-confirmed scope, no login/profile frontend or auth browser fixture is
+shipped in T1.2. Existing `ptdev e2e` remains the real shell/spike gate; it is
+**not** browser acceptance for AT-102/116. API coverage and stored profile
+timezone/default checks do not complete full AT-117's real datetime/filter/
+admin-default scenarios. T1.2 remains in progress until linked acceptance passes.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:
