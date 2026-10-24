@@ -33,6 +33,10 @@ handler tx ──► pg_notify('pt_events', '{"tbl":"…","op":"update","ids":[�
 - Captured in the same transaction as the write using PG18 `RETURNING OLD.*, NEW.*` (or OLD/NEW for specific columns).
 - `changes` jsonb: `{ "<fieldId>": { "o": <old>, "n": <new> } }` only for changed fields; inserts store `n` only, deletes store full `o` snapshot.
 - Not recorded: system fields, virtual fields (formula/lookup/rollup).
+- Field conversion records one table-level `type_change` event with NULL
+  `row_id` (D-071), not one event per converted row. All row actions require a
+  row ID; metadata-table purge cascades history, while physical row deletion
+  does not. This schema exists now; capture/retention jobs remain later work.
 - Link changes recorded on both rows as `link`/`unlink` with the other row's id + display value.
 - Bulk paste over N rows → N history rows (one per row) in one INSERT.
 - Retention: daily job deletes history older than `history_retention_days` (default 90).

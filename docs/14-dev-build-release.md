@@ -166,6 +166,21 @@ Cleanup errors make the package fail and identify the owned database for manual
 recovery. Do not use broad `pt_test_*` cleanup queries. As with any in-process
 test cleanup, forcibly killing the entire test executable cannot run TestMain.
 
+The DB package's T1.1 tests inspect the real PG18 catalog and exercise defaults,
+constraints, Trash/name rules, composite FKs and deletion behavior. Its
+`TestMetadataUpgradeRollbackPostgreSQL` temporarily runs Goose Down **only to
+0001, only inside its Suite-owned database**, seeds sentinel users/sessions/
+settings, and verifies concurrent/repeated 0002 upgrades and populated down/up
+cycles. It preserves extension OIDs, the initial version record and an unrelated
+metadata object. Production `serve`/`migrate` remain strictly forward-only.
+`TestServePostgreSQLRestarts` performs an initial serve plus two actual restarts,
+checking all version records (including timestamps) remain unchanged, health,
+logs and connection cleanup. A focused live-DB run is:
+
+```text
+go run ./tools/ptdev test -run "TestMetadata|TestInitialMigrationPostgreSQL|TestServePostgreSQLRestarts" -v -count=1
+```
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:

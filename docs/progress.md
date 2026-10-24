@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | ⬜ | | | v0.1.0 | |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1 metadata migrations Done with live PG18/AT-002 verification; T1.2 auth is next. No auth or business services yet. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -26,7 +26,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.6 | Image & deploy files | 🟨 | 2026-10-24 | Implementation verified: AT-004 image contents pass (161,964,427 bytes); isolated Windows/Podman Compose/browser/restart/persistence and gzip export/load checks pass. Full AT-001/005 await Linux/Docker and an approved real Caddy destination; not Done. |
 | T0.7 | Test harness & local gate | 🟨 | 2026-10-24 | Implementation and Windows/Podman verification complete: shared PG18 helper, four real shell E2E checks, failure/cancellation/partial-start cleanup and ptdev check pass. Linked AT-006 still requires Linux bash/Docker; not Done. |
 | T0.8 | RevoGrid spike | ✅ | 2026-10-24 | Scoped objectives demonstrated: opt-in lazy DataGrid, synthetic 200k window with <=300 row cache, real clipboard/editor/range/fill/group/freeze/theme and emulated tablet checks; D-066..068 confirm D-005. Windows check and image-backed E2E pass; no production query/mobile acceptance claimed. |
-| T1.1 | Meta migrations | ⬜ | | |
+| T1.1 | Meta migrations | ✅ | 2026-10-24 | Forward 0002 adds all 14 remaining metadata tables; 0001 unchanged. D-069..071 clarify composite FKs, identifier/name rules, polymorphic grants and history. Real PG18 catalog/default/constraint/delete/upgrade/down-up tests and AT-002 restarts pass; Windows check and 8-check image E2E pass (2 intentional mobile exclusions). T1.2 handoff recorded. |
 | T1.2 | Auth service | ⬜ | | |
 | T1.3 | Setup flow | ⬜ | | |
 | T1.4 | ACL resolver & grants API | ⬜ | | |
@@ -109,6 +109,8 @@ Summary updated at each milestone end.
 | Date | Change |
 |---|---|
 | 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
+| 2026-10-24 | T1.1 started with a clean worktree; required design/runtime/test docs inspected. Started the existing stopped Podman machine and retained dev DB without reset. User confirmed grant-reference and history clarifications before coding. |
+| 2026-10-24 | T1.1 Done: reversible metadata 0002, exact PG18 catalog/default/constraint/delete tests, sentinel-preserving concurrent upgrades and populated down/up, three real serve lifecycles with unchanged migration records (AT-002). Windows check, shell/spike E2E and AT-004 pass. D-069..071, data-model/testing docs, completion record and T1.2 prompt added; unrelated platform acceptance remains pending. |
 | 2026-10-24 | T0.8 started with a clean worktree; pinned engine/adapter APIs and isolated prototype design inspected. |
 | 2026-10-24 | T0.8 scoped spike complete: 200k window/cache, custom editor/renderer, quoted TSV and fill, grouped sample, frozen columns, translations/themes and emulated tablet demonstrated under unchanged CSP. D-066..068 confirm D-005; 20 unit tests, Windows local gate and eight image-backed browser checks pass (two intentional mobile exclusions). T1.1 handoff created; unrelated platform acceptance remains pending. |
 | 2026-10-24 | Resolved OQ-1..4: external Caddy, local Podman/Docker build + image transfer, `ptdev` tool, timezone & currency defaults. Added 14-dev-build-release.md, D-046..D-050, AT-005/006/117/326. |
@@ -458,3 +460,103 @@ Summary updated at each milestone end.
 - Full implementation, interaction matrix, caveats and next task:
   [T0.8 completion](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
   Next: [T1.1 Meta migrations](task-prompts/T1.1.md).
+
+### T1.1 verification evidence (2026-10-24)
+
+- **T1.1 Done; linked AT-002 passes.** Added
+  [0002_metadata.sql](../migrations/0002_metadata.sql) with all 14 remaining
+  metadata tables. Existing 0001 is byte-for-byte unchanged in Git; it still
+  owns users/sessions/settings and extensions. No new dependencies, application
+  APIs, real accounts, physical book/user tables, ACL/lifecycle/collaboration/
+  backup services or frontend changes.
+- D-069..D-071 and [data model](05-data-model.md#integrity-and-service-boundaries-d-069d-071)
+  record composite field/table and same-book FKs, physical-name reservations
+  through Trash, active-field case-insensitive names, field If-Match version,
+  view ownership/storage-shape/scalar checks and the explicit rollback order.
+  User confirmed polymorphic grants remain service-validated (no target FKs or
+  triggers), and table-level type_change history uses NULL row_id with a table
+  purge FK. Those future services must handle grant races/cleanup, last-owner/
+  orphan rules and physical/file/reverse-link cleanup; this is not implemented
+  or implied by metadata cascades.
+- Environment: Windows/amd64, **Go 1.27.0**, **Node 24.15.0**, **pnpm 11.2.2**,
+  **Podman client/server 5.8.2/5.8.4**, **Compose 2.40.3**,
+  **PostgreSQL 18.6** (`180006`, Debian `18.6-1.pgdg13+2` on the retained dev
+  container), **Playwright 1.64.1**, **Chromium 156.0.8078.4**. The existing
+  stopped Podman machine and dev DB were started without resetting anything.
+  Docker and golangci-lint remain absent; no approved server/Caddy destination.
+- Focused PowerShell commands from the repository root:
+
+  ```text
+  go run .\tools\ptdev test -run 'TestEmbeddedMigrationOrdering|TestInitialMigrationPostgreSQL|TestMetadata|TestServePostgreSQLRestarts' -v -count=1
+  go run .\tools\ptdev test -run 'TestMetadata|TestServePostgreSQLRestarts' -v -count=2
+  ```
+
+  Both PASS with **live, required PG18**, not skipped integration evidence.
+  [Catalog tests](../internal/db/metadata_catalog_test.go) verify all 17 meta
+  tables, exact new column order/types/nullability/default expressions, ALWAYS
+  identity, validated constraints and valid/ready unique/lookup indexes.
+  [Behavior tests](../internal/db/metadata_behavior_test.go) check real UUIDv7,
+  timestamps, JSON/boolean/version/NULL defaults, multiple virtual columns,
+  table-level history and **54** expected SQLSTATE failures in the constraint
+  suite (unique/FK/NOT NULL/check/identity), plus Trash/restore/name checks.
+  Valid enums and same-book self-links pass. Seven deletion scenarios cover
+  user, group, display/relation field, table, book and workspace, including
+  authorship SET NULL, personal-view/session/member/notification cascades,
+  surviving sibling scopes, and intentionally service-owned grant references.
+- [Upgrade tests](../internal/db/metadata_upgrade_test.go) run two populated
+  Down-to-0001/up cycles only inside the Suite-owned DB. Sentinel users
+  (including explicit auth/preferences/timestamps), session bytea/IP/expiry/
+  user-agent and nested JSON settings compare unchanged. Extension OIDs/
+  versions, migration-1 record and an unrelated metadata table/data survive.
+  Each upgrade has two concurrent advisory-locked callers, followed by a rerun;
+  versions 1/2 each have exactly one applied record, with unchanged records on
+  the rerun. Down removes all 14 new tables and the identity sequence, not the
+  original schema/data/extensions/unrelated object. The `-count=2` run also
+  verifies the fixture cleanup permits repeating tests in the same package DB.
+- **AT-002:** [serve test](../cmd/pandatable/serve_test.go) performs an initial
+  real serve plus **two restarts**, each with health 200, API 404, graceful
+  shutdown, no ERROR/connection-URL logs and zero remaining app connections.
+  All Goose records, including IDs/timestamps and both applied versions, remain
+  exactly unchanged across all three lifecycles. The occupied-port case remains
+  an explicit failure. Package TestMain cleanup drops the owned databases.
+- Final `go run .\tools\ptdev check`: **PASS**, lint **22.715 s**, test
+  **26.926 s**, build **18.824 s**, total **68.472 s**. Includes gofmt/vet,
+  required uncached Go/PG18 tests, **20 Vitest tests in six files**, strict
+  frontend/E2E TS, ESLint/Prettier, **61** matching non-empty locale keys and
+  negative i18n fixtures, frozen build and native binary. Optional
+  golangci-lint was not run. Initial shell gzip stays **135,087 bytes
+  <600,000**, all assets **255,685 bytes**; no grid in initial imports.
+- Final `go run .\tools\ptdev e2e` with a read-only image-inspection/short-lived
+  pg_dump probe at health readiness: **PASS**, project
+  **pt-e2e-qllx7olo7expau2swdbpjam2jt**, loopback **50903**, health
+  **6.354 s**, **8 passed / 2 intentional mobile exclusions in 32.9 s**.
+  All shell/spike checks remain green; browser/CSP checks report no errors.
+  AT-003/802 preserved; no frontend CSP/i18n/test-policy changes.
+  **AT-004 preserved:** image **162,381,278 bytes <200,000,000**,
+  linux/amd64, UID/GID **10001:10001**, executable
+  `CMD pandatable healthcheck`; runtime pg_dump **18.6**
+  (`18.6-1.pgdg12+2`).
+- An earlier identical browser run also passed 8/2 (health **9.695 s**,
+  **39.9 s** browser duration), but the supplemental PowerShell probe failed
+  because it read Docker's `Config.Healthcheck` instead of Podman's top-level
+  `Healthcheck`. That wrapper failure was not hidden or an app regression:
+  inspected the engine format, corrected only the ephemeral probe, and reran
+  the full combined verification successfully. No application/assertion changes.
+- Ordinary no-DB compatibility was checked separately using
+  `go test .\internal\db .\cmd\pandatable -run 'TestMetadata|TestServePostgreSQLRestarts' -v -count=1`
+  with the URL unset, then an explicit closed loopback port 1. Every DB test
+  clearly skipped in **0.00-0.01 s**; these skips are not counted as integration
+  passes. No shared PostgreSQL container was stopped for that check.
+- Cleanup verified read-only: **zero** remaining `pt_test_*` databases; both
+  named E2E projects have no containers/volumes/networks/tag, and neither
+  **55806** nor **50903** has a listener. The runtime probes/browser version
+  probe exited and reaped themselves. Dev DB is still running; `pt-dev-pgdata`
+  and original release image are retained. No broad prune/reset, shared Caddy/
+  network/remote changes, persistent verification server or committed test
+  artifacts. Ignored browser results/build outputs remain local.
+- **Pending, unchanged:** full AT-001 Linux/Docker, AT-005 approved Ubuntu/
+  Caddy transfer/load/HTTPS and AT-006 Linux bash/Docker. Linux image builds
+  under Podman do not satisfy these. M0/T0.4/T0.6/T0.7 stay in progress.
+  No auth/setup/ACL/production data-grid or future acceptance passes claimed.
+- Implementation/limitations/handoff: [T1.1 record](task-prompts/T1.1.md#implementation-and-handoff-2026-10-24).
+  Next: [T1.2 Auth service](task-prompts/T1.2.md).

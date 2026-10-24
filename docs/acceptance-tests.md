@@ -60,6 +60,24 @@ conclusion: [progress](progress.md#t08-verification-evidence-2026-10-24) and
 [T0.8 record](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
 M0/T0.4/T0.6/T0.7 remain in progress for their unrelated pending platform checks.
 
+### T1.1 scoped evidence (2026-10-24)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-002 | Pass, T1.1 complete | New metadata 0002 plus unchanged 0001: real PG18 clean catalog/default/constraint/FK tests, concurrent/repeated upgrade, two populated down/up cycles with preserved user/session/settings sentinels, extension OIDs and migration-1 record. Initial serve plus two real restarts retain all version records exactly (versions 1/2 each applied once), no errors and zero remaining app connections. Owned DBs dropped. |
+| AT-001 | Partial, preserved | Windows/Podman isolated image/Compose health in 6.354 s; production shell and spike checks pass. Linux/Docker remains pending. |
+| AT-003 | Pass preserved | All four existing desktop/mobile shell checks plus spike checks pass with no browser/CSP errors. No actual login/auth flow is claimed. |
+| AT-004 | Pass preserved | New disposable image: linux/amd64, UID/GID 10001:10001, executable HEALTHCHECK, pg_dump 18.6, 162,381,278 bytes (<200 MB); inspected/probed before owned teardown. |
+| AT-005 / AT-006 | Partial, unchanged | No Docker executable or approved server/Caddy destination. Required live PG18 Windows check passes; Linux/Docker and remote acceptance remain pending. |
+| AT-802 | Pass preserved | ESLint/i18n negative fixtures, strict frontend/E2E TS, Prettier and 61 matching non-empty locale keys pass. |
+
+Final image-backed E2E: **8 passed, 2 intentional mobile exclusions in 32.9 s**.
+The earlier supplemental image probe's engine-format error, corrected rerun,
+exact commands, assertions and cleanup are recorded in
+[progress](progress.md#t11-verification-evidence-2026-10-24) and the
+[T1.1 completion record](task-prompts/T1.1.md#implementation-and-handoff-2026-10-24).
+T1.1 is Done; unrelated M0/platform and future auth/business acceptance are not.
+
 ## AT-1xx Auth & Admin (M1, M3)
 
 - **AT-101 — First-run setup requires token** · M1 · Given an empty DB, visiting any page redirects to `/setup`; submitting a wrong token fails; submitting the logged token creates admin and logs in; afterwards `/setup` returns "already set up" (410).

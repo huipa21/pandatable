@@ -22,6 +22,11 @@ API uses meta UUIDs for structure and bigint `id` for rows.
 
 ## 2. Meta schema
 
+The SQL below describes the current schema; the executable source is
+[`0001_initial.sql`](../migrations/0001_initial.sql) plus the forward-only
+[`0002_metadata.sql`](../migrations/0002_metadata.sql). Never edit an applied
+migration. See D-069..D-071 for the T1.1 integrity clarifications.
+
 ```sql
 CREATE SCHEMA meta;
 
@@ -100,11 +105,13 @@ CREATE TABLE meta.tables (
   pg_name           text NOT NULL,        -- t_xxxxxxxxxx (unique within schema)
   display_field_id  uuid,                 -- FK added after meta.fields
   position          double precision NOT NULL,
-  schema_version    integer NOT NULL DEFAULT 1,   -- bumped on any field/relation change
+  schema_version    integer NOT NULL DEFAULT 1 CHECK (schema_version > 0), -- bumped on any field/relation change
   created_by        uuid REFERENCES meta.users(id) ON DELETE SET NULL,
   created_at        timestamptz NOT NULL DEFAULT now(),
   deleted_at        timestamptz,
-  deleted_by        uuid REFERENCES meta.users(id) ON DELETE SET NULL
+  deleted_by        uuid REFERENCES meta.users(id) ON DELETE SET NULL,
+  UNIQUE (book_id, pg_name),
+  UNIQUE (book_id, id)                    -- composite FK target for same-book relations
 );
 
 CREATE TABLE meta.fields (
@@ -115,30 +122,47 @@ CREATE TABLE meta.fields (
   ui_type      text NOT NULL,             -- see 07-field-types.md
   pg_column    text,                      -- NULL for virtual fields (formula/lookup/rollup, link on non-FK side)
   pg_type      text,                      -- e.g. 'numeric(12,2)', 'text[]'
-  options      jsonb NOT NULL DEFAULT '{}',  -- type-specific options
+  options      jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(options) = 'object'),
   is_system    boolean NOT NULL DEFAULT false,
   is_required  boolean NOT NULL DEFAULT false,
   is_unique    boolean NOT NULL DEFAULT false,
   default_json jsonb,                     -- default value (typed via codec)
   position     double precision NOT NULL,
+  version      integer NOT NULL DEFAULT 1 CHECK (version > 0), -- API If-Match
   created_at   timestamptz NOT NULL DEFAULT now(),
-  deleted_at   timestamptz                -- soft-deleted: column kept until purge
+  deleted_at   timestamptz,               -- soft-deleted: column kept until purge
+  UNIQUE (table_id, id),
+  UNIQUE (table_id, pg_column)
 );
 CREATE UNIQUE INDEX ON meta.fields(table_id, lower(name)) WHERE deleted_at IS NULL;
-ALTER TABLE meta.tables ADD FOREIGN KEY (display_field_id) REFERENCES meta.fields(id) ON DELETE SET NULL;
+ALTER TABLE meta.tables ADD CONSTRAINT tables_display_field_fk
+  FOREIGN KEY (id, display_field_id) REFERENCES meta.fields(table_id, id)
+  ON DELETE SET NULL (display_field_id);
 
 CREATE TABLE meta.relations (
   id              uuid PRIMARY KEY DEFAULT uuidv7(),
+  book_id         uuid NOT NULL,
   kind            text NOT NULL CHECK (kind IN ('one_one','one_many','many_many')),
   -- "one" side = parent, "many" side = child (for one_one: child holds FK)
-  parent_table_id uuid NOT NULL REFERENCES meta.tables(id) ON DELETE CASCADE,
-  child_table_id  uuid NOT NULL REFERENCES meta.tables(id) ON DELETE CASCADE,
-  parent_field_id uuid NOT NULL REFERENCES meta.fields(id) ON DELETE CASCADE, -- link field shown in parent
-  child_field_id  uuid NOT NULL REFERENCES meta.fields(id) ON DELETE CASCADE, -- link field shown in child
+  parent_table_id uuid NOT NULL,
+  child_table_id  uuid NOT NULL,
+  parent_field_id uuid NOT NULL,           -- link field shown in parent
+  child_field_id  uuid NOT NULL,           -- link field shown in child
   fk_column       text,                   -- in child table, for one_one/one_many
   junction_table  text,                   -- for many_many
   on_delete       text NOT NULL DEFAULT 'set_null' CHECK (on_delete IN ('set_null','cascade','restrict')),
-  created_at      timestamptz NOT NULL DEFAULT now()
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (book_id, parent_table_id) REFERENCES meta.tables(book_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (book_id, child_table_id) REFERENCES meta.tables(book_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_table_id, parent_field_id) REFERENCES meta.fields(table_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (child_table_id, child_field_id) REFERENCES meta.fields(table_id, id) ON DELETE CASCADE,
+  CHECK (parent_field_id <> child_field_id),
+  CHECK (
+    (kind IN ('one_one','one_many') AND fk_column IS NOT NULL AND junction_table IS NULL)
+    OR (kind = 'many_many' AND fk_column IS NULL AND junction_table IS NOT NULL)
+  ),
+  UNIQUE (book_id, junction_table),
+  UNIQUE (child_table_id, fk_column)
 );
 
 CREATE TABLE meta.views (
@@ -150,12 +174,14 @@ CREATE TABLE meta.views (
   owner_id    uuid REFERENCES meta.users(id) ON DELETE CASCADE,  -- personal views
   locked      boolean NOT NULL DEFAULT false,
   position    double precision NOT NULL,
-  config      jsonb NOT NULL DEFAULT '{}',   -- see 08-query-engine.md
-  version     integer NOT NULL DEFAULT 1,    -- optimistic concurrency for config edits
+  config      jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(config) = 'object'), -- see 08-query-engine.md
+  version     integer NOT NULL DEFAULT 1 CHECK (version > 0),
   created_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
-  deleted_at  timestamptz
+  deleted_at  timestamptz,
+  CHECK ((scope = 'shared' AND owner_id IS NULL) OR (scope = 'personal' AND owner_id IS NOT NULL)),
+  CHECK (NOT locked OR scope = 'shared')
 );
 
 -- ── Permissions ────────────────────────────────────────────────
@@ -198,12 +224,13 @@ CREATE INDEX ON meta.notifications(user_id, read_at);
 
 CREATE TABLE meta.row_history (
   id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  table_id    uuid NOT NULL,
-  row_id      bigint NOT NULL,
+  table_id    uuid NOT NULL REFERENCES meta.tables(id) ON DELETE CASCADE,
+  row_id      bigint,                     -- NULL only for table-level type_change
   user_id     uuid REFERENCES meta.users(id) ON DELETE SET NULL,
-  action      text NOT NULL CHECK (action IN ('insert','update','delete','link','unlink','restore')),
+  action      text NOT NULL CHECK (action IN ('insert','update','delete','link','unlink','restore','type_change')),
   changes     jsonb NOT NULL,             -- {fieldId: {"o": old, "n": new}}
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CHECK ((action = 'type_change') = (row_id IS NULL))
 );
 CREATE INDEX ON meta.row_history(table_id, row_id, id DESC);
 CREATE INDEX ON meta.row_history(created_at);    -- retention purge
@@ -212,15 +239,16 @@ CREATE INDEX ON meta.row_history(created_at);    -- retention purge
 CREATE TABLE meta.attachments (
   id           uuid PRIMARY KEY DEFAULT uuidv7(),
   table_id     uuid NOT NULL REFERENCES meta.tables(id) ON DELETE CASCADE,
-  field_id     uuid NOT NULL REFERENCES meta.fields(id) ON DELETE CASCADE,
+  field_id     uuid NOT NULL,
   file_name    text NOT NULL,
   mime_type    text NOT NULL,
-  size_bytes   bigint NOT NULL,
-  sha256       bytea NOT NULL,
+  size_bytes   bigint NOT NULL CHECK (size_bytes >= 0),
+  sha256       bytea NOT NULL CHECK (octet_length(sha256) = 32),
   storage_path text NOT NULL,             -- relative to PT_DATA_DIR/files
   has_thumb    boolean NOT NULL DEFAULT false,
   uploaded_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL,
-  created_at   timestamptz NOT NULL DEFAULT now()
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (table_id, field_id) REFERENCES meta.fields(table_id, id) ON DELETE CASCADE
 );
 
 -- ── Admin ──────────────────────────────────────────────────────
@@ -235,7 +263,7 @@ CREATE TABLE meta.settings (
 CREATE TABLE meta.backups (
   id          uuid PRIMARY KEY DEFAULT uuidv7(),
   file_name   text NOT NULL UNIQUE,
-  size_bytes  bigint,
+  size_bytes  bigint CHECK (size_bytes >= 0),
   status      text NOT NULL CHECK (status IN ('running','done','failed')),
   error       text,
   created_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL,
@@ -243,6 +271,58 @@ CREATE TABLE meta.backups (
   finished_at timestamptz
 );
 ```
+
+### Integrity and service boundaries (D-069..D-071)
+
+- `books.pg_schema` is globally unique; table names are unique within a book,
+  field columns within a table, junction names within a book, and relation FK
+  columns within a child table. These reservations include trashed metadata:
+  physical objects survive soft deletion. Nullable field columns allow multiple
+  virtual fields. System fields use their documented fixed column names.
+  Identifier generation/validation belongs to T1.9; this migration does not pick
+  a new base32 alphabet or create physical book schemas/tables.
+- Only active **field** names have case-insensitive uniqueness; deleting a field
+  frees its display name, not its physical column name. Group names and backup
+  filenames retain ordinary case-sensitive uniqueness. No additional
+  workspace/book/table/view display-name uniqueness is imposed by the sketch.
+  Restore of a field with a conflicting active name must be resolved by the
+  future Trash service, never by overwriting another field.
+- Composite FKs enforce display-field/table, attachment-field/table and both
+  relation-field/table matches. `relations.book_id` enforces same-book targets
+  through two composite table FKs. Self-links use two distinct fields.
+  Hard deletion clears only `display_field_id`, never the table ID.
+  Soft deletion retains references; future structural services must reassign a
+  deleted display field and hide/clean affected link/computed definitions.
+  Deleting a relation field cascades the relation record, not the other link
+  field or physical DDL; those changes belong in the future service transaction.
+- Positive schema/field/view versions, JSON-object field options/view config,
+  personal-view ownership (shared views have no owner), shared-only locking,
+  relation storage shape, nonnegative file sizes and 32-byte attachment digests
+  are checked in PostgreSQL. Full codecs/config validation remains app work.
+- Polymorphic `grants.resource_id`/`principal_id` deliberately have **no FK or
+  trigger** (user-confirmed D-070). Future grant/lifecycle services must validate
+  existence/type and remove affected grants in the same transaction as a hard
+  deletion, serializing with competing grant creation. Soft deletion retains
+  grants; ACL must hide trashed resources. Direct SQL can leave dangling grants.
+  Last-owner enforcement, orphan rescue and sole-owned workspace/file purge
+  remain service work, not automatic effects of deleting a user row.
+- User hard deletion cascades sessions, memberships, notifications and personal
+  views. All nullable metadata authorship references become NULL ("Deleted
+  user"); shared views/comments/history/attachments/backups survive within
+  surviving scopes. Mention arrays and notification payloads are snapshots, not
+  FKs. Future reads filter deleted users where appropriate.
+- Comments/history reference metadata tables, not physical rows, so row deletion
+  does not destroy undo/history context. Table purge cascades both. History's
+  `type_change` action has NULL `row_id`; all six row actions require a row ID.
+  Retention still applies to both kinds of event.
+- In addition to the indexes shown above, 0002 indexes book workspace,
+  relation parent/child field pairs, view table/owner and attachment table/field
+  lookups; composite unique indexes cover table/field parent traversal and
+  polymorphic resource lookup. Authorship-only indexes are not added speculatively.
+- Startup remains forward-only under the existing advisory lock. 0002 Down
+  explicitly removes its tables and the display-field cycle constraint in
+  dependency order, without CASCADE, schema/extension drops or changes to
+  0001 users/sessions/settings. Down/up tests run only in Suite-owned databases.
 
 ## 3. Physical user table layout
 

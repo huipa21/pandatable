@@ -41,8 +41,17 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		Listen:      "127.0.0.1:0",
 		BaseURL:     "http://127.0.0.1",
 	}
-	var firstMigration time.Time
-	for iteration := 1; iteration <= 2; iteration++ {
+	migrationRecords := func() string {
+		t.Helper()
+		var records string
+		if err := pool.QueryRow(ctx, `SELECT jsonb_agg(to_jsonb(v) ORDER BY id)::text
+			FROM public.goose_db_version v`).Scan(&records); err != nil {
+			t.Fatal(err)
+		}
+		return records
+	}
+	beforeRestarts := migrationRecords()
+	for iteration := 1; iteration <= 3; iteration++ {
 		address, stop, output := startTestServe(t, cfg)
 		client := &http.Client{Timeout: 5 * time.Second}
 		for _, test := range []struct {
@@ -74,20 +83,20 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		if err != nil {
 			t.Fatal("connect to disposable database for verification failed")
 		}
-		var count int
-		var migrationTime time.Time
-		err = verification.QueryRow(ctx, `SELECT count(*), min(tstamp) FROM public.goose_db_version WHERE version_id = 1 AND is_applied`).Scan(&count, &migrationTime)
+		var count, initialCount, metadataCount int
+		err = verification.QueryRow(ctx, `SELECT count(*),
+			count(*) FILTER (WHERE version_id = 1 AND is_applied),
+			count(*) FILTER (WHERE version_id = 2 AND is_applied)
+			FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount)
 		closeErr := verification.Close(ctx)
 		if err != nil || closeErr != nil {
 			t.Fatalf("read/close migration verification: %v, %v", err, closeErr)
 		}
-		if count != 1 {
-			t.Fatalf("startup %d: successful initial migration rows=%d, want 1", iteration, count)
+		if count != 3 || initialCount != 1 || metadataCount != 1 {
+			t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d; want 3/1/1", iteration, count, initialCount, metadataCount)
 		}
-		if iteration == 1 {
-			firstMigration = migrationTime
-		} else if !migrationTime.Equal(firstMigration) {
-			t.Fatal("restart reapplied the initial migration")
+		if migrationRecords() != beforeRestarts {
+			t.Fatal("restart changed migration records")
 		}
 		var connections int
 		if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`).Scan(&connections); err != nil {
@@ -110,7 +119,7 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		if strings.Contains(output.String(), databaseURL) || strings.Contains(output.String(), "postgres://") {
 			t.Fatal("startup logs exposed database connection information")
 		}
-		t.Logf("serve startup %d: health=200, API=404, graceful stop, one unchanged migration record, zero remaining connections", iteration)
+		t.Logf("serve startup %d: health=200, API=404, graceful stop, migrations 1/2 each recorded once and unchanged, zero remaining connections", iteration)
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
