@@ -23,23 +23,51 @@ go run ./tools/ptdev <command> [flags]
 
 | Command | What it does |
 |---|---|
+| `help` / `engine` | List commands and detected engine / show selection reason |
 | `db up` / `db down` / `db reset` | Run dev PostgreSQL 18 container `pt-dev-db` on `127.0.0.1:55432` (volume `pt-dev-pgdata`) |
+| `db status` / `db psql` | Show running/stopped/absent + DSN / open interactive psql |
 | `dev` | Start backend (`go run ./cmd/pandatable serve`) with `PT_DATABASE_URL` pointing to dev DB, and Vite dev server (proxy `/api` → `:8080`, ws included) |
 | `web build` | `pnpm install --frozen-lockfile && pnpm build`, copy `web/dist` → `internal/web/dist` |
-| `build` | `web build` then `go build -trimpath -ldflags "-s -w -X main.version=…" -o bin/pandatable[.exe] ./cmd/pandatable` |
+| `build [--linux]` | Build web assets if present, then `go build -trimpath -ldflags "-s -w -X main.version=…" -o bin/pandatable[.exe] ./cmd/pandatable`; `--linux` emits `bin/pandatable-linux-amd64` (`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`) |
 | `lint` | `gofmt -l`, `go vet`, `golangci-lint run` (if installed), `pnpm lint`, `vue-tsc --noEmit`, i18n key parity |
-| `test` | `go test ./...` (unit + integration; integration uses dev DB, see §3), `pnpm test` (Vitest) |
+| `test [--no-db]` | Start dev DB and set `PT_TEST_DATABASE_URL` for `go test ./...`; `--no-db` skips DB startup; forwards `-run`, `-v`, `-count`; `pnpm test` if present |
 | `e2e` | Build image, start stack with `compose.local.yaml`, run Playwright, tear down |
-| `check` | `lint` + `test` (the "CI" gate before tagging/release) |
+| `check` | `lint` → `test` → `build`, with per-step pass/fail and duration summary; any failed step causes non-zero exit (D-051) |
 | `image build` | Build `localhost/pandatable:<ver>` + `:latest` for `linux/amd64` |
 | `image save [--with-postgres]` | Export image(s) to `dist/pandatable-<ver>.tar.gz` (and `dist/postgres-18.tar.gz`) |
 | `deploy --host user@server [--dir /opt/pandatable]` | Optional: `scp` archive(s) + `ssh docker load` + update `PT_VERSION` + `docker compose up -d app` |
-| `version` | Print computed version (`git describe --tags --dirty`, fallback `0.0.0-dev`) |
+| `version` | `git describe --tags --dirty --always`, strip leading `v`; untagged SHA becomes `0.0.0-dev+<sha>[.dirty]`; unavailable Git/repository falls back to `0.0.0-dev` |
+
+Run ptdev from the repository root. T0.1 implements help, engine, version, DB,
+build, lint, test and check. Dev, standalone web build, e2e, image and deploy
+commands return `not implemented yet (Tx.y)` with exit 2 until their owning task.
+Until T0.5, build/lint/test skip web work when `web/package.json` is absent.
+The T0.1 lint path runs formatting, vet, optional golangci-lint and optional
+`pnpm lint`; dedicated Vue typechecking and i18n parity arrive with T0.5.
+
+The dev DB DSN is
+`postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable`.
+The PostgreSQL 18 volume is mounted at `/var/lib/postgresql` (not the pre-18
+`/var/lib/postgresql/data` path). Readiness is limited to 60 seconds. `db down`
+keeps data; `db reset` removes the container and volume, then starts fresh,
+and requires confirmation unless `--yes` is supplied.
+
+Exit codes: 0 success, 1 operational failure, 2 usage/not implemented. Commands
+are executed directly without a shell; output is streamed and command lines
+are echoed to stderr. Ctrl+C cancels active children. No ANSI colors are used,
+so `NO_COLOR` and redirected output need no special handling. On Windows,
+pnpm npm/Corepack shims are launched through their Node entry point, not `cmd`.
 
 ### Container engine detection
 1. `PT_ENGINE` env (`podman` | `docker`) if set.
 2. Else `podman` if on PATH, else `docker`.
 3. Compose: `<engine> compose` (both engines support the subcommand).
+
+An invalid `PT_ENGINE` is a usage error. An explicit valid override that is
+missing from PATH fails engine/DB operations without falling back. Without an
+engine, help still works (reports unavailable), and version, lint, build and
+`test --no-db` remain usable. Engine selection checks PATH, not daemon health;
+DB operations report a stopped/unreachable machine as an operational error.
 
 Engine-specific flags handled by ptdev:
 

@@ -1,0 +1,21 @@
+version: "2"
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - errcheck
+    - gosec
+    - revive
+    - ineffassign
+    - unused
+  exclusions:
+    rules:
+      - path: tools/ptdev/execx\.go
+        linters:
+          - gosec
+        text: 'G(204|304)'
+formatters:
+  enable:
+    - gofmt
+    - goimports
