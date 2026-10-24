@@ -56,7 +56,7 @@ func TestRunRejectsMalformedArguments(t *testing.T) {
 	}
 }
 
-func TestRunReportsImplementationBoundariesAsJSONWithoutSecrets(t *testing.T) {
+func TestServeReportsImplementationBoundaryAsJSONWithoutSecrets(t *testing.T) {
 	t.Setenv("PT_DATABASE_URL", "postgres://admin:top-secret@db:5432/pandatable")
 	t.Setenv("PT_BASE_URL", "https://table.example.com")
 	t.Setenv("PT_LOG_LEVEL", "warn")
@@ -66,7 +66,6 @@ func TestRunReportsImplementationBoundariesAsJSONWithoutSecrets(t *testing.T) {
 		task    string
 	}{
 		{"serve", "T0.4"},
-		{"migrate", "T0.3"},
 	} {
 		t.Run(test.command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -93,6 +92,30 @@ func TestRunReportsImplementationBoundariesAsJSONWithoutSecrets(t *testing.T) {
 				t.Errorf("unexpected log event: %+v", event)
 			}
 		})
+	}
+}
+
+func TestMigrateConnectionFailureDoesNotLogCredentials(t *testing.T) {
+	t.Setenv("PT_DATABASE_URL", "postgres://admin:top-secret@127.0.0.1:1/pandatable")
+	t.Setenv("PT_BASE_URL", "https://table.example.com")
+	t.Setenv("PT_DB_CONNECT_RETRIES", "0")
+
+	var stdout, stderr bytes.Buffer
+	if got := runWith([]string{"migrate"}, &stdout, &stderr); got != 1 {
+		t.Fatalf("runWith() = %d, want 1; stderr: %s", got, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("unexpected stderr: %s", stderr.String())
+	}
+	if strings.Contains(stdout.String(), "top-secret") || strings.Contains(stdout.String(), "postgres://") {
+		t.Fatalf("migration error log exposed connection credentials or URL: %s", stdout.String())
+	}
+	var event map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &event); err != nil {
+		t.Fatalf("log is not JSON: %v; output: %s", err, stdout.String())
+	}
+	if event["msg"] != "database migration failed" {
+		t.Errorf("unexpected log event: %v", event)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 
 	"pandatable/internal/config"
+	"pandatable/internal/db"
 )
 
 var version = "0.0.0-dev"
@@ -65,7 +67,18 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 		case "serve":
 			return reportUnimplemented(logger, command, "T0.4")
 		case "migrate":
-			return reportUnimplemented(logger, command, "T0.3")
+			pool, err := db.Open(context.Background(), cfg)
+			if err != nil {
+				logger.Error("database migration failed", "error", err)
+				return 1
+			}
+			defer pool.Close()
+			if err := db.RunMigrations(context.Background(), pool); err != nil {
+				logger.Error("database migration failed", "error", err)
+				return 1
+			}
+			logger.Info("database migrations complete")
+			return 0
 		}
 	case "restore", "doctor", "reset-admin-password":
 		if len(commandArgs) == 1 && (commandArgs[0] == "--help" || commandArgs[0] == "-h") {
