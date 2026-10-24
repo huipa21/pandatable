@@ -45,6 +45,16 @@ Until T0.5, build/lint/test skip web work when `web/package.json` is absent.
 The T0.1 lint path runs formatting, vet, optional golangci-lint and optional
 `pnpm lint`; dedicated Vue typechecking and i18n parity arrive with T0.5.
 
+T0.4 implements `pandatable serve`; the combined `ptdev dev` supervisor still
+waits for T0.5. For backend-only development, set `PT_DATABASE_URL` and
+`PT_BASE_URL` and run `go run ./cmd/pandatable serve` (optionally `--listen
+127.0.0.1:8080`). Startup migrates the DB before listening. `/healthz` works
+without frontend assets; UI requests return explicit 503 until `ptdev build`
+can copy the T0.5 output into `internal/web/dist`. No placeholder HTML is shipped.
+The HTTP unit tests use an in-memory SPA fixture, and the CLI restart integration
+test creates/drops its own disposable PostgreSQL 18 database. The shared
+cross-package integration harness remains T0.7 work.
+
 The dev DB DSN is
 `postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable`.
 The PostgreSQL 18 volume is mounted at `/var/lib/postgresql` (not the pre-18

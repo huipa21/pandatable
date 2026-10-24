@@ -73,9 +73,31 @@
 | `internal/backup` | Backup jobs (pg_dump + zip), listing, deletion, restore CLI |
 | `internal/jobs` | Lightweight scheduler (trash purge, history retention, stats cache) |
 | `internal/httpapi` | Router, handlers, middleware, error mapping, static SPA serving |
+| `internal/web` | Embedded built SPA assets from `dist/`; no frontend implementation |
 | `internal/i18n` | Error-code catalogue (messages rendered in frontend) |
 
 Layering rule: `httpapi → services (auth/admin/meta/data/…) → acl/query/ddl → db`. Services never import `httpapi`.
+
+### HTTP foundation (T0.4)
+
+`serve` opens the pgx pool, runs the existing locked migrations, then binds
+`PT_LISTEN`. `httpapi` has no DB dependency: `/healthz` is a deterministic
+liveness endpoint, and the empty `/api/v1` router is reserved for later services.
+The entire `/api` and `/healthz` namespaces are excluded from SPA history fallback,
+including encoded paths. Unsupported health methods return 405.
+
+Middleware order is generated request ID, structured access log, security
+headers, compression, then panic recovery. Access logs use matched route patterns
+rather than raw URLs and do not inspect headers or bodies. Recovery never logs
+panic values or stacks. An already-started response is aborted rather than
+appending a JSON error to a partial success response.
+
+`internal/web` embeds `all:dist`, with only `.gitkeep` before T0.5. Missing/empty
+`index.html` produces an explicit UI 503 and a startup warning; health and API
+responses remain independent. Built static files are served directly, while
+GET/HEAD extensionless client routes fall back to the index (revalidated with
+`Cache-Control: no-cache`). Missing assets, dotfiles and traversal paths return
+404. No fake SPA is shipped. See D-053 through D-055.
 
 ## 4. Request flow example — edit a cell
 

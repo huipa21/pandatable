@@ -35,6 +35,8 @@ func TestRunHelpAndVersionDoNotRequireDatabaseConfiguration(t *testing.T) {
 }
 
 func TestRunRejectsMalformedArguments(t *testing.T) {
+	t.Setenv("PT_DATABASE_URL", "")
+	t.Setenv("PT_BASE_URL", "")
 	tests := []struct {
 		args []string
 		want int
@@ -56,16 +58,17 @@ func TestRunRejectsMalformedArguments(t *testing.T) {
 	}
 }
 
-func TestServeReportsImplementationBoundaryAsJSONWithoutSecrets(t *testing.T) {
+func TestServeConnectionFailureAsJSONWithoutSecrets(t *testing.T) {
 	t.Setenv("PT_DATABASE_URL", "postgres://admin:top-secret@db:5432/pandatable")
 	t.Setenv("PT_BASE_URL", "https://table.example.com")
 	t.Setenv("PT_LOG_LEVEL", "warn")
+	t.Setenv("PT_DB_CONNECT_RETRIES", "0")
 
 	for _, test := range []struct {
 		command string
-		task    string
+		message string
 	}{
-		{"serve", "T0.4"},
+		{"serve", "HTTP server failed"},
 	} {
 		t.Run(test.command, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -75,20 +78,17 @@ func TestServeReportsImplementationBoundaryAsJSONWithoutSecrets(t *testing.T) {
 			if stderr.Len() != 0 {
 				t.Errorf("unexpected stderr: %s", stderr.String())
 			}
-			if strings.Contains(stdout.String(), "top-secret") {
+			if strings.Contains(stdout.String(), "top-secret") || strings.Contains(stdout.String(), "postgres://") {
 				t.Fatal("JSON log exposed the database password")
 			}
 			var event struct {
-				Level          string `json:"level"`
-				Message        string `json:"msg"`
-				Command        string `json:"command"`
-				Implementation string `json:"implementation"`
+				Level   string `json:"level"`
+				Message string `json:"msg"`
 			}
 			if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &event); err != nil {
 				t.Fatalf("log is not JSON: %v; output: %s", err, stdout.String())
 			}
-			if event.Level != "ERROR" || event.Message != "command is not implemented" ||
-				event.Command != test.command || event.Implementation != test.task {
+			if event.Level != "ERROR" || event.Message != test.message {
 				t.Errorf("unexpected log event: %+v", event)
 			}
 		})

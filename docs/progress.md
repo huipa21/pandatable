@@ -7,7 +7,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | Milestone | Status | Started | Finished | Tag | Notes |
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
-| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 complete for their scoped checks. AT-002 migration idempotence verified; full AT-006 remains pending. |
+| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4 implementation verified. AT-002 app restarts pass; full AT-001 and AT-006 remain pending. |
 | M1 Core | ⬜ | | | v0.1.0 | |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
@@ -21,7 +21,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.1 | Repo scaffold & ptdev | ✅ | 2026-10-24 | Scoped completion approved: scaffold, stdlib ptdev, unit tests, Windows/Podman check, PowerShell + Git Bash entry points, native + Linux builds. Go 1.27.0; Podman client/server 5.8.2/5.8.4; Node 24.15.0; PostgreSQL 18.6. golangci-lint absent (warning). Full AT-006 pending Linux/Docker + T0.7 harness. |
 | T0.2 | Config & CLI | ✅ | 2026-10-24 | Config flags/validation and JSON CLI routing; unit tests, ptdev check, and PowerShell/Git Bash smoke pass. Full AT-006 remains pending. |
 | T0.3 | DB & migrations | ✅ | 2026-10-24 | pgx pool, transaction helper, and embedded migration complete; PostgreSQL 18 integration and repeated CLI migrations pass. AT-002 migration behavior verified; full AT-006 remains pending. |
-| T0.4 | HTTP server | ⬜ | | |
+| T0.4 | HTTP server | 🟨 | 2026-10-24 | Implementation and scoped verification complete: chi/middleware, health/API/SPA, migrate-before-listen, graceful shutdown; PostgreSQL 18.6 restarts and ptdev check pass. Kept in progress until linked AT-001 passes with real T0.5 assets, T0.6 Compose and Linux/Docker. |
 | T0.5 | Web scaffold (i18n, theme toggles) | ⬜ | | |
 | T0.6 | Image & deploy files | ⬜ | | |
 | T0.7 | Test harness & local gate | ⬜ | | |
@@ -84,7 +84,7 @@ Summary updated at each milestone end.
 
 | Area | Total | Passing | Notes |
 |---|---|---|---|
-| AT-0xx Foundation | 6 | 0 | AT-002 migration idempotence verified with PostgreSQL 18 and repeated CLI runs. Full AT-006 remains pending Linux bash/Docker + T0.7 harness checks. |
+| AT-0xx Foundation | 6 | 1 | AT-002 passes with two real serve startups against a disposable PostgreSQL 18.6 database. AT-001 health/routing tested locally, but real SPA/Compose/Linux-Docker checks remain pending. Full AT-006 remains pending Linux bash/Docker + T0.7 harness checks. |
 | AT-1xx Auth & Admin | 17 | 0 | |
 | AT-2xx Structure & Permissions | 13 | 0 | |
 | AT-3xx Fields & Grid | 20 | 0 | |
@@ -115,6 +115,8 @@ Summary updated at each milestone end.
 | 2026-10-24 | T0.2: config precedence/validation, CLI routing, JSON logging, and T0.3 task prompt implemented; focused tests, `ptdev check`, and PowerShell/Git Bash CLI smoke checks pass. `golangci-lint` unavailable; full AT-006 remains pending. |
 | 2026-10-24 | T0.3: implementation started. |
 | 2026-10-24 | T0.3: pgx pool/retries, safe transaction helper, advisory-locked embedded Goose migration, and migrate CLI complete. PostgreSQL 18.6 integration, repeated CLI migrations, and `ptdev check` pass; `golangci-lint` unavailable. Full AT-006 remains pending. |
+| 2026-10-24 | T0.4: implementation started. |
+| 2026-10-24 | T0.4 implementation verified: chi HTTP foundation, safe JSON logs/errors, embedded-asset boundary, automatic migrations and bounded shutdown. Focused tests, PostgreSQL 18.6 restarts, ptdev check and Linux cross-build pass; D-053..D-055 and T0.5 handoff added. AT-001 remains pending, so T0.4 and M0 stay in progress. |
 
 ### T0.1 verification evidence (2026-10-24)
 
@@ -134,3 +136,36 @@ Summary updated at each milestone end.
 - Ran `go run ./cmd/pandatable migrate` twice against the disposable database; both runs logged `database migrations complete` with no errors. A separate no-database run clearly skipped the integration test when `PT_TEST_DATABASE_URL` was unset.
 - `go run ./tools/ptdev check`: lint, tests, and build PASS; `gofmt` and `go vet` clean. `golangci-lint` is unavailable, so its checks were not run.
 - AT-002's migration idempotence behavior is verified; the application restart scenario will be exercised once the T0.4 server startup path exists. Full AT-006 remains pending Linux/Docker and T0.7 harness checks.
+
+### T0.4 verification evidence (2026-10-24)
+
+- Focused HTTP/web/CLI/config tests pass. HTTP routes and middleware also pass
+  without `PT_TEST_DATABASE_URL`; HTTP statement coverage is 96.2%, embedded-web
+  package coverage 100%. Health requires no DB or frontend assets.
+- Tests cover deterministic GET/HEAD health, reserved API/health namespaces
+  (including encoded paths), JSON errors, actual static assets and history
+  fallback using an in-memory SPA fixture, missing/empty assets (503), generated
+  IDs, log redaction/levels, security headers, gzip, panic recovery/partial-response
+  abort, graceful drain, forced shutdown deadline, and listener failure.
+- `TestServePostgreSQLRestarts` passes on PostgreSQL 18.6
+  (`server_version_num=180006`): two real `serve` startups each return health 200
+  and API 404, stop gracefully, retain exactly one unchanged migration record,
+  and leave zero DB connections. An occupied port fails explicitly. Disposable
+  databases are dropped; a follow-up query found zero `pt_test_t04_*` databases.
+  This verifies AT-002's application restart scenario.
+- `go run ./tools/ptdev check`: lint, test and native build PASS on Windows/Podman.
+  Formatting and `go vet` pass. `golangci-lint` is unavailable and was not run.
+- `go run ./tools/ptdev build --linux` passes (linux/amd64, CGO disabled).
+  This is compilation evidence, not Linux/Docker runtime acceptance.
+- The built Linux binary also passes two startups in a disposable Linux/Podman
+  container against a disposable PostgreSQL 18.6 DB: health 200, unchanged
+  migration record, SIGTERM shutdown with exit 0, no ERROR events or connection
+  URLs in JSON logs. The smoke container and database were removed. This is
+  direct-binary smoke coverage, not the future Docker/Compose stack acceptance.
+- The new serve integration test clearly skips with an unreachable PostgreSQL
+  URL; the no-DB run also passes. The existing dev database/container was retained.
+- AT-001 is only partially verified: local health/routing and fixture SPA tests
+  pass. The real Vue SPA awaits T0.5, Compose awaits T0.6, and Linux/Docker stack
+  verification remains pending. Full AT-006 remains pending Linux/Docker and the
+  T0.7 harness. No deployment files, frontend scaffold or application services
+  were added. The combined `ptdev dev` supervisor remains for T0.5.

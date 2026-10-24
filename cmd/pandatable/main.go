@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"pandatable/internal/config"
 	"pandatable/internal/db"
@@ -65,7 +67,13 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 		logger := newJSONLogger(stdout, cfg.LogLevel)
 		switch command {
 		case "serve":
-			return reportUnimplemented(logger, command, "T0.4")
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			if err := serve(ctx, cfg, logger); err != nil {
+				logger.Error("HTTP server failed", "error", err)
+				return 1
+			}
+			return 0
 		case "migrate":
 			pool, err := db.Open(context.Background(), cfg)
 			if err != nil {

@@ -15,6 +15,23 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 - **Optimistic concurrency:** views/fields carry `version`; send `If-Match: <version>` on update.
 - Every mutating response includes `"eventId"` so the originating client can ignore its own realtime echo.
 
+### T0.4 operational routes
+
+- `GET /healthz` returns HTTP 200, `Content-Type: application/json`, and
+  `{"status":"ok"}` plus a newline. HEAD is also supported. This is process
+  liveness, not a per-request database readiness check.
+- `/api/v1` is mounted but has no application endpoints yet. Unknown paths in
+  `/api` return JSON 404 `ERR_NOT_FOUND`, never the SPA. Unknown `/healthz/…`
+  paths also return 404; unsupported methods on `/healthz` return JSON 405
+  `ERR_METHOD_NOT_ALLOWED`.
+- Responses include a generated `X-Request-ID`; an incoming value is not reused.
+  Unexpected handler panics return JSON 500 `ERR_INTERNAL` if the response has
+  not started, otherwise the connection/stream is aborted.
+- UI requests return JSON 503 `ERR_SPA_UNAVAILABLE` until built SPA assets exist.
+  This is a pre-T0.5 build state, not an application API success response.
+
+Authentication, CSRF enforcement and the endpoints below are later-task work.
+
 ## 2. Endpoints
 
 ### Setup & auth

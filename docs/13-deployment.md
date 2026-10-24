@@ -145,6 +145,20 @@ App-level defaults configured in Admin → Settings (stored in DB, not env): `de
 
 `serve` and `migrate` accept matching kebab-case flags (`--database-url`, `--data-dir`, `--listen`, `--base-url`, `--trusted-proxies`, `--db-max-conns`, `--log-level`, and `--db-connect-retries`). A supplied flag overrides its environment variable; environment overrides the default. An explicitly empty trusted-proxy list trusts no proxies.
 
+`serve` connects using the existing retry policy and runs the embedded,
+advisory-locked migrations before opening the HTTP listener. A migration or bind
+failure exits nonzero with a JSON error; database URLs/passwords are not logged.
+`GET /healthz` returns 200 with `{"status":"ok"}` once listening, without issuing
+a DB query. Before T0.5 supplies a built SPA, UI routes explicitly return 503
+and startup logs warn that assets are unavailable.
+
+Interrupt (Ctrl+C on Windows) and SIGTERM (Linux/container stop) initiate graceful
+shutdown. The server drains for up to 10 seconds without immediately canceling
+active request contexts; after the deadline it cancels/closes remaining requests
+and reports a shutdown failure. The database pool is then closed. Allow more
+than 10 seconds in the future Compose stop grace period. HTTP header/read/write/
+idle limits are 5/30/30/60 seconds, with headers limited to 1 MiB (D-055).
+
 ## 5. Server layout & first deploy
 
 ```
