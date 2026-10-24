@@ -92,12 +92,32 @@ rather than raw URLs and do not inspect headers or bodies. Recovery never logs
 panic values or stacks. An already-started response is aborted rather than
 appending a JSON error to a partial success response.
 
-`internal/web` embeds `all:dist`, with only `.gitkeep` before T0.5. Missing/empty
-`index.html` produces an explicit UI 503 and a startup warning; health and API
+`internal/web` embeds `all:dist`, with only `.gitkeep` in a clean checkout.
+T0.5's `ptdev web build` copies real Vite output there, preserving `.gitkeep`.
+Missing/empty `index.html` produces an explicit UI 503 and a startup warning; health and API
 responses remain independent. Built static files are served directly, while
 GET/HEAD extensionless client routes fall back to the index (revalidated with
 `Cache-Control: no-cache`). Missing assets, dotfiles and traversal paths return
 404. No fake SPA is shipped. See D-053 through D-055.
+
+### Web foundation (T0.5)
+
+`web/` contains the Vue 3/strict TypeScript shell, Pinia preferences store,
+Vue Router, Naive UI, vue-i18n and dayjs. `/` redirects to `/login`; unknown
+client routes render a translated not-found surface. Neither route implements
+auth or business APIs. Header language/theme controls remain adjacent on mobile.
+
+Preferences use localStorage until server-side user preferences exist.
+Naive UI locale/date locale, dayjs, document language and light/dark/system
+styles follow the store. Locale JSON is precompiled to lazy runtime-only
+chunks; English is loaded at startup for fallback/error messages. This works
+under the existing CSP without inline scripts or `unsafe-eval`. See D-056.
+
+The combined dev command builds a temporary Go executable and launches it and
+Vite's Node entry point as direct children. Vite proxies `/api` (with WebSocket
+upgrade support) and `/healthz`; no WebSocket endpoint exists yet. Cancellation
+or either child exiting stops/reaps both before temporary files are removed.
+See D-057 and [14-dev-build-release.md](14-dev-build-release.md).
 
 ## 4. Request flow example — edit a cell
 

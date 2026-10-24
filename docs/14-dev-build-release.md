@@ -7,7 +7,7 @@ There is **no hosted CI** (D-048). Everything — checks, tests, image build, im
 | Tool | Version | Notes |
 |---|---|---|
 | Go | ≥ 1.25 | `GOPROXY` may be set to `https://goproxy.cn,direct` if needed |
-| Node.js | 22 LTS + pnpm (via corepack) | npm registry mirror optional (`.npmrc`) |
+| Node.js | >= 22.13 + pnpm 11.2.2 (via Corepack) | Tested with Node 24.15.0; npm registry mirror optional (`.npmrc`) |
 | Podman Desktop / podman | ≥ 5.x, podman machine running (WSL2) | `podman compose` requires `podman-compose` or docker-compose v2 binary as provider |
 | Git, OpenSSH client | built into Windows | `scp`/`ssh` for transfer |
 
@@ -26,7 +26,7 @@ go run ./tools/ptdev <command> [flags]
 | `help` / `engine` | List commands and detected engine / show selection reason |
 | `db up` / `db down` / `db reset` | Run dev PostgreSQL 18 container `pt-dev-db` on `127.0.0.1:55432` (volume `pt-dev-pgdata`) |
 | `db status` / `db psql` | Show running/stopped/absent + DSN / open interactive psql |
-| `dev` | Start backend (`go run ./cmd/pandatable serve`) with `PT_DATABASE_URL` pointing to dev DB, and Vite dev server (proxy `/api` → `:8080`, ws included) |
+| `dev` | Build a temporary backend executable and supervise it plus Vite directly; proxy `/api` (WebSocket-ready) and `/healthz` to the backend |
 | `web build` | `pnpm install --frozen-lockfile && pnpm build`, copy `web/dist` → `internal/web/dist` |
 | `build [--linux]` | Build web assets if present, then `go build -trimpath -ldflags "-s -w -X main.version=…" -o bin/pandatable[.exe] ./cmd/pandatable`; `--linux` emits `bin/pandatable-linux-amd64` (`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`) |
 | `lint` | `gofmt -l`, `go vet`, `golangci-lint run` (if installed), `pnpm lint`, `vue-tsc --noEmit`, i18n key parity |
@@ -38,22 +38,50 @@ go run ./tools/ptdev <command> [flags]
 | `deploy --host user@server [--dir /opt/pandatable]` | Optional: `scp` archive(s) + `ssh docker load` + update `PT_VERSION` + `docker compose up -d app` |
 | `version` | `git describe --tags --dirty --always`, strip leading `v`; untagged SHA becomes `0.0.0-dev+<sha>[.dirty]`; unavailable Git/repository falls back to `0.0.0-dev` |
 
-Run ptdev from the repository root. T0.1 implements help, engine, version, DB,
-build, lint, test and check. Dev, standalone web build, e2e, image and deploy
-commands return `not implemented yet (Tx.y)` with exit 2 until their owning task.
-Until T0.5, build/lint/test skip web work when `web/package.json` is absent.
-The T0.1 lint path runs formatting, vet, optional golangci-lint and optional
-`pnpm lint`; dedicated Vue typechecking and i18n parity arrive with T0.5.
+Run ptdev from the repository root. Through T0.5, help, engine, version, DB,
+build, lint, test, check, dev and standalone web build are implemented.
+E2E (T0.7), image and deploy (T0.6) still return `not implemented yet (Tx.y)`
+with exit 2. Build/lint/test retain the no-web-manifest skip path. With the
+scaffold present, `pnpm lint` also runs Prettier, `vue-tsc` and i18n parity.
+Run `pnpm --dir web install --frozen-lockfile` before the first lint/test/dev;
+the build commands perform the frozen install themselves. The workspace allows
+only esbuild's required dependency build script, not arbitrary install scripts.
 
-T0.4 implements `pandatable serve`; the combined `ptdev dev` supervisor still
-waits for T0.5. For backend-only development, set `PT_DATABASE_URL` and
+`ptdev dev` uses `PT_DATABASE_URL` when explicitly set (without starting the
+dev DB); otherwise it starts/reuses the dev DB. Defaults: backend
+`PT_LISTEN=127.0.0.1:8080`, `PT_BASE_URL=http://127.0.0.1:5173`, Vite on
+`127.0.0.1:5173` with strict-port binding. Explicit app settings retain precedence.
+Vite's API target is derived from `PT_LISTEN` (wildcard hosts mapped to loopback);
+port zero is rejected. Standalone `pnpm dev` uses `PT_DEV_API_TARGET` or
+`http://127.0.0.1:8080`. No WebSocket server is implemented.
+
+The supervisor compiles once (restart it for Go changes); Vite provides frontend
+HMR. Both servers are direct children, not `go run`/`pnpm` grandchildren. Either
+child exit/start failure stops the other and returns a visible error. Ctrl+C or
+SIGTERM cancels both and waits for reaping before removing the temporary binary.
+Interrupt is attempted where supported, with forced termination otherwise;
+the backend has a 12-second wait bound (covering its 10-second HTTP drain),
+Vite three seconds. Windows does not support Go's `os.Interrupt` delivery to
+children, so cancellation forcibly stops the direct children there.
+
+For backend-only development, set `PT_DATABASE_URL` and
 `PT_BASE_URL` and run `go run ./cmd/pandatable serve` (optionally `--listen
 127.0.0.1:8080`). Startup migrates the DB before listening. `/healthz` works
-without frontend assets; UI requests return explicit 503 until `ptdev build`
-can copy the T0.5 output into `internal/web/dist`. No placeholder HTML is shipped.
+without frontend assets; UI requests return explicit 503 until `ptdev web build`
+or `ptdev build` copies output into `internal/web/dist`. Generated assets remain
+ignored; copying validates the source index before replacing assets and retains
+the tracked `.gitkeep` so clean/failed-build checkouts still compile.
+No placeholder HTML is shipped.
 The HTTP unit tests use an in-memory SPA fixture, and the CLI restart integration
 test creates/drops its own disposable PostgreSQL 18 database. The shared
 cross-package integration harness remains T0.7 work.
+
+For the opt-in real dev-process test, create a disposable PostgreSQL 18 database
+named `pt_test_*`, set `PTDEV_TEST_DEV_DATABASE_URL` to its URL, leave local port
+5173 free, and run `go test ./tools/ptdev -run TestDevIntegration -v -count=1`.
+It tests Vite/backend startup, health/API proxying and cancellation, asserting
+both listeners close. Drop the disposable database afterwards. Ordinary runs
+skip this test explicitly; it does not replace the T0.7 shared harness.
 
 The dev DB DSN is
 `postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable`.

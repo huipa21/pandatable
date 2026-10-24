@@ -1,0 +1,33 @@
+{
+  "common": {
+    "appName": "PandaTable",
+    "mark": "PT",
+    "tagline": "A little structure. A lot of possibility.",
+    "preferences": "Display preferences",
+    "language": "Language",
+    "languages": {
+      "en": "English",
+      "zhCN": "中文"
+    },
+    "theme": "Theme",
+    "themes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    },
+    "storageError": "Your display preferences could not be saved. Check your browser storage settings.",
+    "localeError": "The language could not be loaded. Check your connection and try again.",
+    "backToLogin": "Back to welcome"
+  },
+  "login": {
+    "eyebrow": "ROOM FOR YOUR IDEAS",
+    "title": "Welcome to PandaTable",
+    "description": "A shared home for your team's structured data.",
+    "status": "Laying the foundation",
+    "notice": "This is the application shell. Sign-in and workspaces will arrive in the next milestone."
+  },
+  "nav": {
+    "notFoundTitle": "Nothing here yet",
+    "notFoundDescription": "This page is not available. Return to the welcome page to get started."
+  }
+}

@@ -1,0 +1,163 @@
+:root {
+  font-family: Inter, 'Segoe UI', system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: light;
+  --surface: #f4f7f5;
+  --text: #20352f;
+  --muted: #637870;
+  --border: #dce6df;
+  --accent: #25836b;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface: #141c19;
+  --text: #e4eee8;
+  --muted: #9fb3a7;
+  --border: #33433a;
+  --accent: #79c9a7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+a {
+  color: inherit;
+}
+
+.app-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 22px clamp(20px, 5vw, 72px);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  text-decoration: none;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.preferences {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+}
+
+.preferences fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.preferences legend {
+  padding: 0 0 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.app-main {
+  width: min(100%, 880px);
+  margin: auto;
+  padding: 80px 24px;
+}
+
+.welcome {
+  text-align: center;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+h1 {
+  margin: 20px 0 16px;
+  font-size: clamp(30px, 5vw, 50px);
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: -1.5px;
+}
+
+.welcome-description {
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.7;
+}
+
+.welcome-card {
+  max-width: 460px;
+  margin: 40px auto 0;
+  border-radius: 18px;
+  text-align: left;
+}
+
+.welcome-card p {
+  margin: 16px 0 0;
+  color: var(--muted);
+  line-height: 1.8;
+}
+
+.app-footer {
+  padding: 20px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    justify-content: center;
+  }
+
+  .preferences {
+    gap: 12px;
+  }
+
+  .app-main {
+    padding: 48px 20px;
+  }
+}

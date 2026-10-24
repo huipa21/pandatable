@@ -19,6 +19,19 @@ type runner struct {
 }
 
 func (runner runner) execute(ctx context.Context, dir string, env map[string]string, capture bool, name string, args ...string) (string, error) {
+	command := runner.command(ctx, dir, env, name, args...)
+	var output bytes.Buffer
+	if capture {
+		command.Stdout = &output
+		command.Stderr = &output
+	}
+	if err := command.Run(); err != nil {
+		return output.String(), fmt.Errorf("%s: %w", name, err)
+	}
+	return output.String(), nil
+}
+
+func (runner runner) command(ctx context.Context, dir string, env map[string]string, name string, args ...string) *exec.Cmd {
 	parts := []string{name}
 	for _, arg := range args {
 		if strings.ContainsAny(arg, " \t\n\"") {
@@ -31,6 +44,8 @@ func (runner runner) execute(ctx context.Context, dir string, env map[string]str
 	command.Dir = filepath.Join(runner.root, dir)
 	command.Env = mergeEnv(os.Environ(), env)
 	command.Stdin = os.Stdin
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
 	command.Cancel = func() error {
 		if err := command.Process.Signal(os.Interrupt); err != nil {
 			return command.Process.Kill()
@@ -38,18 +53,7 @@ func (runner runner) execute(ctx context.Context, dir string, env map[string]str
 		return nil
 	}
 	command.WaitDelay = 3 * time.Second
-	var output bytes.Buffer
-	if capture {
-		command.Stdout = &output
-		command.Stderr = &output
-	} else {
-		command.Stdout = os.Stdout
-		command.Stderr = os.Stderr
-	}
-	if err := command.Run(); err != nil {
-		return output.String(), fmt.Errorf("%s: %w", name, err)
-	}
-	return output.String(), nil
+	return command
 }
 
 func (runner runner) run(ctx context.Context, name string, args ...string) error {

@@ -39,6 +39,11 @@ Routes:
 | `undo` | per-tab action stack |
 | `notifications` | unread list/count |
 
+T0.5 implements only a separate `preferences` store for unauthenticated display
+preferences (`pandatable.locale`, `pandatable.theme` in localStorage). The auth
+store/server preference layer remains future work. `/login` is a welcome/status
+surface, not a sign-in form; unknown routes have a localized not-found page.
+
 ## 4. Grid (desktop/tablet ≥ 768 px)
 
 Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-005).
@@ -72,11 +77,23 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - Naive UI locale + dateLocale switched accordingly; dayjs locale too.
 - Key parity check (both files identical key sets) runs in `ptdev lint`.
 
+T0.5 precompiles locale JSON using `@intlify/unplugin-vue-i18n` and uses the
+runtime-only vue-i18n build: no runtime code generation or CSP relaxation.
+English is loaded once at startup for fallback/error text; Chinese is fetched
+on demand (or on startup when saved/browser-selected). The store updates
+`document.lang`, Naive UI locale/dateLocale, and dayjs together. Storage and
+locale-chunk failures log explicitly and show translated alerts; a failed
+language switch retains the active language. No server preferences exist yet.
+
 ## 7. Theme
 
 - Naive UI `darkTheme` + custom theme overrides; `light | dark | system`.
 - Highlight and select-choice colors defined as token pairs (light/dark) so data colors remain readable in both themes.
 - Toggle in header next to the language toggle; persisted like locale.
+
+System mode listens to `prefers-color-scheme` changes; explicit light/dark
+overrides them. Store disposal removes the listener. All three choices persist
+across reload, independently of language.
 
 ## 7a. Timezone & currency display
 
@@ -89,3 +106,20 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - ESLint + Prettier, `vue-tsc --noEmit` in `ptdev lint` (local gate, no hosted CI).
 - Unit tests: Vitest for paste parser, formatters, filter builder, undo stack.
 - E2E: Playwright (desktop Chrome + mobile emulation) implementing acceptance tests.
+
+T0.5 local commands (from `web/`):
+
+```text
+pnpm lint
+pnpm test
+pnpm build
+```
+
+`lint` includes ESLint 10, Prettier, strict `vue-tsc`, and the nested JSON
+key-parity/non-empty-message check. The i18n ESLint rule rejects untranslated
+template text, interpolated literals, and visible attributes (including labels,
+placeholders and accessible names). Unit tests exercise the actual rule with
+negative fixtures as well as real locale files, preference restoration, system
+changes, and Naive UI locale/theme wiring. Vitest is capped at two workers.
+`pnpm format` applies formatting. The shared Playwright harness is still T0.7;
+T0.5's scoped browser verification is recorded in its task prompt.

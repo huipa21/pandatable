@@ -7,7 +7,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | Milestone | Status | Started | Finished | Tag | Notes |
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
-| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4 implementation verified. AT-002 app restarts pass; full AT-001 and AT-006 remain pending. |
+| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4 implementation verified; T0.5 done. AT-002/003 and AT-802 pass; full AT-001 and AT-006 remain pending. |
 | M1 Core | ⬜ | | | v0.1.0 | |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
@@ -21,8 +21,8 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.1 | Repo scaffold & ptdev | ✅ | 2026-10-24 | Scoped completion approved: scaffold, stdlib ptdev, unit tests, Windows/Podman check, PowerShell + Git Bash entry points, native + Linux builds. Go 1.27.0; Podman client/server 5.8.2/5.8.4; Node 24.15.0; PostgreSQL 18.6. golangci-lint absent (warning). Full AT-006 pending Linux/Docker + T0.7 harness. |
 | T0.2 | Config & CLI | ✅ | 2026-10-24 | Config flags/validation and JSON CLI routing; unit tests, ptdev check, and PowerShell/Git Bash smoke pass. Full AT-006 remains pending. |
 | T0.3 | DB & migrations | ✅ | 2026-10-24 | pgx pool, transaction helper, and embedded migration complete; PostgreSQL 18 integration and repeated CLI migrations pass. AT-002 migration behavior verified; full AT-006 remains pending. |
-| T0.4 | HTTP server | 🟨 | 2026-10-24 | Implementation and scoped verification complete: chi/middleware, health/API/SPA, migrate-before-listen, graceful shutdown; PostgreSQL 18.6 restarts and ptdev check pass. Kept in progress until linked AT-001 passes with real T0.5 assets, T0.6 Compose and Linux/Docker. |
-| T0.5 | Web scaffold (i18n, theme toggles) | ⬜ | | |
+| T0.4 | HTTP server | 🟨 | 2026-10-24 | Implementation and scoped verification complete; real embedded T0.5 SPA now passes browser/CSP/history checks. Kept in progress until linked AT-001 passes with T0.6 Compose and Linux/Docker. |
+| T0.5 | Web scaffold (i18n, theme toggles) | ✅ | 2026-10-24 | AT-003 passes in the real embedded production SPA; AT-802 passes lint/parity with negative fixtures. Vue/TS shell, local preferences, direct-process dev supervisor, web build/copy, ten frontend tests, real dev proxy/cleanup, ptdev check and Linux compilation verified. |
 | T0.6 | Image & deploy files | ⬜ | | |
 | T0.7 | Test harness & local gate | ⬜ | | |
 | T0.8 | RevoGrid spike | ⬜ | | |
@@ -84,7 +84,7 @@ Summary updated at each milestone end.
 
 | Area | Total | Passing | Notes |
 |---|---|---|---|
-| AT-0xx Foundation | 6 | 1 | AT-002 passes with two real serve startups against a disposable PostgreSQL 18.6 database. AT-001 health/routing tested locally, but real SPA/Compose/Linux-Docker checks remain pending. Full AT-006 remains pending Linux bash/Docker + T0.7 harness checks. |
+| AT-0xx Foundation | 6 | 2 | AT-002 and AT-003 pass. Real embedded SPA, health, assets, history and CSP pass locally; full AT-001 still awaits Compose/Linux-Docker. Full AT-006 remains pending Linux bash/Docker + T0.7 harness checks. |
 | AT-1xx Auth & Admin | 17 | 0 | |
 | AT-2xx Structure & Permissions | 13 | 0 | |
 | AT-3xx Fields & Grid | 20 | 0 | |
@@ -92,7 +92,7 @@ Summary updated at each milestone end.
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 0 | |
+| AT-8xx Non-functional | 6 | 1 | AT-802 passes for the T0.5 scaffold: 21 matching keys, untranslated-text/attribute lint and negative fixtures. Remains a continuous local gate. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -117,6 +117,8 @@ Summary updated at each milestone end.
 | 2026-10-24 | T0.3: pgx pool/retries, safe transaction helper, advisory-locked embedded Goose migration, and migrate CLI complete. PostgreSQL 18.6 integration, repeated CLI migrations, and `ptdev check` pass; `golangci-lint` unavailable. Full AT-006 remains pending. |
 | 2026-10-24 | T0.4: implementation started. |
 | 2026-10-24 | T0.4 implementation verified: chi HTTP foundation, safe JSON logs/errors, embedded-asset boundary, automatic migrations and bounded shutdown. Focused tests, PostgreSQL 18.6 restarts, ptdev check and Linux cross-build pass; D-053..D-055 and T0.5 handoff added. AT-001 remains pending, so T0.4 and M0 stay in progress. |
+| 2026-10-24 | T0.5 started: inspected build/HTTP boundaries and Node/pnpm compatibility; implemented localized Vue shell and direct-process dev workflow. |
+| 2026-10-24 | T0.5 complete: AT-003 embedded-browser and AT-802 local gate pass; ten frontend tests, Go checks, production build, real dev proxy/cancellation and Linux compilation verified. Added D-056/D-057 and T0.6 prompt; M0/T0.4 remain in progress pending stack acceptance. |
 
 ### T0.1 verification evidence (2026-10-24)
 
@@ -169,3 +171,42 @@ Summary updated at each milestone end.
   verification remains pending. Full AT-006 remains pending Linux/Docker and the
   T0.7 harness. No deployment files, frontend scaffold or application services
   were added. The combined `ptdev dev` supervisor remains for T0.5.
+
+### T0.5 verification evidence (2026-10-24)
+
+- Environment: Windows, Go 1.27.0, Node 24.15.0, pnpm 11.2.2, PostgreSQL 18.6.
+  Vite 7 and the i18n build plugin support the documented Node >=22.13 floor.
+  Dependencies are lockfile-pinned; esbuild is the only allowed install script.
+- `pnpm lint`: ESLint (including translated-text/visible-attribute rules),
+  Prettier, strict `vue-tsc`, and 21-key en/zh-CN parity PASS. Negative fixtures
+  reject template text, interpolated strings, static labels/placeholders/accessible
+  names, and bound string-literal attributes. Locale failure and blocked-storage
+  tests verify explicit error state instead of a false applied/saved result.
+- `pnpm test`: 3 files / 10 tests PASS. Covers actual Naive UI theme/locale/date
+  locale wiring, dayjs/document language, browser/saved preference precedence,
+  both languages, all three theme modes, restoration, OS changes and disposal.
+- `ptdev web build`, production build/copy and `ptdev check` PASS. Generated
+  files stay ignored; `.gitkeep` survives copying. Go-only tests/build pass both
+  before and after real assets exist. Source validation tests preserve old assets
+  for missing/empty indexes. All emitted HTML/JS/CSS total about 130 KB gzip,
+  below the initial bundle budget even before excluding lazy chunks.
+- Real embedded production browser check at loopback: English → Chinese and
+  light → dark update immediately; reload restores both. Naive UI card background
+  changes from white to `rgb(24, 24, 28)`. Light/system also persist; system follows
+  emulated OS changes, explicit light overrides dark OS. Desktop and 375px mobile
+  controls are adjacent, with no horizontal overflow. AT-003 PASS.
+- The actual Go server returns SPA/history 200, built JS 200, missing asset 404,
+  health JSON 200 and `/api/v1/missing` JSON 404. Deep client route renders the
+  translated not-found surface and returns to welcome. Browser console has no
+  warnings/errors and the production CSP reports zero violations; no CSP changes.
+- Opt-in `TestDevIntegration` PASS against disposable `pt_test_t05_47ba5bb1`:
+  direct backend/Vite startup, health/API proxy and cancellation; both listeners
+  close and the temporary executable directory is removed. Repeated supervisor
+  tests cover cancellation, nonzero/zero unexpected exits and start failures.
+  Disposable DB dropped after verification with zero remaining connections;
+  no verification server remains. Existing dev DB/container retained.
+- Linux/amd64, CGO-disabled compilation of app and ptdev PASS. This is not
+  Linux/Docker runtime acceptance. `golangci-lint` is absent and was not run.
+  Full AT-001 awaits T0.6 Compose/Linux-Docker; AT-006 awaits Linux/Docker and
+  T0.7's shared harness. No auth, grid, deployment files or shared harness added.
+- Next: [T0.6 image & deploy prompt](task-prompts/T0.6.md).

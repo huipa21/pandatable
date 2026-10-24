@@ -23,7 +23,7 @@ func TestMergeEnv(t *testing.T) {
 func TestUsageExitCodes(t *testing.T) {
 	t.Setenv("PT_ENGINE", "")
 	for _, args := range [][]string{
-		{"unknown"}, {"db"}, {"dev"}, {"web", "build"}, {"e2e"}, {"image", "build"}, {"image", "save"}, {"deploy"},
+		{"unknown"}, {"db"}, {"e2e"}, {"image", "build"}, {"image", "save"}, {"deploy"},
 	} {
 		if code := run(context.Background(), args); code != 2 {
 			t.Errorf("run(%v) = %d, want 2", args, code)

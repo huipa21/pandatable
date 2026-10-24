@@ -1,0 +1,33 @@
+{
+  "common": {
+    "appName": "PandaTable",
+    "mark": "PT",
+    "tagline": "有条有理，无限可能。",
+    "preferences": "显示偏好",
+    "language": "语言",
+    "languages": {
+      "en": "English",
+      "zhCN": "中文"
+    },
+    "theme": "主题",
+    "themes": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    },
+    "storageError": "无法保存显示偏好，请检查浏览器的存储设置。",
+    "localeError": "无法加载语言，请检查网络连接后重试。",
+    "backToLogin": "返回欢迎页"
+  },
+  "login": {
+    "eyebrow": "让想法井然有序",
+    "title": "欢迎使用 PandaTable",
+    "description": "与团队一起，为结构化数据找到归属。",
+    "status": "基础建设中",
+    "notice": "当前为应用框架。登录和工作区功能将在下一个里程碑中提供。"
+  },
+  "nav": {
+    "notFoundTitle": "这里还没有内容",
+    "notFoundDescription": "此页面暂不可用，请返回欢迎页。"
+  }
+}

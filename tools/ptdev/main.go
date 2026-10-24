@@ -8,11 +8,12 @@ import (
 	"os/exec"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	code := run(ctx, os.Args[1:])
 	stop()
 	os.Exit(code)
@@ -59,8 +60,8 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
   lint                 Check formatting, vet, optional golangci-lint/web lint
   test [--no-db]       Run tests; forward -run, -v, -count
   check                Run lint, test, build and print a summary
-  dev                  Dev servers (T0.4/T0.5)
-  web build            Web-only build (T0.5)
+  dev                  Start backend and Vite; stop both on exit or Ctrl+C
+  web build            Build frontend and copy embedded assets
   e2e                  Acceptance tests (T0.7)
   image build          Build release image (T0.6)
   image save           Export release image (T0.6)
@@ -90,9 +91,9 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
 	case "check":
 		return runner.check(ctx)
 	case "dev":
-		return usageError{"not implemented yet (T0.4/T0.5)"}
+		return runner.dev(ctx)
 	case "web build":
-		return usageError{"not implemented yet (T0.5)"}
+		return runner.buildWeb(ctx)
 	case "e2e":
 		return usageError{"not implemented yet (T0.7)"}
 	case "image build", "image save", "deploy":

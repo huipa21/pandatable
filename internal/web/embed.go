@@ -5,7 +5,7 @@ import (
 	"io/fs"
 )
 
-// all: keeps the pre-T0.5 placeholder embeddable without shipping a fake SPA.
+// all: keeps clean checkouts embeddable via .gitkeep before the web build.
 //
 //go:embed all:dist
 var assets embed.FS

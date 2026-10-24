@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/fs"
@@ -21,14 +22,8 @@ func binaryName(goos string, linux bool) string {
 
 func (runner runner) build(ctx context.Context, linux bool) error {
 	if runner.webExists() {
-		if err := runner.pnpm(ctx, "install", "--frozen-lockfile"); err != nil {
+		if err := runner.buildWeb(ctx); err != nil {
 			return err
-		}
-		if err := runner.pnpm(ctx, "build"); err != nil {
-			return err
-		}
-		if err := runner.copyWeb(); err != nil {
-			return fmt.Errorf("copy web dist: %w", err)
 		}
 	} else {
 		fmt.Println("web: skipped (no web/ yet)")
@@ -44,11 +39,57 @@ func (runner runner) build(ctx context.Context, linux bool) error {
 	return err
 }
 
+func (runner runner) buildWeb(ctx context.Context) error {
+	if !runner.webExists() {
+		return fmt.Errorf("web/package.json is missing")
+	}
+	if err := runner.pnpm(ctx, "install", "--frozen-lockfile"); err != nil {
+		return err
+	}
+	if err := runner.pnpm(ctx, "build"); err != nil {
+		return err
+	}
+	if err := runner.copyWeb(); err != nil {
+		return fmt.Errorf("copy web dist: %w", err)
+	}
+	return nil
+}
+
 func (runner runner) copyWeb() error {
 	source := filepath.Join(runner.root, "web", "dist")
 	target := filepath.Join(runner.root, "internal", "web", "dist")
-	if err := os.RemoveAll(target); err != nil {
+	index, err := os.ReadFile(filepath.Join(source, "index.html"))
+	if err != nil {
+		return fmt.Errorf("read built index: %w", err)
+	}
+	if len(bytes.TrimSpace(index)) == 0 {
+		return fmt.Errorf("built index.html is empty")
+	}
+	// Validate before removing old assets; retain the tracked embed placeholder.
+	if err := filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && !entry.Type().IsRegular() {
+			return fmt.Errorf("unsupported web asset: %s", path)
+		}
+		return nil
+	}); err != nil {
 		return err
+	}
+	if err := os.MkdirAll(target, 0o750); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".gitkeep" {
+			if err := os.RemoveAll(filepath.Join(target, entry.Name())); err != nil {
+				return err
+			}
+		}
 	}
 	return filepath.WalkDir(source, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {

@@ -27,20 +27,34 @@ All project documentation lives in [`docs/`](docs/README.md). Start there.
 
 ## Status
 
-M0 foundation in progress: T0.1 scaffold and dev tool implemented. See [docs/progress.md](docs/progress.md).
+M0 foundation in progress: CLI, migrations, HTTP server, and localized web shell
+implemented through T0.5. Deployment is next (T0.6). See [docs/progress.md](docs/progress.md).
 
 ## Local Development
 
-Requires Go 1.27.0 and Podman or Docker for the dev database. Run from the repo root:
+Requires Go 1.27.0, Node.js >= 22.13, pnpm 11.2.2 (Corepack), and Podman or
+Docker for the dev database. Run from the repo root:
 
 ```text
 go run ./tools/ptdev help
+pnpm --dir web install --frozen-lockfile
 go run ./tools/ptdev db up
+go run ./tools/ptdev dev
+```
+
+The UI is at `http://127.0.0.1:5173`, with `/api` (including future WebSockets)
+proxied to the backend. Ctrl+C stops both direct child processes. The welcome
+page is a scaffold, not an authentication implementation.
+
+```text
 go run ./tools/ptdev check
+go run ./tools/ptdev web build
 go run ./tools/ptdev build --linux
 go run ./tools/ptdev db down
 ```
 
 Without a container engine, use `go run ./tools/ptdev test --no-db`.
-The application currently supports `version`; `serve` is a stub for T0.2/T0.4.
+`serve` requires `PT_DATABASE_URL` and `PT_BASE_URL`; it migrates before binding
+HTTP. Build the frontend before building the binary to embed the SPA. A clean
+Go-only build still works, but UI requests return explicit 503 until assets exist.
 See [docs/14-dev-build-release.md](docs/14-dev-build-release.md) for command details.
