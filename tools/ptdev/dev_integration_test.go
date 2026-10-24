@@ -5,23 +5,26 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"pandatable/internal/testdb"
 )
 
+var database testdb.Suite
+
+func TestMain(m *testing.M) {
+	os.Exit(database.Run(m))
+}
+
 func TestDevIntegration(t *testing.T) {
-	databaseURL := os.Getenv("PTDEV_TEST_DEV_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("PTDEV_TEST_DEV_DATABASE_URL is not set; use a disposable pt_test_* database for the real dev-process test")
+	if os.Getenv("PTDEV_TEST_DEV") != "1" {
+		t.Skip("set PTDEV_TEST_DEV=1 for the real dev-process test (requires free port 5173)")
 	}
-	parsed, err := url.Parse(databaseURL)
-	if err != nil || !strings.HasPrefix(parsed.Path, "/pt_test_") {
-		t.Fatal("PTDEV_TEST_DEV_DATABASE_URL must name a disposable pt_test_* database")
-	}
+	databaseURL := database.URL(t)
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

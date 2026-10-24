@@ -12,6 +12,7 @@ type options struct {
 	yes            bool
 	noDB           bool
 	testArgs       []string
+	e2eArgs        []string
 	withPostgres   bool
 	releaseVersion string
 	host           string
@@ -44,6 +45,9 @@ func parseArgs(args []string) (options, error) {
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
+		case result.command == "e2e" && arg == "--":
+			result.e2eArgs = append(result.e2eArgs, args[index+1:]...)
+			return result, nil
 		case result.command == "build" && arg == "--linux":
 			result.linux = true
 		case result.command == "db reset" && arg == "--yes":

@@ -35,7 +35,7 @@ func TestImageCommands(t *testing.T) {
 		t.Setenv(name, "private-mirror-not-for-command-output")
 	}
 	for _, engine := range []string{"podman", "docker"} {
-		args := imageBuildArgs(engine, "1.2.3+abc", "1.2.3-abc")
+		args := imageBuildArgs(engine, "1.2.3+abc", "1.2.3-abc", true)
 		joined := strings.Join(args, "|")
 		for _, want := range []string{"linux/amd64", "VERSION=1.2.3+abc", "localhost/pandatable:1.2.3-abc", "localhost/pandatable:latest", filepath.Join("deploy", "Dockerfile")} {
 			if !strings.Contains(joined, want) {

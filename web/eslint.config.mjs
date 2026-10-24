@@ -5,7 +5,7 @@ import ts from 'typescript-eslint'
 import globals from 'globals'
 
 export default ts.config(
-  { ignores: ['dist/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'test-results/**'] },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...vue.configs['flat/recommended'],

@@ -37,14 +37,17 @@ func (runner runner) release(ctx context.Context, override string) (version, tag
 	return version, tag, err
 }
 
-func imageBuildArgs(engine, version, tag string) []string {
+func imageBuildArgs(engine, version, tag string, latest bool) []string {
 	args := []string{"build", "--platform", "linux/amd64"}
 	if engine == "podman" {
 		args = append(args, "--format", "docker")
 	}
 	args = append(args, "-f", filepath.Join("deploy", "Dockerfile"),
 		"--build-arg", "VERSION="+version,
-		"-t", "localhost/pandatable:"+tag, "-t", "localhost/pandatable:latest")
+		"-t", "localhost/pandatable:"+tag)
+	if latest {
+		args = append(args, "-t", "localhost/pandatable:latest")
+	}
 	for _, name := range []string{"GOPROXY", "NPM_REGISTRY", "APT_MIRROR"} {
 		if _, ok := os.LookupEnv(name); ok {
 			args = append(args, "--build-arg", name)
@@ -71,7 +74,7 @@ func (runner runner) image(ctx context.Context, opts options) error {
 		return err
 	}
 	if opts.command == "image build" {
-		return runner.run(ctx, selected.name, imageBuildArgs(selected.name, version, tag)...)
+		return runner.run(ctx, selected.name, imageBuildArgs(selected.name, version, tag, true)...)
 	}
 	if err := runner.saveImage(ctx, selected.name, "localhost/pandatable:"+tag, "pandatable-"+tag+".tar.gz"); err != nil {
 		return err

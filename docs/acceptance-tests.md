@@ -24,6 +24,22 @@ Test users used throughout: `admin` (role admin), `alice`, `bob`, `carol` (role 
 Exact versions, image/archive identifiers, cleanup and failure-path evidence:
 [progress.md, T0.6](progress.md#t06-verification-evidence-2026-10-24).
 
+### T0.7 scoped evidence (2026-10-24)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-001 | Partial | Automated Windows/Podman image/Compose run: health in 6.238 s; four desktop/mobile shell checks pass. Linux/Docker remains unavailable. |
+| AT-002 | Pass preserved | Shared migrated disposable package databases; concurrent/rerun migrations and two real app restarts retain one unchanged migration record. Owned DBs removed afterwards. |
+| AT-003 | Pass preserved | Embedded production shell on desktop/mobile Chromium: en/zh-CN and light/dark/system changes/reload/live OS preferences pass with no browser/CSP errors. No actual login/auth flow is claimed. |
+| AT-004 | Pass preserved | Original release image reinspection: linux/amd64, UID/GID 10001, executable HEALTHCHECK, pg_dump 18.6, 161,964,427 bytes. |
+| AT-005 | Partial, unchanged | No Docker executable or approved Ubuntu/Caddy destination; no actual remote load/HTTPS checks performed. |
+| AT-006 | Partial | Windows PowerShell/Podman `ptdev check` passes; shared PG18 isolation/cleanup and bounded closed-port skips pass. Invalid URL/auth/missing DB and required-DB unreachability fail instead of skipping. Linux bash/Docker gate remains required. |
+| AT-802 | Pass preserved | Strict frontend/E2E TS, ESLint/Prettier, 21-key locale parity and negative i18n fixtures pass in the local gate. |
+
+Real browser failure/cancellation/partial-start cleanup and exact commands:
+[progress.md, T0.7](progress.md#t07-verification-evidence-2026-10-24).
+T0.7 remains in progress until its linked **full AT-006** passes.
+
 ## AT-1xx Auth & Admin (M1, M3)
 
 - **AT-101 — First-run setup requires token** · M1 · Given an empty DB, visiting any page redirects to `/setup`; submitting a wrong token fails; submitting the logged token creates admin and logs in; afterwards `/setup` returns "already set up" (410).

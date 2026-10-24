@@ -1,11 +1,10 @@
-package db
+package db_test
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"net"
 	"os"
 	"reflect"
 	"testing"
@@ -13,9 +12,16 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"pandatable/internal/config"
+	"pandatable/internal/db"
+	"pandatable/internal/testdb"
 	"pandatable/migrations"
 )
+
+var database testdb.Suite
+
+func TestMain(m *testing.M) {
+	os.Exit(database.Run(m))
+}
 
 func TestEmbeddedMigrationOrdering(t *testing.T) {
 	entries, err := migrations.FS.ReadDir(".")
@@ -34,27 +40,14 @@ func TestEmbeddedMigrationOrdering(t *testing.T) {
 }
 
 func TestInitialMigrationPostgreSQL(t *testing.T) {
-	databaseURL := os.Getenv("PT_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("PT_TEST_DATABASE_URL is not set; skipping PostgreSQL migration test")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := Open(ctx, config.Config{DatabaseURL: databaseURL, DBMaxConns: 4})
-	if err != nil {
-		var networkError net.Error
-		if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &networkError) {
-			t.Skipf("PostgreSQL unavailable for migration test: %v", err)
-		}
-		t.Fatalf("connect to PT_TEST_DATABASE_URL: %v", err)
-	}
-	defer pool.Close()
+	pool := database.Open(t)
 
 	results := make(chan error, 2)
 	for range 2 {
 		go func() {
-			results <- RunMigrations(ctx, pool)
+			results <- db.RunMigrations(ctx, pool)
 		}()
 	}
 	for range 2 {
@@ -62,7 +55,7 @@ func TestInitialMigrationPostgreSQL(t *testing.T) {
 			t.Fatalf("concurrent migration run failed: %v", err)
 		}
 	}
-	if err := RunMigrations(ctx, pool); err != nil {
+	if err := db.RunMigrations(ctx, pool); err != nil {
 		t.Fatalf("rerun migrations failed: %v", err)
 	}
 

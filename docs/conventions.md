@@ -16,7 +16,7 @@
   - Static meta queries via `sqlc`.
   - Dynamic data queries via `squirrel` with **identifiers only from meta** (quoted with `pgx.Identifier{}.Sanitize()`), values always as parameters.
   - No string concatenation of user input into SQL — enforced by code review + gosec.
-- Tests: `go test ./...`; integration tests use a real PostgreSQL 18 from `PT_TEST_DATABASE_URL` (dev container started by `ptdev db up`), each test package in its own fresh database; skipped (not failed) if DB unreachable. No testcontainers.
+- Tests: `go test ./...`; integration tests use [internal/testdb](../internal/testdb/) with a package-level Suite and TestMain cleanup, real PostgreSQL 18 from explicit `PT_TEST_DATABASE_URL`, and a fresh migrated database per package. Absent/unreachable DBs clearly skip within a bounded connection attempt; config/auth/SQL/migration errors fail. `ptdev test/check` starts/reuses the dev DB and requires integration tests (no unavailable-DB skips). No testcontainers. See [14, tests](14-dev-build-release.md#3-tests-without-hosted-ci).
 - Cross-platform: code and tooling must work on Windows (dev) and Linux (prod). Use `filepath`, no shell-specific scripts; dev automation goes into `tools/ptdev`.
 - Container engine neutrality: Dockerfile/compose must work with both Podman and Docker (fully qualified image names, no engine-specific features).
 

@@ -121,5 +121,12 @@ template text, interpolated literals, and visible attributes (including labels,
 placeholders and accessible names). Unit tests exercise the actual rule with
 negative fixtures as well as real locale files, preference restoration, system
 changes, and Naive UI locale/theme wiring. Vitest is capped at two workers.
-`pnpm format` applies formatting. The shared Playwright harness is still T0.7;
-T0.5's scoped browser verification is recorded in its task prompt.
+`pnpm format` applies formatting. T0.7 adds pinned Playwright under `web/e2e/`:
+desktop/mobile Chromium, reusable real API request fixtures, automatic browser/
+CSP diagnostics, failure traces/screenshots and production-shell coverage.
+`ptdev e2e` builds and tears down an isolated real image/Compose stack; it is
+separate from the fast gate. Vitest selects only `src/**/*.test.ts`, while
+Playwright selects E2E specs. Both configs and E2E TypeScript participate in
+strict type-check/lint. The opt-in lifecycle failure probe is not an acceptance
+spec. Auth/setup/seed flows remain M1 work. See
+[14, browser setup](14-dev-build-release.md#browser-setup-and-isolated-e2e).

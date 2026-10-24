@@ -3,14 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -20,66 +17,26 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"pandatable/internal/config"
+	"pandatable/internal/testdb"
 )
 
+var database testdb.Suite
+
+func TestMain(m *testing.M) {
+	os.Exit(database.Run(m))
+}
+
 func TestServePostgreSQLRestarts(t *testing.T) {
-	databaseURL := os.Getenv("PT_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("PT_TEST_DATABASE_URL is not set; skipping serve startup/restart integration test")
-	}
-	appURL, err := url.Parse(databaseURL)
-	if err != nil || (appURL.Scheme != "postgres" && appURL.Scheme != "postgresql") {
-		t.Fatal("PT_TEST_DATABASE_URL must be a PostgreSQL URL")
-	}
-	adminConfig, err := pgx.ParseConfig(databaseURL)
+	databaseURL := database.URL(t)
+	appConfig, err := pgx.ParseConfig(databaseURL)
 	if err != nil {
-		t.Fatal("invalid PT_TEST_DATABASE_URL (connection details redacted)")
+		t.Fatal("invalid disposable database URL")
 	}
-	connectCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	admin, err := pgx.ConnectConfig(connectCtx, adminConfig)
-	cancel()
-	if err != nil {
-		var networkError net.Error
-		if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) {
-			t.Skip("PostgreSQL unreachable; skipping serve startup/restart integration test")
-		}
-		t.Fatal("PostgreSQL connection failed (connection details redacted)")
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := admin.Close(ctx); err != nil {
-			t.Error("close PostgreSQL admin connection failed")
-		}
-	})
+	pool := database.Open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	var version int
-	if err := admin.QueryRow(ctx, "SELECT current_setting('server_version_num')::integer").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version < 180000 || version >= 190000 {
-		t.Fatalf("serve integration requires PostgreSQL 18, got server_version_num=%d", version)
-	}
-	t.Logf("PostgreSQL server_version_num=%d", version)
-	databaseName := "pt_test_t04_" + strings.ToLower(rand.Text())
-	identifier := pgx.Identifier{databaseName}.Sanitize()
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+identifier); err != nil {
-		t.Fatalf("create disposable database: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if _, err := admin.Exec(ctx, "DROP DATABASE "+identifier+" WITH (FORCE)"); err != nil {
-			t.Errorf("drop disposable database: %v", err)
-		}
-	})
-	appConfig := adminConfig.Copy()
-	appConfig.Database = databaseName
-	appURL.Path = "/" + databaseName
-	appURL.RawPath = ""
 	cfg := config.Config{
-		DatabaseURL: appURL.String(),
+		DatabaseURL: databaseURL,
 		DBMaxConns:  4,
 		Listen:      "127.0.0.1:0",
 		BaseURL:     "http://127.0.0.1",
@@ -133,7 +90,7 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 			t.Fatal("restart reapplied the initial migration")
 		}
 		var connections int
-		if err := admin.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = $1`, databaseName).Scan(&connections); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`).Scan(&connections); err != nil {
 			t.Fatal(err)
 		}
 		if connections != 0 {

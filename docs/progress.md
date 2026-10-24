@@ -7,7 +7,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | Milestone | Status | Started | Finished | Tag | Notes |
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
-| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6 implementations verified; T0.5 done. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker, approved server and T0.7 harness. |
+| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5 done. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. T0.8 spike not started. |
 | M1 Core | ⬜ | | | v0.1.0 | |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
@@ -24,7 +24,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.4 | HTTP server | 🟨 | 2026-10-24 | Implementation and scoped verification complete; real embedded SPA/Compose/browser/CSP/history checks pass on Windows/Podman. Kept in progress until linked AT-001 also passes on Linux/Docker. |
 | T0.5 | Web scaffold (i18n, theme toggles) | ✅ | 2026-10-24 | AT-003 passes in the real embedded production SPA; AT-802 passes lint/parity with negative fixtures. Vue/TS shell, local preferences, direct-process dev supervisor, web build/copy, ten frontend tests, real dev proxy/cleanup, ptdev check and Linux compilation verified. |
 | T0.6 | Image & deploy files | 🟨 | 2026-10-24 | Implementation verified: AT-004 image contents pass (161,964,427 bytes); isolated Windows/Podman Compose/browser/restart/persistence and gzip export/load checks pass. Full AT-001/005 await Linux/Docker and an approved real Caddy destination; not Done. |
-| T0.7 | Test harness & local gate | ⬜ | | |
+| T0.7 | Test harness & local gate | 🟨 | 2026-10-24 | Implementation and Windows/Podman verification complete: shared PG18 helper, four real shell E2E checks, failure/cancellation/partial-start cleanup and ptdev check pass. Linked AT-006 still requires Linux bash/Docker; not Done. |
 | T0.8 | RevoGrid spike | ⬜ | | |
 | T1.1 | Meta migrations | ⬜ | | |
 | T1.2 | Auth service | ⬜ | | |
@@ -84,7 +84,7 @@ Summary updated at each milestone end.
 
 | Area | Total | Passing | Notes |
 |---|---|---|---|
-| AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman Compose passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 pending Linux/Docker + T0.7 harness. |
+| AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
 | AT-1xx Auth & Admin | 17 | 0 | |
 | AT-2xx Structure & Permissions | 13 | 0 | |
 | AT-3xx Fields & Grid | 20 | 0 | |
@@ -112,10 +112,12 @@ Summary updated at each milestone end.
 | 2026-10-24 | Resolved OQ-1..4: external Caddy, local Podman/Docker build + image transfer, `ptdev` tool, timezone & currency defaults. Added 14-dev-build-release.md, D-046..D-050, AT-005/006/117/326. |
 | 2026-10-24 | T0.1: Go scaffold + stdlib ptdev commands and unit tests; D-051; local gate and Podman PG18 lifecycle verified; T0.2 handoff added. Existing stopped Podman machine started. |
 | 2026-10-24 | T0.2: implementation started. |
+| 2026-10-24 | T0.7: implementation started after reading the T0.6 handoff, binding decisions and current tooling; worktree clean. |
+| 2026-10-24 | T0.7 implementation/scoped verification complete: shared migrated package databases with bounded skips and fail-closed gate, pinned Playwright and isolated Compose runner, real success/failure/cancellation cleanup, D-063..D-065 and T0.8 handoff. Full AT-006 awaits Linux/Docker, so T0.7/M0 remain in progress. |
 | 2026-10-24 | T0.2: config precedence/validation, CLI routing, JSON logging, and T0.3 task prompt implemented; focused tests, `ptdev check`, and PowerShell/Git Bash CLI smoke checks pass. `golangci-lint` unavailable; full AT-006 remains pending. |
 | 2026-10-24 | T0.3: implementation started. |
 | 2026-10-24 | T0.3: pgx pool/retries, safe transaction helper, advisory-locked embedded Goose migration, and migrate CLI complete. PostgreSQL 18.6 integration, repeated CLI migrations, and `ptdev check` pass; `golangci-lint` unavailable. Full AT-006 remains pending. |
-| 2026-10-24 | T0.4: implementation started. |
+| 2026-10-24 | : implementation started. |
 | 2026-10-24 | T0.4 implementation verified: chi HTTP foundation, safe JSON logs/errors, embedded-asset boundary, automatic migrations and bounded shutdown. Focused tests, PostgreSQL 18.6 restarts, ptdev check and Linux cross-build pass; D-053..D-055 and T0.5 handoff added. AT-001 remains pending, so T0.4 and M0 stay in progress. |
 | 2026-10-24 | T0.5 started: inspected build/HTTP boundaries and Node/pnpm compatibility; implemented localized Vue shell and direct-process dev workflow. |
 | 2026-10-24 | T0.5 complete: AT-003 embedded-browser and AT-802 local gate pass; ten frontend tests, Go checks, production build, real dev proxy/cancellation and Linux compilation verified. Added D-056/D-057 and T0.6 prompt; M0/T0.4 remain in progress pending stack acceptance. |
@@ -276,3 +278,80 @@ Summary updated at each milestone end.
   T0.7's shared harness. A Linux container under Podman is not a substitute.
   T0.4, T0.6 and M0 remain in progress. Next:
   [T0.7 test harness & local gate](task-prompts/T0.7.md).
+
+### T0.7 verification evidence (2026-10-24)
+
+- Implemented [internal/testdb](../internal/testdb/): lazy migrated PG18
+  databases per package from template0, 3 s connection bound, explicit absent/
+  dial/DNS skips, redacted operational failures, fresh bounded FORCE cleanup
+  after tests/initialization failures. DB and CLI tests share the helper; the
+  real dev test now uses `PTDEV_TEST_DEV=1` plus the same helper instead of
+  requiring a manually provisioned database.
+- `ptdev test/check` requires reachable integration DBs and defaults to
+  uncached Go tests. Existing lint -> test -> build summary/exit behavior is
+  preserved; E2E stays a separate milestone command. Focused unit tests cover
+  gate continuation/failure/cancellation, E2E arguments, direct-child EOF/
+  reaping, readiness validation and build/start/test/cleanup error propagation.
+- Real PG18 integration PASS via
+  `ptdev test -run "TestInitialMigrationPostgreSQL|TestServePostgreSQLRestarts|TestSuiteIsolationPostgreSQL|TestDevIntegration" -v -count=1`
+  with `PTDEV_TEST_DEV=1`: separate package databases, migration reruns/concurrency,
+  same-suite reuse, isolated row state, two real application restarts with an
+  unchanged single migration record, zero remaining application connections,
+  forced cleanup of an intentionally open connection and DB removal. Real
+  backend/Vite proxy/listener cleanup also passes.
+- Real auth failure SQLSTATE **28P01** and missing DB **3D000** fail without
+  leaking connection details or becoming unavailable/skips. Invalid URL is a
+  failing test. With `PT_TEST_DATABASE_REQUIRED=1`, a closed port is a failure.
+  Plain `go test ./... -v -count=1` against closed loopback port **49704** PASS
+  in **10.795 s** wall time (includes compilation/unrelated bounded unit tests);
+  each DB integration reports its clear skip in **0.00-0.01 s**. Unit tests
+  enforce the helper bound separately. No developer DB was stopped.
+- Final `ptdev check` PASS in Windows PowerShell/Podman: lint **11.143 s**,
+  test **19.119 s**, build **8.595 s**, total **38.856 s**. Includes gofmt/vet,
+  real Go/PG tests, all **10** Vitest tests, strict E2E/frontend TypeScript,
+  ESLint/Prettier, **21-key** locale parity/negative lint fixtures and frozen
+  production build. Optional `golangci-lint` remains absent and was not run.
+- Pinned dev-only `@playwright/test` **1.64.1** adds only its three lockfile
+  packages; Chromium provisioning (`pnpm --dir web e2e:install`) and frozen
+  installation PASS. Workspace manifest remains alongside lockfile/package
+  manifest in the real Dockerfile. No new Go/runtime dependencies.
+- Final `ptdev e2e` PASS: project **pt-e2e-23xngb5vnvv2v7dbyhm462kzbx**,
+  loopback **53175**, health ready in **6.238 s** after startup began (<60 s).
+  **4 tests PASS in 16.1 s**, one worker, desktop/mobile Chromium: actual
+  embedded SPA/JS, health JSON/security headers, deep-route/reload/history,
+  missing static/extensionless asset and reserved API/health/dotfile boundaries,
+  HEAD/405, locale and all three theme modes/reload/live OS changes, actual
+  card colors, adjacent controls and no overflow. No console warnings/errors,
+  page errors or CSP violations; script policy unchanged. AT-003/802 preserved.
+- Final opt-in lifecycle regressions PASS:
+  `PTDEV_TEST_E2E=1 go test ./tools/ptdev -run "TestE2EFailureAndCancellationIntegration|TestE2EStartupFailureIntegration" -v -count=1`
+  (set the environment variable using the host shell's syntax).
+  Deliberate browser assertion failure at **57479** (project
+  **pt-e2e-o7soh6ojypzlugpri2xi3hzymj**, health **7.445 s**) and active-browser
+  cancellation at **56989** (project **pt-e2e-3uf6xxuotolkjlidu7cho7xenx**,
+  health **7.693 s**) both report failure and remove owned containers, volumes,
+  networks, image tag and HTTP listener. Recorded Node runner, worker and Chrome
+  PIDs are gone. Cancellation retains its context cause. Real occupied-port
+  partial Compose startup also fails before browser execution and removes all
+  owned stack resources. Redacted logs/traces/screenshots remain ignored under
+  `web/test-results/`; temporary configs are removed.
+- An initial concurrent gate/probe run exposed a generated-probe source/lint
+  collision and CPU-sensitive existing 5 s lint-test timeout. Probes now use
+  a committed non-acceptance `.probe.ts` plus configs only under ignored
+  test-results; no source generation or timeout relaxation. The final gate
+  and lifecycle checks were run separately and pass.
+- Prior AT-004 release image reinspection still gives linux/amd64,
+  UID/GID **10001:10001**, executable HEALTHCHECK, **161,964,427 bytes** and
+  `pg_dump 18.6`. New E2E tags are disposable and do not overwrite `latest` or
+  the original `0.0.0-dev+d710743.dirty` release.
+- Linux/amd64 app/tooling remain buildable; ptdev executable and its tests
+  cross-compile PASS. This is **not Linux/Docker runtime acceptance**. Docker
+  is absent from PATH and no approved Ubuntu/Caddy destination exists.
+  AT-001 Linux/Docker, full AT-005 and AT-006 Linux bash/Docker are unverified;
+  T0.4/T0.6/T0.7/M0 stay in progress. No auth/setup/business/seed/WebSocket
+  endpoints or future acceptance passes are claimed.
+- Only owned disposable resources were removed. Developer `pt-dev-db`/
+  `pt-dev-pgdata`, unrelated engine resources and shared/remote Caddy were not
+  reset or removed. No verification server remains.
+- Next: [T0.8 RevoGrid spike](task-prompts/T0.8.md), using the new gates and
+  preserving CSP, translations, isolation and honest platform limitations.

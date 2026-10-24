@@ -62,7 +62,7 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
   check                Run lint, test, build and print a summary
   dev                  Start backend and Vite; stop both on exit or Ctrl+C
   web build            Build frontend and copy embedded assets
-  e2e                  Acceptance tests (T0.7)
+  e2e [-- <args>]       Build isolated stack, run Playwright, always clean up
   image build [--version VERSION]
                        Build linux/amd64 release image + latest
   image save [--version VERSION] [--with-postgres]
@@ -100,7 +100,7 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
 	case "web build":
 		return runner.buildWeb(ctx)
 	case "e2e":
-		return usageError{"not implemented yet (T0.7)"}
+		return runner.e2e(ctx, opts)
 	case "image build", "image save":
 		return runner.image(ctx, opts)
 	case "deploy":
@@ -111,6 +111,19 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
 }
 
 func (runner runner) check(ctx context.Context) error {
+	return runCheck(ctx, []checkStep{
+		{"lint", runner.lint},
+		{"test", func(ctx context.Context) error { return runner.test(ctx, options{}) }},
+		{"build", func(ctx context.Context) error { return runner.build(ctx, false) }},
+	})
+}
+
+type checkStep struct {
+	name string
+	run  func(context.Context) error
+}
+
+func runCheck(ctx context.Context, steps []checkStep) error {
 	start := time.Now()
 	type result struct {
 		name     string
@@ -119,14 +132,7 @@ func (runner runner) check(ctx context.Context) error {
 	}
 	var results []result
 	var failures []error
-	for _, step := range []struct {
-		name string
-		run  func(context.Context) error
-	}{
-		{"lint", runner.lint},
-		{"test", func(ctx context.Context) error { return runner.test(ctx, options{}) }},
-		{"build", func(ctx context.Context) error { return runner.build(ctx, false) }},
-	} {
+	for _, step := range steps {
 		stepStart := time.Now()
 		err := step.run(ctx)
 		results = append(results, result{step.name, time.Since(stepStart), err})
