@@ -54,7 +54,7 @@
 
 | Package | Responsibility |
 |---|---|
-| `cmd/pandatable` | Entry point: `serve`, `migrate`, `restore`, `reset-admin-password` sub-commands |
+| `cmd/pandatable` | Entry point: `serve`, `migrate`, `restore`, `doctor`, `reset-admin-password` sub-commands |
 | `internal/config` | Env/flag config (`PT_DATABASE_URL`, `PT_DATA_DIR`, `PT_LISTEN`, `PT_BASE_URL`, …) |
 | `internal/db` | pgx pool, tx helpers, goose migrations for `meta` schema |
 | `internal/auth` | Setup flow, login/logout, sessions, password hashing, rate limit |

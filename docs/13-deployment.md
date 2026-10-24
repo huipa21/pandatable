@@ -134,7 +134,7 @@ Extensions: `pg_trgm`, `pg_stat_statements` (created by migration).
 | `PT_DATA_DIR` | `/data` | `files/`, `backups/`, `tmp/` |
 | `PT_LISTEN` | `:8080` | listen address |
 | `PT_BASE_URL` | — | public URL; Origin/CSRF check, cookie `Secure` when https |
-| `PT_TRUSTED_PROXIES` | private ranges | CIDRs whose `X-Forwarded-*` headers are trusted |
+| `PT_TRUSTED_PROXIES` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | CIDRs whose `X-Forwarded-*` headers are trusted |
 | `PT_DB_MAX_CONNS` | `20` | pgx pool size |
 | `PT_LOG_LEVEL` | `info` | slog level, JSON logs to stdout |
 | `PT_DB_CONNECT_RETRIES` | `30` | startup retries (2 s apart) while DB comes up |
@@ -142,6 +142,8 @@ Extensions: `pg_trgm`, `pg_stat_statements` (created by migration).
 Server-side `.env` (next to compose.yaml): `PT_VERSION`, `PT_DB_PASSWORD`, `PT_BASE_URL`, `PT_PROXY_NETWORK`.
 
 App-level defaults configured in Admin → Settings (stored in DB, not env): `default_timezone` (Asia/Shanghai), `default_currency` (CNY), `default_locale`, upload limit, retention days (D-049, D-050).
+
+`serve` and `migrate` accept matching kebab-case flags (`--database-url`, `--data-dir`, `--listen`, `--base-url`, `--trusted-proxies`, `--db-max-conns`, `--log-level`, and `--db-connect-retries`). A supplied flag overrides its environment variable; environment overrides the default. An explicitly empty trusted-proxy list trusts no proxies.
 
 ## 5. Server layout & first deploy
 
