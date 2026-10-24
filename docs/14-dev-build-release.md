@@ -6,7 +6,7 @@ There is **no hosted CI** (D-048). Everything — checks, tests, image build, im
 
 | Tool | Version | Notes |
 |---|---|---|
-| Go | ≥ 1.25 | `GOPROXY` may be set to `https://goproxy.cn,direct` if needed |
+| Go | 1.27.0 (module/toolchain floor) | `GOPROXY` may be set to `https://goproxy.cn,direct` if needed |
 | Node.js | >= 22.13 + pnpm 11.2.2 (via Corepack) | Tested with Node 24.15.0; npm registry mirror optional (`.npmrc`) |
 | Podman Desktop / podman | ≥ 5.x, podman machine running (WSL2) | `podman compose` requires `podman-compose` or docker-compose v2 binary as provider |
 | Git, OpenSSH client | built into Windows | `scp`/`ssh` for transfer |
@@ -33,15 +33,15 @@ go run ./tools/ptdev <command> [flags]
 | `test [--no-db]` | Start dev DB and set `PT_TEST_DATABASE_URL` for `go test ./...`; `--no-db` skips DB startup; forwards `-run`, `-v`, `-count`; `pnpm test` if present |
 | `e2e` | Build image, start stack with `compose.local.yaml`, run Playwright, tear down |
 | `check` | `lint` → `test` → `build`, with per-step pass/fail and duration summary; any failed step causes non-zero exit (D-051) |
-| `image build` | Build `localhost/pandatable:<ver>` + `:latest` for `linux/amd64` |
-| `image save [--with-postgres]` | Export image(s) to `dist/pandatable-<ver>.tar.gz` (and `dist/postgres-18.tar.gz`) |
-| `deploy --host user@server [--dir /opt/pandatable]` | Optional: `scp` archive(s) + `ssh docker load` + update `PT_VERSION` + `docker compose up -d app` |
+| `image build [--version VERSION]` | Build `localhost/pandatable:<tag>` + `:latest` for `linux/amd64`; preserve original version in the binary |
+| `image save [--version VERSION] [--with-postgres]` | Export version-tagged image to `dist/pandatable-<tag>.tar.gz`; optionally pull/export pinned PG18 to `dist/postgres-18.tar.gz` |
+| `deploy --host user@server --yes [--dir /opt/pandatable] [--version VERSION] [--with-postgres]` | Optional: transfer existing archive(s), load, update only `PT_VERSION`, wait for Compose + internal health; no secret/config transfer |
 | `version` | `git describe --tags --dirty --always`, strip leading `v`; untagged SHA becomes `0.0.0-dev+<sha>[.dirty]`; unavailable Git/repository falls back to `0.0.0-dev` |
 
-Run ptdev from the repository root. Through T0.5, help, engine, version, DB,
-build, lint, test, check, dev and standalone web build are implemented.
-E2E (T0.7), image and deploy (T0.6) still return `not implemented yet (Tx.y)`
-with exit 2. Build/lint/test retain the no-web-manifest skip path. With the
+Run ptdev from the repository root. Through T0.6, help, engine, version, DB,
+build, lint, test, check, dev, standalone web build, image and deploy are implemented.
+E2E still returns `not implemented yet (T0.7)` with exit 2.
+Build/lint/test retain the no-web-manifest skip path. With the
 scaffold present, `pnpm lint` also runs Prettier, `vue-tsc` and i18n parity.
 Run `pnpm --dir web install --frozen-lockfile` before the first lint/test/dev;
 the build commands perform the frozen install themselves. The workspace allows
@@ -117,6 +117,21 @@ Engine-specific flags handled by ptdev:
 
 The `localhost/` prefix is used for both engines so names are identical after load.
 
+Git SemVer metadata contains `+`, which is invalid in an image tag. Image commands
+replace it with `-` for the tag/archive filename only; e.g.
+`0.0.0-dev+abc.dirty` becomes `localhost/pandatable:0.0.0-dev-abc.dirty`.
+The binary retains `0.0.0-dev+abc.dirty`. Versions must have 1-128 tag-safe
+characters (plus `+`), starting with a letter/digit/underscore. Do not publish
+distinct versions that collide under this mapping. Use `--version` consistently
+when saving/deploying a previously built version after the worktree changes.
+
+Exports use a private staging directory under `dist`, then gzip and rename only
+after success. Failures/cancellation retain any prior final archive and remove
+staging files. Each archive contains its named version tag, not an unrelated
+current `latest`. The PostgreSQL archive contains
+`docker.io/library/postgres:18.6-bookworm`, matching Compose.
+Neither save nor deploy silently substitutes a missing app image/archive.
+
 ## 3. Tests without hosted CI
 
 - **Unit:** `go test ./...` (fast, no DB) + Vitest.
@@ -134,43 +149,29 @@ The `localhost/` prefix is used for both engines so names are identical after lo
 6. On server: see [13-deployment.md §6](13-deployment.md#6-upgrades).
 7. Update `progress.md` (milestone/tag) and change log.
 
-## 5. Dockerfile outline (`deploy/Dockerfile`)
+## 5. Image build (`deploy/Dockerfile`)
 
-```dockerfile
-# 1) web
-FROM docker.io/library/node:22-bookworm-slim AS web
-WORKDIR /src/web
-COPY web/package.json web/pnpm-lock.yaml ./
-RUN corepack enable && pnpm install --frozen-lockfile
-COPY web/ ./
-RUN pnpm build
+[deploy/Dockerfile](../deploy/Dockerfile) is the source of truth, not a separate
+copy/paste sketch. It builds Vite with Node 24.15.0 + pnpm 11.2.2, copies
+`package.json`, `pnpm-lock.yaml` **and** `pnpm-workspace.yaml` before frozen
+installation, then compiles with Go 1.27.0 (`GOTOOLCHAIN=local`,
+`CGO_ENABLED=0`, `linux/amd64`, stripped/trimmed, version embedded).
 
-# 2) go
-FROM docker.io/library/golang:1.25-bookworm AS go
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-COPY --from=web /src/web/dist ./internal/web/dist
-ARG VERSION=0.0.0-dev
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/pandatable ./cmd/pandatable
+The Debian bookworm-slim runtime installs PostgreSQL client **major 18** from
+the signed PGDG HTTPS repository, plus CA/timezone data. Client patch/security
+updates are deliberately obtained at build time. A separate throwaway stage
+fetches PGDG's public signing key; curl, Node, Go and build dependencies do not
+enter the runtime. The process runs as UID/GID 10001 with owned persistent
+`/data` subdirectories and an executable-only healthcheck.
 
-# 3) runtime (pg_dump 18 from PGDG for backups)
-FROM docker.io/library/debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg tzdata \
- && install -d /usr/share/postgresql-common/pgdg \
- && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
- && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
- && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
- && apt-get purge -y curl gnupg && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
-RUN useradd -r -u 10001 -d /data pandatable && mkdir -p /data && chown pandatable /data
-COPY --from=go /out/pandatable /usr/local/bin/pandatable
-USER pandatable
-VOLUME /data
-EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s CMD ["pandatable", "healthcheck"]
-ENTRYPOINT ["pandatable"]
-CMD ["serve"]
-```
+[.dockerignore](../.dockerignore) is an allowlist of app/migration/frontend source
+and manifests, with additional secret/generated/test exclusions. Host assets,
+node_modules, data, docs, tools, Git metadata and local configuration are not
+the build context. Real assets come only from the frontend stage.
 
-Notes: `pandatable healthcheck` sub-command does an HTTP GET to `/healthz` (no curl needed). Base images are fully qualified for Podman. Build args for mirrors (`GOPROXY`, `NPM_REGISTRY`, `APT_MIRROR`) supported by ptdev via env passthrough.
+Optional `GOPROXY`, `NPM_REGISTRY`, `APT_MIRROR` environment variables are
+passed as named build arguments without echoing their values in ptdev's
+command lines. `APT_MIRROR` replaces Debian's base repository URL (default
+`http://deb.debian.org/debian`); PGDG remains its official HTTPS repository.
+Use public/credential-free mirror URLs: build args are not secret storage.
+No dependencies or hosted CI are added.

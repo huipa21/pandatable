@@ -63,9 +63,14 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
   dev                  Start backend and Vite; stop both on exit or Ctrl+C
   web build            Build frontend and copy embedded assets
   e2e                  Acceptance tests (T0.7)
-  image build          Build release image (T0.6)
-  image save           Export release image (T0.6)
-  deploy               Transfer and deploy image (T0.6)`)
+  image build [--version VERSION]
+                       Build linux/amd64 release image + latest
+  image save [--version VERSION] [--with-postgres]
+                       Export gzip Docker archive(s) to dist
+  deploy --host user@server --yes [--dir /opt/pandatable]
+         [--version VERSION] [--with-postgres]
+                       Transfer existing archives, load, update .env, start app
+                       Requires pre-provisioned server files/network; never sends secrets`)
 		selected, err := detectEngine(os.Getenv("PT_ENGINE"), exec.LookPath)
 		if err != nil {
 			fmt.Println("\nEngine: unavailable (" + err.Error() + ")")
@@ -96,8 +101,10 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
 		return runner.buildWeb(ctx)
 	case "e2e":
 		return usageError{"not implemented yet (T0.7)"}
-	case "image build", "image save", "deploy":
-		return usageError{"not implemented yet (T0.6)"}
+	case "image build", "image save":
+		return runner.image(ctx, opts)
+	case "deploy":
+		return runner.deploy(ctx, opts)
 	default:
 		return runner.db(ctx, strings.TrimPrefix(opts.command, "db "), opts.yes)
 	}

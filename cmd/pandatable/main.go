@@ -43,6 +43,25 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch command {
+	case "healthcheck":
+		listen, err := config.HealthcheckListen(commandArgs)
+		if errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintln(stdout, "Usage: pandatable healthcheck [--listen host:port]\n\nUses PT_LISTEN (default :8080); GET /healthz, 2s limit, no database required.")
+			return 0
+		}
+		if err != nil {
+			fmt.Fprintf(stderr, "pandatable: %v\n", err)
+			var usage config.UsageError
+			if errors.As(err, &usage) {
+				return 2
+			}
+			return 1
+		}
+		if err := healthcheck(context.Background(), listen); err != nil {
+			newJSONLogger(stdout, slog.LevelInfo).Error("healthcheck failed", "error", err)
+			return 1
+		}
+		return 0
 	case "version":
 		if len(commandArgs) != 0 {
 			fmt.Fprintln(stderr, "pandatable: version does not accept arguments")
@@ -126,6 +145,7 @@ func printUsage(output io.Writer) {
 Commands:
   serve                 Validate configuration and start the HTTP server (T0.4)
   migrate               Validate configuration and run database migrations (T0.3)
+  healthcheck           Probe HTTP /healthz without database configuration (T0.6)
   restore               Restore a backup (T3.9)
   doctor                Diagnose the installation (not yet scheduled)
   reset-admin-password  Reset an administrator password (T3.10)

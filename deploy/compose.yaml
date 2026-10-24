@@ -1,0 +1,54 @@
+services:
+  db:
+    image: docker.io/library/postgres:18.6-bookworm
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pandatable
+      POSTGRES_USER: pandatable
+      POSTGRES_PASSWORD: ${PT_DB_PASSWORD:?set PT_DB_PASSWORD to a random URL-safe password}
+      TZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "pandatable", "-d", "pandatable"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    stop_grace_period: 30s
+    mem_limit: 1600m
+    networks: [default]
+
+  app:
+    image: localhost/pandatable:${PT_VERSION:-latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    depends_on: [db]
+    environment:
+      PT_DATABASE_URL: postgres://pandatable:${PT_DB_PASSWORD:?set PT_DB_PASSWORD}@db:5432/pandatable?sslmode=disable
+      PT_DATA_DIR: /data
+      PT_LISTEN: ":8080"
+      PT_BASE_URL: ${PT_BASE_URL:?set PT_BASE_URL}
+      PT_TRUSTED_PROXIES: ${PT_TRUSTED_PROXIES-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
+      GOMEMLIMIT: 300MiB
+      TZ: UTC
+    volumes:
+      - ptdata:/data
+    stop_grace_period: 15s
+    mem_limit: 512m
+    networks:
+      default: {}
+      proxy:
+        aliases: [pandatable]
+
+networks:
+  default: {}
+  proxy:
+    external: true
+    name: ${PT_PROXY_NETWORK:-caddy}
+
+volumes:
+  pgdata: {}
+  ptdata: {}

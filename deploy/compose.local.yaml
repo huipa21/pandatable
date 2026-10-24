@@ -1,0 +1,10 @@
+services:
+  app:
+    ports: ["127.0.0.1:${PT_LOCAL_HTTP_PORT:-8080}:8080"]
+    environment:
+      PT_BASE_URL: http://127.0.0.1:${PT_LOCAL_HTTP_PORT:-8080}
+
+networks:
+  proxy:
+    external: false
+    name: ${COMPOSE_PROJECT_NAME:-pandatable}-proxy-local

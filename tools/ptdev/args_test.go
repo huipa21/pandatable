@@ -16,6 +16,16 @@ func TestParseArgs(t *testing.T) {
 		{[]string{"test", "--no-db", "-run", "TestEngine", "-v", "-count=1"}, "test", false},
 		{[]string{"web", "build"}, "web build", false},
 		{[]string{"image", "save"}, "image save", false},
+		{[]string{"image", "save", "--with-postgres", "--version=1.2.3+abc"}, "image save", false},
+		{[]string{"image", "build", "--version", "1.2.3"}, "image build", false},
+		{[]string{"image", "build", "--with-postgres"}, "image build", true},
+		{[]string{"image", "save", "--version"}, "image save", true},
+		{[]string{"image", "save", "--version=../bad"}, "image save", true},
+		{[]string{"deploy", "--host", "ops@server", "--yes"}, "deploy", false},
+		{[]string{"deploy", "--yes"}, "deploy", true},
+		{[]string{"deploy", "--host", "server"}, "deploy", true},
+		{[]string{"deploy", "--host", "--yes"}, "deploy", true},
+		{[]string{"deploy", "--host=-bad", "--yes"}, "deploy", true},
 		{[]string{"db"}, "db", true},
 		{[]string{"db", "oops"}, "db oops", true},
 		{[]string{"oops"}, "oops", true},
@@ -30,7 +40,11 @@ func TestParseArgs(t *testing.T) {
 			t.Errorf("parseArgs(%v) = %+v, %v", test.args, got, err)
 		}
 	}
-	got, err := parseArgs([]string{"test", "--no-db", "-run=Test", "-count", "2", "-v=false"})
+	got, err := parseArgs([]string{"deploy", "--host", "ops@server", "--dir", "/opt/data with spaces", "--yes", "--with-postgres", "--version", "1.2.3"})
+	if err != nil || got.host != "ops@server" || got.remoteDir != "/opt/data with spaces" || !got.withPostgres || !got.yes || got.releaseVersion != "1.2.3" {
+		t.Fatalf("deploy flags: %+v, %v", got, err)
+	}
+	got, err = parseArgs([]string{"test", "--no-db", "-run=Test", "-count", "2", "-v=false"})
 	if err != nil || !got.noDB || len(got.testArgs) != 3 || got.testArgs[1] != "-count=2" {
 		t.Fatalf("test flag forwarding: %+v, %v", got, err)
 	}

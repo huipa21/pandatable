@@ -5,12 +5,24 @@ Test users used throughout: `admin` (role admin), `alice`, `bob`, `carol` (role 
 
 ## AT-0xx Foundation (M0)
 
-- **AT-001 — Stack starts** · M0 · Given the laptop with Podman, when `podman compose -f compose.yaml -f compose.local.yaml up -d` runs, then `GET http://127.0.0.1:8080/healthz` returns 200 within 60 s and the SPA loads. Same with Docker on Linux.
+- **AT-001 — Stack starts** · M0 · Given the laptop with Podman and a completed `deploy/.env`, from the repository root run `podman compose --env-file deploy/.env -f deploy/compose.yaml -f deploy/compose.local.yaml up -d`; then `GET http://127.0.0.1:8080/healthz` returns 200 within 60 s and the SPA loads. Same with Docker on Linux. Disposable checks may choose a unique `-p` project and `PT_LOCAL_HTTP_PORT`.
 - **AT-002 — Migrations idempotent** · M0 *(API)* · When the app restarts twice, then migrations run once and no error is logged.
 - **AT-003 — Language & theme toggles** · M0 · Given the login page, when the user clicks 中文 then 🌙, then UI text switches to Chinese and dark theme applies immediately; after reload, both persist.
 - **AT-004 — Image contents** · M0 *(manual)* · `<engine> run --rm --entrypoint pg_dump localhost/pandatable:<ver> --version` prints 18.x; image is linux/amd64; size < 200 MB; runs as non-root; HEALTHCHECK present (`docker inspect`).
 - **AT-005 — Laptop → server path** · M0 *(manual)* · `ptdev image build` + `ptdev image save --with-postgres` on Windows/Podman → copy archives → `docker load` on Ubuntu → `docker compose up -d` with `PT_PROXY_NETWORK` = Caddy's network → app reachable at `https://<domain>` through the existing Caddy, WebSocket upgrade succeeds (`/api/v1/ws` once implemented; `/healthz` in M0); app and db publish no host ports.
 - **AT-006 — Local gate cross-platform** · M0 *(manual)* · `go run ./tools/ptdev check` succeeds in Windows PowerShell (Podman) and in Linux bash (Docker); with the DB stopped, `go test ./...` skips integration tests with a clear message instead of failing/hanging.
+
+### T0.6 scoped evidence (2026-10-24)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-001 | Partial | Windows/Podman isolated Compose: health 200 in 6.534 s, real SPA/assets/deep route/browser/CSP pass. Linux/Docker still unavailable. |
+| AT-004 | Pass | linux/amd64, UID/GID 10001, executable HEALTHCHECK (inspection + archive), pg_dump 18.6, uncompressed image 161,964,427 bytes (<200 MB); persistent storage writable. |
+| AT-005 | Partial | Both gzip Docker archives have complete manifests/layers and load with Podman. No Docker executable or approved Ubuntu/Caddy destination: actual transfer, Docker load/start and external HTTPS remain unverified. |
+| AT-006 | Pending | Windows local gate passes; Linux tooling cross-compiles and POSIX deploy-script unit tests pass under Podman. Linux/Docker runtime and T0.7 shared harness remain required. |
+
+Exact versions, image/archive identifiers, cleanup and failure-path evidence:
+[progress.md, T0.6](progress.md#t06-verification-evidence-2026-10-24).
 
 ## AT-1xx Auth & Admin (M1, M3)
 

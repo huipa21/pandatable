@@ -10,85 +10,51 @@ Tencent Cloud Lighthouse-class: 2 vCPU, 4 GB RAM, Ubuntu 24.04 LTS x86_64, Docke
 
 | Service | Image | Networks | Notes |
 |---|---|---|---|
-| `db` | `postgres:18` (Debian) | `default` (private) | volume `pgdata`; custom `postgresql.conf`; no published ports |
+| `db` | `docker.io/library/postgres:18.6-bookworm` | `default` (private) | volume `pgdata`; custom `postgresql.conf`; no published ports |
 | `app` | `localhost/pandatable:${PT_VERSION}` (loaded from tar) | `default` + external `proxy` | Debian slim + `postgresql-client-18` (pg_dump/pg_restore); volume `/data`; no published ports |
 
 Caddy is **not** part of this stack. The app joins Caddy's existing network so Caddy can reach it by alias `pandatable:8080`.
 
-### deploy/compose.yaml (sketch)
+### Compose files and invocation paths
 
-Must work with both `docker compose` (server) and `podman compose` (laptop smoke tests) — D-047. Therefore: no Docker-only extensions, app retries DB connection on startup instead of relying solely on `depends_on: condition`.
+The executable configuration is [deploy/compose.yaml](../deploy/compose.yaml),
+with [compose.local.yaml](../deploy/compose.local.yaml) for laptop smoke tests.
+Both engines use simple `depends_on`; the application's existing bounded DB
+retry policy handles startup readiness. App stop grace is 15 s (HTTP drain is
+10 s); DB stop grace is 30 s. Memory limits are 512 MB and 1600 MB.
 
-```yaml
-name: pandatable
+From the **repository root**, copy `deploy/.env.example` to `deploy/.env`,
+fill the required password, then run:
 
-services:
-  db:
-    image: docker.io/library/postgres:18
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: pandatable
-      POSTGRES_USER: pandatable
-      POSTGRES_PASSWORD: ${PT_DB_PASSWORD:?set PT_DB_PASSWORD}
-      TZ: UTC
-    volumes:
-      - pgdata:/var/lib/postgresql
-      - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pandatable -d pandatable"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    mem_limit: 1600m
-    networks: [default]
-
-  app:
-    image: localhost/pandatable:${PT_VERSION:-latest}
-    restart: unless-stopped
-    depends_on: [db]
-    environment:
-      PT_DATABASE_URL: postgres://pandatable:${PT_DB_PASSWORD}@db:5432/pandatable?sslmode=disable
-      PT_DATA_DIR: /data
-      PT_LISTEN: ":8080"
-      PT_BASE_URL: ${PT_BASE_URL:?set PT_BASE_URL}          # e.g. https://table.example.com
-      PT_TRUSTED_PROXIES: ${PT_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}
-      GOMEMLIMIT: 300MiB
-      TZ: UTC
-    volumes:
-      - ptdata:/data
-    mem_limit: 512m
-    networks:
-      default: {}
-      proxy:
-        aliases: [pandatable]
-
-networks:
-  default: {}
-  proxy:
-    external: true
-    name: ${PT_PROXY_NETWORK:-caddy}      # name of the existing Caddy network on the server
-
-volumes:
-  pgdata: {}
-  ptdata: {}
+```
+podman compose --env-file deploy/.env -p pandatable -f deploy/compose.yaml -f deploy/compose.local.yaml up -d
 ```
 
-`deploy/compose.local.yaml` (override for laptop smoke tests, no Caddy available):
-```yaml
-services:
-  app:
-    ports: ["127.0.0.1:8080:8080"]
-networks:
-  proxy:
-    external: false
-    name: pandatable-proxy-local
-```
-Usage: `podman compose -f compose.yaml -f compose.local.yaml up -d`.
+From **inside deploy/**, the equivalent is
+`podman compose --env-file .env -p pandatable -f compose.yaml -f compose.local.yaml up -d`.
+The earlier root-level `-f compose.yaml` sketch was incorrect: there are no
+root-level Compose files. On the server the copied files sit together in
+`/opt/pandatable`, so `docker compose up -d` runs from that directory.
+
+The local override publishes only `127.0.0.1:${PT_LOCAL_HTTP_PORT:-8080}`,
+sets the matching HTTP base URL, and creates a project-scoped private proxy
+network (`<project>-proxy-local`), not the shared Caddy network. Use a unique
+`-p` and local port for disposable tests. No fixed container/volume names are
+used. Neither server service publishes a host port.
 
 Notes:
 - PG 18 official image keeps data under `/var/lib/postgresql/18/docker` (volume mounted at `/var/lib/postgresql`), easing future major upgrades.
 - Image names are fully qualified (`docker.io/library/...`, `localhost/...`) so Podman and Docker resolve them identically (Podman does not assume Docker Hub; `podman save` → `docker load` keeps the `localhost/` prefix).
+- The app uses UID/GID 10001, owns `/data/files`, `/data/backups`, `/data/tmp`,
+  and initializes named volume ownership from the image. For a bind mount,
+  provision that directory's ownership yourself; the app does not run as root
+  or silently repair shared host directories.
+- Copy [deploy/.env.example](../deploy/.env.example); it intentionally has no
+  usable password. Generate a unique random password (e.g. 32 random bytes in
+  hex). `PT_DB_PASSWORD` must use URL-unreserved characters only
+  (`A-Z a-z 0-9 . _ ~ -`) because Compose inserts it in a PostgreSQL URL.
+  Do not print `compose config` without `--quiet` or commit the completed file.
+  An explicitly empty `PT_TRUSTED_PROXIES` remains empty (trust no proxies).
 
 ### Caddy configuration (in the user's existing Caddy)
 
@@ -152,6 +118,14 @@ failure exits nonzero with a JSON error; database URLs/passwords are not logged.
 a DB query. Before T0.5 supplies a built SPA, UI routes explicitly return 503
 and startup logs warn that assets are unavailable.
 
+`pandatable healthcheck [--listen host:port]` reads only `PT_LISTEN` (default
+`:8080`); unrelated/missing DB and base URL settings do not affect it. Wildcard
+listeners map to IPv4/IPv6 loopback. The probe ignores HTTP proxy variables,
+does not follow redirects, requires HTTP 200 from `/healthz`, and fails visibly
+with exit 1 within 2 s. Invalid flags exit 2. The image uses the executable
+directly, with no shell/curl dependency (10 s interval, 3 s engine timeout,
+60 s start period, three retries). This is liveness, not ongoing DB readiness.
+
 Interrupt (Ctrl+C on Windows) and SIGTERM (Linux/container stop) initiate graceful
 shutdown. The server drains for up to 10 seconds without immediately canceling
 active request contexts; after the deadline it cancels/closes remaining requests
@@ -175,6 +149,10 @@ idle limits are 5/30/30/60 seconds, with headers limited to 1 MiB (D-055).
 4. `docker compose logs app | grep SETUP_TOKEN` → open `PT_BASE_URL/setup`, paste token, create first admin.
 5. Add the site block to the existing Caddyfile and reload Caddy.
 
+The setup page/token are M1 work, not available in the M0 shell. Provision
+the external network and Caddy site only with the shared server owner's
+approval. `ptdev deploy` never creates/changes Caddy or its network.
+
 ## 6. Upgrades
 
 ```
@@ -183,6 +161,30 @@ sed -i 's/^PT_VERSION=.*/PT_VERSION=<newver>/' .env
 docker compose up -d app
 ```
 Migrations run automatically on start (goose, in tx, advisory lock). Create a backup in Admin before upgrading. Rollback = set previous `PT_VERSION` (only if no migrations ran; otherwise restore backup).
+
+Optional tooling (from the laptop repository root):
+`go run ./tools/ptdev deploy --host user@server --dir /opt/pandatable --version X.Y.Z --yes`
+(add `--with-postgres` to transfer/load its existing archive too). This requires
+modern OpenSSH scp (SFTP default), noninteractive SSH credentials/known host,
+remote Docker + Compose with `--wait`, and pre-provisioned Compose/config/.env
+and Caddy network. `--host` accepts a DNS name, IPv4 or SSH alias, optionally
+with a user; configure other SSH options/ports/IPv6 in SSH config via an alias.
+`--dir` is an absolute POSIX path, including spaces/apostrophes if needed.
+
+No deployment happens without both an explicit host and `--yes`. The tool checks
+existing local archives and remote files/config, uploads only image archives to a
+unique staging directory, loads them, updates the single `PT_VERSION=` line in
+the existing `.env`, runs `docker compose up -d --wait --wait-timeout 60 app`,
+then probes internal health. It never transfers secrets or replaces server
+configuration. It removes only its staged archives/directory on success/failure,
+with a 15 s cleanup bound, reporting cleanup failures too.
+
+Failures stop the sequence; no fallback after an error, app rebuild or automatic
+rollback is attempted. Without `--with-postgres`, Compose may pull its pinned DB
+image if it is not already present. A failed load/start can leave loaded images or an updated version
+and partially started stack; inspect the server before retrying. Internal
+health does not prove external TLS/proxy reachability: verify `/healthz` and
+the SPA through the real Caddy domain separately (AT-005).
 
 ## 7. Restore
 

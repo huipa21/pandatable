@@ -54,7 +54,7 @@
 
 | Package | Responsibility |
 |---|---|
-| `cmd/pandatable` | Entry point: `serve`, `migrate`, `restore`, `doctor`, `reset-admin-password` sub-commands |
+| `cmd/pandatable` | Entry point: `serve`, `migrate`, `healthcheck`, `restore`, `doctor`, `reset-admin-password` sub-commands |
 | `internal/config` | Env/flag config (`PT_DATABASE_URL`, `PT_DATA_DIR`, `PT_LISTEN`, `PT_BASE_URL`, …) |
 | `internal/db` | pgx pool, tx helpers, goose migrations for `meta` schema |
 | `internal/auth` | Setup flow, login/logout, sessions, password hashing, rate limit |
@@ -156,7 +156,7 @@ pandatable/
 ├── deploy/
 │   ├── Dockerfile             multi-stage, linux/amd64, works with podman & docker
 │   ├── compose.yaml           server stack (app + db, external caddy network)
-│   ├── compose.local.yaml     laptop override (publish 127.0.0.1:8080, local network)
+│   ├── compose.local.yaml     laptop override (loopback HTTP, project-local network)
 │   ├── postgresql.conf        tuned for 4 GB host
 │   ├── Caddyfile.example      site block to paste into the existing Caddy
 │   └── .env.example

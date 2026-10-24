@@ -1,0 +1,4 @@
+table.example.com {
+    encode zstd gzip
+    reverse_proxy pandatable:8080
+}

@@ -7,7 +7,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | Milestone | Status | Started | Finished | Tag | Notes |
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
-| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4 implementation verified; T0.5 done. AT-002/003 and AT-802 pass; full AT-001 and AT-006 remain pending. |
+| M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6 implementations verified; T0.5 done. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker, approved server and T0.7 harness. |
 | M1 Core | ⬜ | | | v0.1.0 | |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
@@ -21,9 +21,9 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.1 | Repo scaffold & ptdev | ✅ | 2026-10-24 | Scoped completion approved: scaffold, stdlib ptdev, unit tests, Windows/Podman check, PowerShell + Git Bash entry points, native + Linux builds. Go 1.27.0; Podman client/server 5.8.2/5.8.4; Node 24.15.0; PostgreSQL 18.6. golangci-lint absent (warning). Full AT-006 pending Linux/Docker + T0.7 harness. |
 | T0.2 | Config & CLI | ✅ | 2026-10-24 | Config flags/validation and JSON CLI routing; unit tests, ptdev check, and PowerShell/Git Bash smoke pass. Full AT-006 remains pending. |
 | T0.3 | DB & migrations | ✅ | 2026-10-24 | pgx pool, transaction helper, and embedded migration complete; PostgreSQL 18 integration and repeated CLI migrations pass. AT-002 migration behavior verified; full AT-006 remains pending. |
-| T0.4 | HTTP server | 🟨 | 2026-10-24 | Implementation and scoped verification complete; real embedded T0.5 SPA now passes browser/CSP/history checks. Kept in progress until linked AT-001 passes with T0.6 Compose and Linux/Docker. |
+| T0.4 | HTTP server | 🟨 | 2026-10-24 | Implementation and scoped verification complete; real embedded SPA/Compose/browser/CSP/history checks pass on Windows/Podman. Kept in progress until linked AT-001 also passes on Linux/Docker. |
 | T0.5 | Web scaffold (i18n, theme toggles) | ✅ | 2026-10-24 | AT-003 passes in the real embedded production SPA; AT-802 passes lint/parity with negative fixtures. Vue/TS shell, local preferences, direct-process dev supervisor, web build/copy, ten frontend tests, real dev proxy/cleanup, ptdev check and Linux compilation verified. |
-| T0.6 | Image & deploy files | ⬜ | | |
+| T0.6 | Image & deploy files | 🟨 | 2026-10-24 | Implementation verified: AT-004 image contents pass (161,964,427 bytes); isolated Windows/Podman Compose/browser/restart/persistence and gzip export/load checks pass. Full AT-001/005 await Linux/Docker and an approved real Caddy destination; not Done. |
 | T0.7 | Test harness & local gate | ⬜ | | |
 | T0.8 | RevoGrid spike | ⬜ | | |
 | T1.1 | Meta migrations | ⬜ | | |
@@ -84,7 +84,7 @@ Summary updated at each milestone end.
 
 | Area | Total | Passing | Notes |
 |---|---|---|---|
-| AT-0xx Foundation | 6 | 2 | AT-002 and AT-003 pass. Real embedded SPA, health, assets, history and CSP pass locally; full AT-001 still awaits Compose/Linux-Docker. Full AT-006 remains pending Linux bash/Docker + T0.7 harness checks. |
+| AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman Compose passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 pending Linux/Docker + T0.7 harness. |
 | AT-1xx Auth & Admin | 17 | 0 | |
 | AT-2xx Structure & Permissions | 13 | 0 | |
 | AT-3xx Fields & Grid | 20 | 0 | |
@@ -119,6 +119,7 @@ Summary updated at each milestone end.
 | 2026-10-24 | T0.4 implementation verified: chi HTTP foundation, safe JSON logs/errors, embedded-asset boundary, automatic migrations and bounded shutdown. Focused tests, PostgreSQL 18.6 restarts, ptdev check and Linux cross-build pass; D-053..D-055 and T0.5 handoff added. AT-001 remains pending, so T0.4 and M0 stay in progress. |
 | 2026-10-24 | T0.5 started: inspected build/HTTP boundaries and Node/pnpm compatibility; implemented localized Vue shell and direct-process dev workflow. |
 | 2026-10-24 | T0.5 complete: AT-003 embedded-browser and AT-802 local gate pass; ten frontend tests, Go checks, production build, real dev proxy/cancellation and Linux compilation verified. Added D-056/D-057 and T0.6 prompt; M0/T0.4 remain in progress pending stack acceptance. |
+| 2026-10-24 | T0.6 implementation and scoped verification: source-allowlisted image, executable healthcheck, Compose/Caddy examples, image export and opt-in remote tooling. AT-004 and Windows/Podman stack/browser/persistence checks pass; full AT-001/005/006 remain pending. D-058..D-062 and T0.7 handoff added. |
 
 ### T0.1 verification evidence (2026-10-24)
 
@@ -210,3 +211,68 @@ Summary updated at each milestone end.
   Full AT-001 awaits T0.6 Compose/Linux-Docker; AT-006 awaits Linux/Docker and
   T0.7's shared harness. No auth, grid, deployment files or shared harness added.
 - Next: [T0.6 image & deploy prompt](task-prompts/T0.6.md).
+
+### T0.6 verification evidence (2026-10-24)
+
+- Environment: Go 1.27.0, Node 24.15.0, pnpm 11.2.2, Podman client/server
+  5.8.2/5.8.4, Compose provider 2.40.3. Docker and golangci-lint are not on PATH.
+  No remote destination/authorization was supplied; no server/shared Caddy
+  resources were changed.
+- Focused CLI/config/ptdev tests PASS; `ptdev check` PASS (lint, Go + ten frontend
+  tests, native build). Go vet/format, TypeScript, translation lint/parity pass.
+  Latest cleanup-only adjustment additionally passes tooling tests/vet.
+  Linux/amd64 ptdev cross-compilation passes. Optional golangci-lint not run.
+- The POSIX generated deployment scripts execute successfully in an isolated
+  Linux/Podman Go container using a fake Docker executable, including directory
+  spaces/apostrophes, preservation of the other `.env` lines, and explicit
+  preflight/load/start/probe failures with no later commands after failure.
+  These are shell/unit tests, **not** a real remote or Linux/Docker deployment.
+- `ptdev image build` PASS with both version and latest tags. Binary reports
+  `0.0.0-dev+d710743.dirty`; tag is `localhost/pandatable:0.0.0-dev-d710743.dirty`.
+  Image ID `151798547521a5843869fd2125fc684533ea6cfec42c824a5a591d877ca7f0e4`:
+  linux/amd64, UID/GID 10001, executable HEALTHCHECK present in inspection and
+  Docker archive config. Final post-load uncompressed size **161,964,427 bytes**
+  (<200,000,000); layer tar members total 161,957,376 bytes.
+  `pg_dump --version`: **18.6 (Debian 18.6-1.pgdg12+2)**. CA/timezone data present;
+  no Node, Go or curl in runtime. **AT-004 PASS** via Podman + archive inspection.
+- A disposable context-copy build verifies source/workspace/lockfiles and
+  `.gitkeep` are available, but node_modules, generated assets, Git metadata,
+  docs/tools, deploy config, bin/dist, local env/npm config and Go tests do not
+  enter the context. Empty excluded host directories were also excluded.
+- Compose project `pt-t06-6417`, loopback port 18086, fresh DB/app volumes:
+  health **200 in 6.534 s** after `up -d` began. Built JS, SPA/deep routes 200;
+  missing assets (including extensionless ones), reserved API/health subpaths
+  and dotfiles return JSON 404. Image and DB become healthy.
+- Integrated browser: real embedded login and translated deep-route not-found
+  render; English -> Chinese and dark mode persist across reload; **zero**
+  console warnings/errors, page errors or CSP violations. AT-003/802 preserved.
+  No auth/business/WebSocket endpoints or shared E2E harness added.
+- App as UID 10001 writes persistent files and can write backups/tmp. Two app
+  restarts preserve exactly one migration-1 record with timestamp
+  `2026-10-24 07:36:36.738052`. Graceful stop exits **0 in 3.983 s**, leaving zero
+  application DB connections. `down` without `-v`, then `up --wait`, preserves
+  both DB migration state and the file sentinel.
+- Server config has **no app/DB host ports**, external proxy network and alias
+  `pandatable`; empty trusted-proxy setting stays empty. Local override binds
+  only `127.0.0.1:18086`; DB volume is `/var/lib/postgresql`.
+- `ptdev image save --with-postgres` PASS. Final gzip archives:
+  `dist/pandatable-0.0.0-dev-d710743.dirty.tar.gz` = **54,937,045 bytes**;
+  `dist/postgres-18.tar.gz` = **161,810,248 bytes**. Full gzip CRC/EOF and Docker
+  `manifest.json`, referenced config/layers/tags/platform are verified, including
+  the app HEALTHCHECK. Both archives load successfully with Podman.
+  Docker load compatibility is structurally checked, **not runtime-certified**.
+- Native missing-image export fails with exit 1 and leaves no final/staging
+  archive; missing Docker override fails without fallback. Missing deploy host
+  or `--yes` exits 2 without SSH. Healthcheck without listener exits 1 without
+  DB config; serve still rejects missing DB config. Tests cover redirects,
+  non-200, refusal, invalid flags, wildcard binds, proxy bypass and the real
+  2-second deadline; export failures/cancellation preserve prior files and clean
+  staging, including Windows paths with spaces.
+- Disposable containers/networks/volumes/context images and temporary fixtures/
+  binaries removed. Existing `pt-dev-db` and `pt-dev-pgdata` retained; no broad
+  prune/reset performed. Release images/archives remain for reuse.
+- **Pending:** full AT-001 on Linux/Docker; AT-005 Windows archives -> Ubuntu
+  `docker load`/Compose -> approved existing Caddy HTTPS; AT-006 Linux/Docker and
+  T0.7's shared harness. A Linux container under Podman is not a substitute.
+  T0.4, T0.6 and M0 remain in progress. Next:
+  [T0.7 test harness & local gate](task-prompts/T0.7.md).
