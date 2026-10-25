@@ -80,6 +80,25 @@ semantics and <600,000-byte initial gzip/no-grid gate are unchanged. T1.2
 profile/timezone UI, AT-116 and full AT-117 remain deferred; sign-in capability
 alone does not certify all of AT-102.
 
+### T1.6 groups and user detail (D-084..D-087)
+
+- Active admins also see Groups navigation. `/admin/groups` provides paged
+  literal search, counts and create; `/admin/groups/:id` provides name/description
+  editing, confirmed deletion and paged/searchable member add/remove. The active
+  user picker uses the existing admin users API with search and paging.
+- User display-name links open `/admin/users/:userId`, showing sanitized identity,
+  status and paged/searchable linked group memberships. Group members link back
+  to user detail; both sides satisfy AT-109. Existing user editing/reset stays
+  on `/admin/users`. Disabled memberships are shown and removable.
+- Route changes abort/generation-guard list and picker reads; typed errors and
+  explicit retries remain visible. No implicit admin access or new auth path.
+  Both locales, empty/error states, desktop/mobile wrapping and deletion cancel
+  are covered by the production-image admin scenario. Explicit expected HTTP
+  diagnostics match method/path/status and must occur; unrelated console/CSP
+  diagnostics still fail. The unchanged ten/minute/IP budget covers the suite.
+- No dependencies or grid imports are added. Initial shell remains below
+  600,000 gzip bytes; preferences, CSP and the opt-in lab are preserved.
+
 ## 4. Grid (desktop/tablet ≥ 768 px)
 
 Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-005).

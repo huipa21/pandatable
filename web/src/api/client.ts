@@ -61,6 +61,12 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_IDENTITY_CONFLICT')
     case 'ERR_LAST_ADMIN':
       return t('errors.ERR_LAST_ADMIN')
+    case 'ERR_GROUP_NAME_CONFLICT':
+      return t('errors.ERR_GROUP_NAME_CONFLICT')
+    case 'ERR_MEMBERSHIP_EXISTS':
+      return t('errors.ERR_MEMBERSHIP_EXISTS')
+    case 'ERR_PRINCIPAL_DISABLED':
+      return t('errors.ERR_PRINCIPAL_DISABLED')
     case 'ERR_AUTH_BUSY':
       return t('errors.ERR_AUTH_BUSY')
     case 'ERR_RATE_LIMITED':

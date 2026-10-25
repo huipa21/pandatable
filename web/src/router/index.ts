@@ -19,6 +19,14 @@ export const router = createRouter({
       component: () => import('../pages/AdminUsersPage.vue'),
     },
     {
+      path: '/admin/users/:userId',
+      component: () => import('../pages/AdminGroupsPage.vue'),
+    },
+    {
+      path: '/admin/groups/:id?',
+      component: () => import('../pages/AdminGroupsPage.vue'),
+    },
+    {
       path: '/connection-error',
       component: () => import('../pages/ConnectionErrorPage.vue'),
     },

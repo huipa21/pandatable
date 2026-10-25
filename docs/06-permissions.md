@@ -82,6 +82,15 @@ but do not create resource grants. D-082's last-active-**admin** protection is
 independent of workspace ownership; disabling a last direct workspace owner is
 allowed and retains the workspace/grants/authorship.
 
+T1.6 implements admin-only group CRUD and individual membership add/remove
+(D-084..D-087). Both successful membership changes and group deletion invalidate
+the resolver immediately, including uncertain commit outcomes; real tests prime
+both denied and granted cache entries without waiting for TTL. Group deletion
+removes its polymorphic grants in the same transaction as membership cascade.
+Disabled users retain memberships for re-enable, but cannot be newly added;
+their existing memberships can be removed. These operations neither grant
+admin data access nor change direct-user last-owner/last-active-admin rules.
+
 ## 6. Relations & cross-table visibility
 
 Relations are within one book, but table-level grants can differ inside a book.

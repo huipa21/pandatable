@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5 Done. Admin users and login/forced-change UI verified; AT-101/103/104..108/803 pass. T1.2 AT-102/116 and full AT-117 remain pending. ACL/grants API verified (AT-204..212 at the API surface); groups and other business services remain future work. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6 Done. Admin users/groups and login/forced-change UI verified; AT-101/103/104..109/803 pass. T1.2 AT-102/116 and full AT-117 remain pending. ACL/grants API verified (AT-204..212 at the API surface); dashboard and other business services remain future work. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -31,7 +31,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.3 | Setup flow | ✅ | 2026-10-25 | First-run token/status/admin/session, process-safe one-time setup and localized desktop/mobile UI. AT-101 passes in production-image Chromium; required PG18 gate and full local checks pass. D-078; no migration. |
 | T1.4 | ACL resolver & grants API | ✅ | 2026-10-26 | Resolver (one SQL/lookup, flat groups, path-only visibility, LRU+epoch invalidation), grants list/PUT/DELETE with scope-owner, last-owner, hidden-404/visible-403, principal validation and workspace-lock/D-070 serialization; `require` guard. D-079/D-080, no migration. AT-204..212 pass at the API surface (209-212 fully; UI parts of 204-208 await T1.10-T1.12). Windows check and 9/2 image E2E pass. |
 | T1.5 | Admin users | ✅ | 2026-10-26 | Admin-only list/search/create/PATCH/reset, normalized collision-safe identities, last-active-admin and self-management rules, atomic session revocation and ACL invalidation; responsive localized users UI and login/forced change. D-081..083, no migration/dependencies. Required PG18 tests x3, Windows check, production-image AT-104..108 desktop/mobile and 11/2 regression suite pass; T1.6 handoff recorded. |
-| T1.6 | Admin groups | ⬜ | | |
+| T1.6 | Admin groups | ✅ | 2026-10-26 | Group CRUD/member API, localized group/user detail and immediate ACL invalidation; D-084..087, no migration/dependency. Required PG18 x3 and production desktop/mobile AT-109 pass; full image suite 11/2. Full check passes with command-scoped GOFLAGS=-p=1 after existing testdb cleanup deadline failures under parallel package load; exact caveat/evidence below. T1.7 handoff recorded. |
 | T1.7 | Admin dashboard | ⬜ | | |
 | T1.8 | Admin settings & workspaces list | ⬜ | | |
 | T1.9 | DDL module | ⬜ | | |
@@ -85,14 +85,14 @@ Summary updated at each milestone end.
 | Area | Total | Passing | Notes |
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
-| AT-1xx Auth & Admin | 17 | 7 | AT-101/103 and T1.5 AT-104..108 pass (real production-image desktop/mobile plus PG18). Login/forced-change UI now exists; full AT-102 and profile AT-116 remain pending. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
+| AT-1xx Auth & Admin | 17 | 8 | AT-101/103 and T1.5/T1.6 AT-104..109 pass (real production-image desktop/mobile plus PG18). Login/forced-change UI now exists; full AT-102 and profile AT-116 remain pending. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
 | AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface (real HTTP/PG18). AT-204..208 pass for resolver/grants API behavior; their editor/menu/banner/sidebar UI parts remain for T1.10-T1.12. AT-201..203/213 not started. |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 143 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). No NFR-2/3 or full-load AT-801 claim. |
+| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 169 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). No NFR-2/3 or full-load AT-801 claim. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -108,6 +108,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | T1.6 completed: group CRUD/members, linked group/user detail, D-084..087, deterministic grant/member/delete concurrency and immediate ACL invalidation. AT-109 production desktop/mobile and full 11/2 image suite pass; full check passes with GOFLAGS=-p=1 (default-parallel testdb cleanup failures recorded, not relaxed). T1.7 prompt created; original stopped DB/VM state restored. |
 | 2026-10-26 | T1.4 implemented and verified: `internal/acl` resolver/grants service, `/api/v1/grants` routes, `require` guard, D-079/D-080, sqlc `aclsql`, docs and T1.5 prompt. Required PG18 tests (x3), Windows check and image E2E pass. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.3 started after reading the required docs and T1.2 handoff; D-078 records the confirmed setup policies. AT-101 and the required PG18/local gates now pass; exact evidence follows. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.2 backend implementation verified and handed off; D-072..077, static sqlc auth queries, API/types/testing docs and T1.3 prompt added. Windows check, required PG18 and final 8/2 image E2E pass. Kept T1.2 in progress because the user explicitly deferred auth/profile UI and full AT-117. No shared/remote deployment or unrelated task completion. |
@@ -890,3 +891,91 @@ Full commands, implementation details and limitations:
 [T1.5 completion record](task-prompts/T1.5.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.6 Admin groups](task-prompts/T1.6.md)**, carrying the mandatory
 Invalidate-after-membership-change and completion/next-prompt obligations.
+
+## T1.6 admin groups verification and handoff (2026-10-26)
+
+**T1.6 Done; production-image desktop/mobile AT-109 passes.** User confirmed
+the D-084..D-086 list, name/description, membership/disabled-user, deletion and
+detail-UI contracts before editing. D-087 records the lock refinement proven
+by real concurrency tests. No migration, dependency, shared/remote deployment
+or hosted CI was added.
+
+### Delivered
+
+- Admin-only group list/search/create/detail/PATCH/delete, member list/add/remove,
+  user detail and user-group lists. Static SQL stays in the existing admin sqlc
+  entry. Names retain case-sensitive uniqueness; bounded Unicode fields,
+  literal search, stable paging/counts, typed duplicate/disabled/missing errors.
+- Group deletion DELETEs principal first, cascades memberships and removes all
+  polymorphic grants atomically. Group mutation actor lock is FK-compatible
+  `FOR NO KEY UPDATE`; distinct member target is `FOR UPDATE` and group is
+  `FOR KEY SHARE`. Existing user-admin locks are unchanged. All mutations
+  reauthorize after actor lock; memberships/deletion invalidate ACL after commit
+  and commit errors. Real grant/delete races exposed and fixed a deadlock.
+- Responsive localized groups list/detail and linked user detail, group edits,
+  confirmation/cancel deletion, active-user search/paging picker, member removal,
+  error/retry and empty states. Abort/generation guards preserve auth and prevent
+  stale reads. Non-admin navigation/API/deep-route denial remains independent.
+
+### Exact verification
+
+Environment: Go **1.27.0 windows/amd64**, cgo=0; PG **18.6**
+(`18.6-1.pgdg13+2`); Podman **5.8.2/5.8.4**; Node **24.15.0**,
+pnpm **11.2.2**, pinned sqlc **1.31.1**, Playwright **1.64.1** Chromium.
+Docker/golangci-lint unavailable; no race-detector claim.
+
+- Focused group/HTTP PG18 tests and real-grant/deferred-commit cases pass x3.
+  `go test ./internal/admin ./internal/auth ./internal/acl ./internal/httpapi
+  -count=3`: **PASS**, **20.096 / 20.286 / 20.217 / 27.989 s**. Explicit
+  `PT_TEST_DATABASE_URL`, required=1, fresh Suite-owned migrated databases only.
+- Pinned generator version query failed on network; cached-source invocation
+  succeeds: `go -C C:\Users\huipa\go\pkg\mod\github.com\sqlc-dev\sqlc@v1.31.1
+  run ./cmd/sqlc -f C:\other\pandatable\sqlc.yaml generate`. SHA-256 before/after
+  all auth/acl/admin generated files is byte-identical. No version/proxy change.
+- `pnpm --dir web lint`, `pnpm --dir web test`, `pnpm --dir web build`: **PASS**,
+  **169** matching non-empty locale keys, **27 tests / 8 files**. Shell gzip
+  **166,667 bytes**, all assets **299,014 bytes**, no initial grid imports.
+- Default `go run ./tools/ptdev check` attempted twice: lint/build pass, existing
+  `TestSuiteIsolationPostgreSQL` fails during cleanup under concurrent packages.
+  `go test ./internal/testdb -run TestSuiteIsolationPostgreSQL -count=3 -v`
+  passes (**3.606 s**). Full check with command-scoped `GOFLAGS=-p=1` passes:
+  lint **14.815 s**, test **67.344 s**, build **10.882 s**, total **93.041 s**.
+  No tests skipped, cached, softened or removed; shared testdb code unchanged.
+  Default-parallel cleanup sensitivity is a retained limitation, not a claimed
+  default-gate pass. Exact PowerShell commands are in the T1.6 record.
+- Focused `go run ./tools/ptdev e2e -- admin-users.spec.ts`: **3 passed / 44.1 s**
+  including setup and desktop/mobile AT-104..109. Final `go run ./tools/ptdev
+  e2e`: **11 passed / 2 intentional mobile exclusions (1.0m)**, admin scenarios
+  **14.0 / 14.2 s**. Real setup/admin API seeding only, unchanged ten-login
+  budget. Both Bob/Carol user details, group detail, create/add/remove/edit/delete,
+  bilingual duplicate error, empty state and cancel paths pass. Exact expected
+  diagnostic is method/path/status-scoped and must occur; CSP/other errors fail.
+- Final project `pt-e2e-hl6wlqupim5s43o25i6myqb4f3`: health **6.206 s**;
+  one-shot app **73.41 MB / 536.9 MB, 13.21% CPU** (not load certification).
+  Saved group/user screenshots visually inspected for desktop/mobile wrapping
+  and overlap. Editor diagnostics and `git diff --check` pass.
+
+### Failures, cleanup and handoff
+
+Initial SQL generation could not reach the module proxy; an offline version
+query also failed, so the exact cached 1.31.1 module was run directly. New tests
+initially guessed ACL API names; corrected to NewResource/Access. Vue lint
+caught picker punctuation and whitespace-sensitive tag layout; fixed with
+translated labels and existing multiline markup, without rule changes. First
+image build caught invalid multiline template assignments (typecheck missed
+it); a named handler and local production build fixed it before successful E2E.
+The deterministic grant/delete test reproduced an actor/granted_by FK deadlock;
+D-087's narrower locks and both grant/deletion orders now pass repeatedly.
+Two default-parallel full checks hit the existing shared testdb five-second
+context/cleanup timing; isolated x3 and the full serial-package gate pass.
+
+All Suite databases and sessions verified **zero**. Both successful E2E projects
+removed their containers, private networks/volumes and unique image tags; failed
+pre-image run had no tag to remove. Retained `pt-dev-pgdata`, release images,
+unrelated containers/anonymous volumes/networks and Caddy were not removed.
+`pt-dev-db` and `podman-machine-default` restored to their original **stopped**
+state. Generated web assets and ignored screenshots/test artifacts are excluded
+from the commit. No remote or shared deployment.
+
+Linux/Docker/server AT-001/005/006, T1.2 AT-102/116/full AT-117 and T1.4
+UI-dependent acceptance remain pending. Next: **[T1.7 Admin dashboard](task-prompts/T1.7.md)**.

@@ -283,6 +283,43 @@ Expected 401 `/auth/me` probes are matched narrowly to Chromium's HTTP console
 diagnostics, alongside AT-101's explicitly asserted negative setup responses;
 all other warnings/errors/CSP violations still fail the suite.
 
+### T1.6 admin groups checks
+
+`internal/admin/groups_test.go` reuses the package Suite, fixture and real ACL
+resolver. Coverage includes Unicode/control bounds, trim/case-sensitive names,
+literal search/paging/counts, duplicate/missing/disabled membership, retained
+disabled members, atomic deletion/grant cleanup, rollback, all auth classes,
+caller reauthorization and concurrent duplicate adds/status changes. Primed ACL
+entries gain and lose access immediately, including group deletion. A deferred
+constraint-trigger failure proves commit errors still invalidate the cache.
+Deterministic gates exercise the real grant service before/after deletion and
+when the grant creator is the concurrently added member. D-087 records the
+deadlock exposed and corrected by that evidence; no migration is needed.
+
+```text
+go test ./internal/admin ./internal/httpapi -run "TestGroup|TestAdminGroups|TestMembershipCommitError" -count=3
+go test ./internal/admin ./internal/auth ./internal/acl ./internal/httpapi -count=3
+go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
+pnpm --dir web lint
+pnpm --dir web test
+go run ./tools/ptdev check
+go run ./tools/ptdev e2e
+```
+
+All Go integration commands require explicit `PT_TEST_DATABASE_URL` and
+`PT_TEST_DATABASE_REQUIRED=1`; tests remain uncached and use only Suite-owned
+disposable databases. Verify pinned regeneration byte identity for all generated
+packages. If the version query is unreachable but pinned source is cached, run
+that exact module's `cmd/sqlc` with an absolute `-f` repository config and record
+the fallback command, never silently change versions or proxy configuration.
+
+The existing `admin-users.spec.ts` scenario now covers AT-104..109 on desktop
+and mobile with the same sign-ins: Bob/Carol seed only through the real admin
+API, `team-a` creation, both membership-detail views, add/remove, en/zh-CN
+edit, exact duplicate-name error, empty search/membership, deletion cancel and
+confirmed cleanup. Group/user-detail screenshots are retained under ignored
+results. No auth bypass or extra login budget is introduced.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:

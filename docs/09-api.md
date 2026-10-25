@@ -142,12 +142,17 @@ UI remain later-task work.
 | Method | Path | Notes |
 |---|---|---|
 | GET/POST | `/admin/users` | list (search, status) / create `{username, email?, displayName, role, password}` |
+| GET | `/admin/users/{id}` | sanitized admin user detail |
+| GET | `/admin/users/{id}/groups` | paged/searchable group memberships |
 | PATCH | `/admin/users/{id}` | displayName, email, role, status |
 | POST | `/admin/users/{id}/reset-password` | `{ password }` → sets must_change_password |
 | GET | `/admin/users/{id}/ownerships` | workspaces/books/tables where user is direct owner + sole-owner flag |
 | POST | `/admin/users/{id}/transfer` | `{ toUserId }` transfers all direct owner grants |
 | DELETE | `/admin/users/{id}` | hard delete; `?confirm=<username>`; deletes sole-owned workspaces (to trash bypassed → purge) |
-| CRUD | `/admin/groups`, `/admin/groups/{id}/members` | |
+| GET/POST | `/admin/groups` | list/search / create `{name, description?}` |
+| GET/PATCH/DELETE | `/admin/groups/{id}` | detail / edit name or description / permanent deletion |
+| GET/POST | `/admin/groups/{id}/members` | paged/searchable members / add `{userId}` |
+| DELETE | `/admin/groups/{id}/members/{userId}` | remove membership, absent membership is a no-op |
 | GET | `/admin/workspaces` | name, owners, size, orphaned |
 | POST | `/admin/workspaces/{id}/owner` | `{ userId }` (orphan rescue) |
 | GET/PATCH | `/admin/settings` | app name, default timezone, default currency, default locale, upload limit, retention days |
@@ -160,9 +165,9 @@ UI remain later-task work.
 
 #### T1.5 users contract (D-081..D-083)
 
-Only the users list/create/PATCH/reset routes above are implemented here.
-Groups, ownership transfer/deletion, workspaces, settings and backups remain
-later tasks. The entire `/admin/*` API namespace requires an active admin:
+T1.5 implements users list/create/PATCH/reset; T1.6 adds groups and user detail
+as specified below. Ownership transfer/user deletion, workspaces, settings and
+backups remain later tasks. The entire `/admin/*` API namespace requires an active admin:
 401 unauthenticated/disabled, 403 `ERR_PASSWORD_CHANGE_REQUIRED` for a forced
 user, otherwise 403 `ERR_PERMISSION_DENIED` for a non-admin. Admin status does
 not grant resource access. All routes reuse auth's exact CSRF/Origin, no-store,
@@ -204,6 +209,50 @@ not grant resource access. All routes reuse auth's exact CSRF/Origin, no-store,
   Role/status writes invalidate ACL after commit, even if commit is uncertain.
   Disabling a last workspace owner is allowed and retains all data/authorship;
   orphan rescue/transfer remains deferred.
+
+#### T1.6 groups contract (D-084..D-087)
+
+All paths use the same active-admin namespace guard, exact Origin + CSRF,
+no-store, strict 4096-byte JSON and ten-second deadline as users. Groups are flat;
+administration never grants implicit resource access.
+
+- Group lists, group members and user memberships return `{items,total}` from
+  one repeatable-read snapshot. `offset` defaults 0, nonnegative int32; `limit`
+  defaults 50, 1..500. `q` uses the same trimmed, case-insensitive literal-substring
+  and 254-byte/control validation as users. Groups search name/description and
+  order by name/id; members search username/email/displayName and order by
+  username/id. Unknown/duplicate/malformed parameters fail 400. Empty pages have
+  `items: []` and the filtered total; missing target user/group is 404.
+- Group DTO: `id,name,description,createdAt,memberCount` (counts include disabled
+  members). GET detail returns `{group}`; user GET detail returns `{user}` using
+  the existing sanitized user DTO. No sessions/hashes/passwords are exposed.
+- POST requires name; omitted description defaults to `""`. Name is trimmed,
+  case-preserving, 1..100 Unicode characters, no controls, with the existing
+  **case-sensitive** uniqueness. Description is at most 1000 Unicode characters;
+  newline, carriage return and tab are allowed, other controls are rejected.
+  No Unicode normalization or case-folded name uniqueness is introduced.
+  Create returns 201 `{group,eventId}`; duplicate name is 409
+  `ERR_GROUP_NAME_CONFLICT`. PATCH preserves omitted fields, rejects null/empty
+  patches, and returns 200 `{group,eventId}`.
+- POST members requires an existing active `userId`; missing/malformed ID is
+  404 `ERR_NOT_FOUND`, disabled is 409 `ERR_PRINCIPAL_DISABLED`, duplicate is
+  409 `ERR_MEMBERSHIP_EXISTS`. Success is 201 `{eventId}`. DELETE requires an
+  existing group/user and returns 200 `{eventId}` even if the membership is absent.
+  Existing disabled memberships remain visible and removable; disable does not
+  purge memberships. There is no bulk replacement or nested-group endpoint.
+- Group DELETE returns 200 `{eventId}` after deleting the principal row first,
+  cascading memberships and deleting every polymorphic group grant in the same
+  transaction. UI confirmation is required; no resource/data deletion or
+  last-direct-user-owner exception is added. Missing group is 404.
+- All group mutations share `pandatable.admin.users`, then lock/recheck the
+  acting admin/session with actor `FOR NO KEY UPDATE`. Membership locks a distinct
+  target user `FOR UPDATE`, checks status under that lock, then locks its group
+  `FOR KEY SHARE`. Edit uses group `FOR UPDATE`; deletion takes the DELETE lock
+  before grant cleanup. This composes with user status/auth and D-080 principal
+  locks without blocking grant `granted_by` FK key-share on the actor. The original
+  user-admin actor lock remains unchanged. Membership writes/deletion invalidate
+  ACL after commit, also if commit reports an uncertain outcome/error; failed
+  or rolled-back operations may conservatively invalidate without changing data.
 
 ### Directory (any user — for pickers)
 | GET | `/directory/users?q=` | active users: id, displayName, username, avatarColor |

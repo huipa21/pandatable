@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect, observeBrowser } from './fixtures'
+import { test, expect, observeBrowser, expectHTTPFailure } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -18,7 +18,179 @@ async function noOverflow(page: Page) {
   ).toBe(true)
 }
 
-test('AT-104..108: admin users, forced change, reset, disable and panel visibility', async ({
+async function verifyGroups(page: Page, suffix: string) {
+  const headers = { Origin: process.env.PT_E2E_BASE_URL!, 'X-PT-CSRF': '1' }
+  const createdUsers: { id: string; username: string; displayName: string }[] =
+    []
+  for (const name of ['bob', 'carol']) {
+    const response = await page.request.post('/api/v1/admin/users', {
+      headers,
+      data: {
+        username: `${name}-${suffix}`,
+        displayName: name === 'bob' ? 'Bob' : 'Carol',
+        role: 'user',
+        password: 'Temporary-password-123',
+      },
+    })
+    expect(response.status()).toBe(201)
+    createdUsers.push((await response.json()).user)
+  }
+  await page.getByRole('link', { name: en.groups.title, exact: true }).click()
+  await expect(page.getByText(en.groups.empty, { exact: true })).toBeVisible()
+  await page
+    .getByRole('button', { name: en.groups.create, exact: true })
+    .click()
+  await page.getByLabel(en.groups.name, { exact: true }).fill(' team-a ')
+  await page
+    .getByLabel(en.groups.description, { exact: true })
+    .fill('Team description\nSecond line')
+  await page
+    .getByRole('button', { name: en.admin.confirm, exact: true })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: 'team-a', exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByText(en.groups.emptyMembers, { exact: true }),
+  ).toBeVisible()
+  await noOverflow(page)
+  const groupID = new URL(page.url()).pathname.split('/').at(-1)!
+  for (const user of createdUsers) {
+    await page
+      .getByLabel(en.groups.selectUser, { exact: true })
+      .selectOption(user.id)
+    await page.getByRole('button', { name: en.groups.add, exact: true }).click()
+    await expect(page.locator(`[data-member="${user.username}"]`)).toBeVisible()
+  }
+  await expect(page.locator('[data-member]')).toHaveCount(2)
+  await page.screenshot({
+    path: test.info().outputPath('groups-en.png'),
+    fullPage: true,
+  })
+  const bob = createdUsers[0]!
+  const carol = createdUsers[1]!
+  await page
+    .locator(`[data-member="${bob.username}"]`)
+    .getByRole('link', { name: 'Bob', exact: true })
+    .click()
+  await expect(page).toHaveURL(new RegExp(`/admin/users/${bob.id}$`))
+  await expect(
+    page.getByRole('heading', { name: en.groups.memberships, exact: true }),
+  ).toBeVisible()
+  await expect(page.locator('[data-group="team-a"]')).toContainText('2 members')
+  await noOverflow(page)
+  await page.screenshot({
+    path: test.info().outputPath('user-memberships.png'),
+    fullPage: true,
+  })
+  await page.getByRole('link', { name: 'team-a', exact: true }).click()
+  await page
+    .locator(`[data-member="${carol.username}"]`)
+    .getByRole('link', { name: 'Carol', exact: true })
+    .click()
+  await expect(page.locator('[data-group="team-a"]')).toBeVisible()
+  await page.getByRole('link', { name: 'team-a', exact: true }).click()
+  await page
+    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: zh.groups.members, exact: true }),
+  ).toBeVisible()
+  await page
+    .locator(`[data-member="${carol.username}"]`)
+    .getByRole('button', { name: zh.groups.remove, exact: true })
+    .click()
+  await expect(page.locator('[data-member]')).toHaveCount(1)
+  await page.getByRole('button', { name: zh.groups.edit, exact: true }).click()
+  await page.getByLabel(zh.groups.name, { exact: true }).fill('团队-a')
+  await page
+    .getByLabel(zh.groups.description, { exact: true })
+    .fill('更新后的描述')
+  await noOverflow(page)
+  await page
+    .getByRole('button', { name: zh.admin.confirm, exact: true })
+    .click()
+  await expect(
+    page.getByRole('heading', { name: '团队-a', exact: true }),
+  ).toBeVisible()
+  await expect(page.getByText('更新后的描述', { exact: true })).toBeVisible()
+  await page.screenshot({
+    path: test.info().outputPath('groups-zh.png'),
+    fullPage: true,
+  })
+  const conflict = await page.request.post('/api/v1/admin/groups', {
+    headers,
+    data: { name: 'occupied-name' },
+  })
+  expect(conflict.status()).toBe(201)
+  const conflictID = (await conflict.json()).group.id
+  await page.getByRole('button', { name: zh.groups.edit, exact: true }).click()
+  await page.getByLabel(zh.groups.name, { exact: true }).fill('occupied-name')
+  expectHTTPFailure(page, 'PATCH', `/api/v1/admin/groups/${groupID}`, 409)
+  await page
+    .getByRole('button', { name: zh.admin.confirm, exact: true })
+    .click()
+  await expect(page.getByRole('alert')).toContainText(
+    zh.errors.ERR_GROUP_NAME_CONFLICT,
+  )
+  await page.getByRole('button', { name: zh.admin.cancel, exact: true }).click()
+  await page
+    .getByRole('button', { name: zh.common.languages.en, exact: true })
+    .click()
+  await page
+    .getByRole('link', { name: en.groups.backGroups, exact: true })
+    .click()
+  await page
+    .getByLabel(en.groups.searchHint, { exact: true })
+    .fill('no-such-group')
+  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await expect(page.getByText(en.groups.empty, { exact: true })).toBeVisible()
+  await page.getByLabel(en.groups.searchHint, { exact: true }).fill('团队')
+  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await expect(page.locator('[data-group]')).toHaveCount(1)
+  await page.getByRole('link', { name: '团队-a', exact: true }).click()
+  await page
+    .getByRole('button', { name: en.groups.delete, exact: true })
+    .click()
+  await noOverflow(page)
+  await page.getByRole('button', { name: en.admin.cancel, exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/admin/groups/${groupID}$`))
+  await page
+    .getByRole('button', { name: en.groups.delete, exact: true })
+    .click()
+  await page
+    .getByRole('button', { name: en.admin.confirm, exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/admin\/groups$/)
+  expect(
+    (await page.request.get(`/api/v1/admin/groups/${groupID}`)).status(),
+  ).toBe(404)
+  expect(
+    (await page.request.get(`/api/v1/admin/users/${bob.id}/groups`)).status(),
+  ).toBe(200)
+  expect(
+    (
+      await (
+        await page.request.get(`/api/v1/admin/users/${bob.id}/groups`)
+      ).json()
+    ).total,
+  ).toBe(0)
+  expect(
+    (
+      await page.request.delete(`/api/v1/admin/groups/${conflictID}`, {
+        headers,
+      })
+    ).status(),
+  ).toBe(200)
+  await page.goto(`/admin/users/${bob.id}`)
+  await expect(page.getByText(en.groups.empty, { exact: true })).toBeVisible()
+  await page
+    .getByRole('link', { name: en.groups.backUsers, exact: true })
+    .click()
+  await expect(page).toHaveURL(/\/admin\/users$/)
+}
+
+test('AT-104..109: admin users and groups, forced change, reset, disable and panel visibility', async ({
   page,
   browser,
   api,
@@ -40,6 +212,10 @@ test('AT-104..108: admin users, forced change, reset, disable and panel visibili
   ).toBeVisible()
   await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/users$/)
+  await verifyGroups(
+    page,
+    testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop',
+  )
   await page.getByRole('button', { name: en.admin.create, exact: true }).click()
   await page
     .getByLabel(en.admin.username, { exact: true })
@@ -139,12 +315,26 @@ test('AT-104..108: admin users, forced change, reset, disable and panel visibili
       userPage.getByRole('link', { name: en.admin.menu, exact: true }),
     ).toHaveCount(0)
     await expect(
+      userPage.getByRole('link', { name: en.groups.title, exact: true }),
+    ).toHaveCount(0)
+    await expect(
       userPage.getByRole('link', { name: /sign.?up|register/i }),
     ).toHaveCount(0)
     await userPage.goto('/admin/users')
     await expect(userPage).toHaveURL(/\/home$/)
     await userPage.goto('/admin/future')
     await expect(userPage).toHaveURL(/\/home$/)
+    for (const path of [
+      '/admin/groups',
+      '/admin/groups/missing',
+      '/admin/users/missing',
+    ]) {
+      await userPage.goto(path)
+      await expect(userPage).toHaveURL(/\/home$/)
+    }
+    expect(
+      (await userContext.request.get('/api/v1/admin/groups')).status(),
+    ).toBe(403)
     const forbidden = await userContext.request.post('/api/v1/admin/users', {
       headers,
       data: {},

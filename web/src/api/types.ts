@@ -89,3 +89,20 @@ export interface AdminUserMutation extends AuthMutation {
   user: AdminUser
   sessionsRevoked?: boolean
 }
+
+export interface AdminGroup {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  memberCount: number
+}
+
+export interface GroupListing {
+  items: AdminGroup[]
+  total: number
+}
+
+export interface GroupMutation extends AuthMutation {
+  group: AdminGroup
+}

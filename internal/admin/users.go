@@ -164,6 +164,11 @@ func (service *Service) List(ctx context.Context, token string, input ListInput)
 
 func (service *Service) mutation(ctx context.Context, token string, target pgtype.UUID,
 	fn func(*adminsql.Queries, *bool) error) error {
+	return service.adminMutation(ctx, token, target, false, fn)
+}
+
+func (service *Service) adminMutation(ctx context.Context, token string, target pgtype.UUID, groupOperation bool,
+	fn func(*adminsql.Queries, *bool) error) error {
 	hash, err := auth.SessionHash(token)
 	if err != nil {
 		return err
@@ -181,7 +186,11 @@ func (service *Service) mutation(ctx context.Context, token string, target pgtyp
 		if err != nil {
 			return err
 		}
-		if _, err := queries.LockUser(ctx, actor); err != nil {
+		lockActor := queries.LockUser
+		if groupOperation {
+			lockActor = queries.LockGroupAdministrator
+		}
+		if _, err := lockActor(ctx, actor); err != nil {
 			return fmt.Errorf("lock acting administrator: %w", err)
 		}
 		if _, err := authorize(ctx, queries, hash); err != nil {

@@ -28,11 +28,25 @@ function responses(user: { role: string; mustChangePassword: boolean } | null) {
 
 it('redirects unauthenticated and non-admin deep admin routes', async () => {
   responses(null)
-  await router.push('/admin/users')
-  expect(router.currentRoute.value.path).toBe('/login')
+  for (const path of [
+    '/admin/users',
+    '/admin/groups',
+    '/admin/groups/group-id',
+    '/admin/users/user-id',
+  ]) {
+    await router.push(path)
+    expect(router.currentRoute.value.path).toBe('/login')
+  }
   responses({ role: 'user', mustChangePassword: false })
-  await router.push('/admin/future')
-  expect(router.currentRoute.value.path).toBe('/home')
+  for (const path of [
+    '/admin/future',
+    '/admin/groups',
+    '/admin/groups/group-id',
+    '/admin/users/user-id',
+  ]) {
+    await router.push(path)
+    expect(router.currentRoute.value.path).toBe('/home')
+  }
 })
 
 it('forces password change before every other client route, even the spike', async () => {

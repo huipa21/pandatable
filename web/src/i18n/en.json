@@ -84,6 +84,31 @@
     "previous": "Previous",
     "next": "Next"
   },
+  "groups": {
+    "title": "Groups",
+    "create": "Create group",
+    "edit": "Edit group",
+    "delete": "Delete group",
+    "deleteNotice": "Delete {name}? All its memberships and grants will be removed. Workspace data is kept.",
+    "name": "Group name",
+    "description": "Description",
+    "searchHint": "Search group name or description",
+    "members": "Members",
+    "memberCount": "{total} members",
+    "total": "{total} groups",
+    "empty": "No groups match these filters.",
+    "emptyMembers": "No members match these filters.",
+    "add": "Add member",
+    "remove": "Remove member",
+    "selectUser": "Select an active user",
+    "candidate": "{name} ({username})",
+    "memberships": "Group memberships",
+    "userDetail": "User detail",
+    "backUsers": "Back to users",
+    "backGroups": "Back to groups",
+    "saved": "Group changes saved.",
+    "pageSize": "Items per page"
+  },
   "setup": {
     "eyebrow": "FIRST-RUN SETUP",
     "title": "Create your administrator account",
@@ -162,6 +187,9 @@
     "ERR_LAST_ADMIN": "At least one active administrator must remain.",
     "ERR_RATE_LIMITED": "Too many sign-in attempts. Try again in one minute.",
     "ERR_CSRF": "The security check failed. Reload this page and try again.",
-    "ERR_NOT_FOUND": "The requested user no longer exists."
+    "ERR_NOT_FOUND": "The requested user or group no longer exists.",
+    "ERR_GROUP_NAME_CONFLICT": "That group name is already in use.",
+    "ERR_MEMBERSHIP_EXISTS": "That user is already a member of this group.",
+    "ERR_PRINCIPAL_DISABLED": "Disabled users cannot be added to a group."
   }
 }

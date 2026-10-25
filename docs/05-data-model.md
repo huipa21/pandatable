@@ -339,6 +339,17 @@ are still future work and must use that lock/revocation contract.
   workspace owner may be disabled (orphaning). Password resets also lock the
   target and revoke all sessions atomically. Role/status writes invalidate ACL
   after commit/uncertain commit; no schema change is needed.
+- T1.6 group administration (D-084..D-087) reuses 0001 groups/members without a
+  migration. Case-sensitive group uniqueness is retained; service validation
+  trims/bounds names and bounds descriptions. Mutations share the D-082 advisory
+  lock, use actor `FOR NO KEY UPDATE` and recheck its session, then membership
+  target user `FOR UPDATE` and group `FOR KEY SHARE` (one statement per lock).
+  Group edits use group `FOR UPDATE`. The narrower actor lock allows grant
+  `granted_by` FK checks; the narrower membership group lock allows concurrent
+  principal `FOR SHARE` while preventing deletion. Deletion DELETEs the group
+  first, cascades memberships, then removes polymorphic grants transactionally.
+  Disable retains memberships; adding disabled users is rejected, removal is
+  allowed. Membership/deletion commits and uncertain commits invalidate ACL.
 - Comments/history reference metadata tables, not physical rows, so row deletion
   does not destroy undo/history context. Table purge cascades both. History's
   `type_change` action has NULL `row_id`; all six row actions require a row ID.

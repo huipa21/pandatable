@@ -84,6 +84,31 @@
     "previous": "上一页",
     "next": "下一页"
   },
+  "groups": {
+    "title": "用户组",
+    "create": "创建用户组",
+    "edit": "编辑用户组",
+    "delete": "删除用户组",
+    "deleteNotice": "删除 {name}？该组的所有成员关系和授权将被移除，工作区数据将保留。",
+    "name": "用户组名称",
+    "description": "描述",
+    "searchHint": "搜索用户组名称或描述",
+    "members": "成员",
+    "memberCount": "{total} 位成员",
+    "total": "{total} 个用户组",
+    "empty": "没有符合筛选条件的用户组。",
+    "emptyMembers": "没有符合筛选条件的成员。",
+    "add": "添加成员",
+    "remove": "移除成员",
+    "selectUser": "选择启用中的用户",
+    "candidate": "{name}（{username}）",
+    "memberships": "所属用户组",
+    "userDetail": "用户详情",
+    "backUsers": "返回用户列表",
+    "backGroups": "返回用户组列表",
+    "saved": "用户组更改已保存。",
+    "pageSize": "每页条目数"
+  },
   "setup": {
     "eyebrow": "首次设置",
     "title": "创建管理员账号",
@@ -162,6 +187,9 @@
     "ERR_LAST_ADMIN": "必须保留至少一名正常的管理员。",
     "ERR_RATE_LIMITED": "登录尝试过多，请一分钟后重试。",
     "ERR_CSRF": "安全检查失败，请刷新页面后重试。",
-    "ERR_NOT_FOUND": "请求的用户已不存在。"
+    "ERR_NOT_FOUND": "请求的用户或用户组已不存在。",
+    "ERR_GROUP_NAME_CONFLICT": "该用户组名称已被使用。",
+    "ERR_MEMBERSHIP_EXISTS": "该用户已是此用户组的成员。",
+    "ERR_PRINCIPAL_DISABLED": "无法将已禁用的用户添加到用户组。"
   }
 }

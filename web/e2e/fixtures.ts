@@ -5,11 +5,39 @@ import {
   type Page,
 } from '@playwright/test'
 
+const expectedHTTPFailures = new WeakMap<
+  Page,
+  { method: string; path: string; status: number }[]
+>()
+
+export function expectHTTPFailure(
+  page: Page,
+  method: string,
+  path: string,
+  status: number,
+) {
+  const failures = expectedHTTPFailures.get(page) ?? []
+  failures.push({ method, path, status })
+  expectedHTTPFailures.set(page, failures)
+}
+
 export async function observeBrowser(page: Page) {
   const errors: string[] = []
   const pendingFailures: number[] = []
   page.on('response', (response) => {
     const path = new URL(response.url()).pathname
+    const expected = expectedHTTPFailures.get(page) ?? []
+    const index = expected.findIndex(
+      (failure) =>
+        failure.path === path &&
+        failure.method === response.request().method() &&
+        failure.status === response.status(),
+    )
+    if (index >= 0) {
+      expected.splice(index, 1)
+      pendingFailures.push(response.status())
+      return
+    }
     // Setup negative cases are asserted by AT-101; an absent/revoked session
     // is the normal identity-probe result on public routes.
     if (
@@ -50,6 +78,10 @@ export const test = base.extend<{
     async ({ page }, use, testInfo) => {
       const { errors, pendingFailures } = await observeBrowser(page)
       await use()
+      expect(
+        expectedHTTPFailures.get(page) ?? [],
+        'every explicit HTTP failure occurred',
+      ).toEqual([])
       expect(
         pendingFailures,
         'only matched expected setup/identity HTTP console diagnostics',

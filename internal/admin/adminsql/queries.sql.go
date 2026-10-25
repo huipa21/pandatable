@@ -11,12 +11,69 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addGroupMember = `-- name: AddGroupMember :execrows
+INSERT INTO meta.group_members(group_id,user_id) VALUES ($1,$2) ON CONFLICT DO NOTHING
+`
+
+type AddGroupMemberParams struct {
+	GroupID pgtype.UUID
+	UserID  pgtype.UUID
+}
+
+func (q *Queries) AddGroupMember(ctx context.Context, arg AddGroupMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addGroupMember, arg.GroupID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countActiveAdmins = `-- name: CountActiveAdmins :one
 SELECT count(*) FROM meta.users WHERE role = 'admin' AND status = 'active'
 `
 
 func (q *Queries) CountActiveAdmins(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countActiveAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countGroupMembers = `-- name: CountGroupMembers :one
+SELECT count(*) FROM meta.users u JOIN meta.group_members m ON m.user_id=u.id
+WHERE m.group_id=$1
+  AND (strpos(lower(u.username), $2::text) > 0
+    OR strpos(lower(COALESCE(u.email,'')), $2) > 0
+    OR strpos(lower(u.display_name), $2) > 0)
+`
+
+type CountGroupMembersParams struct {
+	GroupID pgtype.UUID
+	Q       string
+}
+
+func (q *Queries) CountGroupMembers(ctx context.Context, arg CountGroupMembersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroupMembers, arg.GroupID, arg.Q)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countGroups = `-- name: CountGroups :one
+SELECT count(*) FROM meta.groups g
+WHERE (strpos(lower(g.name), $1::text) > 0
+    OR strpos(lower(g.description), $1) > 0)
+  AND ($2::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM meta.group_members m WHERE m.group_id=g.id AND m.user_id=$2))
+`
+
+type CountGroupsParams struct {
+	Q      string
+	UserID pgtype.UUID
+}
+
+func (q *Queries) CountGroups(ctx context.Context, arg CountGroupsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countGroups, arg.Q, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -40,6 +97,22 @@ func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, 
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createGroup = `-- name: CreateGroup :one
+INSERT INTO meta.groups(name, description) VALUES ($1,$2) RETURNING id
+`
+
+type CreateGroupParams struct {
+	Name        string
+	Description string
+}
+
+func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createGroup, arg.Name, arg.Description)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const createUser = `-- name: CreateUser :one
@@ -68,6 +141,53 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const deleteGroup = `-- name: DeleteGroup :one
+DELETE FROM meta.groups WHERE id=$1 RETURNING id
+`
+
+func (q *Queries) DeleteGroup(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, deleteGroup, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const deleteGroupGrants = `-- name: DeleteGroupGrants :exec
+DELETE FROM meta.grants WHERE principal_type='group' AND principal_id=$1
+`
+
+func (q *Queries) DeleteGroupGrants(ctx context.Context, principalID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteGroupGrants, principalID)
+	return err
+}
+
+const getGroup = `-- name: GetGroup :one
+SELECT g.id, g.name, g.description, g.created_at,
+    (SELECT count(*) FROM meta.group_members m WHERE m.group_id=g.id) AS member_count
+FROM meta.groups g WHERE g.id=$1
+`
+
+type GetGroupRow struct {
+	ID          pgtype.UUID
+	Name        string
+	Description string
+	CreatedAt   pgtype.Timestamptz
+	MemberCount int64
+}
+
+func (q *Queries) GetGroup(ctx context.Context, id pgtype.UUID) (GetGroupRow, error) {
+	row := q.db.QueryRow(ctx, getGroup, id)
+	var i GetGroupRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedAt,
+		&i.MemberCount,
+	)
+	return i, err
 }
 
 const getUser = `-- name: GetUser :one
@@ -128,6 +248,130 @@ func (q *Queries) IdentityExists(ctx context.Context, arg IdentityExistsParams) 
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const listGroupMembers = `-- name: ListGroupMembers :many
+SELECT u.id, u.username, u.email, u.display_name, u.role, u.status,
+    u.must_change_password, u.last_login_at, u.created_at, u.updated_at
+FROM meta.users u JOIN meta.group_members m ON m.user_id=u.id
+WHERE m.group_id=$1
+  AND (strpos(lower(u.username), $2::text) > 0
+    OR strpos(lower(COALESCE(u.email,'')), $2) > 0
+    OR strpos(lower(u.display_name), $2) > 0)
+ORDER BY u.username,u.id LIMIT $4 OFFSET $3
+`
+
+type ListGroupMembersParams struct {
+	GroupID    pgtype.UUID
+	Q          string
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListGroupMembersRow struct {
+	ID                 pgtype.UUID
+	Username           string
+	Email              pgtype.Text
+	DisplayName        string
+	Role               string
+	Status             string
+	MustChangePassword bool
+	LastLoginAt        pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+}
+
+func (q *Queries) ListGroupMembers(ctx context.Context, arg ListGroupMembersParams) ([]ListGroupMembersRow, error) {
+	rows, err := q.db.Query(ctx, listGroupMembers,
+		arg.GroupID,
+		arg.Q,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupMembersRow
+	for rows.Next() {
+		var i ListGroupMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Username,
+			&i.Email,
+			&i.DisplayName,
+			&i.Role,
+			&i.Status,
+			&i.MustChangePassword,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroups = `-- name: ListGroups :many
+SELECT g.id, g.name, g.description, g.created_at,
+    (SELECT count(*) FROM meta.group_members m WHERE m.group_id=g.id) AS member_count
+FROM meta.groups g
+WHERE (strpos(lower(g.name), $1::text) > 0
+    OR strpos(lower(g.description), $1) > 0)
+  AND ($2::uuid IS NULL OR EXISTS (
+    SELECT 1 FROM meta.group_members m WHERE m.group_id=g.id AND m.user_id=$2))
+ORDER BY g.name, g.id LIMIT $4 OFFSET $3
+`
+
+type ListGroupsParams struct {
+	Q          string
+	UserID     pgtype.UUID
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListGroupsRow struct {
+	ID          pgtype.UUID
+	Name        string
+	Description string
+	CreatedAt   pgtype.Timestamptz
+	MemberCount int64
+}
+
+func (q *Queries) ListGroups(ctx context.Context, arg ListGroupsParams) ([]ListGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listGroups,
+		arg.Q,
+		arg.UserID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupsRow
+	for rows.Next() {
+		var i ListGroupsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.MemberCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUsers = `-- name: ListUsers :many
@@ -198,6 +442,39 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
+const lockGroup = `-- name: LockGroup :one
+SELECT id FROM meta.groups WHERE id=$1 FOR UPDATE
+`
+
+func (q *Queries) LockGroup(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockGroup, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const lockGroupAdministrator = `-- name: LockGroupAdministrator :one
+SELECT id FROM meta.users WHERE id = $1 FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockGroupAdministrator(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockGroupAdministrator, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const lockMembershipGroup = `-- name: LockMembershipGroup :one
+SELECT id FROM meta.groups WHERE id=$1 FOR KEY SHARE
+`
+
+func (q *Queries) LockMembershipGroup(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockMembershipGroup, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const lockUser = `-- name: LockUser :one
 SELECT id FROM meta.users WHERE id = $1 FOR UPDATE
 `
@@ -216,6 +493,23 @@ SELECT pg_advisory_xact_lock(hashtextextended('pandatable.admin.users', 0))
 func (q *Queries) LockUserAdministration(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, lockUserAdministration)
 	return err
+}
+
+const removeGroupMember = `-- name: RemoveGroupMember :execrows
+DELETE FROM meta.group_members WHERE group_id=$1 AND user_id=$2
+`
+
+type RemoveGroupMemberParams struct {
+	GroupID pgtype.UUID
+	UserID  pgtype.UUID
+}
+
+func (q *Queries) RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, removeGroupMember, arg.GroupID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const resetPassword = `-- name: ResetPassword :exec
@@ -268,6 +562,21 @@ func (q *Queries) SessionUser(ctx context.Context, idHash []byte) (SessionUserRo
 		&i.MustChangePassword,
 	)
 	return i, err
+}
+
+const updateGroup = `-- name: UpdateGroup :exec
+UPDATE meta.groups SET name=$2, description=$3 WHERE id=$1
+`
+
+type UpdateGroupParams struct {
+	ID          pgtype.UUID
+	Name        string
+	Description string
+}
+
+func (q *Queries) UpdateGroup(ctx context.Context, arg UpdateGroupParams) error {
+	_, err := q.db.Exec(ctx, updateGroup, arg.ID, arg.Name, arg.Description)
+	return err
 }
 
 const updateUser = `-- name: UpdateUser :exec

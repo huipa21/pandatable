@@ -310,7 +310,11 @@ void load()
         :data-user="user.username"
       >
         <div class="user-details">
-          <h2>{{ user.displayName }}</h2>
+          <h2>
+            <RouterLink :to="`/admin/users/${user.id}`">
+              {{ user.displayName }}
+            </RouterLink>
+          </h2>
           <p>{{ user.username }}</p>
           <p v-if="user.email">{{ user.email }}</p>
           <p>

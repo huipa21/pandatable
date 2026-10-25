@@ -151,6 +151,22 @@ No full AT-102/116/117, Linux/Docker/server, realtime or load acceptance is
 inferred. Exact commands, failures and cleanup:
 [T1.5 record](task-prompts/T1.5.md#implementation-and-handoff-2026-10-26).
 
+### T1.6 admin groups evidence (2026-10-26)
+
+| Test | Status | Evidence |
+|---|---|---|
+| AT-109 | Pass | Production-image desktop/mobile creates `team-a`, adds Bob/Carol through UI, verifies group detail and both user details, removes membership, edits in en/zh-CN, confirms/cancels deletion, checks empty/search/error states and responsive layouts. Fixtures seed only via real setup/admin APIs. |
+| AT-104..108 | Preserved | Same production scenario retains forced change, role/reset/disable/re-enable and admin visibility; group/user-detail deep routes and API independently deny non-admins. No extra sign-ins or rate-limit bypass. |
+| AT-207 API behavior | Preserved | Actual admin membership add/remove/deletion invalidates primed ACL caches immediately, not after TTL. PG18 proves rollback, concurrency with real grants, principal cleanup and commit-error invalidation. Remaining resource/editor/sidebar UI stays pending T1.10-T1.12. |
+| AT-101/103/802/803 | Preserved | Full setup/shell/spike image suite, required PG18 auth/CSRF tests, 169 matching locale keys and no-inline/no-eval CSP pass. Shell gzip 166,667 bytes; no grid imports. |
+
+Final image suite: **11 passed / 2 intentional mobile exclusions**. Full local
+check passes with command-scoped `GOFLAGS=-p=1`; default-parallel checks failed
+twice in existing testdb cleanup, with unchanged assertions/timeouts and isolated
+x3 pass. This caveat is not a default-gate pass or load/platform certification.
+Exact verification, failures, resources and cleanup:
+[T1.6 completion record](task-prompts/T1.6.md#implementation-and-handoff-2026-10-26).
+
 ## AT-2xx Structure & Permissions (M1)
 
 ### T1.4 API-surface evidence (2026-10-26)
