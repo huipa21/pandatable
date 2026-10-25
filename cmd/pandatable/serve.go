@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 
+	"pandatable/internal/acl"
 	"pandatable/internal/auth"
 	"pandatable/internal/config"
 	"pandatable/internal/db"
@@ -39,6 +40,14 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure auth service: %w", err)
 	}
+	resolver, err := acl.NewResolver(pool)
+	if err != nil {
+		return fmt.Errorf("configure ACL resolver: %w", err)
+	}
+	aclService, err := acl.NewService(pool, resolver)
+	if err != nil {
+		return fmt.Errorf("configure grants service: %w", err)
+	}
 	setupToken, setupNeeded, err := authService.InitializeSetup(ctx)
 	if err != nil {
 		return fmt.Errorf("initialize first-run setup: %w", err)
@@ -47,7 +56,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("SETUP_TOKEN=" + setupToken)
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
-		Service: authService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Service: authService, ACL: aclService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)

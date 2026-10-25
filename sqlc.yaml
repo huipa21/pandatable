@@ -11,3 +11,13 @@ sql:
         out: internal/auth/authsql
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema:
+      - migrations
+    queries: internal/acl/queries.sql
+    gen:
+      go:
+        package: aclsql
+        out: internal/acl/aclsql
+        sql_package: pgx/v5
+        omit_unused_structs: true

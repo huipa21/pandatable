@@ -18,6 +18,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"pandatable/internal/acl"
 	"pandatable/internal/apperr"
 	"pandatable/internal/auth"
 )
@@ -26,12 +27,14 @@ const sessionCookie = "pt_session"
 
 type AuthOptions struct {
 	Service        *auth.Service
+	ACL            *acl.Service
 	BaseURL        string
 	TrustedProxies []netip.Prefix
 }
 
 type authHTTP struct {
 	service *auth.Service
+	acl     *acl.Service
 	logger  *slog.Logger
 	origin  string
 	secure  bool
@@ -49,7 +52,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 	if !secure {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
-	return &authHTTP{service: options.Service, logger: logger, origin: origin,
+	return &authHTTP{service: options.Service, acl: options.ACL, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -237,6 +240,9 @@ func (api *authHTTP) mount(router chi.Router) {
 	router.Patch("/auth/me", api.profile)
 	router.Post("/auth/password", api.password)
 	router.Get("/meta/timezones", api.timezones)
+	if api.acl != nil {
+		api.mountGrants(router)
+	}
 }
 
 func (api *authHTTP) setupStatus(w http.ResponseWriter, r *http.Request) {

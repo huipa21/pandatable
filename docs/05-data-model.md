@@ -317,6 +317,13 @@ are still future work and must use that lock/revocation contract.
   existence/type and remove affected grants in the same transaction as a hard
   deletion, serializing with competing grant creation. Soft deletion retains
   grants; ACL must hide trashed resources. Direct SQL can leave dangling grants.
+  The T1.4 grant service implements the serialization half: every grant
+  mutation locks the workspace row `FOR NO KEY UPDATE`, then the book/table
+  `FOR KEY SHARE`, then a user/group principal `FOR SHARE`, in that order, each
+  as its own statement. Future hard-delete services must `DELETE` the target
+  (or principal) row *first* (taking the conflicting lock), then delete
+  `meta.grants` rows for that type/id in the same transaction, then invalidate
+  the ACL cache after commit.
   Last-owner enforcement, orphan rescue and sole-owned workspace/file purge
   remain service work, not automatic effects of deleting a user row.
 - User hard deletion cascades sessions, memberships, notifications and personal

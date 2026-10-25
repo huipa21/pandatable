@@ -201,7 +201,8 @@ and verify the row cannot reappear. Expiry tests deliberately extend the stored
 expiry to prove idle/absolute limits are checked independently.
 
 Static auth queries are generated locally using pinned `sqlc` **1.31.1**:
-`sqlc generate`. Commit its Go bindings; generation must produce no diff on
+`sqlc generate` (also generates `internal/acl/aclsql` from the second
+`sqlc.yaml` entry). Commit its Go bindings; generation must produce no diff on
 rerun. [catalog.sql](../internal/auth/catalog.sql) declares the PG timezone
 catalog only for the offline generator; no runtime SQL or migration executes it.
 The application image uses existing Go source allowlists and does not include
@@ -232,6 +233,22 @@ app container's startup log. The harness sends it to Playwright through a
 private child environment variable and redacts it from retained Compose logs.
 The E2E run also prints a read-only app-container memory/CPU snapshot. No
 production seed endpoint or real developer account is used.
+
+### T1.4 ACL and grants checks
+
+`internal/acl` tests are Suite-owned PG18 tests (own `TestMain`); unit tests
+need no database. Resolver matrix, group union/membership, disabled/trashed,
+path-only visibility, TTL bound, cache hit counts, validation, scope-owner and
+last-owner rules, rollback, concurrent owner removals and the D-070 hard-delete
+lock interleavings are in `internal/acl`; AT-204..212 at the HTTP surface
+(including `authHTTP.require` probe routes) are in `internal/httpapi`.
+
+```text
+go run ./tools/ptdev test -run "Test(Effective|Membership|Disabled|PathOnly|Cache|Put|Inherited|List|Scope|Delete|LastOwner|Orphaned|Concurrent|Grant|Failed|Resolver|Access|Level|Resource)" -v -count=1
+```
+
+Production-image E2E cannot seed non-admin users or workspaces until T1.5/T1.10
+ship real APIs, so these ACL checks are API/HTTP-level evidence only.
 
 ### Browser setup and isolated E2E
 

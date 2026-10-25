@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3 Done. T1.2 backend auth verified, but browser AT-102/116 and full AT-117 remain pending. AT-101/103/803 pass. ACL/admin/business services remain future work. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4 Done. T1.2 backend auth verified, but browser AT-102/116 and full AT-117 remain pending. AT-101/103/803 pass; ACL/grants API verified (AT-204..212 at the API surface). Admin/business services remain future work. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -29,7 +29,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.1 | Meta migrations | ✅ | 2026-10-24 | Forward 0002 adds all 14 remaining metadata tables; 0001 unchanged. D-069..071 clarify composite FKs, identifier/name rules, polymorphic grants and history. Real PG18 catalog/default/constraint/delete/upgrade/down-up tests and AT-002 restarts pass; Windows check and 8-check image E2E pass (2 intentional mobile exclusions). T1.2 handoff recorded. |
 | T1.2 | Auth service | 🟨 | 2026-10-25 | Backend verified: bounded argon2id, hash-only PG sessions/expiry/revocation, auth/profile/timezone APIs, alias/IP limits, trusted proxies, CSRF/cookies. Windows check and image E2E pass; AT-103/803 pass. User chose backend-only: browser AT-102/116 and full AT-117 remain pending, so not Done. T1.3 handoff created. |
 | T1.3 | Setup flow | ✅ | 2026-10-25 | First-run token/status/admin/session, process-safe one-time setup and localized desktop/mobile UI. AT-101 passes in production-image Chromium; required PG18 gate and full local checks pass. D-078; no migration. |
-| T1.4 | ACL resolver & grants API | ⬜ | | |
+| T1.4 | ACL resolver & grants API | ✅ | 2026-10-26 | Resolver (one SQL/lookup, flat groups, path-only visibility, LRU+epoch invalidation), grants list/PUT/DELETE with scope-owner, last-owner, hidden-404/visible-403, principal validation and workspace-lock/D-070 serialization; `require` guard. D-079/D-080, no migration. AT-204..212 pass at the API surface (209-212 fully; UI parts of 204-208 await T1.10-T1.12). Windows check and 9/2 image E2E pass. |
 | T1.5 | Admin users | ⬜ | | |
 | T1.6 | Admin groups | ⬜ | | |
 | T1.7 | Admin dashboard | ⬜ | | |
@@ -86,7 +86,7 @@ Summary updated at each milestone end.
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
 | AT-1xx Auth & Admin | 17 | 2 | AT-101 setup browser acceptance and AT-103 real HTTP/PG18 rate limits pass. AT-102/116 API evidence only; login/profile browser UI remains deferred. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
-| AT-2xx Structure & Permissions | 13 | 0 | |
+| AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface (real HTTP/PG18). AT-204..208 pass for resolver/grants API behavior; their editor/menu/banner/sidebar UI parts remain for T1.10-T1.12. AT-201..203/213 not started. |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
@@ -108,6 +108,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | T1.4 implemented and verified: `internal/acl` resolver/grants service, `/api/v1/grants` routes, `require` guard, D-079/D-080, sqlc `aclsql`, docs and T1.5 prompt. Required PG18 tests (x3), Windows check and image E2E pass. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.3 started after reading the required docs and T1.2 handoff; D-078 records the confirmed setup policies. AT-101 and the required PG18/local gates now pass; exact evidence follows. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.2 backend implementation verified and handed off; D-072..077, static sqlc auth queries, API/types/testing docs and T1.3 prompt added. Windows check, required PG18 and final 8/2 image E2E pass. Kept T1.2 in progress because the user explicitly deferred auth/profile UI and full AT-117. No shared/remote deployment or unrelated task completion. |
 | 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
@@ -762,3 +763,52 @@ Next: **T1.4 ACL resolver & grants API**. The prompt carries forward D-069..D-07
 session/auth contracts, metadata integrity and polymorphic-grant service rules,
 PG18 test isolation, no migration unless justified, CSP/i18n/resource limits,
 and the required completion record plus T1.5 prompt handoff.
+
+## T1.4 ACL verification and handoff (2026-10-26)
+
+**T1.4 Done at its API surface.** `internal/acl` implements the resolver and
+grants service; `GET/PUT /api/v1/grants` and `DELETE /api/v1/grants/{id}` are
+mounted by `serve`; `authHTTP.require(level, type, param)` is the reusable
+404/403 guard for later resource routes. D-079 (single-SQL lookup with flat
+groups joined in SQL, path-only visibility, LRU 4096/5 s TTL plus process epoch
+`Invalidate()`; replaces doc 06's NOTIFY sketch under D-045) and D-080
+(owner-only list/PUT/DELETE, hidden=404 / visible-but-low=403, workspace
+`FOR NO KEY UPDATE` + key-share locks serializing with hard deletion,
+principal 404/409, active-direct-user last-owner rule) are recorded. No
+migration; 0001/0002 unchanged; second sqlc entry generates `internal/acl/aclsql`
+byte-identically with pinned 1.31.1.
+
+### Verification
+
+- Go **1.27.0**, PostgreSQL **18.6**, Podman **5.8.2**, sqlc **1.31.1**;
+  Docker/golangci-lint/race (cgo off) unavailable.
+- `go test ./internal/acl ./internal/httpapi -count=3` with required PG18:
+  **PASS** (12.9 s / 14.9 s). Covers the resolver matrix, group union and
+  membership, disabled/admin/trashed, path-only visibility, cache hit/epoch/TTL/
+  LRU/race-with-invalidation, validation, scope-owner boundaries, last-owner
+  edge cases, orphaned workspaces, rollback/lock release, 12 rounds of
+  concurrent last-owner removal, concurrent upserts and hard-delete
+  interleavings, plus HTTP AT-204..212, CSRF/Origin/auth/forced-change/disabled
+  and body/query/method rules.
+- `go run ./tools/ptdev check`: **PASS**, lint **14.228 s**, test **26.956 s**,
+  build **12.582 s**, total **53.766 s** (first run failed only gofmt on
+  CRLF-created files; fixed with `gofmt -w`).
+- `go run ./tools/ptdev e2e` (goproxy.cn mirror): **PASS**, **9 passed / 2
+  intentional mobile skips in 39.4 s**, health **6.474 s**, shell gzip
+  **138,976 bytes**, app snapshot **74.3 MB / 536.9 MB, 12.08% CPU** (startup
+  observation, not AT-801).
+- Cache/query behavior: one SQL statement per uncached lookup; repeated lookups
+  within TTL and epoch cost zero queries; a committed mutation invalidates, a
+  rejected one does not.
+
+### Cleanup and next task
+
+Zero `pt_test_*` databases/sessions remain; the E2E project, volumes, networks
+and image were removed; `pt-dev-db`/`pt-dev-pgdata` retained (container stopped
+again as before the task). No remote deployment. Limitations: lifecycle/
+disable/membership services must call `Resolver.Invalidate()` when they arrive;
+UI parts of AT-204..208 are T1.10-T1.12; T1.2 browser AT-102/116/full AT-117
+and Linux/Docker AT-001/005/006 remain pending. Details:
+[T1.4 record](task-prompts/T1.4.md#implementation-and-handoff-2026-10-26).
+
+Next: **[T1.5 Admin users](task-prompts/T1.5.md)**.

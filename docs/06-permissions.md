@@ -34,10 +34,13 @@ effective(user, workspace W)      = max over grants on {W}
 
 A user sees a workspace in the sidebar if they have *any* grant on it, or on any book/table within it. Same for books. Items without effective permission are hidden (e.g. a user with only a table grant sees W → B → that table only). Workspace/book shown as "path-only" (cannot open settings, cannot list siblings).
 
+The resolver reports this as `Access{Level, Visible}`: `Visible` is true when the level is above none **or** the user's principals hold a grant on any live descendant. Guards return **404** when `Visible` is false (hidden, missing, trashed, disabled user) and **403** when the resource is visible but the level is insufficient (including path-only workspaces/books). The sidebar/`/nav` consumer is T1.10/T1.11.
+
 ### Implementation
 
-- `acl.Resolver` loads, per request, the user's group ids (cached in session context) and resolves with a single SQL query using the path (W, B, T ids from a cached `meta` lookup).
-- Per-process LRU cache keyed by (user, resource) with invalidation on any grant/group/membership change (bumped `acl_epoch` broadcast via NOTIFY).
+- `acl.Resolver` (D-079) resolves with one SQL statement per lookup: the user's flat group memberships are joined in SQL (no separate per-session group cache), against the grants on the live path W → B → T. Disabled users, trashed targets and trashed ancestors produce no access.
+- Per-process LRU cache keyed by (user, resource), 4096 entries, 5 s TTL. D-045 (single instance) makes the NOTIFY broadcast unnecessary: an in-process **epoch** replaces it. Every service that commits a change to grants, group membership, user status/role-disable, or resource trash/restore/delete **must call `Resolver.Invalidate()` after commit** (also when the commit outcome is uncertain). Invalidate drops all entries and bumps the epoch; a lookup that began before the bump is never stored. The TTL only bounds staleness from out-of-band SQL; it is not the invalidation mechanism.
+- The grant service never trusts the cache: ownership checks for mutations run uncached inside the workspace-locked transaction.
 
 ## 4. Action matrix
 
@@ -70,6 +73,7 @@ Anyone (role `user`) can create a new workspace and becomes its owner.
 3. **Last-owner rule:** a workspace must always have ≥ 1 *active user* with a direct `owner` grant on the workspace (group-only ownership doesn't count, so it can't vanish through membership changes). Removing/downgrading/disabling the last one is rejected (`ERR_LAST_OWNER`).
 4. Disabling a user who is the last owner of a workspace is allowed, but the workspace then becomes **orphaned** and appears in Admin → Workspaces for ownership transfer.
 5. Owners cannot remove their own *inherited* owner level via a lower-level grant (only-raise rule).
+6. Only an effective owner may *list* a scope's grants (D-080); `read`/`write` users get 403, hidden scopes 404.
 
 ## 6. Relations & cross-table visibility
 

@@ -136,6 +136,17 @@ versions, resolved failures and owned cleanup are recorded in
 
 ## AT-2xx Structure & Permissions (M1)
 
+### T1.4 API-surface evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-209..212 | Pass (API) | Real HTTP/PG18: book owner manages B/T only (403 on W, 404 on another book), workspace owner grants owner, last owner `ERR_LAST_OWNER` then allowed after a second owner, no-grant users and admin role get 404. |
+| AT-204..208 | Partial | Resolver/grants API behavior passes (read/write probes and 403s, raise-only with `inheritedLevel` warning data, group grant removal with invalidation + 5 s TTL bound, table-only API visibility). Disabled editors/menus, warning banner, tab behavior and sidebar presentation await T1.10-T1.12. |
+
+Tests: `internal/acl` and `internal/httpapi` (required PG18, `-count=3`);
+membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
+[progress](progress.md#t14-acl-verification-and-handoff-2026-10-26).
+
 - **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`.
 - **AT-202 — Rename is metadata only** · M1 *(API)* · Renaming T/field to Chinese names with spaces works; physical names unchanged.
 - **AT-203 — Delete goes to trash** · M1/M3 · alice deletes T → disappears from sidebar; (M3) appears in W's Trash and can be restored with data intact.

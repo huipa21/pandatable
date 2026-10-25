@@ -31,7 +31,8 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
   This is a pre-T0.5 build state, not an application API success response.
 
 T1.2 implements the auth/profile/timezone backend below. T1.3 implements
-first-run setup; admin, ACL and business endpoints remain later-task work. The
+first-run setup; T1.4 adds the ACL resolver and grants API; admin and other
+business endpoints remain later-task work. The
 welcome page is still not a sign-in UI; login/profile browser acceptance remains
 pending by explicit scope choice.
 
@@ -183,9 +184,60 @@ pending by explicit scope choice.
 | DELETE | `/trash/{type}/{id}` | purge now |
 
 ### Permissions
+| Method | Path | Notes |
+|---|---|---|
 | GET | `/grants?resource=workspace:{id}` | direct grants on resource + inherited summary |
 | PUT | `/grants` | `{ resourceType, resourceId, principalType, principalId, level }` (upsert) |
 | DELETE | `/grants/{id}` | |
+
+#### T1.4 grants contract (D-079, D-080)
+
+- All three routes use the T1.2 protections: session + disabled-user denial,
+  `must_change_password` → 403, no-store, ten-second deadline, exact Origin and
+  `X-PT-CSRF: 1` on PUT/DELETE, JSON-only bodies of at most 4096 bytes with known
+  fields. They exist only when the server is configured with the ACL service
+  (always in `serve`).
+- `resource` is `workspace:<uuid>`, `book:<uuid>` or `table:<uuid>` (canonical
+  UUID, exactly one value). Malformed references are 400 `ERR_VALIDATION`.
+- **Authorization:** list, PUT and DELETE all require the caller to be an
+  *effective owner* of the grant's resource (direct or inherited), which is the
+  D-014 scope-owner rule: an owner of S manages S and descendants, including
+  `owner` grants, and nothing outside S. Admin role gives nothing. Mutations
+  re-evaluate ownership uncached inside the locked transaction.
+- **404 vs 403:** a resource with no effective grant for the caller, no grant on
+  any live descendant (path-only visibility) and not visible through a grant is
+  hidden: 404 `ERR_NOT_FOUND`, also for missing/trashed targets and ancestors.
+  A resource that is visible (effective level below the requirement, or
+  path-only) is 403 `ERR_PERMISSION_DENIED`. Example (AT-209): a book owner
+  gets 403 on the parent workspace, 404 on a sibling book.
+- `GET` returns `{ resource, effectiveLevel, items, inherited }`. `items` are
+  direct grants on the resource; `inherited` are grants on its workspace/book
+  ancestors (workspace first). A grant is
+  `{ id, resourceType, resourceId, principalType, principalId, level, grantedBy,
+  createdAt, principal }`, where `principal` is `{ name, username, status }` for
+  users (display name), `{ name, username: null, status: null }` for groups, or
+  `null` for a dangling principal. `items[]` also carry `inheritedLevel`
+  (nullable): the highest level the *same principal* inherits from ancestors, so
+  clients can warn that a lower direct level has no effect.
+- `PUT` validates level (`read|write|owner`), types, UUIDs and the principal:
+  missing user/group 404 `ERR_PRINCIPAL_NOT_FOUND`, disabled user 409
+  `ERR_PRINCIPAL_DISABLED`. Returns `{ grant, created, eventId }`: 201 when
+  created, 200 when the level was replaced; an identical level is an unchanged
+  200 no-op. Lowering the *direct* level below an inherited one is allowed and
+  has no effect (D-013).
+- `DELETE` returns `{ eventId }`; unknown ids are 404, malformed ids 400.
+- **Last owner:** removing or downgrading the direct `owner` grant of an
+  *active user* on a workspace when no other active direct user owner exists is
+  409 `ERR_LAST_OWNER`. Group ownership and disabled owners do not count; owner
+  grants on books/tables are unprotected.
+- Concurrent mutations in one workspace serialize on its row lock; mutations
+  also hold key-share locks on book/table/user/group targets so they serialize
+  with hard deletion. After any committed change the resolver cache is
+  invalidated before the response is sent.
+- Server-side route guard: `authHTTP.require(level, type, urlParam)` returns
+  404/403 as above and is how later resource routes (`/tables/{id}/…`) enforce
+  ACLs. Resolver decisions are cached per process; see
+  [06](06-permissions.md#implementation).
 
 ### Views
 | POST | `/tables/{id}/views` | `{ name, type, scope }` |
