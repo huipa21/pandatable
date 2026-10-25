@@ -54,3 +54,38 @@ export interface APIError {
     details?: Record<string, unknown>
   }
 }
+
+export interface AdminUser {
+  id: string
+  username: string
+  email: string | null
+  displayName: string
+  role: 'admin' | 'user'
+  status: 'active' | 'disabled'
+  mustChangePassword: boolean
+  lastLoginAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UserListing {
+  items: AdminUser[]
+  total: number
+}
+
+export interface CreateUserRequest {
+  username: string
+  email?: string | null
+  displayName: string
+  role: AdminUser['role']
+  password: string
+}
+
+export type AdminUserPatch = Partial<
+  Pick<AdminUser, 'email' | 'displayName' | 'role' | 'status'>
+>
+
+export interface AdminUserMutation extends AuthMutation {
+  user: AdminUser
+  sessionsRevoked?: boolean
+}

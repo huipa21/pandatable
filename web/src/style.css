@@ -207,6 +207,115 @@ h1 {
   margin: 0 auto;
 }
 
+.session-nav,
+.user-actions,
+.admin-heading,
+.user-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.session-nav {
+  justify-content: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.auth-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.app-main:has(.admin-users) {
+  width: min(100%, 1100px);
+  padding: 32px 24px;
+  margin: 0 auto;
+}
+
+.admin-heading {
+  justify-content: space-between;
+}
+
+.admin-heading h1 {
+  font-size: 34px;
+}
+
+.admin-editor,
+.user-search,
+.pagination {
+  margin-top: 24px;
+}
+
+.user-search > .n-input {
+  flex: 1 1 240px;
+}
+
+select {
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.user-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+}
+
+.form-wide {
+  grid-column: 1 / -1;
+}
+
+.user-list {
+  display: grid;
+  gap: 12px;
+}
+
+.user-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.user-details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.user-details h2 {
+  font-size: 18px;
+  margin: 0 0 8px;
+}
+
+.user-details p {
+  margin: 4px 0;
+}
+
+@media (max-width: 767px) {
+  .user-card {
+    display: block;
+  }
+
+  .user-card .user-actions {
+    margin-top: 16px;
+  }
+
+  .user-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 480px) {
   .app-header {
     justify-content: center;

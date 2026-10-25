@@ -70,10 +70,17 @@ Anyone (role `user`) can create a new workspace and becomes its owner.
 
 1. An owner of scope S (effective, possibly inherited) can create/update/delete grants on S and any descendant of S.
 2. An owner can grant `owner`.
-3. **Last-owner rule:** a workspace must always have ≥ 1 *active user* with a direct `owner` grant on the workspace (group-only ownership doesn't count, so it can't vanish through membership changes). Removing/downgrading/disabling the last one is rejected (`ERR_LAST_OWNER`).
+3. **Last-owner rule:** grant removal/downgrade must keep ≥ 1 *active user* with a direct `owner` grant on the workspace (group-only ownership doesn't count, so it can't vanish through membership changes). Removing/downgrading the last one is rejected (`ERR_LAST_OWNER`). User disable follows the orphaning exception below.
 4. Disabling a user who is the last owner of a workspace is allowed, but the workspace then becomes **orphaned** and appears in Admin → Workspaces for ownership transfer.
 5. Owners cannot remove their own *inherited* owner level via a lower-level grant (only-raise rule).
 6. Only an effective owner may *list* a scope's grants (D-080); `read`/`write` users get 403, hidden scopes 404.
+
+T1.5 implements disable/enable under the user row lock, revokes all sessions in
+the same transaction and invalidates the resolver immediately after commit
+(also on uncertain commits). Role changes likewise revoke sessions/invalidate,
+but do not create resource grants. D-082's last-active-**admin** protection is
+independent of workspace ownership; disabling a last direct workspace owner is
+allowed and retains the workspace/grants/authorship.
 
 ## 6. Relations & cross-table visibility
 

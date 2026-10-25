@@ -134,6 +134,23 @@ versions, resolved failures and owned cleanup are recorded in
 [progress](progress.md#t13-setup-verification-and-handoff-2026-10-25) and the
 [T1.3 completion record](task-prompts/T1.3.md#implementation-and-handoff-2026-10-25).
 
+### T1.5 admin users evidence (2026-10-26)
+
+| Test | Status | Evidence |
+|---|---|---|
+| AT-104 | Pass | No registration UI; real non-admin create request gets 403 `ERR_PERMISSION_DENIED` (unauthenticated 401). |
+| AT-105 | Pass | Desktop/mobile production UI creates normalized users with temporary passwords; login/deep routes force `/change-password`; successful change revokes sessions and requires re-login. |
+| AT-106 | Pass | Admin reset through the real UI revokes the existing browser session (me=401); reset password login requires change. PG18 verifies all-session atomicity/rollback and old-password login race. |
+| AT-107 | Pass | Disable logs the open tab out on its next request; login is denied; retained identity is visible and re-enables. PG18 verifies retained workspace/creator/grants and immediate cache invalidation (no TTL wait). |
+| AT-108 | Pass | Non-admin sees no Admin link; `/admin/users` and unknown `/admin/*` deep routes redirect home; independent API denial and forced/disabled authorization verified. |
+| AT-002/003/004/101/103/802/803 | Preserved | Required PG18 Windows gate and production setup/shell/spike suite pass; image 162,975,200 bytes, linux/amd64, UID/GID 10001, healthcheck and PG18 client; 143 locale keys, CSP unchanged. |
+
+Final production-image suite: **11 passed / 2 intentional mobile exclusions**.
+Both admin scenarios cover role edits, search, en/zh-CN and responsive cards/forms.
+No full AT-102/116/117, Linux/Docker/server, realtime or load acceptance is
+inferred. Exact commands, failures and cleanup:
+[T1.5 record](task-prompts/T1.5.md#implementation-and-handoff-2026-10-26).
+
 ## AT-2xx Structure & Permissions (M1)
 
 ### T1.4 API-surface evidence (2026-10-26)

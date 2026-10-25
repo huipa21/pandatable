@@ -331,6 +331,14 @@ are still future work and must use that lock/revocation contract.
   user"); shared views/comments/history/attachments/backups survive within
   surviving scopes. Mention arrays and notification payloads are snapshots, not
   FKs. Future reads filter deleted users where appropriate.
+- T1.5 disable/enable and role changes are updates, not deletion: user IDs,
+  data, grants and authorship stay intact. D-082 serializes user-admin
+  mutations with `pandatable.admin.users`, then locks/rechecks the actor and
+  locks the target user before writing and revoking all target sessions in the
+  same transaction. The last active admin cannot be disabled/demoted; the last
+  workspace owner may be disabled (orphaning). Password resets also lock the
+  target and revoke all sessions atomically. Role/status writes invalidate ACL
+  after commit/uncertain commit; no schema change is needed.
 - Comments/history reference metadata tables, not physical rows, so row deletion
   does not destroy undo/history context. Table purge cascades both. History's
   `type_change` action has NULL `row_id`; all six row actions require a row ID.

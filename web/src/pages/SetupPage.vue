@@ -3,10 +3,12 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { NAlert, NButton, NFormItem, NInput, NSpin } from 'naive-ui'
 import { usePreferencesStore } from '../stores/preferences'
+import { useAuthStore } from '../stores/auth'
 import type { APIError, AuthUserMutation } from '../api/types'
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
+const auth = useAuthStore()
 const setupErrorCodes = [
   'ERR_VALIDATION',
   'ERR_SETUP_TOKEN',
@@ -88,6 +90,7 @@ async function submit() {
       return
     }
     user.value = (result as AuthUserMutation).user
+    auth.setUser(user.value)
     form.token = ''
     form.password = ''
     state.value = 'success'

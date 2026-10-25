@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4 Done. T1.2 backend auth verified, but browser AT-102/116 and full AT-117 remain pending. AT-101/103/803 pass; ACL/grants API verified (AT-204..212 at the API surface). Admin/business services remain future work. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5 Done. Admin users and login/forced-change UI verified; AT-101/103/104..108/803 pass. T1.2 AT-102/116 and full AT-117 remain pending. ACL/grants API verified (AT-204..212 at the API surface); groups and other business services remain future work. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -30,7 +30,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.2 | Auth service | 🟨 | 2026-10-25 | Backend verified: bounded argon2id, hash-only PG sessions/expiry/revocation, auth/profile/timezone APIs, alias/IP limits, trusted proxies, CSRF/cookies. Windows check and image E2E pass; AT-103/803 pass. User chose backend-only: browser AT-102/116 and full AT-117 remain pending, so not Done. T1.3 handoff created. |
 | T1.3 | Setup flow | ✅ | 2026-10-25 | First-run token/status/admin/session, process-safe one-time setup and localized desktop/mobile UI. AT-101 passes in production-image Chromium; required PG18 gate and full local checks pass. D-078; no migration. |
 | T1.4 | ACL resolver & grants API | ✅ | 2026-10-26 | Resolver (one SQL/lookup, flat groups, path-only visibility, LRU+epoch invalidation), grants list/PUT/DELETE with scope-owner, last-owner, hidden-404/visible-403, principal validation and workspace-lock/D-070 serialization; `require` guard. D-079/D-080, no migration. AT-204..212 pass at the API surface (209-212 fully; UI parts of 204-208 await T1.10-T1.12). Windows check and 9/2 image E2E pass. |
-| T1.5 | Admin users | ⬜ | | |
+| T1.5 | Admin users | ✅ | 2026-10-26 | Admin-only list/search/create/PATCH/reset, normalized collision-safe identities, last-active-admin and self-management rules, atomic session revocation and ACL invalidation; responsive localized users UI and login/forced change. D-081..083, no migration/dependencies. Required PG18 tests x3, Windows check, production-image AT-104..108 desktop/mobile and 11/2 regression suite pass; T1.6 handoff recorded. |
 | T1.6 | Admin groups | ⬜ | | |
 | T1.7 | Admin dashboard | ⬜ | | |
 | T1.8 | Admin settings & workspaces list | ⬜ | | |
@@ -85,14 +85,14 @@ Summary updated at each milestone end.
 | Area | Total | Passing | Notes |
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
-| AT-1xx Auth & Admin | 17 | 2 | AT-101 setup browser acceptance and AT-103 real HTTP/PG18 rate limits pass. AT-102/116 API evidence only; login/profile browser UI remains deferred. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
+| AT-1xx Auth & Admin | 17 | 7 | AT-101/103 and T1.5 AT-104..108 pass (real production-image desktop/mobile plus PG18). Login/forced-change UI now exists; full AT-102 and profile AT-116 remain pending. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
 | AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface (real HTTP/PG18). AT-204..208 pass for resolver/grants API behavior; their editor/menu/banner/sidebar UI parts remain for T1.10-T1.12. AT-201..203/213 not started. |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 61 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). No NFR-2/3 or full-load AT-801 claim. |
+| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 143 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). No NFR-2/3 or full-load AT-801 claim. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -812,3 +812,81 @@ and Linux/Docker AT-001/005/006 remain pending. Details:
 [T1.4 record](task-prompts/T1.4.md#implementation-and-handoff-2026-10-26).
 
 Next: **[T1.5 Admin users](task-prompts/T1.5.md)**.
+
+## T1.5 admin users verification and handoff (2026-10-26)
+
+**T1.5 Done; AT-104..AT-108 pass.** Started and completed 2026-10-26 after
+user confirmation of the D-081 list/identity/password policy, D-082
+last-active-admin/self-management and transaction protocol, and D-083 scoped
+login/forced-change/admin UI. No migration or dependency additions.
+
+### Delivered
+
+- `internal/admin`: sanitized users DTOs, literal search/status/paging,
+  normalized identities with legacy collision/ambiguity rejection, create,
+  PATCH and forced password reset. Static SQL uses a third pinned-sqlc entry.
+- User mutations serialize with `pandatable.admin.users`, lock/recheck the
+  acting admin/session, then lock the target. Role/status changes and resets
+  revoke all target sessions atomically; last-active-admin changes fail 409.
+  Self-demotion/disable is allowed when another admin remains; self-reset is
+  allowed. Role/status writes invalidate ACL after commit/uncertain commit.
+  Last workspace owner disable is allowed; data/authorship remain.
+- Admin-only HTTP namespace, shared auth worker/identity validators, strict
+  request/CSRF/no-store/error contracts. SPA sign-in, minimal home, forced
+  password change/re-login, admin-only menu, responsive localized user
+  create/edit/role/status/reset/search forms, explicit errors and route guards.
+  Existing setup completion, preferences, CSP and opt-in grid are preserved.
+
+### Exact verification
+
+- Versions: Go 1.27.0 windows/amd64, PostgreSQL 18.6, Podman client/server
+  5.8.2/5.8.4, Node 24.15.0, pnpm 11.2.2, sqlc 1.31.1,
+  Playwright 1.64.1 (Chromium). Docker/golangci-lint unavailable; cgo off.
+- `go test ./internal/admin ./internal/auth ./internal/httpapi -count=3`,
+  explicit `PT_TEST_DATABASE_URL` and `PT_TEST_DATABASE_REQUIRED=1`: **PASS**
+  (final 8.096 s / 14.072 s / 18.190 s). Includes failed-session-delete
+  rollback, actual PG lock evidence, concurrent self-demotions, concurrent
+  duplicate-email updates, stale caller reauthorization and old-password login
+  queued behind reset (cannot resurrect a session). Disable/enable invalidation
+  is tested against a primed resolver cache, without waiting for TTL.
+- `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate`: **PASS**;
+  SHA-256 before/after all three generated packages is byte-identical.
+- `pnpm --dir web lint` and `pnpm --dir web test`: **PASS**, **143** matching
+  keys and **27 tests / 8 files**. Guard tests include forced access to setup
+  and spike, non-admin deep routes and explicit connection failures.
+- Final `go run ./tools/ptdev check`: **PASS**, lint **19.224 s**,
+  test **31.358 s**, build **13.518 s**, total **64.101 s**.
+- Final `go run ./tools/ptdev e2e`: **PASS**, **11 passed / 2 intentional
+  mobile exclusions in 57.1 s**; desktop/mobile admin scenarios
+  **10.3 s / 9.9 s**. Setup and all existing shell/spike checks pass.
+  Production health **6.381 s**. Shell gzip **165,751 bytes** (<600,000, no
+  grid imports), all assets **294,311 bytes**. Startup app snapshot
+  **74.35 MB / 536.9 MB, 13.19% CPU** (not load-test/AT-801 evidence).
+- Separate owned production-image probe: **AT-004 preserved**,
+  linux/amd64, **162,975,200 bytes** (<200 MB), UID/GID 10001:10001,
+  executable healthcheck and `pg_dump` **18.6**. Probe tag/container removed.
+
+### Failures, cleanup and handoff
+
+Initial lint caught Vue formatting and an untranslated role/status separator;
+fixed through existing ESLint/Prettier and a shared en/zh-CN formatting key.
+The first hash-check command used a native Git wildcard that PowerShell did not
+expand; corrected to enumerated `Get-FileHash` inputs. Initial E2E reached the
+working password-change success UI but expected `status` instead of Naive UI's
+actual `alert`; corrected the locator, then subsequent full runs passed. The first
+image probe looked for Docker's Config.Healthcheck, but Podman exposes the
+image's top-level HealthCheck; corrected the probe and verified actual metadata
+and runtime client. No production assertion, CSP or rate limit was weakened.
+
+All Suite-owned databases/sessions were removed (catalog counts both zero).
+All four E2E projects and owned probe images/containers were removed, with
+their private networks/volumes. `pt-dev-db` restored to stopped and
+`pt-dev-pgdata` retained. Release images/shared networks/Caddy untouched.
+Ignored generated assets and browser artifacts are not committed. No remote
+deployment or hosted CI. Linux/Docker/server AT-001/005/006, T1.2
+AT-102/116/full AT-117 and T1.4 UI-dependent acceptance remain pending.
+
+Full commands, implementation details and limitations:
+[T1.5 completion record](task-prompts/T1.5.md#implementation-and-handoff-2026-10-26).
+Next: **[T1.6 Admin groups](task-prompts/T1.6.md)**, carrying the mandatory
+Invalidate-after-membership-change and completion/next-prompt obligations.

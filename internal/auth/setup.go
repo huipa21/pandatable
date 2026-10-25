@@ -5,12 +5,9 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
-	"net/mail"
 	"net/netip"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -82,26 +79,16 @@ func (service *Service) hasSetupToken(token string, now time.Time) bool {
 }
 
 func normalizeSetupInput(input SetupInput) (SetupInput, error) {
-	input.Username = strings.ToLower(strings.TrimSpace(input.Username))
-	if len(input.Username) < 3 || len(input.Username) > 32 {
-		return SetupInput{}, validation()
+	var err error
+	input.Username, err = NormalizeUsername(input.Username)
+	if err != nil {
+		return SetupInput{}, err
 	}
-	for _, character := range input.Username {
-		if !(character >= 'a' && character <= 'z' || character >= '0' && character <= '9' ||
-			character == '.' || character == '_' || character == '-') {
-			return SetupInput{}, validation()
-		}
+	input.Email, err = NormalizeEmail(input.Email)
+	if err != nil {
+		return SetupInput{}, err
 	}
-	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
-	if !utf8.ValidString(input.Email) || len(input.Email) > 254 {
-		return SetupInput{}, validation()
-	}
-	address, err := mail.ParseAddress(input.Email)
-	if err != nil || address.Address != input.Email || strings.ContainsAny(input.Email, "\r\n") {
-		return SetupInput{}, validation()
-	}
-	if !utf8.ValidString(input.DisplayName) || strings.TrimSpace(input.DisplayName) == "" ||
-		utf8.RuneCountInString(input.DisplayName) > 100 || strings.ContainsFunc(input.DisplayName, unicode.IsControl) ||
+	if !ValidDisplayName(input.DisplayName) ||
 		!validPassword(input.Password) || input.Locale != "en" && input.Locale != "zh-CN" {
 		return SetupInput{}, validation()
 	}

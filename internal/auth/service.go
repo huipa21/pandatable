@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -352,9 +351,7 @@ func (service *Service) UpdateProfile(ctx context.Context, token string, patch P
 		return User{}, validation()
 	}
 	if patch.DisplayName != nil {
-		value := *patch.DisplayName
-		if !utf8.ValidString(value) || strings.TrimSpace(value) == "" || utf8.RuneCountInString(value) > 100 ||
-			strings.ContainsFunc(value, unicode.IsControl) {
+		if !ValidDisplayName(*patch.DisplayName) {
 			return User{}, validation()
 		}
 	}

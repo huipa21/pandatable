@@ -1,16 +1,41 @@
 <script setup lang="ts">
-import { NButton, NButtonGroup } from 'naive-ui'
+import { ref } from 'vue'
+import { NAlert, NButton, NButtonGroup } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { usePreferencesStore } from '../stores/preferences'
+import { useAuthStore } from '../stores/auth'
+import { errorMessage, RequestError } from '../api/client'
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
+const auth = useAuthStore()
+const router = useRouter()
+const error = ref<unknown>(null)
+const busy = ref(false)
+
+async function logout() {
+  if (busy.value) return
+  busy.value = true
+  error.value = null
+  try {
+    await auth.logout()
+    await router.replace('/login')
+  } catch (cause) {
+    if (cause instanceof RequestError && cause.code === 'ERR_UNAUTHENTICATED') {
+      auth.setUser(null)
+      await router.replace('/login')
+    } else error.value = cause
+  } finally {
+    busy.value = false
+  }
+}
 </script>
 
 <template>
   <div class="app-shell">
     <header class="app-header">
-      <RouterLink class="brand" to="/login">
+      <RouterLink class="brand" :to="auth.user ? '/home' : '/login'">
         <span class="brand-mark" aria-hidden="true">{{
           t('common.mark')
         }}</span>
@@ -69,7 +94,24 @@ const preferences = usePreferencesStore()
         </fieldset>
       </div>
     </header>
+    <nav v-if="auth.user" class="session-nav" :aria-label="t('auth.account')">
+      <template v-if="!auth.user.mustChangePassword">
+        <RouterLink to="/home">{{ t('auth.homeTitle') }}</RouterLink>
+        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/users">
+          {{ t('admin.menu') }}
+        </RouterLink>
+        <RouterLink to="/change-password">
+          {{ t('auth.changePassword') }}
+        </RouterLink>
+      </template>
+      <NButton size="small" :loading="busy" @click="logout">
+        {{ t('auth.signOut') }}
+      </NButton>
+    </nav>
     <main class="app-main">
+      <NAlert v-if="error" type="error" role="alert">
+        {{ errorMessage(error) }}
+      </NAlert>
       <slot />
     </main>
     <footer class="app-footer">{{ t('common.tagline') }}</footer>

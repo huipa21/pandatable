@@ -247,8 +247,41 @@ lock interleavings are in `internal/acl`; AT-204..212 at the HTTP surface
 go run ./tools/ptdev test -run "Test(Effective|Membership|Disabled|PathOnly|Cache|Put|Inherited|List|Scope|Delete|LastOwner|Orphaned|Concurrent|Grant|Failed|Resolver|Access|Level|Resource)" -v -count=1
 ```
 
-Production-image E2E cannot seed non-admin users or workspaces until T1.5/T1.10
-ship real APIs, so these ACL checks are API/HTTP-level evidence only.
+T1.5 supplies real admin user seeding; workspace fixtures still require T1.10.
+These ACL checks remain API/HTTP-level evidence.
+
+### T1.5 admin users checks
+
+`internal/admin` owns a separate Suite-managed PG18 database. Tests cover
+normalization/legacy ambiguous identities, literal search/pagination, typed
+validation/authorization, temporary-password/self-reset flows, all-session
+revocation, status/role rules, last-active-admin concurrency, rollback on failed
+session revocation, real row-lock waits and caller reauthorization. A cached
+last workspace owner's access disappears immediately on disable and returns
+on enable; workspace/authorship rows remain. `internal/httpapi` covers the
+admin namespace, strict bodies/query parameters, CSRF and DTO/error contracts.
+Static queries use the third sqlc 1.31.1 entry (`internal/admin/adminsql`);
+all three generated packages must stay byte-identical on regeneration.
+
+```text
+go test ./internal/admin ./internal/auth ./internal/httpapi -count=3
+pnpm --dir web lint
+pnpm --dir web test
+go run ./tools/ptdev check
+go run ./tools/ptdev e2e
+```
+
+The focused Go command requires explicit `PT_TEST_DATABASE_URL` and
+`PT_TEST_DATABASE_REQUIRED=1`; `ptdev check` supplies them automatically.
+Browser AT-104..108 uses only logged-token setup, actual login/admin APIs and
+the production UI. One scenario per desktop/mobile creates normalized users,
+edits roles in both locales, searches, changes a forced password, tests
+non-admin API/deep-route denial, resets/revokes, disables an open session on
+its next request and re-enables the retained identity. Ten total login attempts
+fit the unchanged ten/minute/IP limit; the tests do not bypass/reset rate state.
+Expected 401 `/auth/me` probes are matched narrowly to Chromium's HTTP console
+diagnostics, alongside AT-101's explicitly asserted negative setup responses;
+all other warnings/errors/CSP violations still fail the suite.
 
 ### Browser setup and isolated E2E
 
@@ -279,7 +312,9 @@ English/Chinese and light/dark/system persistence, actual Naive UI styles,
 adjacent controls, no page overflow, and no console/page/CSP errors. AT-101 now
 uses the production image and the logged token from the unique owned app
 container; ptdev passes it only to Playwright and redacts it from failure logs.
-Login/profile/business/seed flows remain unimplemented or unclaimed.
+T1.5 adds login/forced-change and admin-user browser acceptance; profile and
+workspace/business flows remain deferred. Browser users are seeded only via the
+real admin API, never SQL or a test-only production endpoint.
 
 T0.8 adds [grid-spike.spec.ts](../web/e2e/grid-spike.spec.ts) to this same
 production-image suite. It verifies opt-in isolation, 200k logical-row

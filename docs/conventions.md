@@ -18,6 +18,9 @@
     [configuration](../sqlc.yaml) and [query source](../internal/auth/queries.sql);
     commit the generated Go bindings. The offline PG catalog declaration is
     generator-only, never a migration. The generator is not a runtime dependency.
+    The same configuration also generates ACL and admin bindings from their
+    respective `queries.sql` files; a pinned regeneration must be byte-identical
+    for all three generated packages.
   - Dynamic data queries via `squirrel` with **identifiers only from meta** (quoted with `pgx.Identifier{}.Sanitize()`), values always as parameters.
   - No string concatenation of user input into SQL — enforced by code review + gosec.
 - Tests: `go test ./...`; integration tests use [internal/testdb](../internal/testdb/) with a package-level Suite and TestMain cleanup, real PostgreSQL 18 from explicit `PT_TEST_DATABASE_URL`, and a fresh migrated database per package. Absent/unreachable DBs clearly skip within a bounded connection attempt; config/auth/SQL/migration errors fail. `ptdev test/check` starts/reuses the dev DB and requires integration tests (no unavailable-DB skips). No testcontainers. See [14, tests](14-dev-build-release.md#3-tests-without-hosted-ci).

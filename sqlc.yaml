@@ -21,3 +21,13 @@ sql:
         out: internal/acl/aclsql
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema:
+      - migrations
+    queries: internal/admin/queries.sql
+    gen:
+      go:
+        package: adminsql
+        out: internal/admin/adminsql
+        sql_package: pgx/v5
+        omit_unused_structs: true

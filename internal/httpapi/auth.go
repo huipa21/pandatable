@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/admin"
 	"pandatable/internal/apperr"
 	"pandatable/internal/auth"
 )
@@ -28,6 +29,7 @@ const sessionCookie = "pt_session"
 type AuthOptions struct {
 	Service        *auth.Service
 	ACL            *acl.Service
+	Admin          *admin.Service
 	BaseURL        string
 	TrustedProxies []netip.Prefix
 }
@@ -35,6 +37,7 @@ type AuthOptions struct {
 type authHTTP struct {
 	service *auth.Service
 	acl     *acl.Service
+	admin   *admin.Service
 	logger  *slog.Logger
 	origin  string
 	secure  bool
@@ -52,7 +55,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 	if !secure {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
-	return &authHTTP{service: options.Service, acl: options.ACL, logger: logger, origin: origin,
+	return &authHTTP{service: options.Service, acl: options.ACL, admin: options.Admin, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -243,6 +246,9 @@ func (api *authHTTP) mount(router chi.Router) {
 	if api.acl != nil {
 		api.mountGrants(router)
 	}
+	if api.admin != nil {
+		api.mountAdmin(router)
+	}
 }
 
 func (api *authHTTP) setupStatus(w http.ResponseWriter, r *http.Request) {
@@ -367,7 +373,7 @@ func patchString(raw json.RawMessage, nullable bool) (*string, error) {
 	}
 	var value string
 	if string(raw) == "null" || json.Unmarshal(raw, &value) != nil {
-		return nil, apperr.New(400, "ERR_VALIDATION", "Profile values must be strings (timezone may be null)")
+		return nil, apperr.New(400, "ERR_VALIDATION", "Invalid string or null value")
 	}
 	return &value, nil
 }

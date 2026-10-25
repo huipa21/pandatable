@@ -39,14 +39,46 @@ Routes:
 | `undo` | per-tab action stack |
 | `notifications` | unread list/count |
 
-T0.5 implements only a separate `preferences` store for unauthenticated display
-preferences (`pandatable.locale`, `pandatable.theme` in localStorage). The auth
-store and preference synchronization remain future work. T1.2 provides the
+T0.5 introduced a separate `preferences` store for unauthenticated display
+preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2 provides the
 auth/profile backend and mirrored [API types](../web/src/api/types.ts); T1.3
 adds only the localized `/setup` form and initial-setup route redirect. Setup
 success shows the authenticated first-admin identity without adding a sign-in
-form. `/login` remains a welcome/status surface; login/profile browser work is
-still pending. Unknown routes have a localized not-found page after setup.
+form. T1.5 adds the auth store and login/forced-change/admin surfaces below;
+server preference synchronization and profile UI remain deferred.
+Unknown routes have a localized not-found page after setup.
+
+### T1.5 authentication and admin users (D-081..D-083)
+
+- `/login` preserves the welcome copy/card and adjacent local preference controls
+  and adds username/email/password sign-in. `/home` is only a signed-in identity
+  and future-workspace notice, not a workspace dashboard.
+- Router navigation checks setup, then `/auth/me`. Missing sessions are expected
+  401s; network/server errors render `/connection-error` with an explicit retry,
+  never a success-shaped bypass. Forced users go to `/change-password` before
+  any other post-setup route (including the spike). That form requires current,
+  new and confirmation passwords, then sends the existing auth API request,
+  clears local identity and requires re-login after all-session revocation.
+- Active admins see **Admin** -> `/admin/users`. Others see no Admin link;
+  `/admin/*` redirects to `/home` (or `/login` without a session). API authorization
+  is independent of the client guard. Auth identity is memory-only; credentials
+  and session tokens are never stored in localStorage.
+- Admin users supports literal search/status, offset paging (50 default, <=500),
+  create, edit/displayName/email/role, confirmed disable/enable and password
+  reset. Inline, focusable forms use temporary-password policy/revocation
+  notices. Desktop uses compact horizontal records; below 768 px they become
+  stacked cards with wrapping actions and single-column forms. Every new string
+  and error is translated in en/zh-CN. A revoked/disabled open tab redirects to
+  login on its next request; M1 adds no realtime/polling promises.
+- Actual role/status changes or reset of oneself clear the identity and redirect
+  to login. Rejected last-admin changes and other errors stay visible, translated
+  from error codes, never server text. User-list GETs are abortable and
+  generation-guarded; stale identity reads cannot overwrite a newer sign-out.
+
+The no-inline/no-eval CSP, lazy synthetic-only grid lab, local preference
+semantics and <600,000-byte initial gzip/no-grid gate are unchanged. T1.2
+profile/timezone UI, AT-116 and full AT-117 remain deferred; sign-in capability
+alone does not certify all of AT-102.
 
 ## 4. Grid (desktop/tablet ≥ 768 px)
 

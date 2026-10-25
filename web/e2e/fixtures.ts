@@ -1,7 +1,44 @@
-import { test as base, expect, type APIRequestContext } from '@playwright/test'
+import {
+  test as base,
+  expect,
+  type APIRequestContext,
+  type Page,
+} from '@playwright/test'
 
-// Later auth fixtures can extend this test and seed real users through api.
-// No setup/auth/seed endpoints exist in M0.
+export async function observeBrowser(page: Page) {
+  const errors: string[] = []
+  const pendingFailures: number[] = []
+  page.on('response', (response) => {
+    const path = new URL(response.url()).pathname
+    // Setup negative cases are asserted by AT-101; an absent/revoked session
+    // is the normal identity-probe result on public routes.
+    if (
+      (path === '/api/v1/setup' && [401, 410].includes(response.status())) ||
+      (path === '/api/v1/auth/me' && response.status() === 401)
+    )
+      pendingFailures.push(response.status())
+  })
+  page.on('console', (message) => {
+    if (['warning', 'error'].includes(message.type())) {
+      const expected = pendingFailures.findIndex((status) =>
+        message.text().includes(`status of ${status} `),
+      )
+      if (message.type() === 'error' && expected >= 0) {
+        pendingFailures.splice(expected, 1)
+        return
+      }
+      errors.push(`console.${message.type()}: ${message.text()}`)
+    }
+  })
+  page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      console.error(`CSP: ${event.violatedDirective} ${event.blockedURI}`)
+    })
+  })
+  return { errors, pendingFailures }
+}
+
 export const test = base.extend<{
   api: APIRequestContext
   browserDiagnostics: void
@@ -11,41 +48,11 @@ export const test = base.extend<{
   },
   browserDiagnostics: [
     async ({ page }, use, testInfo) => {
-      const errors: string[] = []
-      const setupFailures: number[] = []
-      page.on('response', (response) => {
-        const path = new URL(response.url()).pathname
-        if (
-          path === '/api/v1/setup' &&
-          [401, 410].includes(response.status())
-        ) {
-          setupFailures.push(response.status())
-        }
-      })
-      page.on('console', (message) => {
-        if (['warning', 'error'].includes(message.type())) {
-          const expectedFailure = setupFailures.findIndex((status) =>
-            message.text().includes(`status of ${status} `),
-          )
-          if (message.type() === 'error' && expectedFailure >= 0) {
-            setupFailures.splice(expectedFailure, 1)
-            return
-          }
-          errors.push(`console.${message.type()}: ${message.text()}`)
-        }
-      })
-      page.on('pageerror', (error) =>
-        errors.push(`pageerror: ${error.message}`),
-      )
-      await page.addInitScript(() => {
-        document.addEventListener('securitypolicyviolation', (event) => {
-          console.error(`CSP: ${event.violatedDirective} ${event.blockedURI}`)
-        })
-      })
+      const { errors, pendingFailures } = await observeBrowser(page)
       await use()
       expect(
-        setupFailures,
-        'setup error responses are asserted in AT-101',
+        pendingFailures,
+        'only matched expected setup/identity HTTP console diagnostics',
       ).toEqual([])
       await testInfo.attach('browser-diagnostics', {
         body: JSON.stringify(errors, null, 2),

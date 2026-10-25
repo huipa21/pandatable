@@ -31,10 +31,9 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
   This is a pre-T0.5 build state, not an application API success response.
 
 T1.2 implements the auth/profile/timezone backend below. T1.3 implements
-first-run setup; T1.4 adds the ACL resolver and grants API; admin and other
-business endpoints remain later-task work. The
-welcome page is still not a sign-in UI; login/profile browser acceptance remains
-pending by explicit scope choice.
+first-run setup; T1.4 adds the ACL resolver and grants API; T1.5 adds admin
+users and login/forced-password-change UI. Other business endpoints and profile
+UI remain later-task work.
 
 ## 2. Endpoints
 
@@ -117,7 +116,7 @@ pending by explicit scope choice.
 
 - `GET /setup/status` is public and returns `{ needed: bool }` with no-store.
   When needed, SPA navigation to any route except `/setup` redirects to
-  `/setup`. `/login` remains the welcome-only surface.
+  `/setup`. T1.5 adds a sign-in form to the existing `/login` welcome surface.
 - When no users exist and `setup_completed` is absent from `meta.settings`,
   each process boot creates a 32-byte random base64url token in memory, valid
   for 24 hours, and emits the dedicated `SETUP_TOKEN=…` log message. The token
@@ -158,6 +157,53 @@ pending by explicit scope choice.
 | GET/POST | `/admin/backups` | list / create (async job) |
 | GET | `/admin/backups/{id}/download` | streamed zip |
 | DELETE | `/admin/backups/{id}` | |
+
+#### T1.5 users contract (D-081..D-083)
+
+Only the users list/create/PATCH/reset routes above are implemented here.
+Groups, ownership transfer/deletion, workspaces, settings and backups remain
+later tasks. The entire `/admin/*` API namespace requires an active admin:
+401 unauthenticated/disabled, 403 `ERR_PASSWORD_CHANGE_REQUIRED` for a forced
+user, otherwise 403 `ERR_PERMISSION_DENIED` for a non-admin. Admin status does
+not grant resource access. All routes reuse auth's exact CSRF/Origin, no-store,
+4096-byte strict JSON, typed errors and ten-second deadline.
+
+- List: `q` (trimmed, case-insensitive **literal substring** of username,
+  email or displayName; at most 254 UTF-8 bytes, no control characters),
+  `status` (empty/all, `active`, `disabled`), `offset` (default 0, nonnegative
+  int32), `limit` (default 50, 1..500). Duplicate/unknown parameters fail 400.
+  Returns `{items,total}` from one repeatable-read snapshot, ordered by username
+  then id. Empty/out-of-range pages have `items: []` and the filtered total.
+- Admin user DTO: `id, username, email, displayName, role, status,
+  mustChangePassword, lastLoginAt, createdAt, updatedAt`; email and lastLoginAt
+  are nullable. No password/hash/session metadata is returned.
+- Create: username is immutable, trimmed/lowercased `[a-z0-9._-]{3,32}`;
+  email is optional/null/blank or normalized/validated exactly as setup.
+  Display name follows the existing 100-code-point/nonblank/no-controls rule;
+  role is required (`admin|user`). Admin supplies the password (8..32 UTF-8
+  bytes, unmodified); new users are active with `mustChangePassword: true`.
+  Returns 201 `{user,eventId}` without creating a session for the new user.
+- PATCH preserves omitted fields; only email accepts null (null/blank clears
+  it); username/password are not patchable. At least one field is required.
+  Returns `{user,sessionsRevoked,eventId}`. Actual role or status changes revoke
+  **all** sessions in the same user-row-locked transaction, including on enable.
+  An unchanged role/status does not revoke sessions.
+- Identity checks reject case-insensitive duplicates and cross-column
+  username/email ambiguity, including legacy rows: 409 `ERR_IDENTITY_CONFLICT`.
+  Missing/malformed target id is 404 `ERR_NOT_FOUND`.
+- Demoting/disabling the last active admin is 409 `ERR_LAST_ADMIN`; disabled
+  admins do not count. Self-demotion/disable is allowed if another active admin
+  remains. Self-reset is allowed. Reset returns `{eventId}`, sets forced change
+  and atomically revokes all sessions; disabled users remain disabled.
+  Self-revoking success also expires the caller's cookie.
+- Mutations share a PostgreSQL transaction advisory lock
+  `pandatable.admin.users`, then lock/recheck the actor and lock the target user
+  before updating. Caller session/status/role/forced-change is rechecked after
+  the actor lock. Last-admin and identity checks are serialized across processes.
+  Password hashing reuses the existing auth worker, with busy=503.
+  Role/status writes invalidate ACL after commit, even if commit is uncertain.
+  Disabling a last workspace owner is allowed and retains all data/authorship;
+  orphan rescue/transfer remains deferred.
 
 ### Directory (any user — for pickers)
 | GET | `/directory/users?q=` | active users: id, displayName, username, avatarColor |
