@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -52,12 +53,15 @@ type ProfilePatch struct {
 }
 
 type Service struct {
-	pool      *db.Pool
-	queries   *authsql.Queries
-	passwords *Passwords
-	dummy     string
-	limits    *limits
-	now       func() time.Time
+	pool        *db.Pool
+	queries     *authsql.Queries
+	passwords   *Passwords
+	dummy       string
+	limits      *limits
+	now         func() time.Time
+	setupMu     sync.RWMutex
+	setupToken  string
+	setupExpiry time.Time
 }
 
 func New(pool *db.Pool) (*Service, error) {

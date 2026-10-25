@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1 Done; T1.2 backend auth verified, but explicitly backend-only: browser AT-102/116 and full AT-117 remain pending. AT-103/803 pass. T1.3 setup prompt ready; no setup/ACL/admin/business services yet. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3 Done. T1.2 backend auth verified, but browser AT-102/116 and full AT-117 remain pending. AT-101/103/803 pass. ACL/admin/business services remain future work. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -28,7 +28,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T0.8 | RevoGrid spike | ✅ | 2026-10-24 | Scoped objectives demonstrated: opt-in lazy DataGrid, synthetic 200k window with <=300 row cache, real clipboard/editor/range/fill/group/freeze/theme and emulated tablet checks; D-066..068 confirm D-005. Windows check and image-backed E2E pass; no production query/mobile acceptance claimed. |
 | T1.1 | Meta migrations | ✅ | 2026-10-24 | Forward 0002 adds all 14 remaining metadata tables; 0001 unchanged. D-069..071 clarify composite FKs, identifier/name rules, polymorphic grants and history. Real PG18 catalog/default/constraint/delete/upgrade/down-up tests and AT-002 restarts pass; Windows check and 8-check image E2E pass (2 intentional mobile exclusions). T1.2 handoff recorded. |
 | T1.2 | Auth service | 🟨 | 2026-10-25 | Backend verified: bounded argon2id, hash-only PG sessions/expiry/revocation, auth/profile/timezone APIs, alias/IP limits, trusted proxies, CSRF/cookies. Windows check and image E2E pass; AT-103/803 pass. User chose backend-only: browser AT-102/116 and full AT-117 remain pending, so not Done. T1.3 handoff created. |
-| T1.3 | Setup flow | ⬜ | | |
+| T1.3 | Setup flow | ✅ | 2026-10-25 | First-run token/status/admin/session, process-safe one-time setup and localized desktop/mobile UI. AT-101 passes in production-image Chromium; required PG18 gate and full local checks pass. D-078; no migration. |
 | T1.4 | ACL resolver & grants API | ⬜ | | |
 | T1.5 | Admin users | ⬜ | | |
 | T1.6 | Admin groups | ⬜ | | |
@@ -85,7 +85,7 @@ Summary updated at each milestone end.
 | Area | Total | Passing | Notes |
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
-| AT-1xx Auth & Admin | 17 | 1 | AT-103 passes on real HTTP/PG18 with alias-shared lock and controllable time. AT-102/116 API evidence only; browser UI deferred by user. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
+| AT-1xx Auth & Admin | 17 | 2 | AT-101 setup browser acceptance and AT-103 real HTTP/PG18 rate limits pass. AT-102/116 API evidence only; login/profile browser UI remains deferred. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
 | AT-2xx Structure & Permissions | 13 | 0 | |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
@@ -108,6 +108,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-25 | T1.3 started after reading the required docs and T1.2 handoff; D-078 records the confirmed setup policies. AT-101 and the required PG18/local gates now pass; exact evidence follows. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.2 backend implementation verified and handed off; D-072..077, static sqlc auth queries, API/types/testing docs and T1.3 prompt added. Windows check, required PG18 and final 8/2 image E2E pass. Kept T1.2 in progress because the user explicitly deferred auth/profile UI and full AT-117. No shared/remote deployment or unrelated task completion. |
 | 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
 | 2026-10-24 | T1.1 started with a clean worktree; required design/runtime/test docs inspected. Started the existing stopped Podman machine and retained dev DB without reset. User confirmed grant-reference and history clarifications before coding. |
@@ -693,7 +694,71 @@ Generated web assets, ignored browser results and temporary tools/logs are not
 committed.
 
 Implementation/limitations: [T1.2 record](task-prompts/T1.2.md#implementation-and-handoff-2026-10-25).
-Next prompt: **[T1.3 Setup flow](task-prompts/T1.3.md)**. It carries forward
-single-worker hashing, session/CSRF/cookie/proxy constraints, owned PG18 tests,
-unchanged migrations/CSP/resources and the requirement to record completion
-and create T1.4's prompt. T1.3 itself is not started by this handoff.
+T1.3 is now complete; next is **[T1.4 ACL resolver & grants API](task-prompts/T1.4.md)**.
+
+## T1.3 setup verification and handoff (2026-10-25)
+
+**T1.3 Done.** D-078 records a 32-byte process-local bootstrap token, 24-hour
+expiry and restart rotation; an advisory-locked transaction rechecks both the
+zero-user condition and setup marker before atomically inserting the first
+admin, session and `setup_completed` setting. No migration was added and
+0001/0002 are unchanged. Username is trimmed/lowercased and restricted to
+`[a-z0-9._-]{3,32}`. The required email is trimmed/lowercased and saved for
+future SMTP/login use. Password remains 8-32 UTF-8 bytes. The setup UI is
+localized in English/Simplified Chinese, redirects first-run SPA routes to
+`/setup`, and ends at an authenticated identity/completion surface; `/login`
+remains welcome-only.
+
+### Verification
+
+- Environment: Go **1.27.0**, Node **24.15.0**, pnpm **11.2.2**, Podman
+  client/server **5.8.2/5.8.4**, Compose **2.40.3**, PostgreSQL **18.6**,
+  sqlc **1.31.1**, Playwright **1.64.1**, Chromium **156.0.8078.4**.
+  Docker, golangci-lint and an approved Ubuntu/Caddy destination remain
+  unavailable.
+- Focused required PG18 tests passed uncached:
+  `go test ./internal/auth ./internal/httpapi -run 'TestSetup|TestAuthCSRFAndLimitsHTTPPostgreSQL' -v -count=1`
+  and `go test ./internal/auth -run '^TestConcurrentSetupProcessesPostgreSQL$' -v -count=1`.
+  They cover wrong/expired token, setup status, exact user/hash/session data,
+  successful session authentication, rollback with no partial rows or token
+  consumption, completion 410, active/disabled existing users, two independent
+  services racing through PG, HTTPS cookies, CSRF/Origin, safe logging and
+  restart token rotation/rejection. Suite TestMain dropped its owned databases.
+- `go run ./tools/ptdev check`: **PASS**, required uncached PG18; lint **17.298 s**,
+  tests **31.549 s**, build **16.374 s**, total **65.222 s**. Includes gofmt,
+  vet, **20 Vitest tests**, strict TS, lint/Prettier, **80** matching locale keys
+  and the native build. Optional golangci-lint was not run.
+- `go run ./tools/ptdev e2e`: **PASS**, **9 passed / 2 intentional mobile
+  exclusions in 45.2 s**, health **6.934 s**. AT-101 exercises the production
+  image: setup redirect, wrong-token 401, desktop and Pixel 7 form layout,
+  admin creation, authenticated `/auth/me`, completion status and POST 410.
+  No browser/CSP errors. The isolated startup snapshot was **72.8 MB / 536.9 MB**
+  and **11.63% CPU**; this is a single observation, not AT-801 load certification.
+  Initial shell gzip is **138,976 bytes**, under the 600,000-byte cap.
+- Pinned `go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate` succeeds;
+  bindings are reproducible. The generator was not on PATH, so the pinned
+  `go run` invocation was used without adding runtime dependencies.
+
+### Resolved failures and cleanup
+
+The first browser attempt found Naive UI's visual labels were not associated
+with native inputs; translated `aria-label` input props fixed that. Chromium
+reports expected API 401/410 statuses as generic console errors, so E2E now
+filters only those setup-route responses and explicitly asserts both statuses;
+all other console/page/CSP errors remain fatal. A provider-specific Compose
+`ps` banner made resource IDs unavailable; the final snapshot uses direct
+read-only engine `ps` filtered to the owned Compose project/service. No
+acceptance assertions, CSP rules or locale checks were weakened.
+
+The final E2E project, app/DB containers, volumes, networks and unique image
+were removed. Suite inspection found zero remaining `pt_test_*` databases.
+The existing `pt-dev-db` container is restored to stopped, with
+`pt-dev-pgdata` preserved. Release images, shared networks/Caddy, generated
+web assets and browser artifacts were not committed; no remote deployment was
+performed. AT-001/005/006 Linux/Docker/server checks and T1.2 browser AT-102/116
+plus full AT-117 remain pending.
+
+Next: **T1.4 ACL resolver & grants API**. The prompt carries forward D-069..D-078,
+session/auth contracts, metadata integrity and polymorphic-grant service rules,
+PG18 test isolation, no migration unless justified, CSP/i18n/resource limits,
+and the required completion record plus T1.5 prompt handoff.

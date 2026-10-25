@@ -50,6 +50,15 @@ func (q *Queries) CheckSession(ctx context.Context, arg CheckSessionParams) (pgt
 	return user_id, err
 }
 
+const completeSetup = `-- name: CompleteSetup :exec
+INSERT INTO meta.settings (key, value) VALUES ('setup_completed', 'true'::jsonb)
+`
+
+func (q *Queries) CompleteSetup(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, completeSetup)
+	return err
+}
+
 const createSession = `-- name: CreateSession :exec
 INSERT INTO meta.sessions (id_hash, user_id, created_at, last_seen_at, expires_at, ip, user_agent)
 VALUES ($1, $2, $3::timestamptz,
@@ -76,6 +85,40 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.UserAgent,
 	)
 	return err
+}
+
+const createSetupUser = `-- name: CreateSetupUser :one
+INSERT INTO meta.users (username, email, display_name, password_hash, role, locale,
+      avatar_color, last_login_at, updated_at)
+VALUES ($1, $2, $3, $4,
+  'admin', $5, $6, $7::timestamptz,
+  $7::timestamptz)
+RETURNING id
+`
+
+type CreateSetupUserParams struct {
+	Username     string
+	Email        pgtype.Text
+	DisplayName  string
+	PasswordHash string
+	Locale       string
+	AvatarColor  string
+	Now          pgtype.Timestamptz
+}
+
+func (q *Queries) CreateSetupUser(ctx context.Context, arg CreateSetupUserParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, createSetupUser,
+		arg.Username,
+		arg.Email,
+		arg.DisplayName,
+		arg.PasswordHash,
+		arg.Locale,
+		arg.AvatarColor,
+		arg.Now,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const defaultTimezone = `-- name: DefaultTimezone :one
@@ -159,6 +202,15 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (GetUserRow, erro
 	return i, err
 }
 
+const lockSetup = `-- name: LockSetup :exec
+SELECT pg_advisory_xact_lock(hashtextextended('pandatable.setup', 0))
+`
+
+func (q *Queries) LockSetup(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockSetup)
+	return err
+}
+
 const lockUser = `-- name: LockUser :one
 SELECT id, password_hash, status FROM meta.users WHERE id = $1 FOR UPDATE
 `
@@ -206,6 +258,18 @@ DELETE FROM meta.sessions WHERE user_id = $1
 func (q *Queries) RevokeUserSessions(ctx context.Context, userID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, revokeUserSessions, userID)
 	return err
+}
+
+const setupNeeded = `-- name: SetupNeeded :one
+SELECT NOT EXISTS (SELECT 1 FROM meta.users)
+   AND NOT EXISTS (SELECT 1 FROM meta.settings WHERE key = 'setup_completed')
+`
+
+func (q *Queries) SetupNeeded(ctx context.Context) (pgtype.Bool, error) {
+	row := q.db.QueryRow(ctx, setupNeeded)
+	var column_1 pgtype.Bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const timezones = `-- name: Timezones :many

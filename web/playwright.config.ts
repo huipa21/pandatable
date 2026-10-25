@@ -28,9 +28,21 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'setup-chromium',
+      testMatch: '**/setup.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'desktop-chromium',
+      testIgnore: '**/setup.spec.ts',
+      dependencies: ['setup-chromium'],
+      use: { ...devices['Desktop Chrome'] },
+    },
     {
       name: 'mobile-chromium',
+      testIgnore: '**/setup.spec.ts',
+      dependencies: ['setup-chromium'],
       use: { ...devices['Pixel 7'], defaultBrowserType: 'chromium' },
     },
   ],

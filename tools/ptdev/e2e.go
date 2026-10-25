@@ -11,12 +11,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
 
 type e2eSteps struct {
 	build, up, ready, test, diagnostics, down, removeImage func(context.Context) error
+}
+
+var setupTokenLogPattern = regexp.MustCompile(`SETUP_TOKEN=([A-Za-z0-9_-]{43})`)
+var composeContainerIDPattern = regexp.MustCompile(`(?i)\b[0-9a-f]{12,64}\b`)
+
+func composeContainerIDs(output string) []string {
+	return composeContainerIDPattern.FindAllString(output, -1)
+}
+
+func setupTokenFromLogs(logs string) (string, error) {
+	matches := setupTokenLogPattern.FindAllStringSubmatch(logs, -1)
+	if len(matches) != 1 {
+		return "", errors.New("expected exactly one setup token in the owned app startup log")
+	}
+	return matches[0][1], nil
+}
+
+func redactSetupToken(logs string) string {
+	return setupTokenLogPattern.ReplaceAllString(logs, "SETUP_TOKEN=[REDACTED]")
 }
 
 func runE2E(ctx context.Context, steps e2eSteps) (err error) {
@@ -118,13 +138,41 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 		},
 		ready: func(ctx context.Context) error { return waitE2EHealth(ctx, baseURL) },
 		test: func(ctx context.Context) error {
+			containers, err := runner.execute(ctx, "", nil, true, selected.name,
+				"ps", "--filter", "label=com.docker.compose.project="+project,
+				"--filter", "label=com.docker.compose.service=app", "--format", "{{.ID}}")
+			containerIDs := composeContainerIDs(containers)
+			if err != nil || len(containerIDs) != 1 {
+				return errors.New("find owned app container for resource snapshot")
+			}
+			statsArgs := []string{"stats", "--no-stream", "--format", "{{.Name}} {{.MemUsage}} {{.CPUPerc}}"}
+			statsArgs = append(statsArgs, containerIDs...)
+			stats, err := runner.execute(ctx, "", nil, true, selected.name, statsArgs...)
+			if err != nil {
+				return errors.New("read owned app resource snapshot")
+			}
+			fmt.Printf("E2E app resource snapshot: %s\n", strings.TrimSpace(stats))
+			logs, err := compose(ctx, true, "logs", "--no-color", "--tail", "100", "app")
+			if err != nil {
+				return errors.New("read setup token from owned app startup log")
+			}
+			setupToken, err := setupTokenFromLogs(logs)
+			if err != nil {
+				return err
+			}
+			testEnv := make(map[string]string, len(env)+1)
+			for key, value := range env {
+				testEnv[key] = value
+			}
+			testEnv["PT_E2E_SETUP_TOKEN"] = setupToken
 			args := append([]string{filepath.Join(runner.root, "web", "e2e", "run.mjs"), "test"}, opts.e2eArgs...)
-			command := runner.command(ctx, "web", env, "node", args...)
+			command := runner.command(ctx, "web", testEnv, "node", args...)
 			return runCooperative(command)
 		},
 		diagnostics: func(ctx context.Context) error {
 			output, commandErr := compose(ctx, true, "logs", "--no-color", "--tail", "200")
 			output = strings.ReplaceAll(output, password, "[REDACTED]")
+			output = redactSetupToken(output)
 			fileErr := os.WriteFile(filepath.Join(results, "compose.log"), []byte(output), 0o600)
 			fmt.Fprintln(os.Stderr, output)
 			return errors.Join(commandErr, fileErr)

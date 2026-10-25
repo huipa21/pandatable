@@ -26,6 +26,22 @@
     "status": "Laying the foundation",
     "notice": "This is the application shell. Sign-in and workspaces will arrive in the next milestone."
   },
+  "setup": {
+    "eyebrow": "FIRST-RUN SETUP",
+    "title": "Create your administrator account",
+    "description": "Use the setup token from the server log to secure this PandaTable instance.",
+    "token": "Setup token",
+    "username": "Username",
+    "email": "Email address",
+    "displayName": "Display name",
+    "password": "Password",
+    "submit": "Create administrator",
+    "statusDescription": "This PandaTable instance is ready for its first administrator.",
+    "successTitle": "PandaTable is ready",
+    "signedInAs": "Signed in as {name}",
+    "identity": "{username} · {email}",
+    "alreadyComplete": "Setup has already been completed."
+  },
   "spike": {
     "eyebrow": "T0.8 · ISOLATED PROTOTYPE",
     "title": "RevoGrid feasibility lab",
@@ -73,5 +89,12 @@
   "nav": {
     "notFoundTitle": "Nothing here yet",
     "notFoundDescription": "This page is not available. Return to the welcome page to get started."
+  },
+  "errors": {
+    "ERR_VALIDATION": "Check the setup details and try again.",
+    "ERR_SETUP_TOKEN": "The setup token is invalid or expired. Check the server log for the current token.",
+    "ERR_SETUP_COMPLETE": "Setup has already been completed.",
+    "ERR_AUTH_BUSY": "Password service is busy. Try again shortly.",
+    "ERR_INTERNAL": "The request could not be completed. Try again."
   }
 }

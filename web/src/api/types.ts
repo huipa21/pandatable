@@ -17,6 +17,19 @@ export interface LoginRequest {
   password: string
 }
 
+export interface SetupRequest {
+  token: string
+  username: string
+  email: string
+  displayName: string
+  password: string
+  locale: 'en' | 'zh-CN'
+}
+
+export interface SetupStatus {
+  needed: boolean
+}
+
 export interface PasswordRequest {
   current: string
   new: string

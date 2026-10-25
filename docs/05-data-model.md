@@ -274,8 +274,10 @@ CREATE TABLE meta.backups (
 
 ### Integrity and service boundaries (D-069..D-071)
 
-T1.2 auth (D-072..D-076) reuses the original users/sessions/settings with **no
-schema migration**. Session `id_hash` is SHA-256 of a canonical base64url token
+T1.2 auth and T1.3 setup (D-072..D-078) reuse the original users/sessions/settings
+with **no schema migration**. Setup stores only the `setup_completed` boolean
+setting after atomically creating the first admin and session. Its one-time
+bootstrap token remains process-local; it is not persisted. Session `id_hash` is SHA-256 of a canonical base64url token
 made from 32 random bytes. `expires_at` is the earlier of seven days from
 `last_seen_at` and 30 days from `created_at`; validation checks both independently,
 requires an active user, and sliding uses conditional UPDATE, never UPSERT.

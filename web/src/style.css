@@ -141,6 +141,59 @@ h1 {
   line-height: 1.8;
 }
 
+.setup {
+  width: min(100%, 560px);
+  margin: 0 auto;
+}
+
+.setup h1 {
+  font-size: 36px;
+}
+
+.setup-description {
+  margin: 0 0 28px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.setup-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 18px;
+  padding-top: 8px;
+  border-top: 2px solid var(--accent);
+}
+
+.setup-form .n-form-item:first-child,
+.setup-form .n-form-item:nth-child(4),
+.setup-form .n-form-item:nth-child(5),
+.setup-form .n-alert,
+.setup-submit {
+  grid-column: 1 / -1;
+}
+
+.setup-submit {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.setup-result {
+  padding: 16px 20px;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.setup-result p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.setup-identity {
+  margin-top: 6px !important;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .app-footer {
   padding: 20px;
   color: var(--muted);
@@ -165,5 +218,17 @@ h1 {
 
   .app-main {
     padding: 48px 20px;
+  }
+
+  .setup h1 {
+    font-size: 30px;
+  }
+
+  .setup-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .setup-form .n-form-item {
+    grid-column: 1;
   }
 }

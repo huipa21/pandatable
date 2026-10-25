@@ -30,9 +30,10 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 - UI requests return JSON 503 `ERR_SPA_UNAVAILABLE` until built SPA assets exist.
   This is a pre-T0.5 build state, not an application API success response.
 
-T1.2 implements the auth/profile/timezone backend below. Setup, admin, ACL and
-business endpoints remain later-task work. The welcome page is still not a
-sign-in UI; browser auth/profile acceptance remains pending by explicit scope choice.
+T1.2 implements the auth/profile/timezone backend below. T1.3 implements
+first-run setup; admin, ACL and business endpoints remain later-task work. The
+welcome page is still not a sign-in UI; login/profile browser acceptance remains
+pending by explicit scope choice.
 
 ## 2. Endpoints
 
@@ -40,7 +41,7 @@ sign-in UI; browser auth/profile acceptance remains pending by explicit scope ch
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/setup/status` | `{ needed: bool }` |
-| POST | `/setup` | `{ token, username, displayName, password, locale }` → first admin; 410 once done |
+| POST | `/setup` | `{ token, username, email, displayName, password, locale }` → first admin + session; 410 once done |
 | POST | `/auth/login` | `{ login, password }` (username or email); rate-limited 10/min/IP, 5 failures → 1 min lock per account |
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | user, role, prefs, mustChangePassword |
@@ -52,8 +53,8 @@ sign-in UI; browser auth/profile acceptance remains pending by explicit scope ch
 - Passwords are **8-32 UTF-8 bytes**, without trimming, normalization or composition
   rules. Login trims surrounding whitespace from the username/email only, and
   matches username/email case-insensitively. Multiple matching legacy identities
-  fail closed. Future setup/admin creation must normalize and reject ambiguous
-  identities; no schema or account-creation service is introduced here.
+  fail closed. T1.3 setup normalizes its first username/email; future admin
+  creation must preserve these normalization and ambiguous-identity safeguards.
 - Login returns `{ user, eventId }`; `GET /auth/me` returns the user directly;
   profile PATCH returns `{ user, eventId }`. Logout/password success returns
   `{ eventId }`. Password change requires the current password and a different
@@ -109,7 +110,33 @@ sign-in UI; browser auth/profile acceptance remains pending by explicit scope ch
   415 `ERR_CONTENT_TYPE`, 429 `ERR_RATE_LIMITED` (`Retry-After: 60`),
   503 `ERR_AUTH_BUSY` (`Retry-After: 1`), 500 `ERR_INTERNAL`. Internal errors
   log only a fixed message and request ID, never driver/hash/credential content.
-  Frontend consumers must translate codes when that UI is implemented.
+  The setup UI translates setup errors; future auth consumers must do the same.
+
+#### T1.3 setup contract (D-078)
+
+- `GET /setup/status` is public and returns `{ needed: bool }` with no-store.
+  When needed, SPA navigation to any route except `/setup` redirects to
+  `/setup`. `/login` remains the welcome-only surface.
+- When no users exist and `setup_completed` is absent from `meta.settings`,
+  each process boot creates a 32-byte random base64url token in memory, valid
+  for 24 hours, and emits the dedicated `SETUP_TOKEN=…` log message. The token
+  is never stored or included in access/request logs. Restarting while setup is
+  incomplete invalidates the prior token and logs a replacement.
+- POST requires exact Origin plus `X-PT-CSRF: 1`, bounded JSON and trusted-proxy
+  client IP policy. Username is trimmed/lowercased and must match
+  `[a-z0-9._-]{3,32}`. Email is required, trimmed/lowercased and validated as
+  one address for future SMTP/login use. Password remains 8-32 UTF-8 bytes
+  without normalization.
+- `ERR_SETUP_TOKEN` is 401 for invalid/expired tokens; `ERR_SETUP_COMPLETE` is
+  410 when a user exists or completion is recorded. Setup serializes across
+  processes with a PostgreSQL transaction advisory lock, rechecks zero users
+  and completion state in the transaction, then atomically creates the admin,
+  session and `setup_completed` setting. Rollback leaves no partial rows and
+  does not consume the process token.
+- Success returns `{ user, eventId }` and sets the existing secure
+  server-side `pt_session` cookie. Raw session tokens appear only in `Set-Cookie`.
+  The localized UI remains on a completion state showing the authenticated
+  identity; T1.3 does not add or claim a login form.
 
 ### Admin (role=admin)
 | Method | Path | Notes |

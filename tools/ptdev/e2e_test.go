@@ -33,6 +33,36 @@ func TestE2EArguments(t *testing.T) {
 	}
 }
 
+func TestSetupTokenLogHandling(t *testing.T) {
+	token := strings.Repeat("A", 43)
+	logs := `{"level":"WARN","msg":"SETUP_TOKEN=` + token + `"}`
+	parsed, err := setupTokenFromLogs(logs)
+	if err != nil || parsed != token {
+		t.Fatalf("setup token parse=%q err=%v", parsed, err)
+	}
+	if strings.Contains(redactSetupToken(logs), token) || !strings.Contains(redactSetupToken(logs), "SETUP_TOKEN=[REDACTED]") {
+		t.Fatal("setup token remained in retained diagnostics")
+	}
+	for _, invalid := range []string{"", logs + logs, `SETUP_TOKEN=short`} {
+		if _, err := setupTokenFromLogs(invalid); err == nil {
+			t.Fatalf("accepted invalid startup token log: %q", invalid)
+		}
+	}
+}
+
+func TestComposeContainerIDParsing(t *testing.T) {
+	id := strings.Repeat("a", 64)
+	output := `>>>> Executing external compose provider "docker-compose.exe" <<<<` + "\n" + id + "\n"
+	ids := composeContainerIDs(output)
+	if !reflect.DeepEqual(ids, []string{id}) {
+		t.Fatalf("container IDs=%v, want only %s", ids, id)
+	}
+	shortID := strings.Repeat("b", 12)
+	if ids := composeContainerIDs(shortID); !reflect.DeepEqual(ids, []string{shortID}) {
+		t.Fatalf("short container IDs=%v, want %s", ids, shortID)
+	}
+}
+
 func TestE2ELifecycle(t *testing.T) {
 	for _, mode := range []string{"success", "build", "up", "ready", "test", "cancel-build", "cancel-up", "cancel-test", "down", "diagnostics", "remove-image"} {
 		t.Run(mode, func(t *testing.T) {

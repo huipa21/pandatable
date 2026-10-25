@@ -26,6 +26,22 @@
     "status": "基础建设中",
     "notice": "当前为应用框架。登录和工作区功能将在下一个里程碑中提供。"
   },
+  "setup": {
+    "eyebrow": "首次设置",
+    "title": "创建管理员账号",
+    "description": "使用服务器日志中的设置令牌保护此 PandaTable 实例。",
+    "token": "设置令牌",
+    "username": "用户名",
+    "email": "电子邮箱",
+    "displayName": "显示名称",
+    "password": "密码",
+    "submit": "创建管理员",
+    "statusDescription": "此 PandaTable 实例已准备好创建首位管理员。",
+    "successTitle": "PandaTable 已就绪",
+    "signedInAs": "已登录为 {name}",
+    "identity": "{username} · {email}",
+    "alreadyComplete": "设置已完成。"
+  },
   "spike": {
     "eyebrow": "T0.8 · 隔离原型",
     "title": "RevoGrid 可行性实验",
@@ -73,5 +89,12 @@
   "nav": {
     "notFoundTitle": "这里还没有内容",
     "notFoundDescription": "此页面暂不可用，请返回欢迎页。"
+  },
+  "errors": {
+    "ERR_VALIDATION": "请检查设置内容后重试。",
+    "ERR_SETUP_TOKEN": "设置令牌无效或已过期。请查看服务器日志中的当前令牌。",
+    "ERR_SETUP_COMPLETE": "设置已完成。",
+    "ERR_AUTH_BUSY": "密码服务正忙，请稍后重试。",
+    "ERR_INTERNAL": "无法完成请求，请重试。"
   }
 }

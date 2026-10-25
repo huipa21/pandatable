@@ -39,6 +39,13 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure auth service: %w", err)
 	}
+	setupToken, setupNeeded, err := authService.InitializeSetup(ctx)
+	if err != nil {
+		return fmt.Errorf("initialize first-run setup: %w", err)
+	}
+	if setupNeeded {
+		logger.Warn("SETUP_TOKEN=" + setupToken)
+	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
 		Service: authService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})

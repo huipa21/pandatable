@@ -116,6 +116,24 @@ suite, **not auth UI acceptance**. T1.2 remains in progress, not Done.
 Exact commands, failure corrections, CPU/memory observations and owned cleanup:
 [progress](progress.md#t12-backend-verification-and-handoff-2026-10-25).
 
+### T1.3 scoped evidence (2026-10-25)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-101 | Pass | Production-image Chromium setup: empty-instance redirect, wrong-token 401, desktop and Pixel 7 form layout, first-admin creation, authenticated `/auth/me`, completed status and POST 410. Browser/CSP diagnostics clean. |
+| AT-002/003/004/802 | Pass preserved | Required PG18 migration/restart gate; shell/spike image checks; initial shell gzip 138,976 bytes (<600,000); 80 matching non-empty locale keys. |
+| AT-103/803 | Pass preserved | Existing real HTTP/PG18 rate-limit, CSRF/Origin, cookie and security-header coverage remains green in the required gate. |
+| AT-102/116 and full AT-117 | Partial, unchanged | Login/profile UI and real datetime/filter/admin-default behavior remain outside T1.3. |
+| AT-001/005/006 | Partial, unchanged | Windows/Podman local evidence only; Linux/Docker and approved server/Caddy checks remain pending. |
+
+The required `ptdev check` passes with uncached PG18. Final image E2E reports
+**9 passed / 2 intentional mobile exclusions in 45.2 s**, health **6.934 s**,
+and no browser/CSP errors. The one-shot app snapshot was **72.8 MB / 536.9 MB**
+at **11.63% CPU**; this is not AT-801 load certification. Exact commands,
+versions, resolved failures and owned cleanup are recorded in
+[progress](progress.md#t13-setup-verification-and-handoff-2026-10-25) and the
+[T1.3 completion record](task-prompts/T1.3.md#implementation-and-handoff-2026-10-25).
+
 ## AT-2xx Structure & Permissions (M1)
 
 - **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`.

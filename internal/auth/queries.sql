@@ -62,5 +62,23 @@ SELECT COALESCE((SELECT CASE WHEN jsonb_typeof(value) = 'string' THEN value #>> 
 -- name: ValidTimezone :one
 SELECT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name = $1 AND name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%');
 
+-- name: SetupNeeded :one
+SELECT NOT EXISTS (SELECT 1 FROM meta.users)
+   AND NOT EXISTS (SELECT 1 FROM meta.settings WHERE key = 'setup_completed');
+
+-- name: LockSetup :exec
+SELECT pg_advisory_xact_lock(hashtextextended('pandatable.setup', 0));
+
+-- name: CreateSetupUser :one
+INSERT INTO meta.users (username, email, display_name, password_hash, role, locale,
+      avatar_color, last_login_at, updated_at)
+VALUES (sqlc.arg(username), sqlc.arg(email), sqlc.arg(display_name), sqlc.arg(password_hash),
+  'admin', sqlc.arg(locale), sqlc.arg(avatar_color), sqlc.arg(now)::timestamptz,
+  sqlc.arg(now)::timestamptz)
+RETURNING id;
+
+-- name: CompleteSetup :exec
+INSERT INTO meta.settings (key, value) VALUES ('setup_completed', 'true'::jsonb);
+
 -- name: Timezones :many
 SELECT name::text FROM pg_timezone_names WHERE name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%' ORDER BY name;

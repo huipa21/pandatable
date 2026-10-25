@@ -42,9 +42,11 @@ Routes:
 T0.5 implements only a separate `preferences` store for unauthenticated display
 preferences (`pandatable.locale`, `pandatable.theme` in localStorage). The auth
 store and preference synchronization remain future work. T1.2 provides the
-auth/profile backend and mirrored [API types](../web/src/api/types.ts) only,
-by explicit user scope choice. `/login` is still a welcome/status
-surface, not a sign-in form; unknown routes have a localized not-found page.
+auth/profile backend and mirrored [API types](../web/src/api/types.ts); T1.3
+adds only the localized `/setup` form and initial-setup route redirect. Setup
+success shows the authenticated first-admin identity without adding a sign-in
+form. `/login` remains a welcome/status surface; login/profile browser work is
+still pending. Unknown routes have a localized not-found page after setup.
 
 ## 4. Grid (desktop/tablet ≥ 768 px)
 

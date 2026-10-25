@@ -51,8 +51,20 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		return records
 	}
 	beforeRestarts := migrationRecords()
+	previousSetupToken := ""
 	for iteration := 1; iteration <= 3; iteration++ {
 		address, stop, output := startTestServe(t, cfg)
+		const setupLogPrefix = `"msg":"SETUP_TOKEN=`
+		if strings.Count(output.String(), setupLogPrefix) != 1 {
+			stop()
+			t.Fatalf("startup %d must log exactly one setup token", iteration)
+		}
+		tokenStart := strings.Index(output.String(), setupLogPrefix) + len(setupLogPrefix)
+		setupToken := strings.SplitN(output.String()[tokenStart:], `"`, 2)[0]
+		if len(setupToken) != 43 || strings.ContainsAny(setupToken, "=+/ ") || setupToken == previousSetupToken {
+			stop()
+			t.Fatalf("startup %d emitted an invalid or reused setup token", iteration)
+		}
 		client := &http.Client{Timeout: 5 * time.Second}
 		for _, test := range []struct {
 			path   string
@@ -77,6 +89,30 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 				t.Fatalf("unexpected health response: %q", body)
 			}
 		}
+		if previousSetupToken != "" {
+			request, err := http.NewRequest(http.MethodPost, "http://"+address+"/api/v1/setup", strings.NewReader(
+				`{"token":"`+previousSetupToken+`","username":"restart-admin","email":"restart@example.test","displayName":"Restart Admin","password":"12345678","locale":"en"}`))
+			if err != nil {
+				stop()
+				t.Fatal(err)
+			}
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Origin", "http://127.0.0.1")
+			request.Header.Set("X-PT-CSRF", "1")
+			response, err := client.Do(request)
+			if err != nil {
+				stop()
+				t.Fatal(err)
+			}
+			body, readErr := io.ReadAll(response.Body)
+			closeErr := response.Body.Close()
+			if readErr != nil || closeErr != nil || response.StatusCode != http.StatusUnauthorized ||
+				!strings.Contains(string(body), `"code":"ERR_SETUP_TOKEN"`) {
+				stop()
+				t.Fatalf("previous-process setup token response=%d body=%s errors=%v/%v", response.StatusCode, body, readErr, closeErr)
+			}
+		}
+		previousSetupToken = setupToken
 		stop()
 
 		verification, err := pgx.ConnectConfig(ctx, appConfig)

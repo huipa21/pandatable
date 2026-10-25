@@ -229,12 +229,58 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, value any) error {
 
 func (api *authHTTP) mount(router chi.Router) {
 	router.Use(api.protect)
+	router.Get("/setup/status", api.setupStatus)
+	router.Post("/setup", api.setup)
 	router.Post("/auth/login", api.login)
 	router.Post("/auth/logout", api.logout)
 	router.Get("/auth/me", api.me)
 	router.Patch("/auth/me", api.profile)
 	router.Post("/auth/password", api.password)
 	router.Get("/meta/timezones", api.timezones)
+}
+
+func (api *authHTTP) setupStatus(w http.ResponseWriter, r *http.Request) {
+	needed, err := api.service.SetupNeeded(r.Context())
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Needed bool `json:"needed"`
+	}{needed})
+}
+
+func (api *authHTTP) setup(w http.ResponseWriter, r *http.Request) {
+	ip, err := clientIP(r, api.proxies)
+	if err != nil {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Invalid client IP chain"))
+		return
+	}
+	var input struct {
+		Token       string `json:"token"`
+		Username    string `json:"username"`
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+		Password    string `json:"password"`
+		Locale      string `json:"locale"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	session, token, err := api.service.Setup(r.Context(), auth.SetupInput{
+		Token: input.Token, Username: input.Username, Email: input.Email,
+		DisplayName: input.DisplayName, Password: input.Password, Locale: input.Locale,
+	}, ip, r.UserAgent())
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	api.cookie(w, token, session.ExpiresAt)
+	writeJSON(w, http.StatusOK, struct {
+		User    auth.User `json:"user"`
+		EventID string    `json:"eventId"`
+	}{session.User, rand.Text()})
 }
 
 func (api *authHTTP) login(w http.ResponseWriter, r *http.Request) {

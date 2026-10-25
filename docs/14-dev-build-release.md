@@ -213,6 +213,26 @@ shipped in T1.2. Existing `ptdev e2e` remains the real shell/spike gate; it is
 timezone/default checks do not complete full AT-117's real datetime/filter/
 admin-default scenarios. T1.2 remains in progress until linked acceptance passes.
 
+### T1.3 setup checks
+
+The auth and HTTP setup tests use separate Suite-owned PG18 databases and clean
+their first-admin/settings fixtures with bounded cleanup. The required local
+gate supplies `PT_TEST_DATABASE_REQUIRED=1`; setup tests cover token expiry and
+restart rotation, normalized identity/password boundaries, rollback, existing
+active/disabled users, session storage, CSRF/cookie policy and two independently
+initialized services racing through the PostgreSQL setup lock.
+
+```text
+go run ./tools/ptdev test -run "TestSetup|TestConcurrentSetup|TestSetupHTTP|TestServePostgreSQLRestarts" -v -count=1
+go run ./tools/ptdev e2e
+```
+
+The production-image AT-101 test obtains its token only from the uniquely owned
+app container's startup log. The harness sends it to Playwright through a
+private child environment variable and redacts it from retained Compose logs.
+The E2E run also prints a read-only app-container memory/CPU snapshot. No
+production seed endpoint or real developer account is used.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:
@@ -235,12 +255,14 @@ only project-scoped networks/volumes. Startup plus exact `/healthz` JSON readine
 is bounded to 60 s; probes bypass proxies and reject redirects. A port race is
 reported as startup failure, not hidden by connecting to another app.
 
+adjacent controls, no page overflow, and no console/page/CSP errors. API fixtures
 The real embedded shell is checked on desktop and mobile Chromium (one worker,
 zero retries, 120 s global bound): health/JS/history/404/HEAD/method boundaries,
 English/Chinese and light/dark/system persistence, actual Naive UI styles,
-adjacent controls, no page overflow, and no console/page/CSP errors. API fixtures
-are ready for later real user seeding, but auth/setup/business/seed APIs and their
-acceptance tests are intentionally not implemented or claimed.
+adjacent controls, no page overflow, and no console/page/CSP errors. AT-101 now
+uses the production image and the logged token from the unique owned app
+container; ptdev passes it only to Playwright and redacts it from failure logs.
+Login/profile/business/seed flows remain unimplemented or unclaimed.
 
 T0.8 adds [grid-spike.spec.ts](../web/e2e/grid-spike.spec.ts) to this same
 production-image suite. It verifies opt-in isolation, 200k logical-row

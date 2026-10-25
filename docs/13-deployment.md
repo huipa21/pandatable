@@ -203,7 +203,10 @@ Collected by `gopsutil` + PG queries, cached 5 s:
 - No published ports: DB reachable only on the private compose network; app reachable only via Caddy's network.
 - HTTPS terminated by Caddy; `PT_BASE_URL` must be `https://…` in production (cookies `Secure`).
 - Firewall: only 22/80/443.
-- Setup token single-use; setup endpoint returns 410 after completion.
+- Setup bootstrap token is process-local, valid 24 hours, and rotated/logged on
+  restart while no user exists; only the dedicated `SETUP_TOKEN=…` entry is
+  permitted to expose it. Setup is transaction-serialized and the endpoint
+  returns 410 after completion.
 - Login rate limits (per IP from trusted `X-Forwarded-For`, per account); session idle timeout 7 days, absolute 30 days; sessions revoked on password reset/disable.
 - Upload MIME sniffing; attachments served with `Content-Disposition: attachment` except safe image types; `X-Content-Type-Options: nosniff`; CSP on SPA.
 
