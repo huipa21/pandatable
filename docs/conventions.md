@@ -1,8 +1,11 @@
 # Conventions
 
 ## Repository & branches
-- `master` is always releasable. Feature branches `m1/t1.4-login` → merge with squash.
-- **No hosted CI**: run `go run ./tools/ptdev check` before every merge to `master` and before every tag; `ptdev e2e` before milestone tags (D-048).
+- Single linear history on `master` (D-131): commit every task directly on
+  `master`; do not create feature/task branches, merge commits or squash
+  merges. Run `git switch master` before starting if needed; `git branch`
+  must list only `master`.
+- **No hosted CI**: run `go run ./tools/ptdev check` before every commit to `master` and before every tag; `ptdev e2e` before milestone tags (D-048).
 - Commits: Conventional Commits — `feat(grid): fill-down`, `fix(acl): …`, `docs: …`, `chore: …`. Reference task IDs: `feat(auth): login endpoint [T1.3]`.
 - Versioning: SemVer; `v0.x` until M3 complete → `v1.0.0`.
 
@@ -74,4 +77,4 @@
 ## Docs
 - Update `progress.md` on task start/finish.
 - New decisions → `decisions.md`.
-- Design changes → update the relevant `05–13` doc in the same PR as code.
+- Design changes → update the relevant `05–13` doc in the same commit as code.
