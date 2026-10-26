@@ -7,12 +7,14 @@ import { errorMessage, request, RequestError } from '../api/client'
 import type { ResourceKind, TableSchema } from '../api/types'
 import { useAuthStore } from '../stores/auth'
 import { tablePath, useNavStore, type NavigationItem } from '../stores/nav'
+import { useSharingStore } from '../stores/sharing'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
+const sharing = useSharingStore()
 const schema = ref<TableSchema | null>(null)
 const loading = ref(false)
 const error = ref<unknown>(null)
@@ -54,6 +56,13 @@ const missing = computed(
     nav.loaded &&
     !nav.error &&
     (!node.value || (schema.value && route.params.viewId && !view.value)),
+)
+const canShare = computed(
+  () =>
+    node.value &&
+    !node.value.pathOnly &&
+    node.value.level === 'owner' &&
+    (kind.value !== 'table' || schema.value?.myLevel === 'owner'),
 )
 
 async function loadSchema() {
@@ -102,6 +111,12 @@ watch(
   () => void loadSchema(),
   { immediate: true },
 )
+watch(
+  () => nav.revision,
+  () => {
+    if (!loading.value) void loadSchema()
+  },
+)
 onBeforeUnmount(() => {
   generation++
   controller?.abort()
@@ -146,6 +161,9 @@ onBeforeUnmount(() => {
     </div>
     <template v-else-if="node">
       <h1>{{ schema?.table.name ?? node.name }}</h1>
+      <button v-if="canShare" @click="sharing.open(node)">
+        {{ t('sharing.open') }}
+      </button>
       <p v-if="node.pathOnly">{{ t('nav.pathNotice') }}</p>
       <template v-if="kind !== 'table'">
         <p v-if="node.children.length === 0">

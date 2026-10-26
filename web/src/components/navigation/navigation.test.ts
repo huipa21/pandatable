@@ -82,6 +82,9 @@ it('renders nested links and exposes same-parent drag plus keyboard/touch reorde
     tree.workspaces[0]!.pathOnly = true
     b.level = 'none'
     b.pathOnly = true
+    b.tables.forEach((table) => {
+      table.level = 'read'
+    })
     nav.tree = structuredClone(tree)
     await nextTick()
     expect(wrapper.findAll('summary')).toHaveLength(0)

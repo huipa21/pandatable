@@ -400,9 +400,31 @@ application-lifetime deadline. Canceling a waiter does not cancel other waiters.
 Directory results, including failures and their scan timestamps, cache separately
 for one hour. See deployment monitoring for scan safety and local-storage limits.
 
-### Directory (any user — for pickers)
-| GET | `/directory/users?q=` | active users: id, displayName, username, avatarColor |
-| GET | `/directory/groups?q=` | id, name |
+### Sharing directory (T1.12, D-109)
+
+| Method | Path | Response |
+|---|---|---|
+| GET | `/directory/users?resource=table:<uuid>&q=alice` | `{items:[{id,name,username}],hasMore}`; active users only |
+| GET | `/directory/groups?resource=book:<uuid>&q=team` | `{items:[{id,name,username:null}],hasMore}` |
+
+Both routes require active, password-change-cleared authentication and effective
+**owner of the supplied scope**, not admin role. `resource` follows the grants
+reference grammar (workspace/book/table); missing, hidden or trashed paths are
+404, visible non-owner/path-only is 403. Authorization and search use one
+read-only repeatable-read snapshot with uncached ownership. Grant mutations still
+recheck principal existence/status and ownership independently.
+
+Exactly one `resource` and one `q`, no other query parameters. Search is trimmed,
+2..100 Unicode code points, <=254 UTF-8 bytes, valid UTF-8 without control
+characters. Malformed/duplicate/unknown parameters and invalid references are
+400 `ERR_VALIDATION`. Match a literal case-insensitive substring of username or
+display name (users), name (groups); `%`, `_` and quotes are ordinary characters.
+Return at most 20 matches, users ordered by username/id, groups by name/id.
+`hasMore` means refine the query; there is no total, paging or empty browse.
+Only `id`, `name` and nullable `username` are exposed: no email, role, status,
+membership or admin enumeration. This intentionally scoped minimal identity
+discovery replaces the earlier unimplemented general-directory sketch.
+Responses are no-store with the normal ten-second deadline/redacted errors.
 
 ### Structure
 | Method | Path | Notes |

@@ -436,6 +436,75 @@ func (q *Queries) LockWorkspace(ctx context.Context, id pgtype.UUID) (pgtype.UUI
 	return id_2, err
 }
 
+const searchShareGroups = `-- name: SearchShareGroups :many
+SELECT id, name
+FROM meta.groups
+WHERE strpos(lower(name), lower($1::text)) > 0
+ORDER BY name, id
+LIMIT 21
+`
+
+type SearchShareGroupsRow struct {
+	ID   pgtype.UUID
+	Name string
+}
+
+func (q *Queries) SearchShareGroups(ctx context.Context, search string) ([]SearchShareGroupsRow, error) {
+	rows, err := q.db.Query(ctx, searchShareGroups, search)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchShareGroupsRow
+	for rows.Next() {
+		var i SearchShareGroupsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchShareUsers = `-- name: SearchShareUsers :many
+SELECT id, display_name AS name, username
+FROM meta.users
+WHERE status = 'active'
+  AND (strpos(lower(username), lower($1::text)) > 0
+       OR strpos(lower(display_name), lower($1::text)) > 0)
+ORDER BY username, id
+LIMIT 21
+`
+
+type SearchShareUsersRow struct {
+	ID       pgtype.UUID
+	Name     string
+	Username string
+}
+
+func (q *Queries) SearchShareUsers(ctx context.Context, search string) ([]SearchShareUsersRow, error) {
+	rows, err := q.db.Query(ctx, searchShareUsers, search)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchShareUsersRow
+	for rows.Next() {
+		var i SearchShareUsersRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const tableAccess = `-- name: TableAccess :one
 WITH principals AS (
   SELECT 'user'::text AS principal_type, u.id AS principal_id

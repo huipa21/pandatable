@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createResourceLabel } from '../../i18n'
 import { useNavStore, type NavigationItem } from '../../stores/nav'
+import { useSharingStore } from '../../stores/sharing'
 
-defineProps<{ item: NavigationItem }>()
+const props = defineProps<{ item: NavigationItem }>()
 const emit = defineEmits<{
   navigate: []
   drag: [item: NavigationItem]
@@ -13,7 +14,11 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const nav = useNavStore()
+const sharing = useSharingStore()
 const expanded = ref(true)
+const canShare = computed(
+  () => !props.item.pathOnly && props.item.level === 'owner',
+)
 </script>
 
 <template>
@@ -41,9 +46,15 @@ const expanded = ref(true)
         t('nav.pathOnly')
       }}</span>
     </div>
-    <details v-if="item.canEdit || item.canCreate" class="node-actions">
+    <details
+      v-if="item.canEdit || item.canCreate || canShare"
+      class="node-actions"
+    >
       <summary>{{ t('nav.actions', { name: item.name }) }}</summary>
       <div class="nav-actions">
+        <button v-if="canShare" @click="sharing.open(item)">
+          {{ t('sharing.open') }}
+        </button>
         <button
           v-if="item.canCreate && item.childKind"
           :disabled="nav.busy"

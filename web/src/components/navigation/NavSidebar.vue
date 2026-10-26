@@ -7,6 +7,7 @@ import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import NavContents from './NavContents.vue'
 import StructureDialog from './StructureDialog.vue'
+import ShareDialog from '../sharing/ShareDialog.vue'
 
 const { t } = useI18n()
 const nav = useNavStore()
@@ -107,5 +108,6 @@ onBeforeUnmount(() => {
       </button>
     </div>
     <StructureDialog />
+    <ShareDialog />
   </div>
 </template>

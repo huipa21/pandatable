@@ -84,6 +84,16 @@ commits). Renames/reorders do not change authorization.
 5. Owners cannot remove their own *inherited* owner level via a lower-level grant (only-raise rule).
 6. Only an effective owner may *list* a scope's grants (D-080); `read`/`write` users get 403, hidden scopes 404.
 
+T1.12 (D-108..D-111) exposes Share only for effective owner of the **target**,
+independently of parent-structure ownership. The real picker uses a bounded,
+scope-owner-authorized minimal directory, not administrative user/group APIs.
+Direct grants are editable after review; inherited grants remain read-only with
+source/level summaries. Warnings use the same principal's `inheritedLevel`;
+group memberships can independently raise a user's actual access. Removing a
+direct grant never promises to remove inherited access. Disabled/missing
+principals remain honestly labeled/removable; failed writes are localized and
+permissions are re-fetched, not optimistically changed.
+
 T1.5 implements disable/enable under the user row lock, revokes all sessions in
 the same transaction and invalidates the resolver immediately after commit
 (also on uncertain commits). Role changes likewise revoke sessions/invalidate,

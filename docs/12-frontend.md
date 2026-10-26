@@ -68,11 +68,47 @@ Routes:
   display-field name, visible views and `myLevel`. `/t/:tableId` replaces to the
   first Grid (otherwise first visible view). Missing/mismatched parents/views,
   hidden or removed resources show neutral localized not-found copy. This is a
-  schema-only shell: no grid import, row/query/field/view editing or sharing UI.
+  schema-only shell: no grid import or row/query/field/view editing. T1.12 adds
+  sharing below without expanding that boundary.
 - en/zh-CN use static translation keys and precompiled runtime-only messages.
   Explicit local preferences, memory-only auth, production CSP and the
   <600,000-byte/no-initial-grid bundle gate remain unchanged. Unit mocks are
   lower-layer evidence only; browser fixtures use real accounts and APIs.
+
+### T1.12 sharing (D-108..D-112)
+
+- Sidebar actions and resource pages expose Share only for target effective
+  owner, including book/table-only owners who cannot rename/delete that resource
+  without parent ownership. No Share on path-only/read/write/admin-only nodes.
+- A viewport-bounded, scrollable native modal separates direct grants from
+  read-only inherited grants and identifies principal type/status and source
+  scope/id/level. Missing principals show an honest missing label/id; disabled
+  and missing grants can be removed, not replaced. User content is interpolated,
+  never HTML. Native focus trapping/Escape/return-to-opener works above the
+  mobile navigation drawer; labeled native controls support keyboard/touch.
+- User/group search is explicit and cancellation/generation guarded. Require
+  2..100 code points/254 UTF-8 bytes without controls; return only 20 minimal
+  matches plus a narrow-search notice, no empty enumeration or admin APIs.
+  Changing search/type immediately clears old results and selection. The real
+  server rechecks ownership and principal status; selecting a result is not a
+  reservation.
+- Add/replace/change/remove enters an explicit review step. The UI explains
+  only-raise inheritance, active direct user last-owner protection and possible
+  self-access loss. Per-principal inherited warnings never imply a lower grant
+  restricts a group/inherited owner. Last-owner/disabled/missing/server/network
+  failures stay explicit, translated from codes in en/zh-CN; never server text.
+- Memory-only sharing state resets/aborts on scope/route/identity changes.
+  Separate list/search requests and serialized writes have ten-second client
+  deadlines. Failed reads disable editing and expose retry; failed writes never
+  optimistically change permissions. Even uncertain writes reconcile nav.
+  Successful writes re-read grants; self-access loss clears privileged state.
+  Nav revisions refresh open sharing and the current table schema, so existing
+  visible 30-second/focus/visibility refresh converges other tabs without
+  promising realtime. No new dependency, auth persistence or CSP relaxation.
+- Acceptance is real M1 grants/nav/schema/structure-denial behavior, not the
+  unimplemented rows/editors/shared-view APIs in full AT-204..207. D-112 expands
+  only scenario/global harness bounds to 150/360 seconds, retaining request,
+  assertion, login, dashboard and PG deadlines, one worker and zero retries.
 
 T0.5 introduced a separate `preferences` store for unauthenticated display
 preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2 provides the

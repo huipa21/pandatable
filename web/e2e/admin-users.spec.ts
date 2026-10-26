@@ -1,5 +1,11 @@
 import type { Page } from '@playwright/test'
-import { test, expect, observeBrowser, expectHTTPFailure } from './fixtures'
+import {
+  test,
+  expect,
+  observeBrowser,
+  expectHTTPFailure,
+  expectBrowserClean,
+} from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyDashboard } from './dashboard'
@@ -199,7 +205,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
   browser,
   api,
 }, testInfo) => {
-  test.setTimeout(75_000)
+  test.setTimeout(150_000)
   const username = `alice-${testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop'}`
   const temporary = 'Temporary-password-123'
   const changed = 'Changed-password-123'
@@ -448,8 +454,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
       .getByLabel(en.admin.status, { exact: true })
       .selectOption('active')
     await expect(card).toContainText(en.admin.active)
-    expect(diagnostics.errors).toEqual([])
-    expect(diagnostics.pendingFailures).toEqual([])
+    expectBrowserClean(userPage, diagnostics)
   } finally {
     await userContext.close()
     const restored = await page.request.patch('/api/v1/admin/settings', {

@@ -67,6 +67,24 @@ export async function observeBrowser(page: Page) {
   return { errors, pendingFailures }
 }
 
+export function expectBrowserClean(
+  page: Page,
+  diagnostics: { errors: string[]; pendingFailures: number[] },
+) {
+  expect(
+    expectedHTTPFailures.get(page) ?? [],
+    'every explicit HTTP failure occurred',
+  ).toEqual([])
+  expect(
+    diagnostics.pendingFailures,
+    'only matched expected HTTP console diagnostics',
+  ).toEqual([])
+  expect(
+    diagnostics.errors,
+    'no browser warnings, errors or CSP violations',
+  ).toEqual([])
+}
+
 export const test = base.extend<{
   api: APIRequestContext
   browserDiagnostics: void

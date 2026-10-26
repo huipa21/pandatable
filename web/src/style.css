@@ -191,6 +191,7 @@ a {
 .resource-page button,
 .welcome > button,
 .structure-dialog button,
+.share-dialog button,
 .sidebar-container > button,
 .drawer-content > button,
 .nav-error button {
@@ -218,6 +219,7 @@ button:disabled {
 }
 
 .structure-dialog,
+.share-dialog,
 .nav-drawer {
   color: var(--text);
   background: var(--surface);
@@ -229,6 +231,59 @@ button:disabled {
   border-radius: 12px;
   padding: 24px;
   overflow-wrap: anywhere;
+}
+
+.share-dialog {
+  width: min(720px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  border-radius: 12px;
+  padding: 20px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.share-dialog h2 {
+  min-width: 0;
+  font-size: 22px;
+}
+
+.share-dialog label,
+.share-search {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.share-search {
+  margin-top: 16px;
+}
+
+.share-search input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.share-list {
+  list-style: none;
+  padding: 0;
+}
+
+.share-grant,
+.share-review {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.share-grant span {
+  margin-inline-start: 8px;
 }
 
 dialog::backdrop {
@@ -276,6 +331,13 @@ dialog::backdrop {
 }
 
 @media (max-width: 767px) {
+  .share-dialog button,
+  .share-dialog select,
+  .share-dialog input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
   .app-body.with-sidebar {
     flex-direction: column;
   }

@@ -146,6 +146,46 @@ export interface WorkspaceListing {
 
 export type ResourceKind = 'workspace' | 'book' | 'table'
 export type AccessLevel = 'none' | 'read' | 'write' | 'owner'
+export type GrantLevel = Exclude<AccessLevel, 'none'>
+export type PrincipalType = 'user' | 'group'
+
+export interface Grant {
+  id: string
+  resourceType: ResourceKind
+  resourceId: string
+  principalType: PrincipalType
+  principalId: string
+  level: GrantLevel
+  grantedBy: string | null
+  createdAt: string
+  principal: {
+    name: string
+    username: string | null
+    status: 'active' | 'disabled' | null
+  } | null
+}
+
+export interface DirectGrant extends Grant {
+  inheritedLevel: GrantLevel | null
+}
+
+export interface GrantListing {
+  resource: { type: ResourceKind; id: string }
+  effectiveLevel: AccessLevel
+  items: DirectGrant[]
+  inherited: Grant[]
+}
+
+export interface DirectoryPrincipal {
+  id: string
+  name: string
+  username: string | null
+}
+
+export interface DirectoryListing {
+  items: DirectoryPrincipal[]
+  hasMore: boolean
+}
 
 export interface NavView {
   id: string

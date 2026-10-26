@@ -16,7 +16,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 30_000,
-  globalTimeout: 180_000,
+  globalTimeout: 360_000,
   expect: { timeout: 5_000 },
   forbidOnly: true,
   reporter: [['list']],

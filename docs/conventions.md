@@ -46,6 +46,11 @@
   ignore stale responses on route/identity changes. Failed refreshes are visibly
   stale, never an empty success. Native dialogs and drag alternatives must remain
   keyboard/touch accessible; names are validated by Unicode code points.
+- Sharing uses the target's effective ownership, not parent-structure ownership.
+  Pickers use scoped `/directory` search, never admin enumeration; no email or
+  membership disclosure. Direct mutations require review and authoritative
+  re-fetch, including after uncertain writes. Keep inherited grants read-only
+  and distinguish per-principal inheritance from user/group effective access.
 
 ## Naming
 - API JSON: camelCase. DB: snake_case. Physical user objects: `b_`, `t_`, `c_`, `j_`, `s_` prefixes + 10-char base32.

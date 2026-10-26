@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 
@@ -59,6 +60,29 @@ func (api *authHTTP) mountGrants(router chi.Router) {
 	router.Get("/grants", api.authenticated(api.listGrants))
 	router.Put("/grants", api.authenticated(api.putGrant))
 	router.Delete("/grants/{id}", api.authenticated(api.deleteGrant))
+	router.Get("/directory/users", api.authenticated(api.shareDirectory("user")))
+	router.Get("/directory/groups", api.authenticated(api.shareDirectory("group")))
+}
+
+func (api *authHTTP) shareDirectory(kind string) func(http.ResponseWriter, *http.Request, auth.User) {
+	return func(w http.ResponseWriter, r *http.Request, user auth.User) {
+		query, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(query) != 2 || len(query["resource"]) != 1 || len(query["q"]) != 1 {
+			api.fail(w, r, acl.ErrValidation())
+			return
+		}
+		resource, err := acl.ParseResourceRef(query.Get("resource"))
+		if err != nil {
+			api.fail(w, r, err)
+			return
+		}
+		listing, err := api.acl.Directory(r.Context(), user.ID, resource, kind, query.Get("q"))
+		if err != nil {
+			api.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, listing)
+	}
 }
 
 func (api *authHTTP) listGrants(w http.ResponseWriter, r *http.Request, user auth.User) {

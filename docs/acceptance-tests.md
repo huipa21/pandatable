@@ -276,6 +276,37 @@ Default-parallel Suite cleanup still fails separately and NFR-1 is not certified
 Exact commands, failures, resources and cleanup:
 [T1.11 record](task-prompts/T1.11.md#implementation-and-handoff-2026-10-26).
 
+### T1.12 real M1 sharing evidence (2026-10-26)
+
+| Test | Status | Real production-image desktop/mobile evidence / remaining boundary |
+|---|---|---|
+| AT-204 | Sharing scope pass; full test pending | Alice uses the real user picker to grant/replace workspace read. Bob sees the hierarchy and schema read level, no Share, and cannot use the owner directory. Rows/editors/add-row/schema-menu/write-row behavior awaits actual field/row/grid APIs/UI; no proxy credit. |
+| AT-205 | Sharing scope pass; full test pending | Book write reaches actual table schema; Bob cannot create a table (403) or share. Row CRUD/shared-view/field mutation acceptance awaits those APIs/UI. |
+| AT-206 | Sharing scope pass; full test pending | Workspace read + table write leaves the sibling read; workspace write + direct table read warns using real inheritedLevel and preserves actual schema write. Removing the direct grant retains inherited access. Persisted cell editing is still pending. |
+| AT-207 | Sharing scope pass; full test pending | Real group picker grants book write to Carol; real admin membership removal immediately denies schema (404, measured <5 s), and focus refresh removes the resource. Row editing remains pending. |
+| AT-208 | Pass preserved and extended | Real table-only read pruning/path-only contexts remain; table-only owner can share the table but cannot rename it without book ownership. Read/write/path-only/admin-only nodes have no Share. |
+| AT-209 | Pass | Book-only owner Bob shares his book/table with Carol; parent workspace grants 403, hidden sibling book grants 404. Book rename still requires workspace owner. |
+| AT-210 | Pass | Workspace owner Bob grants Carol owner through the real picker/UI; inherited/direct scope controls remain authoritative. |
+| AT-211 | Pass | Real last active direct user owner removal and downgrade return localized ERR_LAST_OWNER. After another active direct user owner exists, Alice can downgrade herself; Share disappears and privileged state clears. Bob restores her through the same real UI. |
+| AT-112/201/203/213 | Pass preserved, M1 boundaries unchanged | Existing real navigation/admin isolation/creation/Trash-removal scenario still passes. M3 restoration remains pending. |
+| AT-111/117/202/322/804 | Dependencies retained | Upload enforcement, real datetime/filter behavior, field rename and filter APIs are not implemented by sharing. |
+
+Final full image project `pt-e2e-24b43zcuwjbe3jlogmxisv224d`: **11 passed /
+2 intentional mobile-grid exclusions (3.3m)**; both expanded real account/
+navigation/sharing scenarios pass. Additional real principal deletion/disable
+between selection and confirmation returns localized errors; disabled users
+disappear from search. Both locales/themes, modal keyboard/focus/drawer/touch,
+viewport bounds and strict console/CSP diagnostics pass. No mocked production
+picker, SQL/browser seed, extra sign-in budget, row/editor proxy or auth shortcut.
+
+Required uncached PG18 and scoped-serial full check pass; **66 frontend tests /
+18 files**, **348 matching locale keys**, initial gzip **184,252 bytes** without
+initial grid imports. Default-parallel Suite cleanup still fails separately;
+post-auth RSS still exceeds 150 MB, so NFR-1 is not certified. T1.12 remains
+**In progress** for its linked full AT-204..207 dependencies, not a claim that
+future row/editor functionality passed. Exact commands, failures/resources and
+owned-only cleanup: [T1.12 record](task-prompts/T1.12.md#implementation-and-handoff-2026-10-26).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

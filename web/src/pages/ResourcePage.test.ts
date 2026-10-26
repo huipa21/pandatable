@@ -66,6 +66,35 @@ it('shows real schema metadata, breadcrumbs, levels and view links without any g
   }
 })
 
+it('refreshes unchanged-route schema on nav revision and removes sharing when the server reports non-owner', async () => {
+  let owner = true
+  const fetch = vi.fn(() =>
+    Promise.resolve(
+      Response.json({
+        ...tableSchema(),
+        myLevel: owner ? 'owner' : 'read',
+      }),
+    ),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const { wrapper, nav } = await setup('/t/t/v/v')
+  try {
+    expect(
+      wrapper.findAll('button').some((button) => button.text() === 'Share'),
+    ).toBe(true)
+    owner = false
+    nav.revision++
+    await flushPromises()
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.schema-summary').text()).toContain('Read')
+    expect(
+      wrapper.findAll('button').some((button) => button.text() === 'Share'),
+    ).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('replaces a table shortcut with its real Grid id and ignores schema reads from an abandoned route', async () => {
   vi.stubGlobal(
     'fetch',

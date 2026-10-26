@@ -37,7 +37,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.9 | DDL module | 🟨 | 2026-10-26 | Physical-only caller-pgx.Tx DDL, strict 50-bit identifiers, typed types/defaults and explicit constraint removal; D-094..096, no migration/dependency. Required PG18 x3 (100% statements), serial-package full check and production image 11/2 pass. Default-parallel cleanup failure remains; AT-202/full AT-804 await real table/field/filter APIs. T1.10 handoff recorded; not Done. |
 | T1.10 | Workspace/Book/Table API | ✅ | 2026-10-26 | API implementation unchanged; T1.11 closes real M1 browser AT-201/203/213 and full AT-112. Required uncached PG18 and scoped-serial complete gate pass; default-parallel cleanup caveat persists. Done for M1 structure scope: AT-203 restoration remains M3, AT-202 field rename T1.14 and full AT-804 T2.6, not claimed. |
 | T1.11 | Sidebar & navigation UI | ✅ | 2026-10-26 | D-104..107: memory-only nav refresh/identity guards, owner-of-parent tree controls, path-only breadcrumbs, native create/rename/Trash dialogs, drag/button reorder, mobile drawer and lazy schema-only table routes. Real desktop/mobile AT-201/208/213/full AT-112 and M1 AT-203 pass. 52 unit tests/304 locale keys, required PG18 and serial full check pass; image suite 11 passed/2 intentional exclusions. Initial gzip 178,390 bytes, no grid imports. Default-parallel cleanup/RSS caveats unchanged; exact record below and T1.12 prompt created. |
-| T1.12 | Share dialog UI | ⬜ | | |
+| T1.12 | Share dialog UI | 🟨 | 2026-10-26 | M1 sharing implementation verified: D-108..112, target-owner native dialog, direct/inherited review, scoped minimal real directory, localized failures and race-safe nav/schema refresh. Real desktop/mobile sharing AT-204..211 scope and full AT-208..211 pass; full AT-204..207 rows/editors/shared views still await T1.14..T1.19, so In progress. 66 frontend tests/348 keys; required PG18 and scoped-serial full check pass; full image suite 11 passed/2 intentional exclusions, initial gzip 184,252 bytes/no initial grid. Default-parallel Suite cleanup and NFR-1 caveats retained. Exact record below; T1.13 prompt created. | |
 | T1.13 | Codec framework + batch 1 | ⬜ | | |
 | T1.14 | Field API & UI | ⬜ | | |
 | T1.15 | Basic query & rows API | ⬜ | | |
@@ -1366,3 +1366,63 @@ Exact commands/failures/log names:
 [T1.11 completion record](task-prompts/T1.11.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.12 Share dialog UI](task-prompts/T1.12.md)**. Full AT-111/322 uploads,
 AT-117 datetime/filter, AT-202 field rename and AT-804 filters remain pending.
+
+## T1.12 sharing implementation and handoff (2026-10-26)
+
+**M1 sharing implementation verified; task remains In progress** because full
+linked AT-204..207 still requires real rows/editors/shared views from later
+tasks. Full M1 AT-208..211 and the real sharing portions of AT-204..207 pass;
+no permission-probe, mocked picker or SQL fixture substitutes for those missing
+row/editor scenarios.
+
+- D-108..D-112: effective target-owner Share on sidebar/resource pages, native
+  responsive direct/inherited dialog, explicit review and localized failures,
+  bounded owner-authorized real directory (minimal identities, first 20,
+  explicit 2..100-code-point/254-byte search, no admin enumeration), cancellation/
+  identity/race guards and authoritative nav/schema refresh. No migration or
+  dependency; pinned sqlc generation is byte-identical across all 12 bindings.
+- Final full production project **pt-e2e-24b43zcuwjbe3jlogmxisv224d**:
+  **11 passed / 2 intentional mobile-grid exclusions (3.3m)**, setup **6.4 s**,
+  desktop/mobile expanded scenarios **1.3m / 1.3m**. Real users/groups/scopes,
+  read/write/owner/inherited levels, direct removal, last-owner rejections,
+  self-access loss/restoration, principal missing/disabled races, membership
+  revocation <5 s, independent admin isolation and prior real navigation all
+  pass. Both locales/light-dark, mobile drawer stacking/Escape/focus/touch and
+  viewport bounds pass; retained-tab browser/CSP diagnostics clean.
+- **66 frontend tests / 18 files**, **348 locale keys**, strict frontend/E2E TS,
+  ESLint/Prettier and Go build/vet pass. Required focused uncached PG18 ACL/HTTP
+  **5.001 / 12.807 s**; serial full gate's same packages **4.683 / 14.641 s**.
+  Full scoped-serial check **PASS**, lint **22.153 s**, test **2m2.255 s**,
+  build **13.934 s**, total **2m38.343 s**. No PG deadline/assertion change.
+- Default-parallel full check **FAIL** only on existing `internal/db` and
+  `internal/testdb` Suite cleanup/drop sensitivity: lint **18.436 s PASS**,
+  test **25.198 s FAIL**, build **14.990 s PASS**, total **58.624 s**.
+  Reported separately, not certified. Initial browser attempt found native
+  select labels included option text; translated aria-labels fixed real lookup/
+  accessibility, not auth or acceptance thresholds. Its timed-out disposable
+  branding cleanup also broke mobile; corrected desktop **2 passed** and final
+  full run pass. Exact failures/commands are in the completion record.
+- Initial gzip **184,252 bytes** (<600,000), all assets **325,999 bytes**,
+  no initial grid chunks; synthetic opt-in grid unchanged. Image **163,622,369
+  bytes**, linux/amd64, UID/GID10001:10001, executable HEALTHCHECK and pg_dump18.6.
+  Health ready **6.648 s**; startup **74.39 MB / 536.9 MB, 6.42% CPU**;
+  independent live sample **24.72 MB, 7.38% CPU**. Actual post-auth dashboard
+  RSS **168,689,664 / 181,317,632 bytes**, exceeding 150 MB: **NFR-1 not
+  certified**. Dashboard refresh **9884.6 / 9884.9 ms**, genuine 4096/2048-byte
+  fixtures; VM RAM **16,613,826,560 bytes**, 16 visible CPUs, container limit
+  **536,870,912 bytes**, not the target host. No forced GC/hash weakening.
+- All three owned projects' containers/volumes/networks/tags absent; final Suite
+  DBs/connections **0 / 0**. Retained pt-dev-db/pt-dev-pgdata, latest image
+  `151798547521`, unrelated stopped buildkit/anonymous storage/networks/Caddy
+  preserved. Dev DB and VM restored **stopped**. No broad prune/reset,
+  remote/shared deployment, hosted CI or committed browser/generated assets.
+
+Go1.27.0/Node24.15.0/pnpm11.2.2/PG18.6/Podman5.8.2-5.8.4,
+Vue3.5.44/Pinia3.0.4/Router4.6.4/NaiveUI2.45.3/vue-i18n11.4.16,
+Vite7.3.7/TS5.9.3/Vitest4.1.12/Playwright1.64.1/Chromium156.0.8078.4.
+golangci-lint absent (explicit warning); no optional-linter/race or physical
+device/virtual-keyboard/Linux-Docker/target-host certification.
+Full AT-111/322, AT-117, AT-202 field rename, AT-804 filters and M3 restore remain
+pending. Exact record: [T1.12](task-prompts/T1.12.md#implementation-and-handoff-2026-10-26).
+Next: **[T1.13 Codec framework + batch 1](task-prompts/T1.13.md)**, including its
+mandatory completion record and following T1.14 prompt.

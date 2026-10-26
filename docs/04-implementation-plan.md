@@ -71,6 +71,12 @@ T1.10/T1.11 are Done for M1 scope; AT-203 restoration remains M3. T1.8 still
 awaits upload enforcement, and T1.9 still awaits field/filter API acceptance.
 The schema-only table shell does not implement or import the production grid.
 
+T1.12 adds real target-owner sharing and the bounded owner-authorized directory
+(D-108..D-112), without expanding the schema-only shell. Its M1 sharing evidence
+must be separated from the full linked AT-204..207 row/editor/shared-view
+scenarios, which still require T1.14..T1.19. Keep T1.12 In progress while those
+dependencies remain; real grant/nav/schema checks do not substitute for them.
+
 ### Fields & rows
 | ID | Task | Details | Docs | AT | Est |
 |---|---|---|---|---|---|

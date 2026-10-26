@@ -506,6 +506,42 @@ cleanup sensitivity separately from the command-scoped serial pass.
 Full AT-111/322, AT-117, AT-202 field rename and AT-804 filter APIs remain pending;
 M3 owns AT-203 restoration, not this M1 deletion scenario.
 
+### T1.12 sharing checks
+
+T1.12 extends the same real account contexts with
+[sharing scenarios](../web/e2e/sharing.ts). D-112 supersedes D-107's harness
+bounds only (150 s expanded scenario, 360 s suite); all other thresholds remain.
+
+```powershell
+$env:PT_TEST_DATABASE_URL = (& go run .\tools\ptdev db status | Select-Object -Last 1)
+$env:PT_TEST_DATABASE_REQUIRED = '1'
+go test .\internal\acl .\internal\httpapi -count=1
+pnpm --dir web exec vitest run src\stores\sharing.test.ts src\components\sharing\sharing.test.ts src\components\navigation\navigation.test.ts src\pages\ResourcePage.test.ts
+pnpm --dir web lint
+pnpm --dir web test
+pnpm --dir web build
+go run .\tools\ptdev check
+$env:GOFLAGS = '-p=1'; go run .\tools\ptdev check
+$env:GOFLAGS = '-p=1'; go run .\tools\ptdev e2e -- admin-users.spec.ts
+$env:GOFLAGS = '-p=1'; go run .\tools\ptdev e2e
+```
+
+The directory test uses `internal/testdb.Suite` with real PG18 for owner-only
+privacy/bounds, literal search, active filtering, uncached grant revocation,
+hidden/visible/forced/unauthenticated errors and trashed ancestors. SQL fixtures
+here are lower-layer evidence, not browser acceptance. Static queries regenerate
+with the existing pinned sqlc 1.31.1 command; no migration/dependency.
+
+Store/component tests cover stale target/query/type/identity responses, exact
+search bounds, CSRF/review/write serialization, uncertain-write reconciliation,
+last-owner/principal errors, redaction/retry, disabled/dangling grants and
+target-owner versus parent-owner controls. The production-image scenario uses
+real users/groups/grants and membership APIs with no mocked route, SQL seed,
+additional login budget or row/editor proxy acceptance. Browser diagnostics
+remain strict for all retained user tabs; only explicitly expected status errors
+are consumed. Default-parallel Suite cleanup sensitivity must still be reported
+separately from command-scoped serial results.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:
@@ -530,7 +566,7 @@ reported as startup failure, not hidden by connecting to another app.
 
 adjacent controls, no page overflow, and no console/page/CSP errors. API fixtures
 The real embedded shell is checked on desktop and mobile Chromium (one worker,
-zero retries, 180 s global bound per D-107): health/JS/history/404/HEAD/method boundaries,
+zero retries, 360 s global bound per D-112): health/JS/history/404/HEAD/method boundaries,
 English/Chinese and light/dark/system persistence, actual Naive UI styles,
 adjacent controls, no page overflow, and no console/page/CSP errors. AT-101 now
 uses the production image and the logged token from the unique owned app

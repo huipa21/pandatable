@@ -1,3 +1,19 @@
+-- name: SearchShareUsers :many
+SELECT id, display_name AS name, username
+FROM meta.users
+WHERE status = 'active'
+  AND (strpos(lower(username), lower(sqlc.arg(search)::text)) > 0
+       OR strpos(lower(display_name), lower(sqlc.arg(search)::text)) > 0)
+ORDER BY username, id
+LIMIT 21;
+
+-- name: SearchShareGroups :many
+SELECT id, name
+FROM meta.groups
+WHERE strpos(lower(name), lower(sqlc.arg(search)::text)) > 0
+ORDER BY name, id
+LIMIT 21;
+
 -- Access queries return the maximum applicable grant along the target path
 -- (workspace -> book -> table) for the user and the user's flat groups, plus
 -- whether the target is visible path-only through a grant on a descendant.

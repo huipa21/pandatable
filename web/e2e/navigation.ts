@@ -1,8 +1,15 @@
 import type { Browser, Page } from '@playwright/test'
-import { test, expect, observeBrowser, expectHTTPFailure } from './fixtures'
+import {
+  test,
+  expect,
+  observeBrowser,
+  expectHTTPFailure,
+  expectBrowserClean,
+} from './fixtures'
 import type { Navigation, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
+import { verifySharing } from './sharing'
 
 const headers = () => ({
   Origin: process.env.PT_E2E_BASE_URL!,
@@ -265,6 +272,9 @@ export async function verifyNavigation(
     await expect(inventory.locator('a,button')).toHaveCount(0)
 
     const contexts = []
+    const participantPages: Page[] = []
+    const participantDiagnostics: Awaited<ReturnType<typeof observeBrowser>>[] =
+      []
     try {
       for (const [index, participant] of participants.entries()) {
         const context = await browser.newContext({
@@ -312,7 +322,9 @@ export async function verifyNavigation(
         })
         expect(grant.status()).toBe(201)
         const page = await context.newPage()
+        participantPages.push(page)
         const diagnostics = await observeBrowser(page)
+        participantDiagnostics.push(diagnostics)
         await page.goto(`/t/${tid}/v/${viewId}`)
         await page
           .getByRole('button', { name: en.common.languages.en, exact: true })
@@ -365,6 +377,18 @@ export async function verifyNavigation(
         expect(diagnostics.errors).toEqual([])
         expect(diagnostics.pendingFailures).toEqual([])
       }
+      await verifySharing(
+        admin,
+        alice,
+        participantPages[0]!,
+        participantPages[1]!,
+        { wid, bid, tid, siblingTable, siblingBook },
+        participants,
+        aliceUsername,
+      )
+      participantPages.forEach((page, index) =>
+        expectBrowserClean(page, participantDiagnostics[index]!),
+      )
     } finally {
       for (const context of contexts) await context.close()
     }
