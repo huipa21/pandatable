@@ -13,6 +13,7 @@ import (
 	"pandatable/internal/config"
 	"pandatable/internal/db"
 	"pandatable/internal/httpapi"
+	"pandatable/internal/structure"
 	"pandatable/internal/web"
 )
 
@@ -52,6 +53,10 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure grants service: %w", err)
 	}
+	structureService, err := structure.New(pool, resolver)
+	if err != nil {
+		return fmt.Errorf("configure structure service: %w", err)
+	}
 	adminService, err := admin.NewService(pool, authService, resolver)
 	if err != nil {
 		return fmt.Errorf("configure admin service: %w", err)
@@ -69,7 +74,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("SETUP_TOKEN=" + setupToken)
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
-		Service: authService, ACL: aclService, Admin: adminService, System: monitor, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)

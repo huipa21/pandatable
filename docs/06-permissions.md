@@ -34,7 +34,7 @@ effective(user, workspace W)      = max over grants on {W}
 
 A user sees a workspace in the sidebar if they have *any* grant on it, or on any book/table within it. Same for books. Items without effective permission are hidden (e.g. a user with only a table grant sees W → B → that table only). Workspace/book shown as "path-only" (cannot open settings, cannot list siblings).
 
-The resolver reports this as `Access{Level, Visible}`: `Visible` is true when the level is above none **or** the user's principals hold a grant on any live descendant. Guards return **404** when `Visible` is false (hidden, missing, trashed, disabled user) and **403** when the resource is visible but the level is insufficient (including path-only workspaces/books). The sidebar/`/nav` consumer is T1.10/T1.11.
+The resolver reports this as `Access{Level, Visible}`: `Visible` is true when the level is above none **or** the user's principals hold a grant on any live descendant. Guards return **404** when `Visible` is false (hidden, missing, trashed, disabled user) and **403** when the resource is visible but the level is insufficient (including path-only workspaces/books). `GET /nav` (T1.10, D-102) builds the sidebar tree from the same rules; the sidebar UI is T1.11.
 
 ### Implementation
 
@@ -65,6 +65,15 @@ The resolver reports this as `Access{Level, Visible}`: `Visible` is true when th
 | Restore from Trash within scope | | | ✓ |
 
 Anyone (role `user`) can create a new workspace and becomes its owner.
+
+T1.10 (D-097/D-099) implements the matrix for structure: creating a workspace
+inserts the direct owner grant in the same transaction; creating, renaming,
+reordering or soft-deleting a book needs effective owner of the workspace and
+the same for a table needs effective owner of its book. Each mutation checks the
+target's visibility first (404), then the parent ownership (403), repeats the
+check uncached after the workspace/book/table and actor locks, and invalidates
+the resolver after resource creation or soft deletion (also on uncertain
+commits). Renames/reorders do not change authorization.
 
 ## 5. Grant management rules (D-014)
 

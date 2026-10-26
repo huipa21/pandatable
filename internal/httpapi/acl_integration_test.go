@@ -18,6 +18,7 @@ import (
 	"pandatable/internal/acl"
 	"pandatable/internal/auth"
 	"pandatable/internal/db"
+	"pandatable/internal/structure"
 )
 
 type aclUser struct {
@@ -27,17 +28,19 @@ type aclUser struct {
 }
 
 type aclFixture struct {
-	t        *testing.T
-	pool     *db.Pool
-	ctx      context.Context
-	handler  http.Handler
-	probes   http.Handler
-	resolver *acl.Resolver
-	phc      string
-	logins   int
-	users    []string
-	spaces   []string
-	groups   []string
+	t           *testing.T
+	pool        *db.Pool
+	ctx         context.Context
+	handler     http.Handler
+	probes      http.Handler
+	resolver    *acl.Resolver
+	authService *auth.Service
+	aclService  *acl.Service
+	phc         string
+	logins      int
+	users       []string
+	spaces      []string
+	groups      []string
 }
 
 const aclPassword = "Fixture-password-123"
@@ -59,11 +62,15 @@ func newACLFixture(t *testing.T) *aclFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &aclFixture{t: t, pool: pool, ctx: ctx, resolver: resolver}
+	f := &aclFixture{t: t, pool: pool, ctx: ctx, resolver: resolver, authService: authService, aclService: aclService}
 	if f.phc, err = auth.NewPasswords().Hash(ctx, aclPassword); err != nil {
 		t.Fatal(err)
 	}
-	options := AuthOptions{Service: authService, ACL: aclService, BaseURL: "https://table.example"}
+	structureService, err := structure.New(pool, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := AuthOptions{Service: authService, ACL: aclService, Structure: structureService, BaseURL: "https://table.example"}
 	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
 	if f.handler, err = New(logger, testAssets(), options); err != nil {
 		t.Fatal(err)

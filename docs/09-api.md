@@ -34,7 +34,8 @@ T1.2 implements the auth/profile/timezone backend below. T1.3 implements
 first-run setup; T1.4 adds the ACL resolver and grants API; T1.5 adds admin
 users and login/forced-password-change UI; T1.6 adds groups; T1.7 adds system
 observations/dashboard; T1.8 adds settings, public branding/default language,
-currency catalog and read-only workspace inventory. Other business endpoints
+currency catalog and read-only workspace inventory; T1.10 adds the
+workspace/book/table structure API below. Other business endpoints
 and profile UI remain later-task work.
 
 T1.9 adds **no HTTP route**. Future structure/field services can propagate its
@@ -407,13 +408,13 @@ for one hour. See deployment monitoring for scan safety and local-storage limits
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/nav` | full sidebar tree the user may see (workspaces → books → tables → views) with effective levels |
-| POST | `/workspaces` | |
-| PATCH/DELETE | `/workspaces/{id}` | delete → trash |
-| POST | `/workspaces/{id}/books` | |
-| PATCH/DELETE | `/books/{id}` | |
-| POST | `/books/{id}/tables` | `{ name, fields?: [...] }` |
-| PATCH/DELETE | `/tables/{id}` | name, displayFieldId, position |
-| GET | `/tables/{id}/schema` | fields, relations, views, schemaVersion, myLevel |
+| POST | `/workspaces` | `{ name, icon?, color? }` → 201 `{ workspace, eventId }`; creator becomes direct owner |
+| PATCH/DELETE | `/workspaces/{id}` | PATCH `{ name?, icon?, color? }` (null clears icon/color); delete → trash |
+| POST | `/workspaces/{id}/books` | `{ name }` → 201 `{ book, eventId }` |
+| PATCH/DELETE | `/books/{id}` | PATCH `{ name?, index? }`; delete → trash |
+| POST | `/books/{id}/tables` | `{ name }` → 201 table schema + `eventId` (T1.14 adds `fields?`) |
+| PATCH/DELETE | `/tables/{id}` | PATCH `{ name?, index? }` (`displayFieldId` arrives with T1.14); delete → trash |
+| GET | `/tables/{id}/schema` | table, fields, relations, views, schemaVersion, myLevel |
 | POST | `/tables/{id}/fields` | create field (incl. link → creates relation + reverse field) |
 | PATCH/DELETE | `/fields/{id}` | rename/options/constraints; delete → trash |
 | POST | `/fields/{id}/convert:dry-run` | `{ uiType, pgType?, options }` |
@@ -422,6 +423,48 @@ for one hour. See deployment monitoring for scan safety and local-storage limits
 | GET | `/trash?scope=workspace:{id}` | |
 | POST | `/trash/{type}/{id}/restore` | |
 | DELETE | `/trash/{type}/{id}` | purge now |
+
+#### T1.10 structure contract (D-097..D-103)
+
+- Routes exist only when the server has the structure service (always in
+  `serve`) and use the T1.2 protections: session + disabled-user 401,
+  `must_change_password` 403, no-store, ten-second deadline, exact Origin and
+  `X-PT-CSRF: 1` on unsafe methods, JSON-only bodies of at most 4096 bytes with
+  unknown/duplicate members rejected, and no query string on `/nav` or
+  `/tables/{id}/schema`. A malformed UUID path is 404 `ERR_NOT_FOUND`.
+- **Who may do what:** any active user may `POST /workspaces`; the creator gets a
+  direct `owner` grant atomically. Workspace PATCH/DELETE, book creation and book
+  PATCH/DELETE need effective owner of the **workspace**; table creation and
+  table PATCH/DELETE need effective owner of the **book** (workspace owners
+  inherit it). The admin role gives
+  nothing. A hidden/missing/trashed target is 404 (checked first), a visible or
+  path-only target without the required parent ownership is 403.
+- **Inputs:** `name` is trimmed, 1..100 Unicode code points, no control
+  characters; `icon` (nullable) ≤16 code points; `color` (nullable) `#RRGGBB`.
+  `index` is a zero-based integer among the *other live siblings* under the same
+  parent (D-101); out of range is 400 and an unchanged index is a 200 no-op.
+  PATCH requires at least one known member. Display names are not unique.
+- **Responses** carry an opaque `eventId` (D-103). `POST /books/{id}/tables`
+  returns the full table schema: `table`, `fields` (Name + five system fields,
+  no physical names), `relations: []`, `views` (default Grid), `schemaVersion`
+  1 and `myLevel`. `GET /tables/{id}/schema` (read level) returns the same shape
+  for the caller (shared views plus their personal views).
+- **Soft delete:** DELETE sets `deleted_at/by` on the target only; descendants,
+  physical objects, grants, fields and views are retained for the Trash service
+  (M3) while the ACL hides the target and everything below it immediately
+  (the resolver is invalidated before the response). A second delete is 404.
+- **Errors:** validation 400; unauthenticated/disabled actor 401; hidden 404;
+  insufficient 403; physical-name retries exhausted or DDL conflict 409
+  `ERR_DDL_CONFLICT`; a lock wait over three seconds 409 `ERR_DDL_LOCK_TIMEOUT`.
+  Unexpected database/driver/cancellation errors are redacted 500s with the
+  standard correlated log.
+- **`GET /nav`** → `{ workspaces: [{ id, name, icon, color, createdAt, level,
+  pathOnly, books: [{ id, name, position, level, pathOnly, tables: [{ id, name,
+  position, schemaVersion, level, views: [{ id, name, type, scope }] }] }] }] }`.
+  `level` is `none|read|write|owner` (max grant on the path, flat groups,
+  active users); `none`/`pathOnly` workspaces and books hold only visible
+  descendants. Order: workspaces by creation, books/tables by position then id.
+  Trashed resources never appear and the admin role is not special.
 
 ### Permissions
 | Method | Path | Notes |

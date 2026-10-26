@@ -61,6 +61,10 @@ the real API scenarios need T1.10 table, T1.14 field and T2.6 filter APIs.
 Keep T1.9 In progress until those linked scenarios pass. T1.10 owns default
 Grid/Name/system-field metadata, ACL/locks, atomic orchestration and events.
 
+T1.10 delivers that orchestration as `internal/structure` plus the doc 09 routes
+(D-097..D-103). AT-201/203/213 pass at the API surface; their sidebar UI parts
+are T1.11, so T1.10 stays In progress until the linked scenarios pass.
+
 ### Fields & rows
 | ID | Task | Details | Docs | AT | Est |
 |---|---|---|---|---|---|

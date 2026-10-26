@@ -24,6 +24,16 @@ sql:
   - engine: postgresql
     schema:
       - migrations
+    queries: internal/structure/queries.sql
+    gen:
+      go:
+        package: structuresql
+        out: internal/structure/structuresql
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema:
+      - migrations
       - internal/admin/catalog.sql
     queries: internal/admin/queries.sql
     gen:

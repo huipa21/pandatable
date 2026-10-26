@@ -35,7 +35,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.7 | Admin dashboard | ✅ | 2026-10-26 | Read-only cached metrics and localized responsive dashboard; D-088..090, gopsutil v4.25.9, no migration. Required PG18 x3, non-root Linux filesystem tests and production desktop/mobile AT-110 pass; refresh 9904/9855.5 ms. Full image suite 11/2; complete check passes with GOFLAGS=-p=1, default-parallel cleanup caveat retained. Real post-auth RSS exceeds NFR-1 target; not certified. T1.8 handoff recorded. |
 | T1.8 | Admin settings & workspaces list | 🟨 | 2026-10-26 | Implemented available scope: seven atomic settings/default readers/public branding and read-only workspace inventory, D-091..093. Required PG18 x3, serial-package full check and final production image 11/2 pass. Full AT-111/112 await upload/workspace APIs; SQL fixtures are API evidence only. In progress, not Done; T1.9 handoff recorded. |
 | T1.9 | DDL module | 🟨 | 2026-10-26 | Physical-only caller-pgx.Tx DDL, strict 50-bit identifiers, typed types/defaults and explicit constraint removal; D-094..096, no migration/dependency. Required PG18 x3 (100% statements), serial-package full check and production image 11/2 pass. Default-parallel cleanup failure remains; AT-202/full AT-804 await real table/field/filter APIs. T1.10 handoff recorded; not Done. |
-| T1.10 | Workspace/Book/Table API | ⬜ | | |
+| T1.10 | Workspace/Book/Table API | 🟨 | 2026-10-26 | `internal/structure` + 11 routes: atomic workspace+owner grant, book/table metadata+DDL, system fields, Name display field, default Grid, reorder, soft delete, `/nav`, schema read; D-097..103, sqlc `structuresql`, no migration/dependency. Required PG18, default-parallel (known cleanup failure) and serial full check, and image E2E 11/2 pass. AT-201/203/213 pass at API level; sidebar UI (T1.11), AT-202 field rename, AT-112 browser half remain; not Done. T1.11 prompt created. |
 | T1.11 | Sidebar & navigation UI | ⬜ | | |
 | T1.12 | Share dialog UI | ⬜ | | |
 | T1.13 | Codec framework + batch 1 | ⬜ | | |
@@ -86,7 +86,7 @@ Summary updated at each milestone end.
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
 | AT-1xx Auth & Admin | 17 | 9 | AT-101/103 and T1.5..T1.7 AT-104..110 pass (real production-image desktop/mobile plus PG18). T1.8 partial AT-111/112; uploads/workspace creation/navigation/table APIs remain blockers. Full AT-102/profile AT-116 remain pending. AT-117 includes team-default propagation, not real datetime/filter UI. T1.2/T1.8 remain in progress. |
-| AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface (real HTTP/PG18). AT-204..208 pass for resolver/grants API behavior; their editor/menu/banner/sidebar UI parts remain for T1.10-T1.12. AT-201..203/213 not started. |
+| AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface. T1.10 adds real HTTP/PG18 API passes for AT-201/203/213 and the table-rename half of AT-202; their sidebar/Trash UI, field rename and AT-204..208 UI parts await T1.11/T1.12/T1.14. |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
@@ -108,6 +108,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | T1.10 implemented: workspace/book/table API (`internal/structure`), atomic metadata+DDL, system fields/Name/default Grid, reorder, soft delete, `/nav`, D-097..D-103 and sqlc `structuresql`. Required PG18 tests, serial full check and image E2E 11/2 pass; default-parallel Suite cleanup failure recorded. Sidebar UI and linked UI/field acceptance stay pending, so In progress; T1.11 prompt created. Retained Podman VM/dev DB restored stopped. |
 | 2026-10-26 | T1.6 completed: group CRUD/members, linked group/user detail, D-084..087, deterministic grant/member/delete concurrency and immediate ACL invalidation. AT-109 production desktop/mobile and full 11/2 image suite pass; full check passes with GOFLAGS=-p=1 (default-parallel testdb cleanup failures recorded, not relaxed). T1.7 prompt created; original stopped DB/VM state restored. |
 | 2026-10-26 | T1.4 implemented and verified: `internal/acl` resolver/grants service, `/api/v1/grants` routes, `require` guard, D-079/D-080, sqlc `aclsql`, docs and T1.5 prompt. Required PG18 tests (x3), Windows check and image E2E pass. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.3 started after reading the required docs and T1.2 handoff; D-078 records the confirmed setup policies. AT-101 and the required PG18/local gates now pass; exact evidence follows. No migration or shared/remote deployment. |
@@ -1285,3 +1286,20 @@ deployment or hosted CI. Exact commands/results/failures/cleanup and local
 log names: [T1.9 completion](task-prompts/T1.9.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.10 Workspace/Book/Table API](task-prompts/T1.10.md)**, including
 mandatory completion record and following T1.11 prompt.
+
+## T1.10 structure API implementation and handoff (2026-10-26)
+
+**In progress.** Real HTTP/PG18 API evidence for AT-201/203/213 and the table-rename
+half of AT-202; AT-112's admin half (empty nav, 404s, inventory owner) passes at
+the API. Sidebar/browser scenarios (T1.11), field rename (T1.14), uploads
+(AT-111/322), datetime/filter (AT-117) and filter injection (AT-804) are pending.
+Delivered/verified: `internal/structure`, 11 routes, D-097..D-103, pinned sqlc
+`structuresql` (other generated files byte-identical), no migration/dependency.
+Focused PG18: 27 structure tests 86.0% statements plus HTTP `TestStructureAPI*`.
+Default-parallel check fails only the existing Suite cleanup deadline in
+`internal/db`/`internal/testdb` (lint 16.5 s, test 27.3 s FAIL, build 16.3 s);
+command-scoped `GOFLAGS=-p=1` check **PASS** (2m15.5 s); image E2E **11 passed /
+2 intentional exclusions**, startup 74.2 MB. NFR-1 remains uncertified. Exact
+commands, failures, limitations and cleanup:
+[T1.10 completion record](task-prompts/T1.10.md#implementation-and-handoff-2026-10-26).
+Next: **[T1.11 Sidebar & navigation UI](task-prompts/T1.11.md)**.

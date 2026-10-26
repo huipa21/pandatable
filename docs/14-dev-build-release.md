@@ -201,8 +201,8 @@ and verify the row cannot reappear. Expiry tests deliberately extend the stored
 expiry to prove idle/absolute limits are checked independently.
 
 Static auth queries are generated locally using pinned `sqlc` **1.31.1**:
-`sqlc generate` (also generates `internal/acl/aclsql` from the second
-`sqlc.yaml` entry). Commit its Go bindings; generation must produce no diff on
+`sqlc generate` (also generates `internal/acl/aclsql`, `internal/admin/adminsql`
+and `internal/structure/structuresql` from the other `sqlc.yaml` entries). Commit its Go bindings; generation must produce no diff on
 rerun. [catalog.sql](../internal/auth/catalog.sql) declares the PG timezone
 catalog only for the offline generator; no runtime SQL or migration executes it.
 The application image uses existing Go source allowlists and does not include
@@ -439,6 +439,38 @@ Catalog tests are not real AT-202 or full AT-804 API acceptance: table/field
 rename and filter injection require T1.10/T1.14/T2.6. See the exact results,
 resource observations and cleanup in the
 [T1.9 completion record](task-prompts/T1.9.md#implementation-and-handoff-2026-10-26).
+
+### T1.10 structure API checks
+
+`internal/structure` has its own Suite-owned PG18 database; `internal/httpapi`
+adds real HTTP scenarios through the production router (no seed or test route).
+Required uncached focused validation (PowerShell):
+
+```powershell
+$env:PT_TEST_DATABASE_URL = (& go run .\tools\ptdev db status | Select-Object -Last 1)
+$env:PT_TEST_DATABASE_REQUIRED = '1'
+go test .\internal\structure -count=1 -cover
+go test .\internal\httpapi -count=1 -run TestStructureAPI -v
+```
+
+Service tests cover strict inputs, exact physical/metadata state (catalog columns,
+identity/defaults, no FKs, six fields, display field, Grid config, locale labels,
+no physical names in DTOs), metadata-only Chinese/payload renames with data
+preserved, deterministic reorder (including renumbering and trashed siblings),
+the owner/visibility matrix, soft-delete retention and immediate cache
+invalidation, scripted collision retry bounds (physical and metadata) and
+rollback after deliberately invalid DDL. Concurrency tests hold the workspace
+lock in a separate transaction to prove grant revoke/downgrade, book/workspace
+delete and user-disable races are rechecked after locking; a real three-second
+lock timeout; serialized parallel creations; and deferred-trigger commit
+failures that must still invalidate and persist nothing. HTTP tests cover
+AT-201/203/213 at the API surface, admin without implicit access plus inventory
+owner, the full level matrix, group-derived ownership, and the unauthenticated/
+disabled/forced-change/CSRF/no-store/bounded-JSON/query/method classes.
+
+Sidebar UI parts of AT-201/203/213, full AT-112, AT-202 field rename and full
+AT-804 are **not** claimed; see
+[T1.10 completion record](task-prompts/T1.10.md#implementation-and-handoff-2026-10-26).
 
 ### Browser setup and isolated E2E
 

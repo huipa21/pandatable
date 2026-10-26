@@ -60,7 +60,7 @@
 | `internal/auth` | Setup flow, login/logout, sessions, password hashing, rate limit |
 | `internal/admin` | Users, groups, ownership transfer, hard delete, settings, sysinfo |
 | `internal/acl` | Grant CRUD, effective-permission resolution + per-request cache |
-| `internal/meta` | Workspaces, books, tables, fields, views, relations (metadata) |
+| `internal/structure` | Workspaces, books, tables: atomic metadata + DDL orchestration, system fields, default Grid, reorder/soft delete, `/nav` (T1.10); fields/views/relations metadata join it in later tasks |
 | `internal/ddl` | Generates & executes DDL for physical schema changes (in same tx as meta change) |
 | `internal/query` | View config → SQL (filter, sort, group, highlight, search, aggregates) |
 | `internal/formula` | Formula language: lexer, parser, type-checker, SQL compiler |

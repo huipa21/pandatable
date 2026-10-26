@@ -505,3 +505,44 @@ metadata rows (including all five `is_system=true` fields), default Grid/Name
 display field, schema versions, NOTIFY/event IDs and transaction completion.
 Lifecycle commits/uncertain commits must also invalidate ACL. This package does
 not implement doctor, orchestration, relation policy, conversion or row APIs.
+
+### T1.10 structure orchestration (D-097..D-103)
+
+`internal/structure` is the service that owns what `internal/ddl` does not; no
+migration was needed (0001/0002 are unchanged). Everything below happens in one
+transaction under the D-099 lock protocol.
+
+- **Book creation:** a fresh `b_` name is generated, `ddl.CreateSchema` runs and
+  `meta.books` is inserted (position = max over all siblings including trashed
+  + 1024). Only metadata uniqueness on `pg_schema` or the physical-name
+  collision is retried (at most three whole transactions, D-100).
+- **Table creation:** `meta.tables` (`schema_version` 1, `pg_name` unique per
+  book), `ddl.CreateTable`, one nullable `text` Name column, then the field and
+  view rows below. A failure at any step (including deliberately invalid DDL)
+  rolls back metadata and physical objects together.
+
+| Field | `ui_type` | `pg_column` / `pg_type` | `is_system` | `is_required` | position |
+|---|---|---|---|---|---|
+| Name (display field) | `text` | generated `c_…` / `text` | no | no | 1024 |
+| ID | `id` | `id` / `bigint` | yes | yes | 1e9 |
+| Created at | `created_at` | `created_at` / `timestamptz` | yes | yes | 1e9+1 |
+| Created by | `created_by` | `created_by` / `uuid` | yes | no | 1e9+2 |
+| Updated at | `updated_at` | `updated_at` / `timestamptz` | yes | yes | 1e9+3 |
+| Updated by | `updated_by` | `updated_by` / `uuid` | yes | no | 1e9+4 |
+
+`options` is `{}`, `description` empty, `version` 1, `is_unique` false and
+`default_json` NULL (physical defaults belong to the system columns). The
+display-field FK points at Name. Field names are the creator's-locale labels
+(en: Name, ID, Created at/by, Updated at/by; zh-CN: 名称, ID, 创建时间, 创建人,
+更新时间, 更新人) and may be renamed like any display name. User fields added
+by T1.14 must append after the highest **non-system** position.
+
+The default view is a shared `grid` named Grid (表格 in zh-CN), position 1024,
+unlocked, `created_by` the creator, with config
+`{"fields":[{id:<Name>,visible:true,width:240},{id:<each system field>,visible:false}…],"frozen":1,"rowHeight":"short"}`.
+
+Display names of workspaces/books/tables are not unique and renames never touch
+`pg_schema`, `pg_name` or `pg_column`. Reorders update only `position`;
+soft deletes set only `deleted_at/deleted_by` on the target and keep the
+physical schema/table/data, descendants' metadata, views and grants. Workspaces
+have no `position`; they are listed by `created_at, id`.

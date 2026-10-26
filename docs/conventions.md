@@ -18,9 +18,9 @@
     [configuration](../sqlc.yaml) and [query source](../internal/auth/queries.sql);
     commit the generated Go bindings. The offline PG catalog declaration is
     generator-only, never a migration. The generator is not a runtime dependency.
-    The same configuration also generates ACL and admin bindings from their
+    The same configuration also generates ACL, admin and structure bindings from their
     respective `queries.sql` files; a pinned regeneration must be byte-identical
-    for all three generated packages. Admin's `catalog.sql` likewise describes
+    for all four generated packages. Admin's `catalog.sql` likewise describes
     monitoring catalogs/Goose metadata for generation only, never runtime DDL.
   - Dynamic data queries via `squirrel` with **identifiers only from meta** (quoted with `pgx.Identifier{}.Sanitize()`), values always as parameters.
   - No string concatenation of user input into SQL — enforced by code review + gosec.

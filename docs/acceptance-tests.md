@@ -241,6 +241,21 @@ reset. No test production endpoint, codec, filter engine or browser seed was
 introduced. Full AT-111/112/117/322 dependencies are unchanged. See
 [T1.9 completion record](task-prompts/T1.9.md#implementation-and-handoff-2026-10-26).
 
+### T1.10 API evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-201 | API pass; UI pending | Real HTTP/PG18: alice creates W ▸ B ▸ T; `/nav` shows the tree; the table has a default Grid view, the Name text display field and five hidden system fields; catalog shows `b_*` schema and `t_*` table. The sidebar rendering is T1.11. |
+| AT-202 | Table API pass; field rename pending | A real `PATCH /tables/{id}` renames to Chinese/space/quote/payload text with physical names and data unchanged. Field rename needs T1.14. |
+| AT-203 | API pass; Trash UI pending | `DELETE` hides the table from nav/schema/ACL (primed cache invalidated at once) and retains physical data, fields, views and grants. M3 restore and sidebar removal are future work. |
+| AT-213 | API pass | Any user (including the admin role) creates a workspace with an atomic direct owner grant; the creator lists the grant as owner. UI part is T1.11. |
+| AT-112 | Partial | Real alice-created workspace: admin `/nav` is empty, schema/grants/PATCH/DELETE are 404 and the admin inventory lists the workspace with owner alice. The browser sidebar scenario awaits T1.11. |
+| AT-204..212 | Preserved | Resolver/grants/API matrix unchanged; structure routes add owner/visibility matrices for read/write/book-owner/table-only/group/admin/stranger. |
+
+T1.10 stays **In progress** until the UI parts pass. Unit and required PG18 tests do
+not complete AT-111/117/322, AT-202 field rename or full AT-804. See the
+[T1.10 completion record](task-prompts/T1.10.md#implementation-and-handoff-2026-10-26).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

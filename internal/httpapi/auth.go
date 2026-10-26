@@ -22,6 +22,7 @@ import (
 	"pandatable/internal/admin"
 	"pandatable/internal/apperr"
 	"pandatable/internal/auth"
+	"pandatable/internal/structure"
 )
 
 const sessionCookie = "pt_session"
@@ -29,6 +30,7 @@ const sessionCookie = "pt_session"
 type AuthOptions struct {
 	Service        *auth.Service
 	ACL            *acl.Service
+	Structure      *structure.Service
 	Admin          *admin.Service
 	System         *admin.SystemMonitor
 	BaseURL        string
@@ -36,14 +38,15 @@ type AuthOptions struct {
 }
 
 type authHTTP struct {
-	service *auth.Service
-	acl     *acl.Service
-	admin   *admin.Service
-	system  *admin.SystemMonitor
-	logger  *slog.Logger
-	origin  string
-	secure  bool
-	proxies []netip.Prefix
+	service   *auth.Service
+	acl       *acl.Service
+	structure *structure.Service
+	admin     *admin.Service
+	system    *admin.SystemMonitor
+	logger    *slog.Logger
+	origin    string
+	secure    bool
+	proxies   []netip.Prefix
 }
 
 func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
@@ -57,7 +60,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 	if !secure {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
-	return &authHTTP{service: options.Service, acl: options.ACL, admin: options.Admin, system: options.System, logger: logger, origin: origin,
+	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, system: options.System, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -247,6 +250,9 @@ func (api *authHTTP) mount(router chi.Router) {
 	router.Get("/meta/timezones", api.timezones)
 	if api.acl != nil {
 		api.mountGrants(router)
+	}
+	if api.structure != nil {
+		api.mountStructure(router)
 	}
 	if api.admin != nil {
 		router.Get("/meta/app", api.appSettings)
