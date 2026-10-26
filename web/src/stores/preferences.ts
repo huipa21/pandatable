@@ -31,6 +31,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
   }
 
   const storedLocale = storage('get', localeKey)
+  let explicitLocale = storedLocale === 'en' || storedLocale === 'zh-CN'
   const storedTheme = storage('get', themeKey)
   const browserLocale = navigator.languages[0] ?? navigator.language
   const locale = ref<Locale>(
@@ -73,6 +74,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
 
   let localeRequest = 0
   async function setLocale(value: Locale, persist = true) {
+    if (persist) explicitLocale = true
     const request = ++localeRequest
     try {
       await loadLocale(value)
@@ -83,6 +85,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
         localeError.value = true
         locale.value = i18n.global.locale.value === 'zh-CN' ? 'zh-CN' : 'en'
       }
+
       return
     }
     if (request !== localeRequest) return
@@ -90,6 +93,10 @@ export const usePreferencesStore = defineStore('preferences', () => {
     i18n.global.locale.value = value
     locale.value = value
     if (persist) storage('set', localeKey, value)
+  }
+
+  async function applyDefaultLocale(value: Locale) {
+    if (!explicitLocale) await setLocale(value, false)
   }
 
   function setTheme(value: Theme) {
@@ -104,6 +111,7 @@ export const usePreferencesStore = defineStore('preferences', () => {
     storageError,
     localeError,
     setLocale,
+    applyDefaultLocale,
     setTheme,
   }
 })

@@ -3,6 +3,7 @@ import { test, expect, observeBrowser, expectHTTPFailure } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyDashboard } from './dashboard'
+import { verifySettings } from './settings'
 
 async function signIn(page: Page, login: string, password: string) {
   await page.goto('/login')
@@ -191,7 +192,7 @@ async function verifyGroups(page: Page, suffix: string) {
   await expect(page).toHaveURL(/\/admin\/users$/)
 }
 
-test('AT-104..110: admin users, groups and dashboard, forced change, reset, disable and panel visibility', async ({
+test('AT-104..110 and scoped AT-111/112: users, groups, dashboard, settings and read-only inventory', async ({
   page,
   browser,
   api,
@@ -219,6 +220,7 @@ test('AT-104..110: admin users, groups and dashboard, forced change, reset, disa
     page,
     testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop',
   )
+  const branding = await verifySettings(page, testInfo.project.name)
   await page.getByRole('button', { name: en.admin.create, exact: true }).click()
   await page
     .getByLabel(en.admin.username, { exact: true })
@@ -286,6 +288,18 @@ test('AT-104..110: admin users, groups and dashboard, forced change, reset, disa
   const userPage = await userContext.newPage()
   const diagnostics = await observeBrowser(userPage)
   try {
+    await userPage.goto('/login')
+    await expect(userPage.locator('.brand')).toContainText(branding.appName)
+    await expect(userPage.locator('html')).toHaveAttribute('lang', 'zh-CN')
+    await expect(
+      userPage.getByRole('link', { name: zh.settings.title, exact: true }),
+    ).toHaveCount(0)
+    await userPage
+      .getByRole('button', { name: zh.common.languages.en, exact: true })
+      .click()
+    await userPage.reload()
+    await expect(userPage.locator('html')).toHaveAttribute('lang', 'en')
+    await expect(userPage.locator('.brand')).toContainText(branding.appName)
     await signIn(userPage, username, temporary)
     await expect(userPage).toHaveURL(/\/change-password$/)
     await userPage.goto('/admin/users')
@@ -314,6 +328,14 @@ test('AT-104..110: admin users, groups and dashboard, forced change, reset, disa
     )
     await signIn(userPage, username, changed)
     await expect(userPage).toHaveURL(/\/home$/)
+    await userPage.reload()
+    await expect(userPage.locator('.brand')).toContainText(branding.appName)
+    await expect(userPage).toHaveTitle(branding.appName)
+    const profile = await userContext.request.get('/api/v1/auth/me')
+    expect(await profile.json()).toMatchObject({
+      locale: 'zh-CN',
+      effectiveTimezone: 'Europe/London',
+    })
     await expect(
       userPage.getByRole('link', { name: en.admin.menu, exact: true }),
     ).toHaveCount(0)
@@ -332,6 +354,8 @@ test('AT-104..110: admin users, groups and dashboard, forced change, reset, disa
     await expect(userPage).toHaveURL(/\/home$/)
     for (const path of [
       '/admin/dashboard',
+      '/admin/settings',
+      '/admin/workspaces',
       '/admin/groups',
       '/admin/groups/missing',
       '/admin/users/missing',
@@ -341,6 +365,20 @@ test('AT-104..110: admin users, groups and dashboard, forced change, reset, disa
     }
     expect(
       (await userContext.request.get('/api/v1/admin/groups')).status(),
+    ).toBe(403)
+    for (const path of ['/admin/settings', '/admin/workspaces']) {
+      await expect(userPage.locator(`a[href="${path}"]`)).toHaveCount(0)
+      expect((await userContext.request.get(`/api/v1${path}`)).status()).toBe(
+        403,
+      )
+    }
+    expect(
+      (
+        await userContext.request.patch('/api/v1/admin/settings', {
+          headers,
+          data: { appName: 'Denied' },
+        })
+      ).status(),
     ).toBe(403)
     const systemDenied = await userContext.request.get('/api/v1/admin/system')
     expect(systemDenied.status()).toBe(403)
@@ -408,5 +446,10 @@ test('AT-104..110: admin users, groups and dashboard, forced change, reset, disa
     expect(diagnostics.pendingFailures).toEqual([])
   } finally {
     await userContext.close()
+    const restored = await page.request.patch('/api/v1/admin/settings', {
+      headers,
+      data: branding.previous,
+    })
+    expect(restored.status()).toBe(200)
   }
 })

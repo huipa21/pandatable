@@ -99,6 +99,17 @@ func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, 
 	return count, err
 }
 
+const countWorkspaces = `-- name: CountWorkspaces :one
+SELECT count(*) FROM meta.workspaces WHERE deleted_at IS NULL AND strpos(lower(name), $1::text)>0
+`
+
+func (q *Queries) CountWorkspaces(ctx context.Context, q_ string) (int64, error) {
+	row := q.db.QueryRow(ctx, countWorkspaces, q_)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createGroup = `-- name: CreateGroup :one
 INSERT INTO meta.groups(name, description) VALUES ($1,$2) RETURNING id
 `
@@ -117,8 +128,8 @@ func (q *Queries) CreateGroup(ctx context.Context, arg CreateGroupParams) (pgtyp
 
 const createUser = `-- name: CreateUser :one
 INSERT INTO meta.users (username, email, display_name, role, password_hash,
-    must_change_password, avatar_color)
-VALUES ($1, $2, $3, $4, $5, true, 'teal')
+    locale, must_change_password, avatar_color)
+VALUES ($1, $2, $3, $4, $5, $6, true, 'teal')
 RETURNING id
 `
 
@@ -128,6 +139,7 @@ type CreateUserParams struct {
 	DisplayName  string
 	Role         string
 	PasswordHash string
+	Locale       string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.UUID, error) {
@@ -137,6 +149,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (pgtype.
 		arg.DisplayName,
 		arg.Role,
 		arg.PasswordHash,
+		arg.Locale,
 	)
 	var id pgtype.UUID
 	err := row.Scan(&id)
@@ -442,6 +455,120 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
+const listWorkspaceOwners = `-- name: ListWorkspaceOwners :many
+WITH owners AS (
+    SELECT g.resource_id,g.principal_id,g.principal_type,
+        COALESCE(u.display_name,gr.name)::text AS name,
+        u.username,u.status,
+        row_number() OVER (PARTITION BY g.resource_id
+            ORDER BY g.principal_type,COALESCE(u.display_name,gr.name),g.principal_id) AS position
+    FROM meta.grants g
+    LEFT JOIN meta.users u ON g.principal_type='user' AND u.id=g.principal_id
+    LEFT JOIN meta.groups gr ON g.principal_type='group' AND gr.id=g.principal_id
+    WHERE g.resource_type='workspace' AND g.resource_id=ANY($1::uuid[]) AND g.level='owner'
+      AND (u.id IS NOT NULL OR gr.id IS NOT NULL)
+)
+SELECT resource_id,principal_id,principal_type,name,username,status
+FROM owners WHERE position<=50 ORDER BY resource_id,position
+`
+
+type ListWorkspaceOwnersRow struct {
+	ResourceID    pgtype.UUID
+	PrincipalID   pgtype.UUID
+	PrincipalType string
+	Name          string
+	Username      pgtype.Text
+	Status        pgtype.Text
+}
+
+func (q *Queries) ListWorkspaceOwners(ctx context.Context, dollar_1 []pgtype.UUID) ([]ListWorkspaceOwnersRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceOwners, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorkspaceOwnersRow
+	for rows.Next() {
+		var i ListWorkspaceOwnersRow
+		if err := rows.Scan(
+			&i.ResourceID,
+			&i.PrincipalID,
+			&i.PrincipalType,
+			&i.Name,
+			&i.Username,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listWorkspaces = `-- name: ListWorkspaces :many
+WITH page AS (
+    SELECT id,name FROM meta.workspaces
+    WHERE deleted_at IS NULL AND strpos(lower(name), $1::text)>0
+    ORDER BY name,id LIMIT $3 OFFSET $2
+)
+SELECT p.id,p.name,
+    NOT EXISTS (SELECT 1 FROM meta.grants g JOIN meta.users u ON u.id=g.principal_id
+        WHERE g.resource_type='workspace' AND g.resource_id=p.id
+          AND g.principal_type='user' AND g.level='owner' AND u.status='active') AS orphaned,
+    (SELECT count(*) FROM meta.grants g
+        LEFT JOIN meta.users u ON g.principal_type='user' AND u.id=g.principal_id
+        LEFT JOIN meta.groups gr ON g.principal_type='group' AND gr.id=g.principal_id
+        WHERE g.resource_type='workspace' AND g.resource_id=p.id AND g.level='owner'
+          AND (u.id IS NOT NULL OR gr.id IS NOT NULL)) AS owner_total,
+    (SELECT COALESCE(sum(a.size_bytes),0)::bigint FROM meta.attachments a
+        JOIN meta.tables t ON t.id=a.table_id JOIN meta.books b ON b.id=t.book_id
+        WHERE b.workspace_id=p.id) AS attachment_bytes
+FROM page p ORDER BY p.name,p.id
+`
+
+type ListWorkspacesParams struct {
+	Q          string
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListWorkspacesRow struct {
+	ID              pgtype.UUID
+	Name            string
+	Orphaned        bool
+	OwnerTotal      int64
+	AttachmentBytes int64
+}
+
+func (q *Queries) ListWorkspaces(ctx context.Context, arg ListWorkspacesParams) ([]ListWorkspacesRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspaces, arg.Q, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWorkspacesRow
+	for rows.Next() {
+		var i ListWorkspacesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Orphaned,
+			&i.OwnerTotal,
+			&i.AttachmentBytes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockGroup = `-- name: LockGroup :one
 SELECT id FROM meta.groups WHERE id=$1 FOR UPDATE
 `
@@ -493,6 +620,30 @@ SELECT pg_advisory_xact_lock(hashtextextended('pandatable.admin.users', 0))
 func (q *Queries) LockUserAdministration(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, lockUserAdministration)
 	return err
+}
+
+const readSettings = `-- name: ReadSettings :many
+SELECT key, value FROM meta.settings WHERE key = ANY($1::text[]) ORDER BY key
+`
+
+func (q *Queries) ReadSettings(ctx context.Context, dollar_1 []string) ([]MetaSetting, error) {
+	rows, err := q.db.Query(ctx, readSettings, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MetaSetting
+	for rows.Next() {
+		var i MetaSetting
+		if err := rows.Scan(&i.Key, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const removeGroupMember = `-- name: RemoveGroupMember :execrows
@@ -645,5 +796,30 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 		arg.Role,
 		arg.Status,
 	)
+	return err
+}
+
+const validSettingTimezone = `-- name: ValidSettingTimezone :one
+SELECT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name=$1 AND name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%')
+`
+
+func (q *Queries) ValidSettingTimezone(ctx context.Context, name string) (bool, error) {
+	row := q.db.QueryRow(ctx, validSettingTimezone, name)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const writeSetting = `-- name: WriteSetting :exec
+INSERT INTO meta.settings(key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value
+`
+
+type WriteSettingParams struct {
+	Key   string
+	Value []byte
+}
+
+func (q *Queries) WriteSetting(ctx context.Context, arg WriteSettingParams) error {
+	_, err := q.db.Exec(ctx, writeSetting, arg.Key, arg.Value)
 	return err
 }

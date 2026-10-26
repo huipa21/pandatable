@@ -3,3 +3,8 @@
 //   sqlc v1.31.1
 
 package adminsql
+
+type MetaSetting struct {
+	Key   string
+	Value []byte
+}

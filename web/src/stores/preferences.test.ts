@@ -78,6 +78,26 @@ describe('AT-003 display preferences', () => {
     expect(usePreferencesStore().locale).toBe('en')
   })
 
+  it('applies the team fallback without persisting it or overwriting an explicit choice', async () => {
+    const store = usePreferencesStore()
+    await store.applyDefaultLocale('zh-CN')
+    expect(store.locale).toBe('zh-CN')
+    expect(localStorage.getItem('pandatable.locale')).toBeNull()
+    await store.setLocale('en')
+    await store.applyDefaultLocale('zh-CN')
+    expect(store.locale).toBe('en')
+    expect(localStorage.getItem('pandatable.locale')).toBe('en')
+  })
+
+  it('does not let an asynchronous fallback race over a newer explicit choice', async () => {
+    const store = usePreferencesStore()
+    const fallback = store.applyDefaultLocale('zh-CN')
+    const explicit = store.setLocale('en')
+    await Promise.all([fallback, explicit])
+    expect(store.locale).toBe('en')
+    expect(localStorage.getItem('pandatable.locale')).toBe('en')
+  })
+
   it('warns on unsupported saved values and falls back to browser/system', () => {
     vi.spyOn(navigator, 'languages', 'get').mockReturnValue(['en-US'])
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

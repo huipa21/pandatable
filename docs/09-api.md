@@ -33,7 +33,9 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 T1.2 implements the auth/profile/timezone backend below. T1.3 implements
 first-run setup; T1.4 adds the ACL resolver and grants API; T1.5 adds admin
 users and login/forced-password-change UI; T1.6 adds groups; T1.7 adds system
-observations/dashboard. Other business endpoints and profile UI remain later-task work.
+observations/dashboard; T1.8 adds settings, public branding/default language,
+currency catalog and read-only workspace inventory. Other business endpoints
+and profile UI remain later-task work.
 
 ## 2. Endpoints
 
@@ -156,6 +158,7 @@ observations/dashboard. Other business endpoints and profile UI remain later-tas
 | GET | `/admin/workspaces` | name, owners, size, orphaned |
 | POST | `/admin/workspaces/{id}/owner` | `{ userId }` (orphan rescue) |
 | GET/PATCH | `/admin/settings` | app name, default timezone, default currency, default locale, upload limit, retention days |
+| GET | `/meta/app` | public `{appName,defaultLocale}` only; no-store |
 | GET | `/meta/timezones` | IANA timezone list (from `pg_timezone_names`) — any user |
 | GET | `/meta/currencies` | ISO 4217 codes — any user |
 | GET | `/admin/system` | CPU %, load, mem used/total, disk used/free, db size, files size, backups size, app RSS, uptime, versions |
@@ -166,8 +169,8 @@ observations/dashboard. Other business endpoints and profile UI remain later-tas
 #### T1.5 users contract (D-081..D-083)
 
 T1.5 implements users list/create/PATCH/reset; T1.6 adds groups and user detail
-as specified below. Ownership transfer/user deletion, workspaces, settings and
-backups remain later tasks. The entire `/admin/*` API namespace requires an active admin:
+as specified below. T1.8 adds settings/workspace inventory; ownership transfer,
+user deletion and backups remain later tasks. The entire `/admin/*` API namespace requires an active admin:
 401 unauthenticated/disabled, 403 `ERR_PASSWORD_CHANGE_REQUIRED` for a forced
 user, otherwise 403 `ERR_PERMISSION_DENIED` for a non-admin. Admin status does
 not grant resource access. All routes reuse auth's exact CSRF/Origin, no-store,
@@ -253,6 +256,94 @@ administration never grants implicit resource access.
   user-admin actor lock remains unchanged. Membership writes/deletion invalidate
   ACL after commit, also if commit reports an uncertain outcome/error; failed
   or rolled-back operations may conservatively invalidate without changing data.
+
+#### T1.8 settings and workspace inventory (D-091..D-093)
+
+All admin routes independently enforce the active-admin/session/forced-change
+contract above, including after taking mutation locks. Existing no-store, exact
+Origin + CSRF, 4096-byte strict JSON and ten-second deadlines remain unchanged.
+No settings/workspace endpoint grants access to resource data.
+
+`GET /admin/settings` accepts no query parameters and returns:
+
+```json
+{
+  "appName": "PandaTable",
+  "defaultTimezone": "Asia/Shanghai",
+  "defaultCurrency": "CNY",
+  "defaultLocale": "en",
+  "uploadMaxMb": 20,
+  "historyRetentionDays": 90,
+  "trashRetentionDays": 30
+}
+```
+
+`PATCH /admin/settings` accepts any nonempty subset of these seven fields;
+unknown fields, nulls, wrong types and query parameters fail validation.
+`appName` is trimmed, nonblank, at most 100 Unicode code points, without
+controls. Timezone exactly matches PG's catalog excluding `posix/`/`right/`;
+currency exactly matches the checked-in current ISO 4217 list
+([SIX list one](https://www.six-group.com/dam/download/financial-information/data-center/iso-currrency/lists/list-one.xml),
+2026-09-17, including fund/special codes); locale is `en|zh-CN`. Numeric fields
+are integers: upload 1..100 **MiB** (1,048,576 bytes each), retention 1..3650
+days. Missing rows use the documented defaults; corrupt stored values fail,
+not silently default. `setup_completed` is never exposed or editable.
+
+The complete candidate is validated before writing supplied keys in a single
+transaction. Writes share `pandatable.admin.users`, lock the acting admin
+`FOR NO KEY UPDATE`, then recheck its session. Disjoint concurrent patches
+compose; same-field writes serialize, last committed write wins (no settings
+version/If-Match). Response: `{settings,eventId}`. No settings cache, restart,
+filesystem traversal or ACL invalidation is needed: no ACL state changes.
+
+Existing NULL-profile-timezone auth readers observe the new team default on
+their next read; explicit timezones remain unchanged. New admin-created users
+receive the current default locale, but existing users' locale/theme/timezone
+are not rewritten. Setup retains its explicit chosen locale. Upload enforcement,
+currency-field creation and history/trash purge consumers do not exist yet:
+these values persist for T2.2/T2.1/T3.4/T3.6, not completed AT-322.
+
+`GET /meta/app` is public and returns **only** `{appName,defaultLocale}`. It
+does not read privileged settings. No query parameters; no-store, same bounded
+request context and sanitized errors. `GET /meta/currencies` returns
+`{items:string[]}` from the validation catalog to active, password-cleared
+authenticated users, including non-admins; it accepts no query parameters.
+There is no runtime network catalog fetch or new seed/auth endpoint.
+
+`GET /admin/workspaces`: `q`, `offset`, `limit` follow group-list bounds
+(trimmed case-insensitive literal name substring, <=254 UTF-8 bytes/no controls,
+offset nonnegative int32, limit default 50/1..500). Duplicate, malformed and
+unknown query parameters fail. One repeatable-read snapshot returns
+`{items,total}`, ordered by name then UUID; empty/out-of-range pages use `[]`.
+Only live workspaces are listed. Each item is:
+
+```json
+{
+  "id": "workspace-uuid",
+  "name": "Team",
+  "owners": [{
+    "id": "principal-uuid",
+    "type": "user",
+    "name": "Alice",
+    "username": "alice",
+    "status": "active"
+  }],
+  "ownerTotal": 1,
+  "orphaned": false,
+  "attachmentBytes": 0
+}
+```
+
+Owners are direct workspace owner grants to existing users/groups, ordered by
+type, name, UUID; first 50 per workspace, full `ownerTotal` for truncation.
+Disabled users remain visible with status. Groups have null username/status.
+Dangling polymorphic principals are omitted. `orphaned` means **no active direct
+user owner**; a group owner/member or disabled owner never prevents it.
+`attachmentBytes` sums logical `meta.attachments.size_bytes` across retained
+descendants (including trashed books/tables/fields), not PostgreSQL relation
+size, thumbnails/backups or filesystem usage. No path, row data, email,
+physical identifier, ownership mutation or sidebar entry is exposed/created.
+This is not the future workspace/table CRUD API.
 
 #### T1.7 system observations (D-088..D-090)
 

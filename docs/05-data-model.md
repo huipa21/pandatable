@@ -272,6 +272,36 @@ CREATE TABLE meta.backups (
 );
 ```
 
+### T1.8 settings and inventory readers (D-091..D-093)
+
+No migration: the original `meta.settings(key,value jsonb)` already supports
+the seven allowlisted keys below. The API uses camelCase names; only present
+PATCH fields are upserted, atomically, under the shared admin advisory lock and
+actor `FOR NO KEY UPDATE`/session recheck. No settings cache or directory scan.
+Corrupt stored types/values fail explicitly; absent rows use defaults.
+
+| Key | JSON type / default | Bounds / existing consumer |
+|---|---|---|
+| app_name | string / PandaTable | trimmed 1..100 code points, no controls; public header/title |
+| default_timezone | string / Asia/Shanghai | exact PG catalog, no posix/right; auth effectiveTimezone when profile NULL |
+| default_currency | string / CNY | checked-in ISO 4217; field creation deferred T2.1 |
+| default_locale | string / en | en or zh-CN; new admin-created users and non-explicit browser fallback |
+| upload_max_mb | integer / 20 | 1..100 MiB; enforcement deferred T2.2 |
+| history_retention_days | integer / 90 | 1..3650; consumer deferred T3.4 |
+| trash_retention_days | integer / 30 | 1..3650; consumer deferred T3.6 |
+
+Setup's marker remains private/unpatchable. Existing user preferences are not
+rewritten; NULL timezone keeps following the current default. Settings are not
+permissions, so they neither invalidate ACL nor create grants.
+
+Admin workspace inventory is static sqlc over live workspaces, direct owner
+grants and existing principals, with a repeatable-read count/page/owner snapshot.
+Disabled/group owner visibility is independent of orphan status, which uses
+the same active-direct-user-owner rule as D-023/D-080. Owner DTOs cap at 50 per
+workspace plus a total. Recorded attachment bytes include retained descendants
+in Trash; no physical-table query, row data or filesystem traversal. Missing
+principal targets are omitted, not rescued or repaired by this read-only API.
+
 ### Integrity and service boundaries (D-069..D-071)
 
 T1.2 auth and T1.3 setup (D-072..D-078) reuse the original users/sessions/settings

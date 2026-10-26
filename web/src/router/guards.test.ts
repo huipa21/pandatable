@@ -30,6 +30,8 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
   responses(null)
   for (const path of [
     '/admin/dashboard',
+    '/admin/settings',
+    '/admin/workspaces',
     '/admin/users',
     '/admin/groups',
     '/admin/groups/group-id',
@@ -41,6 +43,8 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
   responses({ role: 'user', mustChangePassword: false })
   for (const path of [
     '/admin/dashboard',
+    '/admin/settings',
+    '/admin/workspaces',
     '/admin/future',
     '/admin/groups',
     '/admin/groups/group-id',
@@ -65,6 +69,10 @@ it('lets cleared admins access the user panel and exposes network failures', asy
   expect(router.currentRoute.value.path).toBe('/admin/users')
   await router.push('/admin/dashboard')
   expect(router.currentRoute.value.path).toBe('/admin/dashboard')
+  await router.push('/admin/settings')
+  expect(router.currentRoute.value.path).toBe('/admin/settings')
+  await router.push('/admin/workspaces')
+  expect(router.currentRoute.value.path).toBe('/admin/workspaces')
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
   await router.push('/home')
   expect(router.currentRoute.value.path).toBe('/connection-error')

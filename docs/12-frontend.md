@@ -45,7 +45,8 @@ auth/profile backend and mirrored [API types](../web/src/api/types.ts); T1.3
 adds only the localized `/setup` form and initial-setup route redirect. Setup
 success shows the authenticated first-admin identity without adding a sign-in
 form. T1.5 adds the auth store and login/forced-change/admin surfaces below;
-server preference synchronization and profile UI remain deferred.
+profile UI and full server preference synchronization remain deferred. T1.8
+adds only the explicit team-default fallback described below.
 Unknown routes have a localized not-found page after setup.
 
 ### T1.5 authentication and admin users (D-081..D-083)
@@ -79,6 +80,38 @@ The no-inline/no-eval CSP, lazy synthetic-only grid lab, local preference
 semantics and <600,000-byte initial gzip/no-grid gate are unchanged. T1.2
 profile/timezone UI, AT-116 and full AT-117 remain deferred; sign-in capability
 alone does not certify all of AT-102.
+
+### T1.8 settings and read-only workspace inventory (D-091..D-093)
+
+- Lazy admin-only `/admin/settings` and `/admin/workspaces` preserve all
+  existing navigation and independently guarded APIs. Settings use localized
+  responsive forms, live timezone/currency catalogs, documented integer bounds,
+  loading/error/retry and saved confirmation. Save sends **only changed fields**,
+  avoiding accidental overwrites from stale forms. Reload discards unsaved edits.
+  Upload enforcement/field creation/purge consumers are explicitly labeled as
+  future work, not presented as already enforced.
+- The shell fetches public `/meta/app` once at bootstrap with a ten-second
+  client deadline, then uses its plain-text name for the header/document title.
+  Admin success updates this tab immediately; other users/unauthenticated
+  browsers see the persisted name after reload. Failed public reads retain the
+  product/previous value with a visible translated error and retry, never fake
+  success or exposure of privileged settings.
+- Team default language replaces **browser fallback only**, without writing
+  localStorage. An explicit stored or newly clicked local language choice
+  always wins, including asynchronous races. Theme, OS following and existing
+  server user preferences remain unchanged. Setup sends the actually chosen
+  locale; no profile synchronization or forced-change bypass is added.
+- Workspace cards show names, active-direct-user orphan state, direct owners
+  (disabled status and group caveat), truncation notice and recorded attachment
+  bytes. The size explanation includes retained Trash descendants and excludes
+  PostgreSQL tables, thumbnails/backups and unrecorded files. Search/offset
+  paging, loading, empty/error/retry and both locales are supported. No resource
+  link, grant, transfer button or sidebar entry is created by the inventory.
+- Reads are abortable, deadline-bounded and generation-guarded; unmount cancels
+  pending work. Auth failures redirect using existing error codes. Brand and
+  record names wrap on mobile and render as text, never HTML. Runtime-only
+  i18n, no-inline/no-eval CSP and the no-grid initial gzip gate remain intact.
+  Full AT-111/112 and upload AT-322 remain pending the real planned APIs.
 
 ### T1.7 system dashboard (D-088..D-090)
 

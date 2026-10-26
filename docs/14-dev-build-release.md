@@ -367,6 +367,44 @@ cancellation, no overlaps, request timeouts, late-result rejection and recovery.
 Record default-parallel check separately from any command-scoped `GOFLAGS=-p=1`
 resource workaround; do not change shared testdb assertions/timeouts.
 
+### T1.8 settings and workspace checks
+
+Required uncached PG18 tests in `internal/admin/settings_test.go`,
+`workspaces_test.go` and `internal/httpapi/settings_integration_test.go` cover
+catalog/default/bound validation, sanitized public/admin DTOs, independent auth
+classes, CSRF/body/query validation, atomic rollback and concurrent patches,
+actor-lock recheck, actual auth/profile/default-locale creation readers,
+workspace search/page/order, live/Trash/disabled/group-owner orphan rules,
+50-owner payload cap and retained-attachment metadata sums. An actual owner
+can read grants while a listing-only admin gets 404 and still has no ACL access.
+These SQL fixtures exist **only in Suite-owned databases**, not developer data
+or browser acceptance seeds.
+
+```text
+go test ./internal/admin ./internal/httpapi -run "TestSettings|TestWorkspaces|TestAdminSettings|TestAdminInventory" -count=3
+go test ./cmd/pandatable ./internal/admin ./internal/auth ./internal/acl ./internal/httpapi -count=3
+pnpm --dir web exec vitest run src/stores/preferences.test.ts src/stores/appSettings.test.ts src/pages/AdminSettingsPage.test.ts src/pages/AdminWorkspacesPage.test.ts src/router/guards.test.ts
+go run ./tools/ptdev check
+go run ./tools/ptdev e2e -- admin-users.spec.ts
+go run ./tools/ptdev e2e
+```
+
+Explicit URL/required=1, fresh migrated Suite databases, pinned sqlc **1.31.1**
+byte-identical auth/ACL/admin regeneration and the default-parallel versus
+command-scoped `GOFLAGS=-p=1` distinction still apply. No assertion, diagnostic
+or shared cleanup timeout is weakened to claim a pass.
+
+The existing production-image admin desktop/mobile scenario uses real settings
+GET/PATCH persistence, admin/ordinary/unauthenticated header reloads, title/text
+safety, both locales, explicit-local-language preservation, new-user default
+locale/effective timezone, real empty inventory, loading and narrow asserted
+error/retry cases. No extra sign-in budget, mock successful acceptance values,
+seed API, SQL browser workspace fixture or resource-route implementation.
+Populated inventory rendering is a **unit test**, not full AT-112.
+Full AT-111/322 awaits real uploads (T2.2); full AT-112 awaits real workspace
+creation/navigation/table APIs (T1.10/T1.11); full AT-117 still awaits datetime/
+filter UI. T1.8 stays In progress until linked acceptance really passes.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:

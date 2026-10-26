@@ -6,10 +6,12 @@ import { useRouter } from 'vue-router'
 import { usePreferencesStore } from '../stores/preferences'
 import { useAuthStore } from '../stores/auth'
 import { errorMessage, RequestError } from '../api/client'
+import { useAppSettingsStore } from '../stores/appSettings'
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
+const appSettings = useAppSettingsStore()
 const router = useRouter()
 const error = ref<unknown>(null)
 const busy = ref(false)
@@ -39,7 +41,7 @@ async function logout() {
         <span class="brand-mark" aria-hidden="true">{{
           t('common.mark')
         }}</span>
-        <span>{{ t('common.appName') }}</span>
+        <span>{{ appSettings.appName ?? t('common.appName') }}</span>
       </RouterLink>
       <div class="preferences" :aria-label="t('common.preferences')">
         <fieldset>
@@ -105,6 +107,12 @@ async function logout() {
         </RouterLink>
         <RouterLink v-if="auth.user.role === 'admin'" to="/admin/groups">
           {{ t('groups.title') }}
+        </RouterLink>
+        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/settings">
+          {{ t('settings.title') }}
+        </RouterLink>
+        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/workspaces">
+          {{ t('workspaces.title') }}
         </RouterLink>
         <RouterLink to="/change-password">
           {{ t('auth.changePassword') }}

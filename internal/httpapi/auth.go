@@ -249,6 +249,8 @@ func (api *authHTTP) mount(router chi.Router) {
 		api.mountGrants(router)
 	}
 	if api.admin != nil {
+		router.Get("/meta/app", api.appSettings)
+		router.Get("/meta/currencies", api.currencies)
 		api.mountAdmin(router)
 	}
 }

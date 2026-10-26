@@ -109,6 +109,23 @@ Server-side `.env` (next to compose.yaml): `PT_VERSION`, `PT_DB_PASSWORD`, `PT_B
 
 App-level defaults configured in Admin → Settings (stored in DB, not env): `default_timezone` (Asia/Shanghai), `default_currency` (CNY), `default_locale`, upload limit, retention days (D-049, D-050).
 
+T1.8 implements these settings plus app name without a migration, restart or
+new dependency. See [API contracts](09-api.md#t18-settings-and-workspace-inventory-d-091d-093)
+for bounds/defaults and serialized atomic PATCH. Public no-store `/meta/app`
+exposes only app name/default language, so every user's header/title follows
+after reload without exposing privileged settings. Existing explicit user/local
+preferences stay unchanged; NULL user timezones follow the new default.
+Upload limit is **MiB** (default 20, range 1..100); history/trash retention
+defaults are 90/30 days (range 1..3650). Values persist now, but upload enforcement
+and retention jobs await their planned features. Setting them is not proof of
+AT-322/purge completion. Settings reads perform no filesystem walk and do not
+invalidate the dashboard's hourly directory caches.
+
+Admin workspace sizes are separately labeled **recorded logical attachment
+bytes**, including retained Trash descendants, not the dashboard's disk/PG
+measurements. The read-only metadata inventory never traverses attachment
+paths or grants an administrator resource access.
+
 `serve` and `migrate` accept matching kebab-case flags (`--database-url`, `--data-dir`, `--listen`, `--base-url`, `--trusted-proxies`, `--db-max-conns`, `--log-level`, and `--db-connect-retries`). A supplied flag overrides its environment variable; environment overrides the default. An explicitly empty trusted-proxy list trusts no proxies.
 
 `serve` connects using the existing retry policy and runs the embedded,

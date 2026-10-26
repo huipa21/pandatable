@@ -1,4 +1,5 @@
 -- sqlc-only catalog declarations. Never executed as a migration.
+CREATE VIEW pg_timezone_names AS SELECT ''::text AS name;
 CREATE VIEW pg_stat_activity AS SELECT ''::name AS datname, ''::text AS state;
 CREATE TABLE public.goose_db_version (
     id bigint NOT NULL,

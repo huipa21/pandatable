@@ -12,9 +12,12 @@ import {
   zhCN,
 } from 'naive-ui'
 import { usePreferencesStore } from './stores/preferences'
+import { useAppSettingsStore } from './stores/appSettings'
+import { NButton } from 'naive-ui'
 import AppLayout from './layouts/AppLayout.vue'
 
 const preferences = usePreferencesStore()
+const appSettings = useAppSettingsStore()
 const { t } = useI18n()
 const uiLocale = computed(() => (preferences.locale === 'zh-CN' ? zhCN : enUS))
 const dateLocale = computed(() =>
@@ -24,7 +27,7 @@ const themeOverrides = {
   common: { primaryColor: '#25836b', primaryColorHover: '#31977d' },
 }
 watchEffect(() => {
-  document.title = t('common.appName')
+  document.title = appSettings.appName ?? t('common.appName')
 })
 </script>
 
@@ -37,6 +40,12 @@ watchEffect(() => {
   >
     <NGlobalStyle />
     <AppLayout>
+      <NAlert v-if="appSettings.error" type="error" role="alert">
+        {{ t('settings.publicError') }}
+        <NButton :loading="appSettings.loading" @click="appSettings.refresh">
+          {{ t('auth.retry') }}
+        </NButton>
+      </NAlert>
       <NAlert v-if="preferences.storageError" type="warning" role="alert">
         {{ t('common.storageError') }}
       </NAlert>

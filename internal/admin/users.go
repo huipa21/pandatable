@@ -255,8 +255,12 @@ func (service *Service) Create(ctx context.Context, token string, input CreateIn
 		if err := checkIdentity(ctx, queries, pgtype.UUID{}, username, email); err != nil {
 			return err
 		}
+		defaults, err := readSettings(ctx, queries, []string{"default_locale"})
+		if err != nil {
+			return err
+		}
 		id, err := queries.CreateUser(ctx, adminsql.CreateUserParams{Username: username, Email: email,
-			DisplayName: input.DisplayName, Role: input.Role, PasswordHash: password})
+			DisplayName: input.DisplayName, Role: input.Role, PasswordHash: password, Locale: defaults.DefaultLocale})
 		if err != nil {
 			return fmt.Errorf("create user: %w", err)
 		}

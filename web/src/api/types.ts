@@ -107,6 +107,43 @@ export interface GroupMutation extends AuthMutation {
   group: AdminGroup
 }
 
+export interface AppSettings {
+  appName: string
+  defaultLocale: 'en' | 'zh-CN'
+}
+
+export interface AdminSettings extends AppSettings {
+  defaultTimezone: string
+  defaultCurrency: string
+  uploadMaxMb: number
+  historyRetentionDays: number
+  trashRetentionDays: number
+}
+
+export interface SettingsMutation extends AuthMutation {
+  settings: AdminSettings
+}
+
+export interface AdminWorkspace {
+  id: string
+  name: string
+  owners: {
+    id: string
+    type: 'user' | 'group'
+    name: string
+    username: string | null
+    status: 'active' | 'disabled' | null
+  }[]
+  ownerTotal: number
+  orphaned: boolean
+  attachmentBytes: number
+}
+
+export interface WorkspaceListing {
+  items: AdminWorkspace[]
+  total: number
+}
+
 export interface SystemMetric<T> {
   status: 'ready' | 'unavailable'
   reason?:

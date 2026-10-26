@@ -41,6 +41,12 @@ Estimates are ideal-days (d) for one developer.
 | T1.7 | Admin dashboard | gopsutil CPU/mem/disk, PG sizes, files size (cached walker), versions, uptime; UI cards auto-refresh 10 s. | 13 §8 | AT-110 | 1 |
 | T1.8 | Admin settings & workspaces list | settings API/UI (app name, default timezone, default currency, default language, upload limit, retention days); read-only workspaces list with owners (transfer in M3). | 09 | AT-111, AT-112 | 0.5 |
 
+T1.8 implements D-091..D-093 without workspace/upload feature expansion.
+Its full AT-111 includes upload enforcement (AT-322/T2.2), and full AT-112
+requires real workspace creation/navigation/table APIs (T1.10/T1.11).
+Scoped settings/header and inventory API/UI evidence does not complete those
+linked tests; retain In progress until the real scenarios pass.
+
 ### Structure
 | ID | Task | Details | Docs | AT | Est |
 |---|---|---|---|---|---|

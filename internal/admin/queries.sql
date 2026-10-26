@@ -49,8 +49,8 @@ SELECT EXISTS (
 
 -- name: CreateUser :one
 INSERT INTO meta.users (username, email, display_name, role, password_hash,
-    must_change_password, avatar_color)
-VALUES ($1, $2, $3, $4, $5, true, 'teal')
+    locale, must_change_password, avatar_color)
+VALUES ($1, $2, $3, $4, $5, $6, true, 'teal')
 RETURNING id;
 
 -- name: UpdateUser :exec
@@ -144,3 +144,51 @@ FROM (
     SELECT DISTINCT ON (version_id) version_id, is_applied
     FROM public.goose_db_version ORDER BY version_id, id DESC
 ) AS latest WHERE is_applied;
+
+-- name: ReadSettings :many
+SELECT key, value FROM meta.settings WHERE key = ANY($1::text[]) ORDER BY key;
+
+-- name: WriteSetting :exec
+INSERT INTO meta.settings(key,value) VALUES ($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value;
+
+-- name: ValidSettingTimezone :one
+SELECT EXISTS (SELECT 1 FROM pg_timezone_names WHERE name=$1 AND name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%');
+
+-- name: CountWorkspaces :one
+SELECT count(*) FROM meta.workspaces WHERE deleted_at IS NULL AND strpos(lower(name), sqlc.arg(q)::text)>0;
+
+-- name: ListWorkspaces :many
+WITH page AS (
+    SELECT id,name FROM meta.workspaces
+    WHERE deleted_at IS NULL AND strpos(lower(name), sqlc.arg(q)::text)>0
+    ORDER BY name,id LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset)
+)
+SELECT p.id,p.name,
+    NOT EXISTS (SELECT 1 FROM meta.grants g JOIN meta.users u ON u.id=g.principal_id
+        WHERE g.resource_type='workspace' AND g.resource_id=p.id
+          AND g.principal_type='user' AND g.level='owner' AND u.status='active') AS orphaned,
+    (SELECT count(*) FROM meta.grants g
+        LEFT JOIN meta.users u ON g.principal_type='user' AND u.id=g.principal_id
+        LEFT JOIN meta.groups gr ON g.principal_type='group' AND gr.id=g.principal_id
+        WHERE g.resource_type='workspace' AND g.resource_id=p.id AND g.level='owner'
+          AND (u.id IS NOT NULL OR gr.id IS NOT NULL)) AS owner_total,
+    (SELECT COALESCE(sum(a.size_bytes),0)::bigint FROM meta.attachments a
+        JOIN meta.tables t ON t.id=a.table_id JOIN meta.books b ON b.id=t.book_id
+        WHERE b.workspace_id=p.id) AS attachment_bytes
+FROM page p ORDER BY p.name,p.id;
+
+-- name: ListWorkspaceOwners :many
+WITH owners AS (
+    SELECT g.resource_id,g.principal_id,g.principal_type,
+        COALESCE(u.display_name,gr.name)::text AS name,
+        u.username,u.status,
+        row_number() OVER (PARTITION BY g.resource_id
+            ORDER BY g.principal_type,COALESCE(u.display_name,gr.name),g.principal_id) AS position
+    FROM meta.grants g
+    LEFT JOIN meta.users u ON g.principal_type='user' AND u.id=g.principal_id
+    LEFT JOIN meta.groups gr ON g.principal_type='group' AND gr.id=g.principal_id
+    WHERE g.resource_type='workspace' AND g.resource_id=ANY($1::uuid[]) AND g.level='owner'
+      AND (u.id IS NOT NULL OR gr.id IS NOT NULL)
+)
+SELECT resource_id,principal_id,principal_type,name,username,status
+FROM owners WHERE position<=50 ORDER BY resource_id,position;

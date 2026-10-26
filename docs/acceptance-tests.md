@@ -184,6 +184,22 @@ permission and special-file policies; this is not full Linux/Docker acceptance.
 Exact commands, failures, costs and cleanup:
 [T1.7 completion record](task-prompts/T1.7.md#implementation-and-handoff-2026-10-26).
 
+### T1.8 available-scope evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-111 | Partial | Real admin settings persistence and production-image desktop/mobile header/title reload for admin, ordinary user and unauthenticated browser. Public DTO exposes only appName/defaultLocale; explicit local language choices remain intact. Full test includes upload enforcement (AT-322), which awaits T2.2. |
+| AT-112 | Partial | Required Suite-owned PG18 inventory/owner/orphan/size/paging and owner-only grants versus admin 404/ACL denial pass. Production browser verifies the real empty read-only inventory, navigation/guards and no resource links. No workspace creation/navigation/table APIs exist; SQL fixtures and unit-populated cards are not the full alice-create/sidebar/table-GET UI scenario. Await T1.10/T1.11. |
+| AT-117 | Partial | Real settings changes reach existing NULL-timezone auth/profile readers and new-user defaults; explicit timezone/locale choices survive. Datetime display, relative filters and profile UI remain deferred. |
+| AT-322 | Pending | Upload limit persists with strict integer/MiB bounds, but no attachment upload consumer exists. No mock/reject-all endpoint or upload pass is claimed. |
+| AT-113..115 | Pending, unchanged | Read-only orphan flag follows active direct user owners; rescue/transfer/hard deletion remain M3. |
+
+T1.8 remains **In progress**, not Done. Clarification and the requested AT-112
+UI-verification question were asked; user unavailable, so D-091..D-093 record
+bounded implementation choices and honest future-API dependencies.
+Exact verification, resource caveats and cleanup:
+[T1.8 completion record](task-prompts/T1.8.md#implementation-and-handoff-2026-10-26).
+
 ## AT-2xx Structure & Permissions (M1)
 
 ### T1.4 API-surface evidence (2026-10-26)

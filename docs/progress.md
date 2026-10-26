@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7 Done. Admin users/groups/dashboard and login/forced-change UI verified; AT-101/103/104..110/803 pass. T1.2 AT-102/116 and full AT-117 remain pending. ACL/grants API verified (AT-204..212 at the API surface); settings/workspaces and other business services remain future work. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7 Done. Admin users/groups/dashboard and login/forced-change UI verified; AT-101/103/104..110/803 pass. T1.8 settings/inventory implemented to available scope, but full AT-111/112 await upload/workspace APIs. T1.2 AT-102/116 and full AT-117 remain pending. ACL/grants API verified (AT-204..212 at the API surface); other business services remain future work. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -33,7 +33,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.5 | Admin users | ✅ | 2026-10-26 | Admin-only list/search/create/PATCH/reset, normalized collision-safe identities, last-active-admin and self-management rules, atomic session revocation and ACL invalidation; responsive localized users UI and login/forced change. D-081..083, no migration/dependencies. Required PG18 tests x3, Windows check, production-image AT-104..108 desktop/mobile and 11/2 regression suite pass; T1.6 handoff recorded. |
 | T1.6 | Admin groups | ✅ | 2026-10-26 | Group CRUD/member API, localized group/user detail and immediate ACL invalidation; D-084..087, no migration/dependency. Required PG18 x3 and production desktop/mobile AT-109 pass; full image suite 11/2. Full check passes with command-scoped GOFLAGS=-p=1 after existing testdb cleanup deadline failures under parallel package load; exact caveat/evidence below. T1.7 handoff recorded. |
 | T1.7 | Admin dashboard | ✅ | 2026-10-26 | Read-only cached metrics and localized responsive dashboard; D-088..090, gopsutil v4.25.9, no migration. Required PG18 x3, non-root Linux filesystem tests and production desktop/mobile AT-110 pass; refresh 9904/9855.5 ms. Full image suite 11/2; complete check passes with GOFLAGS=-p=1, default-parallel cleanup caveat retained. Real post-auth RSS exceeds NFR-1 target; not certified. T1.8 handoff recorded. |
-| T1.8 | Admin settings & workspaces list | ⬜ | | |
+| T1.8 | Admin settings & workspaces list | 🟨 | 2026-10-26 | Implemented available scope: seven atomic settings/default readers/public branding and read-only workspace inventory, D-091..093. Required PG18 x3, serial-package full check and final production image 11/2 pass. Full AT-111/112 await upload/workspace APIs; SQL fixtures are API evidence only. In progress, not Done; T1.9 handoff recorded. |
 | T1.9 | DDL module | ⬜ | | |
 | T1.10 | Workspace/Book/Table API | ⬜ | | |
 | T1.11 | Sidebar & navigation UI | ⬜ | | |
@@ -85,14 +85,14 @@ Summary updated at each milestone end.
 | Area | Total | Passing | Notes |
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
-| AT-1xx Auth & Admin | 17 | 9 | AT-101/103 and T1.5..T1.7 AT-104..110 pass (real production-image desktop/mobile plus PG18). Login/forced-change UI now exists; full AT-102 and profile AT-116 remain pending. AT-117 profile/catalog/default persistence only, not real datetime/filter/admin behavior. T1.2 remains in progress. |
+| AT-1xx Auth & Admin | 17 | 9 | AT-101/103 and T1.5..T1.7 AT-104..110 pass (real production-image desktop/mobile plus PG18). T1.8 partial AT-111/112; uploads/workspace creation/navigation/table APIs remain blockers. Full AT-102/profile AT-116 remain pending. AT-117 includes team-default propagation, not real datetime/filter UI. T1.2/T1.8 remain in progress. |
 | AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface (real HTTP/PG18). AT-204..208 pass for resolver/grants API behavior; their editor/menu/banner/sidebar UI parts remain for T1.10-T1.12. AT-201..203/213 not started. |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 226 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). T1.7 observes post-auth RSS above NFR-1 target; no NFR-1/2/3 or full-load AT-801 certification. |
+| AT-8xx Non-functional | 6 | 2 | AT-802 preserved: 261 matching keys, lint/negative fixtures. AT-803 passes on real HTTP/PG18 plus focused cookie/proxy/CSRF tests, with the user-approved literal-loopback HTTP exception (D-073). Post-auth RSS remains a known NFR-1 risk; no NFR-1/2/3 or full-load AT-801 certification. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -1086,3 +1086,111 @@ No remote/shared deployment or hosted CI.
 Exact commands and complete record:
 [T1.7 completion](task-prompts/T1.7.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.8 settings and workspaces list](task-prompts/T1.8.md)**.
+
+## T1.8 settings and workspace inventory (2026-10-26)
+
+**In progress**, with the available implementation delivered. Full AT-111
+requires AT-322 uploads (T2.2); full AT-112 requires real workspace creation,
+navigation and table GET (T1.10/T1.11). Clarification, including AT-112's
+UI-verification method, was requested; user unavailable. D-091..D-093 record
+bounded implementation choices, not user-confirmed contracts.
+
+### Delivered
+
+- Admin settings GET/atomic partial PATCH, seven strict bounded/catalog-
+  validated values, sanitized DTOs, unknown/null/empty rejection, setup marker
+  preservation. Existing admin advisory lock/actor/session recheck serializes
+  writes; no settings cache, ACL mutation or filesystem walks.
+- Existing NULL-timezone auth/profile readers and new-user locale default
+  wired. Existing explicit profile/setup/local choices stay unchanged.
+  Currency-field/upload/retention consumers remain T2.1/T2.2/T3.4/T3.6.
+- Public two-field appName/defaultLocale endpoint, plain-text header/title
+  for all authentication classes after reload, immediate current-tab admin
+  save, explicit translated load failure/retry. Team locale replaces only
+  browser fallback; explicit local storage/click choices win async races.
+- Live read-only paged/searched workspace names, first 50 direct owners plus
+  total, disabled status, group ownership and active-direct-user orphan rule.
+  One repeatable-read snapshot, recorded attachment bytes including retained
+  Trash descendants, not disk/PG size. No grants, resource links, row data,
+  ownership mutation, implicit sidebar access or production seed API.
+- Lazy responsive en/zh-CN settings/inventory pages; independent admin API/
+  service/deep-route guards, loading/empty/error/retry, request cancellation.
+  Existing users/groups/dashboard/auth/ACL/CSRF/CSP/grid/preferences preserved.
+  No new dependency or migration; pinned static admin SQL/catalog only.
+
+### Verification
+
+Versions: Go **1.27.0**, Node **24.15.0**, pnpm **11.2.2**, sqlc **1.31.1**,
+PG **18.6** (dev Debian13/image Debian12 packages), Podman **5.8.2/5.8.4**,
+Playwright **1.64.1** Chromium. Docker/golangci-lint absent. Commands and
+exact version/package suffixes: [completion record](task-prompts/T1.8.md#implementation-and-handoff-2026-10-26).
+
+- Required uncached Suite-owned PG18 settings/inventory/HTTP x3:
+  admin **5.145 s**, HTTP **3.877 s**; extra actual-owner HTTP versus admin
+  inventory/ACL regression x3 **3.442 s**. Covers catalogs/types/bounds/
+  corrupt storage/full rollback/concurrent writers/session recheck/default
+  readers, paging/owner cap/groups/disabled/orphan/Trash/size and independent
+  auth classes. Developer DB schema/data untouched.
+- Full restart/admin/auth/ACL/HTTP x3:
+  **24.177 / 23.641 / 20.970 / 20.859 / 33.067 s**.
+  Auth/ACL/admin pinned regeneration byte-identical.
+- Frontend **40 tests / 13 files**, lint/types/parity, **261 keys** pass.
+  Initial gzip **172,077 bytes**, all assets **311,436**, no initial grid.
+- Default check first caught/fixed a newly nested test declaration; second
+  reproduced existing `TestSuiteIsolationPostgreSQL` owned-DB cleanup deadline
+  sensitivity under package concurrency. **Not** a default pass. No shared
+  timeout/assertion/diagnostic changes. Initial command-scoped
+  `GOFLAGS=-p=1` full gate **91.612 s**; final stable-source gate **95.856 s**
+  (lint **18.259**, test **64.440**, build **13.157**) all pass.
+- Focused production-image setup/admin desktop/mobile **3 passed (1.2m)**,
+  admin **30.7/30.2 s**, real settings persistence/header reload/defaults/
+  explicit preferences, both locales, loading/error/retry and real empty
+  inventory/non-admin denial. Image **163,347,937 bytes**, non-root10001,
+  exec HEALTHCHECK. Health **6.899 s**, startup **74.4 MB / 536.9 MB**;
+  observed live **159.4 MB** and dashboard RSS **169,869,312 bytes**. NFR-1
+  still not certified, no GC/hash weakening.
+- Visual inspection caught mobile two-column settings and user-worded list
+  labels after focused image success. Corrected CSS/locale keys; added exact
+  one-mobile/two-desktop column assertion. First full image predated correction
+  while Playwright loaded new assertion: **10 passed / 1 failed / 2 deliberate
+  mobile-grid exclusions (1.6m)**, expected1/observed2. It demonstrates the
+  old-image defect, not a final-source pass. Final image evidence follows.
+
+Final stable-source production image **11 passed / 2 intentional mobile-grid
+exclusions (1.8m)**, combined admin desktop/mobile **31.7 / 35.5 s**, setup
+**5.9 s**. Exact one-mobile/two-desktop settings columns pass. Final English
+desktop/Chinese mobile settings and Chinese mobile inventory screenshots
+visually inspected; no clipping/overflow. Real persistence/reload/default/local
+choices, independent guards, read-only empty inventory and retry pass.
+Full AT-111/112 remain partial, not inferred from mocks or SQL fixtures.
+
+Final project **pt-e2e-32yjkpq6jjolfkf7knhctu6mt5**: health **6.087 s**,
+startup **74.12 MB / 536.9 MB, 6.18% CPU**; later **151.3 MB, 3.81% CPU**.
+Image **163,347,937 bytes**, linux/amd64, UID/GID10001:10001, exec HEALTHCHECK.
+Dashboard refresh **9883.4 / 9832 ms** and genuine 4096/2048-byte fixtures
+preserved. Actual RSS **169,082,880 / 173,219,840 bytes**, above NFR-1 target.
+VM reports **16,613,830,656 bytes** total, not target 4 GB; container limit
+**536,870,912 bytes**. No normal-load/platform/server certification.
+
+### Failures, cleanup and next task
+
+Tests also caught/fixed a fixture field name, unrepresentable PostgreSQL JSON
+NUL fixture, stale consumed mock Response, matchMedia mock lifetime and
+informational-alert role. Formatting/type/lint issues fixed without rule
+changes. The default-parallel shared cleanup failure and old-image mobile
+failure are recorded separately above, not disguised as final green results.
+An initial read-only cleanup query assumed unset POSTGRES_USER/POSTGRES_DB;
+psql failed as root. Reran with repository helper's explicit postgres role,
+no data changed. Final Suite databases/connections **0 / 0**.
+
+All three E2E projects independently verified **zero private containers,
+volumes, networks and unique tags**. Retained dev DB/volume, release images,
+unrelated buildkit/anonymous volumes/networks/Caddy preserved. Dev DB and
+Podman VM restored to original **stopped** state; dev volume still exists.
+No scratch binary or broad cleanup. Generated assets/test artifacts remain
+ignored, not committed. No remote/shared deployment or hosted CI.
+
+Exact implementation/commands/failures/resources/cleanup and session log names:
+[T1.8 completion](task-prompts/T1.8.md#implementation-and-handoff-2026-10-26).
+Next: **[T1.9 DDL module](task-prompts/T1.9.md)**, retaining future
+AT-111/112/117/322 dependencies and mandatory completion/next-prompt handoff.
