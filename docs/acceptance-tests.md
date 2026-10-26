@@ -327,6 +327,22 @@ existing desktop nav drag-order assertion; no tests/budgets were weakened.
 T1.13 stays **In progress**. See the
 [exact completion record](task-prompts/T1.13.md#implementation-and-handoff-2026-10-26).
 
+### T1.14 field evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-202 | Field rename pass (API + UI) | In the real production image, the owner renames a field to Chinese through the FieldPanel; the version bumps and no physical name appears in the schema DTO. The real-HTTP PG18 test renames to `金额 (含税)` (Chinese, space, parentheses) with `pg_column` and data unchanged. Writer/reader get 403, stranger/admin 404; browser read-level participants also see 403. Together with the T1.10/T1.11 table rename, M1 AT-202 passes. |
+| AT-301 | Field creation scope passes; full pending | All 12 batch-1 kinds are created through the field service in Suite-owned PG18 tests with native types/descriptors checked. The real owner UI creates integer and single-select fields with options/defaults. Grid value entry, persistence after reload and information_schema checks need T1.15/T1.16. |
+| AT-303 | Constraint API/UI scope passes; full pending | Required on NULL cells reports `ERR_REQUIRED_HAS_EMPTY{count}` and fills only with an explicit default; unique reports `ERR_UNIQUE_HAS_DUPLICATES{count}`; defaults are typed physical literals (PG18 Suite fixtures; the UI translates them). Populated-row browser workflows and "default applied to new rows" via the row API need T1.15/T1.16. |
+| AT-304 | Partial | System fields allow rename/description only (real API 400 `system_field`). Fields menu/last-editor values need T1.15/T1.16. |
+| AT-112/201/203/208..211/213 | Existing M1 evidence preserved | Unchanged account/navigation/sharing/admin scenarios pass in the same image run. |
+| AT-111/117/204..207/322/804 | Dependencies retained | T2.2 uploads, real datetime/filter, rows/editors/shared views and T2.6 filter APIs remain pending. |
+
+Default-parallel Suite cleanup failures and post-auth RSS above 150 MB
+(desktop 232652800 bytes) remain explicit; NFR-1 is not certified. T1.14 stays
+**In progress**. See the
+[exact completion record](task-prompts/T1.14.md#implementation-and-handoff-2026-10-26).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

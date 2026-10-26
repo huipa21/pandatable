@@ -96,6 +96,12 @@ T1.14..T1.16; shared vectors/SQL/component fixtures do not substitute for them.
 See [T1.13 record](task-prompts/T1.13.md#implementation-and-handoff-2026-10-26)
 and [T1.14 handoff](task-prompts/T1.14.md).
 
+T1.14's Field API and lazy FieldPanel are implemented (D-123..D-130) on the
+real schema page, without rows or grid. Keep T1.14 In progress until full
+AT-301/303 row/grid scenarios pass through T1.15/T1.16. See the
+[T1.14 record](task-prompts/T1.14.md#implementation-and-handoff-2026-10-26)
+and [T1.15 handoff](task-prompts/T1.15.md).
+
 **Exit:** team can log in, organise workspaces, share, define basic fields, and edit data in grid/mobile. Tag `v0.1.0`.
 
 ---

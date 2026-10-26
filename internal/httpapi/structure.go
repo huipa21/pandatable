@@ -28,6 +28,9 @@ func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Patch("/tables/{id}", api.authenticated(api.updateTable))
 	router.Delete("/tables/{id}", api.authenticated(api.deleteTable))
 	router.Get("/tables/{id}/schema", api.authenticated(api.tableSchema))
+	router.Post("/tables/{id}/fields", api.authenticated(api.createField))
+	router.Patch("/fields/{id}", api.authenticated(api.updateField))
+	router.Delete("/fields/{id}", api.authenticated(api.deleteField))
 }
 
 func (api *authHTTP) nav(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -196,13 +199,17 @@ func (api *authHTTP) createTable(w http.ResponseWriter, r *http.Request, user au
 }
 
 func (api *authHTTP) updateTable(w http.ResponseWriter, r *http.Request, user auth.User) {
-	var input movableInput
+	var input struct {
+		Name           *string `json:"name"`
+		Index          *int    `json:"index"`
+		DisplayFieldID *string `json:"displayFieldId"`
+	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		api.fail(w, r, err)
 		return
 	}
 	table, err := api.structure.UpdateTable(r.Context(), actorOf(user), chi.URLParam(r, "id"),
-		structure.TablePatch{Name: input.Name, Index: input.Index})
+		structure.TablePatch{Name: input.Name, Index: input.Index, DisplayFieldID: input.DisplayFieldID})
 	if err != nil {
 		api.fail(w, r, err)
 		return

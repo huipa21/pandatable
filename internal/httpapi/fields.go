@@ -1,0 +1,121 @@
+package httpapi
+
+import (
+	"crypto/rand"
+	"encoding/json"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+
+	"pandatable/internal/apperr"
+	"pandatable/internal/auth"
+	"pandatable/internal/structure"
+)
+
+// fieldBodyLimit bounds field create/patch bodies so 500-choice options stay
+// reachable (D-125); every other route keeps the 4096-byte limit.
+const fieldBodyLimit = 512 << 10
+
+type fieldResponse struct {
+	structure.FieldResult
+	EventID string `json:"eventId"`
+}
+
+// ifMatch reads the required field version: a positive integer, optionally
+// quoted as an entity tag.
+func ifMatch(r *http.Request) (int32, error) {
+	values := r.Header.Values("If-Match")
+	invalid := apperr.New(400, "ERR_VALIDATION", "If-Match must carry the field version")
+	if len(values) != 1 {
+		return 0, invalid
+	}
+	text := strings.TrimSpace(values[0])
+	if len(text) >= 2 && text[0] == '"' && text[len(text)-1] == '"' {
+		text = text[1 : len(text)-1]
+	}
+	version, err := strconv.ParseInt(text, 10, 32)
+	if err != nil || version < 1 || strconv.FormatInt(version, 10) != text {
+		return 0, invalid
+	}
+	return int32(version), nil
+}
+
+func (api *authHTTP) createField(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		Name        *string         `json:"name"`
+		UIType      *string         `json:"uiType"`
+		Description *string         `json:"description"`
+		Options     json.RawMessage `json:"options"`
+		IsRequired  bool            `json:"isRequired"`
+		IsUnique    bool            `json:"isUnique"`
+		Default     json.RawMessage `json:"default"`
+		FillEmpty   bool            `json:"fillEmpty"`
+	}
+	if err := decodeJSONLimit(w, r, &input, fieldBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	if input.Name == nil || input.UIType == nil {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Field name and type are required"))
+		return
+	}
+	description := ""
+	if input.Description != nil {
+		description = *input.Description
+	}
+	result, err := api.structure.CreateField(r.Context(), actorOf(user), chi.URLParam(r, "id"), structure.FieldInput{
+		Name: *input.Name, UIType: *input.UIType, Description: description, Options: input.Options,
+		IsRequired: input.IsRequired, IsUnique: input.IsUnique, Default: input.Default, FillEmpty: input.FillEmpty})
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, fieldResponse{result, rand.Text()})
+}
+
+func (api *authHTTP) updateField(w http.ResponseWriter, r *http.Request, user auth.User) {
+	version, err := ifMatch(r)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	var input struct {
+		Name        *string         `json:"name"`
+		Description *string         `json:"description"`
+		Options     json.RawMessage `json:"options"`
+		IsRequired  *bool           `json:"isRequired"`
+		IsUnique    *bool           `json:"isUnique"`
+		Default     json.RawMessage `json:"default"`
+		Index       *int            `json:"index"`
+		FillEmpty   bool            `json:"fillEmpty"`
+	}
+	if err := decodeJSONLimit(w, r, &input, fieldBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	result, err := api.structure.UpdateField(r.Context(), actorOf(user), chi.URLParam(r, "id"), structure.FieldPatch{
+		Version: version, Name: input.Name, Description: input.Description, Options: input.Options,
+		IsRequired: input.IsRequired, IsUnique: input.IsUnique, Default: input.Default, Index: input.Index,
+		FillEmpty: input.FillEmpty})
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
+}
+
+func (api *authHTTP) deleteField(w http.ResponseWriter, r *http.Request, user auth.User) {
+	version, err := ifMatch(r)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	result, err := api.structure.DeleteField(r.Context(), actorOf(user), chi.URLParam(r, "id"), version)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
+}

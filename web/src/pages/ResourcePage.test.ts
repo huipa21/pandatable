@@ -52,7 +52,7 @@ it('shows real schema metadata, breadcrumbs, levels and view links without any g
     expect(
       wrapper.findAll('.breadcrumbs a').map((item) => item.text()),
     ).toEqual(['Your PandaTable', 'Workspace', 'Book', 'Table'])
-    expect(wrapper.text()).toContain('not implemented yet')
+    expect(wrapper.text()).toContain('not available yet')
     expect(wrapper.find('revo-grid').exists()).toBe(false)
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/tables/t/schema',

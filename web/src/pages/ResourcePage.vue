@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  onBeforeUnmount,
+  ref,
+  watch,
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createResourceLabel, accessLevelLabel } from '../i18n'
 import { useRoute, useRouter } from 'vue-router'
@@ -16,6 +22,10 @@ const auth = useAuthStore()
 const nav = useNavStore()
 const sharing = useSharingStore()
 const schema = ref<TableSchema | null>(null)
+// Lazy so the field registry/editor stay out of the initial bundle (D-130).
+const FieldPanel = defineAsyncComponent(
+  () => import('../components/fields/FieldPanel.vue'),
+)
 const loading = ref(false)
 const error = ref<unknown>(null)
 let controller: AbortController | undefined
@@ -65,16 +75,33 @@ const canShare = computed(
     (kind.value !== 'table' || schema.value?.myLevel === 'owner'),
 )
 
-async function loadSchema() {
+/** Applies a newer authoritative schema for the shown table only. */
+function applySchema(next: TableSchema) {
+  const shown = schema.value
+  if (
+    !shown ||
+    next.table.id !== shown.table.id ||
+    next.table.id !== node.value?.id ||
+    next.schemaVersion < shown.schemaVersion
+  )
+    return
+  schema.value = next
+}
+
+// A silent load keeps the shown schema (and any open field editor) while
+// refreshing; failures other than access changes leave it in place.
+async function loadSchema(silent = false) {
   controller?.abort()
   const current = ++generation
   const own = new AbortController()
   controller = own
-  schema.value = null
+  const keep =
+    silent && !!node.value && schema.value?.table.id === node.value.id
+  if (!keep) schema.value = null
   error.value = null
   loading.value = false
   if (!node.value || kind.value !== 'table') return
-  loading.value = true
+  loading.value = !keep
   try {
     const result = await request<TableSchema>(
       `/tables/${node.value.id}/schema`,
@@ -83,11 +110,17 @@ async function loadSchema() {
       AbortSignal.any([own.signal, AbortSignal.timeout(10_000)]),
     )
     if (current !== generation) return
-    schema.value = result
+    if (keep && schema.value) applySchema(result)
+    else schema.value = result
     if (!route.params.viewId && result.views.length)
       await router.replace(tablePath(result.table.id, result.views))
   } catch (cause) {
     if (current !== generation || own.signal.aborted) return
+    if (
+      keep &&
+      !(cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+    )
+      return
     error.value = cause
     if (cause instanceof RequestError) {
       if (cause.code === 'ERR_UNAUTHENTICATED') {
@@ -114,7 +147,7 @@ watch(
 watch(
   () => nav.revision,
   () => {
-    if (!loading.value) void loadSchema()
+    if (!loading.value) void loadSchema(true)
   },
 )
 onBeforeUnmount(() => {
@@ -157,7 +190,7 @@ onBeforeUnmount(() => {
     <div v-else-if="error" role="alert">
       <h1>{{ t('nav.unavailable') }}</h1>
       <p>{{ errorMessage(error) }}</p>
-      <button @click="loadSchema">{{ t('auth.retry') }}</button>
+      <button @click="loadSchema()">{{ t('auth.retry') }}</button>
     </div>
     <template v-else-if="node">
       <h1>{{ schema?.table.name ?? node.name }}</h1>
@@ -209,6 +242,12 @@ onBeforeUnmount(() => {
           </RouterLink>
         </nav>
         <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
+        <FieldPanel
+          :key="schema.table.id"
+          :schema="schema"
+          @update="applySchema"
+          @reload="loadSchema(true)"
+        />
         <p>{{ t('nav.tableShellNotice') }}</p>
       </template>
     </template>

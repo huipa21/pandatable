@@ -11,6 +11,33 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bumpSchemaVersion = `-- name: BumpSchemaVersion :exec
+UPDATE meta.tables SET schema_version = schema_version + 1
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) BumpSchemaVersion(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, bumpSchemaVersion, id)
+	return err
+}
+
+const fieldTable = `-- name: FieldTable :one
+
+SELECT f.table_id
+FROM meta.fields f
+JOIN meta.tables t ON t.id = f.table_id AND t.deleted_at IS NULL
+WHERE f.id = $1 AND f.deleted_at IS NULL
+`
+
+// Field API (T1.14, D-123..D-129). Physical columns are changed only through
+// internal/ddl; data preflight/rewrites use validated identifiers in Go.
+func (q *Queries) FieldTable(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, fieldTable, id)
+	var table_id pgtype.UUID
+	err := row.Scan(&table_id)
+	return table_id, err
+}
+
 const getBook = `-- name: GetBook :one
 SELECT id, workspace_id, name, pg_schema, position, created_at
 FROM meta.books
@@ -36,6 +63,55 @@ func (q *Queries) GetBook(ctx context.Context, id pgtype.UUID) (GetBookRow, erro
 		&i.PgSchema,
 		&i.Position,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getField = `-- name: GetField :one
+SELECT id, table_id, name, description, ui_type, pg_column, options, is_system, is_required, is_unique,
+       default_json, position, version
+FROM meta.fields
+WHERE id = $1 AND table_id = $2 AND deleted_at IS NULL
+`
+
+type GetFieldParams struct {
+	ID      pgtype.UUID
+	TableID pgtype.UUID
+}
+
+type GetFieldRow struct {
+	ID          pgtype.UUID
+	TableID     pgtype.UUID
+	Name        string
+	Description string
+	UiType      string
+	PgColumn    pgtype.Text
+	Options     []byte
+	IsSystem    bool
+	IsRequired  bool
+	IsUnique    bool
+	DefaultJson []byte
+	Position    float64
+	Version     int32
+}
+
+func (q *Queries) GetField(ctx context.Context, arg GetFieldParams) (GetFieldRow, error) {
+	row := q.db.QueryRow(ctx, getField, arg.ID, arg.TableID)
+	var i GetFieldRow
+	err := row.Scan(
+		&i.ID,
+		&i.TableID,
+		&i.Name,
+		&i.Description,
+		&i.UiType,
+		&i.PgColumn,
+		&i.Options,
+		&i.IsSystem,
+		&i.IsRequired,
+		&i.IsUnique,
+		&i.DefaultJson,
+		&i.Position,
+		&i.Version,
 	)
 	return i, err
 }
@@ -224,6 +300,48 @@ func (q *Queries) InsertTable(ctx context.Context, arg InsertTableParams) (pgtyp
 	return id, err
 }
 
+const insertUserField = `-- name: InsertUserField :one
+INSERT INTO meta.fields (table_id, name, description, ui_type, pg_column, pg_type, options,
+                         is_required, is_unique, default_json, position)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7::jsonb, $8, $9,
+        $10::jsonb, $11)
+RETURNING id
+`
+
+type InsertUserFieldParams struct {
+	TableID     pgtype.UUID
+	Name        string
+	Description string
+	UiType      string
+	PgColumn    pgtype.Text
+	PgType      pgtype.Text
+	Options     []byte
+	IsRequired  bool
+	IsUnique    bool
+	DefaultJson []byte
+	Position    float64
+}
+
+func (q *Queries) InsertUserField(ctx context.Context, arg InsertUserFieldParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, insertUserField,
+		arg.TableID,
+		arg.Name,
+		arg.Description,
+		arg.UiType,
+		arg.PgColumn,
+		arg.PgType,
+		arg.Options,
+		arg.IsRequired,
+		arg.IsUnique,
+		arg.DefaultJson,
+		arg.Position,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const insertWorkspace = `-- name: InsertWorkspace :one
 
 INSERT INTO meta.workspaces (name, icon, color, created_by)
@@ -344,8 +462,39 @@ func (q *Queries) ListLiveTableOrder(ctx context.Context, bookID pgtype.UUID) ([
 	return items, nil
 }
 
+const listLiveUserFieldOrder = `-- name: ListLiveUserFieldOrder :many
+SELECT id, position FROM meta.fields
+WHERE table_id = $1 AND NOT is_system AND deleted_at IS NULL
+ORDER BY position, id
+`
+
+type ListLiveUserFieldOrderRow struct {
+	ID       pgtype.UUID
+	Position float64
+}
+
+func (q *Queries) ListLiveUserFieldOrder(ctx context.Context, tableID pgtype.UUID) ([]ListLiveUserFieldOrderRow, error) {
+	rows, err := q.db.Query(ctx, listLiveUserFieldOrder, tableID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLiveUserFieldOrderRow
+	for rows.Next() {
+		var i ListLiveUserFieldOrderRow
+		if err := rows.Scan(&i.ID, &i.Position); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTableFields = `-- name: ListTableFields :many
-SELECT id, name, description, ui_type, options, is_system, is_required, is_unique, position, version
+SELECT id, name, description, ui_type, options, is_system, is_required, is_unique, default_json, position, version
 FROM meta.fields
 WHERE table_id = $1 AND deleted_at IS NULL
 ORDER BY position, id
@@ -360,6 +509,7 @@ type ListTableFieldsRow struct {
 	IsSystem    bool
 	IsRequired  bool
 	IsUnique    bool
+	DefaultJson []byte
 	Position    float64
 	Version     int32
 }
@@ -382,6 +532,7 @@ func (q *Queries) ListTableFields(ctx context.Context, tableID pgtype.UUID) ([]L
 			&i.IsSystem,
 			&i.IsRequired,
 			&i.IsUnique,
+			&i.DefaultJson,
 			&i.Position,
 			&i.Version,
 		); err != nil {
@@ -448,6 +599,35 @@ func (q *Queries) ListTableViews(ctx context.Context, arg ListTableViewsParams) 
 	return items, nil
 }
 
+const lockFieldTable = `-- name: LockFieldTable :one
+SELECT t.id, t.pg_name, b.pg_schema, t.display_field_id, t.schema_version
+FROM meta.tables t
+JOIN meta.books b ON b.id = t.book_id
+WHERE t.id = $1 AND t.deleted_at IS NULL
+FOR NO KEY UPDATE OF t
+`
+
+type LockFieldTableRow struct {
+	ID             pgtype.UUID
+	PgName         string
+	PgSchema       string
+	DisplayFieldID pgtype.UUID
+	SchemaVersion  int32
+}
+
+func (q *Queries) LockFieldTable(ctx context.Context, id pgtype.UUID) (LockFieldTableRow, error) {
+	row := q.db.QueryRow(ctx, lockFieldTable, id)
+	var i LockFieldTableRow
+	err := row.Scan(
+		&i.ID,
+		&i.PgName,
+		&i.PgSchema,
+		&i.DisplayFieldID,
+		&i.SchemaVersion,
+	)
+	return i, err
+}
+
 const maxBookPosition = `-- name: MaxBookPosition :one
 SELECT COALESCE(MAX(position), 0)::float8 AS position FROM meta.books WHERE workspace_id = $1
 `
@@ -465,6 +645,19 @@ SELECT COALESCE(MAX(position), 0)::float8 AS position FROM meta.tables WHERE boo
 
 func (q *Queries) MaxTablePosition(ctx context.Context, bookID pgtype.UUID) (float64, error) {
 	row := q.db.QueryRow(ctx, maxTablePosition, bookID)
+	var position float64
+	err := row.Scan(&position)
+	return position, err
+}
+
+const maxUserFieldPosition = `-- name: MaxUserFieldPosition :one
+SELECT COALESCE(MAX(position), 0)::float8 AS position
+FROM meta.fields
+WHERE table_id = $1 AND NOT is_system AND deleted_at IS NULL
+`
+
+func (q *Queries) MaxUserFieldPosition(ctx context.Context, tableID pgtype.UUID) (float64, error) {
+	row := q.db.QueryRow(ctx, maxUserFieldPosition, tableID)
 	var position float64
 	err := row.Scan(&position)
 	return position, err
@@ -813,6 +1006,16 @@ func (q *Queries) RenumberBooks(ctx context.Context, ids []pgtype.UUID) error {
 	return err
 }
 
+const renumberFields = `-- name: RenumberFields :exec
+UPDATE meta.fields SET position = array_position($1::uuid[], id)::float8 * 1024
+WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+`
+
+func (q *Queries) RenumberFields(ctx context.Context, ids []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, renumberFields, ids)
+	return err
+}
+
 const renumberTables = `-- name: RenumberTables :exec
 UPDATE meta.tables SET position = array_position($1::uuid[], id)::float8 * 1024
 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
@@ -853,6 +1056,21 @@ func (q *Queries) SetBookPosition(ctx context.Context, arg SetBookPositionParams
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const setFieldPosition = `-- name: SetFieldPosition :exec
+UPDATE meta.fields SET position = $2, version = version + 1
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+type SetFieldPositionParams struct {
+	ID       pgtype.UUID
+	Position float64
+}
+
+func (q *Queries) SetFieldPosition(ctx context.Context, arg SetFieldPositionParams) error {
+	_, err := q.db.Exec(ctx, setFieldPosition, arg.ID, arg.Position)
+	return err
 }
 
 const setTableDisplayField = `-- name: SetTableDisplayField :one
@@ -945,6 +1163,16 @@ func (q *Queries) TrashBook(ctx context.Context, arg TrashBookParams) (pgtype.UU
 	return id, err
 }
 
+const trashField = `-- name: TrashField :exec
+UPDATE meta.fields SET deleted_at = now(), is_required = false, version = version + 1
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) TrashField(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, trashField, id)
+	return err
+}
+
 const trashTable = `-- name: TrashTable :one
 UPDATE meta.tables SET deleted_at = now(), deleted_by = $2
 WHERE id = $1 AND deleted_at IS NULL
@@ -979,6 +1207,40 @@ func (q *Queries) TrashWorkspace(ctx context.Context, arg TrashWorkspaceParams) 
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const updateField = `-- name: UpdateField :one
+UPDATE meta.fields
+SET name = $1, description = $2, options = $3::jsonb,
+    is_required = $4, is_unique = $5,
+    default_json = $6::jsonb, version = version + 1
+WHERE id = $7 AND deleted_at IS NULL
+RETURNING version
+`
+
+type UpdateFieldParams struct {
+	Name        string
+	Description string
+	Options     []byte
+	IsRequired  bool
+	IsUnique    bool
+	DefaultJson []byte
+	ID          pgtype.UUID
+}
+
+func (q *Queries) UpdateField(ctx context.Context, arg UpdateFieldParams) (int32, error) {
+	row := q.db.QueryRow(ctx, updateField,
+		arg.Name,
+		arg.Description,
+		arg.Options,
+		arg.IsRequired,
+		arg.IsUnique,
+		arg.DefaultJson,
+		arg.ID,
+	)
+	var version int32
+	err := row.Scan(&version)
+	return version, err
 }
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
@@ -1018,4 +1280,16 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const validFieldTimezone = `-- name: ValidFieldTimezone :one
+SELECT EXISTS (SELECT 1 FROM pg_timezone_names
+               WHERE name = $1 AND name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%')
+`
+
+func (q *Queries) ValidFieldTimezone(ctx context.Context, name string) (bool, error) {
+	row := q.db.QueryRow(ctx, validFieldTimezone, name)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

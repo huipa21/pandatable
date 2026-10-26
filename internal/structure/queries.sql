@@ -111,10 +111,78 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id;
 
 -- name: ListTableFields :many
-SELECT id, name, description, ui_type, options, is_system, is_required, is_unique, position, version
+SELECT id, name, description, ui_type, options, is_system, is_required, is_unique, default_json, position, version
 FROM meta.fields
 WHERE table_id = $1 AND deleted_at IS NULL
 ORDER BY position, id;
+
+-- Field API (T1.14, D-123..D-129). Physical columns are changed only through
+-- internal/ddl; data preflight/rewrites use validated identifiers in Go.
+
+-- name: FieldTable :one
+SELECT f.table_id
+FROM meta.fields f
+JOIN meta.tables t ON t.id = f.table_id AND t.deleted_at IS NULL
+WHERE f.id = $1 AND f.deleted_at IS NULL;
+
+-- name: LockFieldTable :one
+SELECT t.id, t.pg_name, b.pg_schema, t.display_field_id, t.schema_version
+FROM meta.tables t
+JOIN meta.books b ON b.id = t.book_id
+WHERE t.id = $1 AND t.deleted_at IS NULL
+FOR NO KEY UPDATE OF t;
+
+-- name: GetField :one
+SELECT id, table_id, name, description, ui_type, pg_column, options, is_system, is_required, is_unique,
+       default_json, position, version
+FROM meta.fields
+WHERE id = $1 AND table_id = $2 AND deleted_at IS NULL;
+
+-- name: MaxUserFieldPosition :one
+SELECT COALESCE(MAX(position), 0)::float8 AS position
+FROM meta.fields
+WHERE table_id = $1 AND NOT is_system AND deleted_at IS NULL;
+
+-- name: ListLiveUserFieldOrder :many
+SELECT id, position FROM meta.fields
+WHERE table_id = $1 AND NOT is_system AND deleted_at IS NULL
+ORDER BY position, id;
+
+-- name: InsertUserField :one
+INSERT INTO meta.fields (table_id, name, description, ui_type, pg_column, pg_type, options,
+                         is_required, is_unique, default_json, position)
+VALUES (sqlc.arg(table_id), sqlc.arg(name), sqlc.arg(description), sqlc.arg(ui_type), sqlc.arg(pg_column),
+        sqlc.arg(pg_type), sqlc.arg(options)::jsonb, sqlc.arg(is_required), sqlc.arg(is_unique),
+        sqlc.narg(default_json)::jsonb, sqlc.arg(position))
+RETURNING id;
+
+-- name: UpdateField :one
+UPDATE meta.fields
+SET name = sqlc.arg(name), description = sqlc.arg(description), options = sqlc.arg(options)::jsonb,
+    is_required = sqlc.arg(is_required), is_unique = sqlc.arg(is_unique),
+    default_json = sqlc.narg(default_json)::jsonb, version = version + 1
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL
+RETURNING version;
+
+-- name: SetFieldPosition :exec
+UPDATE meta.fields SET position = $2, version = version + 1
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: RenumberFields :exec
+UPDATE meta.fields SET position = array_position(sqlc.arg(ids)::uuid[], id)::float8 * 1024
+WHERE id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NULL;
+
+-- name: TrashField :exec
+UPDATE meta.fields SET deleted_at = now(), is_required = false, version = version + 1
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: BumpSchemaVersion :exec
+UPDATE meta.tables SET schema_version = schema_version + 1
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: ValidFieldTimezone :one
+SELECT EXISTS (SELECT 1 FROM pg_timezone_names
+               WHERE name = $1 AND name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%');
 
 -- name: InsertDefaultGridView :one
 INSERT INTO meta.views (table_id, name, type, scope, position, config, created_by)

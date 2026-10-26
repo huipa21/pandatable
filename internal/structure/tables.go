@@ -1,6 +1,7 @@
 package structure
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,8 +15,9 @@ import (
 )
 
 type TablePatch struct {
-	Name  *string
-	Index *int
+	Name           *string
+	Index          *int
+	DisplayFieldID *string
 }
 
 func parentBook(path acl.Path) acl.Resource {
@@ -105,13 +107,14 @@ func (s *Service) CreateTable(ctx context.Context, actor Actor, bookID, name str
 func pgText(value string) pgtype.Text { return pgtype.Text{String: value, Valid: true} }
 
 // UpdateTable renames (metadata only) and/or moves a table among the live
-// tables of its book. The display field changes with the field API (T1.14).
+// tables of its book (book owner), and/or sets the display field (table owner,
+// D-123/D-129).
 func (s *Service) UpdateTable(ctx context.Context, actor Actor, id string, patch TablePatch) (Table, error) {
 	target, err := resourceOf(acl.Table, id)
 	if err != nil {
 		return Table{}, err
 	}
-	if patch.Name == nil && patch.Index == nil {
+	if patch.Name == nil && patch.Index == nil && patch.DisplayFieldID == nil {
 		return Table{}, validation("At least one table field is required")
 	}
 	var name string
@@ -123,8 +126,17 @@ func (s *Service) UpdateTable(ctx context.Context, actor Actor, id string, patch
 	if patch.Index != nil && *patch.Index < 0 {
 		return Table{}, validation("Index is outside the sibling range")
 	}
+	sc := scope{target: target, owner: parentBook}
+	if patch.Name == nil && patch.Index == nil {
+		sc.owner = nil
+	}
 	var updated Table
-	err = s.run(ctx, actor, scope{target: target, owner: parentBook}, func(c *txn) error {
+	err = s.run(ctx, actor, sc, func(c *txn) error {
+		if patch.DisplayFieldID != nil {
+			if err := setDisplayField(ctx, c, target.ID, *patch.DisplayFieldID); err != nil {
+				return err
+			}
+		}
 		if patch.Name != nil {
 			if _, err := c.q.RenameTable(ctx, structuresql.RenameTableParams{ID: target.ID, Name: name}); err != nil {
 				return notFoundIfNoRows(err, "rename table")
@@ -220,7 +232,14 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tableID, user pgty
 	for index, row := range fields {
 		schema.Fields[index] = Field{ID: row.ID.String(), Name: row.Name, Description: row.Description, UIType: row.UiType,
 			Options: json.RawMessage(row.Options), IsSystem: row.IsSystem, IsRequired: row.IsRequired, IsUnique: row.IsUnique,
-			Position: row.Position, Version: row.Version}
+			Default: json.RawMessage("null"), Position: row.Position, Version: row.Version}
+		if row.DefaultJson != nil {
+			var compact bytes.Buffer
+			if err := json.Compact(&compact, row.DefaultJson); err != nil {
+				return TableSchema{}, fmt.Errorf("read field default: %w", err)
+			}
+			schema.Fields[index].Default = json.RawMessage(compact.Bytes())
+		}
 	}
 	for index, row := range views {
 		schema.Views[index] = View{ID: row.ID.String(), Name: row.Name, Type: row.Type, Scope: row.Scope,

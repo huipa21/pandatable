@@ -17,8 +17,8 @@ import {
   type WireValue,
 } from './types'
 
-// Batch-1 FieldKind registry (D-121). Not imported by any route yet; it joins
-// the lazy grid chunk in T1.16.
+// Batch-1 FieldKind registry (D-121). Only the lazy Field panel chunk imports it
+// (D-130); it joins the lazy grid chunk in T1.16.
 const registry: { [K in Kind]: FieldKind<never> } = {
   ...textKinds,
   integer: integerKind,
@@ -43,6 +43,11 @@ export const isSystemKind = (kind: Kind) =>
   kind === 'created_by' ||
   kind === 'updated_at' ||
   kind === 'updated_by'
+
+/** Option-independent constraint support of a kind (doc 07). */
+export const kindConstraints = (kind: Kind): Constraints => ({
+  ...registry[kind].constraints,
+})
 
 /** A kind bound to normalized options, like Go codec.Field. */
 export interface BoundField {

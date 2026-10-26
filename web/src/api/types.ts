@@ -246,6 +246,8 @@ export interface TableSchema {
     isSystem: boolean
     isRequired: boolean
     isUnique: boolean
+    /** Canonical wire default (D-115/D-127) or null. */
+    default: null | string | number | boolean | string[]
     position: number
     version: number
   }[]
@@ -253,6 +255,14 @@ export interface TableSchema {
   views: (NavView & { locked: boolean; position: number; version: number })[]
   schemaVersion: number
   myLevel: AccessLevel
+}
+
+export type TableField = TableSchema['fields'][number]
+
+/** Field mutation response (D-123); `field` is absent after deletion. */
+export interface FieldMutation extends AuthMutation {
+  field?: TableField
+  schema: TableSchema
 }
 
 export interface SystemMetric<T> {

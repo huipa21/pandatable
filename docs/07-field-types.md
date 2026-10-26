@@ -141,7 +141,8 @@ compiler, conversion, field/row API or production grid integration.
   offset seconds) so it re-pastes exactly. Display is not storage.
   At UTC range boundaries, copy uses +00:00 if the display zone would produce
   local year 0000/10000 (D-122), keeping the bounded paste parser reversible.
-  Fixed zones must additionally pass PG `pg_timezone_names` validation in T1.14.
+  Fixed zones additionally pass PG `pg_timezone_names` validation in the T1.14
+  field service (D-128).
 - At most 500 choices, ids `[A-Za-z0-9_-]{1,64}`, trimmed 1..100-code-point
   labels, no controls/comma, unique ids and lower-case labels; closed 13-color
   palette (D-118). Values are exact labels; multi-select is in choice order.
@@ -160,3 +161,19 @@ compiler, conversion, field/row API or production grid integration.
 These codec/unit/PG tests are lower-layer evidence only. Full AT-301/302/304
 requires real fields, rows, persistence, grid editors and Fields menu in
 T1.14..T1.16; T1.13 remains In progress.
+
+### T1.14 field service rules (D-126..D-129)
+
+- Required/unique/default use the codec's `Constraints()`; ineligible
+  settings fail `constraint_unsupported`. Required on NULL cells reports
+  `ERR_REQUIRED_HAS_EMPTY{count}` unless resent with `fillEmpty` plus a default
+  (one parameterized fill, then `SET NOT NULL`). Unique with duplicates reports
+  `ERR_UNIQUE_HAS_DUPLICATES{count}`. Defaults are typed literals only.
+- Option edits that would change the native column fail `storage_change`
+  (conversion is T2.12). Select label changes, matched by choice id, rewrite
+  stored values and the default in the same transaction. Removed choices keep
+  stored labels.
+- Soft delete keeps column and data, drops NOT NULL (except checkbox) and the
+  physical default, and reassigns a deleted display field to the first live
+  eligible field (`ERR_DISPLAY_FIELD_REQUIRED` if none). Checkbox and system
+  kinds are not display-eligible.

@@ -45,8 +45,10 @@ type Field struct {
 	IsSystem    bool            `json:"isSystem"`
 	IsRequired  bool            `json:"isRequired"`
 	IsUnique    bool            `json:"isUnique"`
-	Position    float64         `json:"position"`
-	Version     int32           `json:"version"`
+	// Default is the canonical wire default (D-127) or null.
+	Default  json.RawMessage `json:"default"`
+	Position float64         `json:"position"`
+	Version  int32           `json:"version"`
 }
 
 type View struct {
@@ -60,7 +62,7 @@ type View struct {
 }
 
 // TableSchema is the table-level schema read (doc 09). Relations stay empty
-// until the relation/field API (T1.14).
+// until link fields (M2).
 type TableSchema struct {
 	Table         Table   `json:"table"`
 	Fields        []Field `json:"fields"`

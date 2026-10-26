@@ -10,6 +10,7 @@ import type { Navigation, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
+import { verifyFieldReader, verifyFields } from './fields'
 
 const headers = () => ({
   Origin: process.env.PT_E2E_BASE_URL!,
@@ -158,6 +159,7 @@ export async function verifyNavigation(
         scope: 'shared',
       }),
     ])
+    const fieldFixture = await verifyFields(alice, tid)
     const nav = await tree(alice)
     await expect(nav.locator('[data-nav-id]')).toHaveCount(3)
     await expect(
@@ -210,6 +212,14 @@ export async function verifyNavigation(
       })
       .toEqual([siblingTable, tid])
     if (alice.viewportSize()!.width >= 768) {
+      // The API poll can observe the new order before the client refresh
+      // finishes; drag only once the rendered tree is idle and reordered.
+      await expect(
+        tableActions.getByRole('button', { name: en.nav.moveUp, exact: true }),
+      ).toBeEnabled()
+      await expect(
+        ownerTree.locator(`[data-nav-id="${tid}"] > .nav-row`),
+      ).toHaveAttribute('draggable', 'true')
       await ownerTree
         .locator(`[data-nav-id="${tid}"] > .nav-row`)
         .dragTo(ownerTree.locator(`[data-nav-id="${siblingTable}"] > .nav-row`))
@@ -332,6 +342,7 @@ export async function verifyNavigation(
         await expect(page.locator('.schema-summary')).toContainText(
           en.nav.level.read,
         )
+        await verifyFieldReader(page, tid, fieldFixture.qty)
         const visibleTree = await tree(page)
         await expect(visibleTree.locator('.node-actions')).toHaveCount(0)
         if (index === 1) {

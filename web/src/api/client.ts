@@ -1,12 +1,42 @@
 import { i18n } from '../i18n'
 
+/** Safe, bounded error details; server messages are never shown. */
+export interface ErrorDetails {
+  reason?: string
+  option?: string
+  count?: number
+}
+
 export class RequestError extends Error {
   constructor(
     readonly code: string,
     readonly status: number,
+    readonly details: ErrorDetails = {},
   ) {
     super(code)
   }
+}
+
+function readDetails(value: unknown): ErrorDetails {
+  if (typeof value !== 'object' || value === null) return {}
+  const details: ErrorDetails = {}
+  const raw = value as Record<string, unknown>
+  if (typeof raw.reason === 'string' && /^[a-z_]{1,40}$/.test(raw.reason))
+    details.reason = raw.reason
+  if (typeof raw.option === 'string' && /^[A-Za-z]{1,40}$/.test(raw.option))
+    details.option = raw.option
+  if (
+    typeof raw.count === 'number' &&
+    Number.isSafeInteger(raw.count) &&
+    raw.count >= 0
+  )
+    details.count = raw.count
+  return details
+}
+
+export interface RequestOptions {
+  /** Field version for optimistic concurrency (D-123). */
+  ifMatch?: number
 }
 
 export async function request<T>(
@@ -14,39 +44,54 @@ export async function request<T>(
   method = 'GET',
   body?: unknown,
   signal?: AbortSignal,
+  options: RequestOptions = {},
 ): Promise<T> {
+  const headers: Record<string, string> | undefined =
+    method === 'GET'
+      ? undefined
+      : { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' }
+  if (headers && options.ifMatch !== undefined)
+    headers['If-Match'] = String(options.ifMatch)
   const response = await fetch(`/api/v1${path}`, {
     method,
     cache: 'no-store',
     credentials: 'same-origin',
-    headers:
-      method === 'GET'
-        ? undefined
-        : { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
   const result: unknown = await response.json()
   if (!response.ok) {
-    const code =
+    const failure =
       typeof result === 'object' &&
       result !== null &&
       'error' in result &&
       typeof result.error === 'object' &&
-      result.error !== null &&
-      'code' in result.error &&
-      typeof result.error.code === 'string'
-        ? result.error.code
-        : 'ERR_INTERNAL'
-    throw new RequestError(code, response.status)
+      result.error !== null
+        ? (result.error as Record<string, unknown>)
+        : {}
+    const code =
+      typeof failure.code === 'string' ? failure.code : 'ERR_INTERNAL'
+    throw new RequestError(code, response.status, readDetails(failure.details))
   }
   return result as T
 }
 
 export function errorMessage(error: unknown): string {
   const code = error instanceof RequestError ? error.code : 'ERR_INTERNAL'
+  const count = error instanceof RequestError ? (error.details.count ?? 0) : 0
   const { t } = i18n.global
   switch (code) {
+    case 'ERR_FIELD_NAME_CONFLICT':
+      return t('errors.ERR_FIELD_NAME_CONFLICT')
+    case 'ERR_VERSION_CONFLICT':
+      return t('errors.ERR_VERSION_CONFLICT')
+    case 'ERR_REQUIRED_HAS_EMPTY':
+      return t('errors.ERR_REQUIRED_HAS_EMPTY', { count })
+    case 'ERR_UNIQUE_HAS_DUPLICATES':
+      return t('errors.ERR_UNIQUE_HAS_DUPLICATES', { count })
+    case 'ERR_DISPLAY_FIELD_REQUIRED':
+      return t('errors.ERR_DISPLAY_FIELD_REQUIRED')
     case 'ERR_VALIDATION':
       return t('errors.ERR_VALIDATION')
     case 'ERR_UNAUTHENTICATED':

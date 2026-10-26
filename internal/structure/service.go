@@ -151,7 +151,7 @@ func sanitizeLock(err error) error {
 }
 
 // generatedCollision recognizes only reservations of freshly generated physical
-// names: the DDL creation collision or the two metadata uniqueness constraints
+// names: the DDL creation collision or the three metadata uniqueness constraints
 // on those names. Display-name or other 23505 errors never match.
 func generatedCollision(err error) bool {
 	if err == nil {
@@ -162,7 +162,8 @@ func generatedCollision(err error) bool {
 	}
 	var postgres *pgconn.PgError
 	return errors.As(err, &postgres) && postgres.Code == "23505" &&
-		(postgres.ConstraintName == "books_pg_schema_key" || postgres.ConstraintName == "tables_book_id_pg_name_key")
+		(postgres.ConstraintName == "books_pg_schema_key" || postgres.ConstraintName == "tables_book_id_pg_name_key" ||
+			postgres.ConstraintName == "fields_table_id_pg_column_key")
 }
 
 // retryCollisions runs complete transactions with fresh names, at most

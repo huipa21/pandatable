@@ -160,6 +160,13 @@ AT-301/302/304 evidence without real field/row/grid APIs/UI.
 Record default-parallel Suite cleanup failures separately from command-scoped
 `GOFLAGS=-p=1` results; never relax the helper's assertions or deadlines.
 
+T1.14's focused gate is
+`go test ./internal/structure ./internal/httpapi -run 'Field|CleanDescription|Choice|PGType' -count=1`
+(same explicit DSN/required flags) plus
+`pnpm --dir web exec vitest run src/components/fields/FieldPanel.test.ts src/pages/ResourcePage.test.ts`.
+The production `ptdev e2e` exercises real owner Field UI/API flows from
+`web/e2e/fields.ts` inside the existing navigation scenario.
+
 ### Shared integration helper
 
 Declare a package-level `testdb.Suite`, call `os.Exit(database.Run(m))` in

@@ -535,7 +535,11 @@ transaction under the D-099 lock protocol.
 display-field FK points at Name. Field names are the creator's-locale labels
 (en: Name, ID, Created at/by, Updated at/by; zh-CN: 名称, ID, 创建时间, 创建人,
 更新时间, 更新人) and may be renamed like any display name. User fields added
-by T1.14 must append after the highest **non-system** position.
+by T1.14 append after the highest **non-system** position (D-126). T1.14
+mutations increment the field `version` and table `schema_version` once per
+committed change, store user defaults in `default_json` (canonical wire JSON)
+plus a typed physical default, and soft-delete via `deleted_at` while keeping
+the physical column (D-124/D-127/D-129). No migration was needed.
 
 The default view is a shared `grid` named Grid (表格 in zh-CN), position 1024,
 unlocked, `created_by` the creator, with config

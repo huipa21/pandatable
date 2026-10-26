@@ -66,7 +66,7 @@
       "write": "读写",
       "owner": "所有者"
     },
-    "tableShellNotice": "已加载数据表结构。表格、记录、字段编辑和视图编辑功能尚未实现。"
+    "tableShellNotice": "表结构已加载。行、网格和视图编辑暂不可用。"
   },
   "sharing": {
     "open": "共享",
@@ -385,7 +385,12 @@
     "ERR_MEMBERSHIP_EXISTS": "该用户已是此用户组的成员。",
     "ERR_PRINCIPAL_DISABLED": "无法向已禁用的用户新增授权或将其加入用户组。请刷新并选择正常用户。",
     "ERR_PRINCIPAL_NOT_FOUND": "此用户或用户组已不存在。请重新搜索或移除失效的授权。",
-    "ERR_LAST_OWNER": "工作区必须保留至少一位正常的直接用户所有者。请先添加另一位用户所有者，再移除当前所有者或降低其权限。"
+    "ERR_LAST_OWNER": "工作区必须保留至少一位正常的直接用户所有者。请先添加另一位用户所有者，再移除当前所有者或降低其权限。",
+    "ERR_FIELD_NAME_CONFLICT": "此表中已有其他字段使用该名称。",
+    "ERR_VERSION_CONFLICT": "该字段已在其他地方被修改。已加载最新版本，请检查后重试。",
+    "ERR_REQUIRED_HAS_EMPTY": "现有 {count} 行为空。请先填写，或选择默认值进行填充。",
+    "ERR_UNIQUE_HAS_DUPLICATES": "现有 {count} 个值重复。请先删除重复值。",
+    "ERR_DISPLAY_FIELD_REQUIRED": "请先为此表准备另一个可用作显示字段的字段。"
   },
   "field": {
     "kind": {
@@ -448,6 +453,105 @@
       "multilineHint": "按 Ctrl+Enter 保存",
       "datePlaceholder": "YYYY-MM-DD",
       "datetimePlaceholder": "YYYY-MM-DD HH:mm"
+    },
+    "panel": {
+      "title": "字段",
+      "add": "添加字段",
+      "readOnly": "只有表的所有者可以修改字段。",
+      "system": "系统",
+      "required": "必填",
+      "unique": "唯一",
+      "display": "显示字段",
+      "actions": "字段“{name}”的操作",
+      "edit": "编辑",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "setDisplay": "设为显示字段",
+      "delete": "删除",
+      "confirmDelete": "删除字段“{name}”？该字段将从表中隐藏，已存储的数据会保留。",
+      "confirm": "删除字段",
+      "createTitle": "新建字段",
+      "editTitle": "编辑字段",
+      "name": "名称",
+      "description": "描述",
+      "kind": "类型",
+      "settings": "设置",
+      "maxLength": "最大长度（可选）",
+      "size": "大小",
+      "precision": "总位数",
+      "scale": "小数位数",
+      "displayDecimals": "显示的小数位数（可选）",
+      "thousandSep": "使用千位分隔符",
+      "dateFormat": "日期格式",
+      "timeFormat": "时间格式",
+      "timezone": "时区",
+      "fixedTz": "固定时区（IANA 名称）",
+      "choices": "选项",
+      "choiceLabel": "选项 {n} 名称",
+      "choiceColor": "选项 {n} 颜色",
+      "addChoice": "添加选项",
+      "removeChoice": "移除选项 {n}",
+      "defaultValue": "默认值",
+      "noDefault": "无默认值",
+      "checked": "已勾选",
+      "unchecked": "未勾选",
+      "fillEmpty": "用默认值填充现有空值",
+      "storageFixed": "存储设置在创建后不可更改。",
+      "systemNotice": "系统字段为只读，只能修改名称和描述。",
+      "save": "保存",
+      "create": "创建",
+      "cancel": "取消",
+      "saving": "正在保存…",
+      "saved": "字段已保存。",
+      "deleted": "字段已删除。",
+      "displaySet": "显示字段已更新。",
+      "nameInvalid": "请输入 1 到 100 个字符的名称，且不含控制字符。",
+      "descriptionInvalid": "描述最多 1000 个字符，且不含控制字符。",
+      "defaultInvalid": "默认值：{message}",
+      "noChanges": "没有需要保存的更改。",
+      "reason": {
+        "system_field": "系统字段只允许修改名称和描述。",
+        "constraint_unsupported": "此字段类型不支持该设置。",
+        "storage_change": "存储设置在创建后不可更改。",
+        "display_ineligible": "此字段不能作为显示字段。"
+      },
+      "sizes": {
+        "small": "小整数",
+        "int": "整数",
+        "big": "大整数",
+        "real": "单精度",
+        "double": "双精度"
+      },
+      "dateFormats": {
+        "iso": "2026-01-31",
+        "slash": "2026/01/31",
+        "us": "01/31/2026",
+        "eu": "31/01/2026"
+      },
+      "timeFormats": {
+        "h24": "24 小时制",
+        "h12": "12 小时制"
+      },
+      "timezones": {
+        "user": "查看者时区",
+        "fixed": "固定时区"
+      },
+      "colors": {
+        "gray": "灰色",
+        "red": "红色",
+        "orange": "橙色",
+        "amber": "琥珀色",
+        "yellow": "黄色",
+        "lime": "青柠色",
+        "green": "绿色",
+        "teal": "蓝绿色",
+        "cyan": "青色",
+        "blue": "蓝色",
+        "indigo": "靛蓝色",
+        "purple": "紫色",
+        "pink": "粉色"
+      },
+      "remove": "移除"
     }
   }
 }

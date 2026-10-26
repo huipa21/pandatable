@@ -39,7 +39,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.11 | Sidebar & navigation UI | ✅ | 2026-10-26 | D-104..107: memory-only nav refresh/identity guards, owner-of-parent tree controls, path-only breadcrumbs, native create/rename/Trash dialogs, drag/button reorder, mobile drawer and lazy schema-only table routes. Real desktop/mobile AT-201/208/213/full AT-112 and M1 AT-203 pass. 52 unit tests/304 locale keys, required PG18 and serial full check pass; image suite 11 passed/2 intentional exclusions. Initial gzip 178,390 bytes, no grid imports. Default-parallel cleanup/RSS caveats unchanged; exact record below and T1.12 prompt created. |
 | T1.12 | Share dialog UI | 🟨 | 2026-10-26 | M1 sharing implementation verified: D-108..112, target-owner native dialog, direct/inherited review, scoped minimal real directory, localized failures and race-safe nav/schema refresh. Real desktop/mobile sharing AT-204..211 scope and full AT-208..211 pass; full AT-204..207 rows/editors/shared views still await T1.14..T1.19, so In progress. 66 frontend tests/348 keys; required PG18 and scoped-serial full check pass; full image suite 11 passed/2 intentional exclusions, initial gzip 184,252 bytes/no initial grid. Default-parallel Suite cleanup and NFR-1 caveats retained. Exact record below; T1.13 prompt created. | |
 | T1.13 | Codec framework + batch 1 | 🟨 | 2026-10-26 | Implementation verified: 12 writable + five read-only system codecs/FieldKinds, typed DDL/defaults, exact wire/paste/copy, safe localized components, shared vectors and required uncached PG18. D-113..D-122; no migration/dependency/routes/grid integration. 384 frontend tests/397 keys, initial gzip 185755 bytes; serial full check passes, final image 11 passed/2 intentional exclusions. Default-parallel Suite cleanup and NFR-1 caveats remain. Full AT-301/302/304 awaits T1.14..T1.16; handoff recorded. |
-| T1.14 | Field API & UI | ⬜ | | |
+| T1.14 | Field API & UI | 🟨 | 2026-10-26 | Implementation verified: D-123..D-130 table-owner field create/rename/description/options/required/unique/default/reorder/soft-delete/display field with If-Match, typed DDL, exact preflights, select label rewrites and same-tx schema versions; lazy FieldPanel on the real schema page. 394 frontend tests/487 keys, required PG18, serial full check and production image 11 passed/2 intentional exclusions; real AT-202 field rename passes. Default-parallel cleanup and NFR-1 caveats remain. Full AT-301/303 await T1.15/T1.16 rows/grid; handoff and T1.15 prompt recorded. |
 | T1.15 | Basic query & rows API | ⬜ | | |
 | T1.16 | DataGrid component | ⬜ | | |
 | T1.17 | Copy/paste & fill-down | ⬜ | | |
@@ -86,7 +86,7 @@ Summary updated at each milestone end.
 |---|---|---|---|
 | AT-0xx Foundation | 6 | 3 | AT-002/003/004 pass. AT-001 Windows/Podman automated Compose/E2E passes; Linux/Docker pending. AT-005 export/manifests/Podman load pass, but Docker load/server/Caddy unverified. AT-006 shared harness, unavailable-DB skips and Windows gate pass; Linux/Docker pending. |
 | AT-1xx Auth & Admin | 17 | 9 | AT-101/103 and T1.5..T1.7 AT-104..110 pass (real production-image desktop/mobile plus PG18). T1.8 partial AT-111/112; uploads/workspace creation/navigation/table APIs remain blockers. Full AT-102/profile AT-116 remain pending. AT-117 includes team-default propagation, not real datetime/filter UI. T1.2/T1.8 remain in progress. |
-| AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface. T1.10 adds real HTTP/PG18 API passes for AT-201/203/213 and the table-rename half of AT-202; their sidebar/Trash UI, field rename and AT-204..208 UI parts await T1.11/T1.12/T1.14. |
+| AT-2xx Structure & Permissions | 13 | 4 | AT-209..212 pass at the API surface. T1.10 adds real HTTP/PG18 API passes for AT-201/203/213 and the table-rename half of AT-202; their sidebar/Trash UI, field rename and AT-204..208 UI parts await T1.11/T1.12/T1.14. T1.14 adds the real field-rename half of AT-202 (see the T1.14 evidence; this summary count is not recomputed here). |
 | AT-3xx Fields & Grid | 20 | 0 | |
 | AT-4xx Relations & Computed | 11 | 0 | |
 | AT-5xx Views | 12 | 0 | |
@@ -833,6 +833,34 @@ byte-identically with pinned 1.31.1.
   Exact commands, iterations/resources/cleanup and limitations are in
   [T1.13 record](task-prompts/T1.13.md#implementation-and-handoff-2026-10-26);
   [T1.14 prompt](task-prompts/T1.14.md) carries Field API/UI and T1.15 handoff.
+
+## T1.14 field implementation and handoff (2026-10-26)
+
+- D-123..D-130: table-owner field create/rename/description/options/required/
+  unique/default/reorder/soft-delete and display-field routes. Field `If-Match`,
+  512 KiB field bodies, `meta.tables` row lock, typed DDL, exact NULL/duplicate
+  preflights with optional fill, select label rewrites by choice id,
+  `pg_timezone_names` fixed-zone checks, and one field-version/schemaVersion
+  bump per commit. No migration or dependency.
+- A lazy FieldPanel on the real `/t/:tableId/v/:viewId` schema page has an
+  owner-only header menu and editor dialog plus a read-only list for others.
+  It serializes guarded requests and replaces or reloads the authoritative
+  schema. No rows, grid or synthetic data. Initial gzip **188707 bytes**
+  (<600000); FieldPanel is a 14.15 KB gzip lazy chunk.
+- Final **394 frontend tests / 21 files**, **487 matching keys**. Required
+  uncached PG18 field tests pass. Command-scoped `GOFLAGS=-p=1` full check:
+  lint **20.389 s**, test **2m8.869 s**, build **15.431 s**, total
+  **2m44.689 s**, all PASS. Default full check (twice) fails only Suite DROP
+  cleanup in codec/db/testdb.
+- Final production image `pt-e2e-qowqqq2peog2vkjqjydlq3ax2n`: **11 passed /
+  2 intentional exclusions (3.3m)**. It includes real owner field flows
+  (AT-202 Chinese rename, conflicts, select rewrite, display, reorder, delete)
+  and browser reader denials (API writer/reader/stranger/admin denials in PG18). Two earlier runs failed only the existing desktop
+  nav drag-order step. Desktop post-auth RSS **232652800** bytes,
+  mobile **185143296**: NFR-1 **not certified**.
+- T1.14 stays **In progress** until full AT-301/303 rows/grid scenarios pass
+  (T1.15/T1.16). [T1.14 record](task-prompts/T1.14.md#implementation-and-handoff-2026-10-26);
+  [T1.15 prompt](task-prompts/T1.15.md).
 
 ### Cleanup and next task
 

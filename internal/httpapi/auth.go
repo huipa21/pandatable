@@ -222,11 +222,17 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, value any) error {
+	return decodeJSONLimit(w, r, value, 4096)
+}
+
+// decodeJSONLimit is decodeJSON with an explicit body bound; only field bodies
+// use a larger one (D-125).
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, value any, limit int64) error {
 	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || contentType != "application/json" {
 		return apperr.New(415, "ERR_CONTENT_TYPE", "Content-Type must be application/json")
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
 		return apperr.New(400, "ERR_VALIDATION", "Invalid JSON request")

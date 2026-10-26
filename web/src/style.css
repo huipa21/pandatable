@@ -330,6 +330,151 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 
+.field-panel {
+  margin: 24px 0;
+}
+
+.field-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field-list {
+  list-style: none;
+  padding: 0;
+}
+
+.field-list > li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.field-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-name {
+  font-weight: 600;
+  min-width: 0;
+}
+
+.field-kind,
+.field-description,
+.field-status {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.field-description {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+}
+
+.field-badge {
+  font-size: 12px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.field-actions {
+  margin-inline-start: auto;
+}
+
+.field-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.field-dialog {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.field-dialog form,
+.field-settings,
+.field-choices {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.field-settings,
+.field-choices {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.field-dialog label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.field-dialog label.field-check,
+.field-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-choice input {
+  flex: 1;
+}
+
+.field-dialog .field-choice select {
+  width: auto;
+}
+
+.field-dialog input:not([type='checkbox']),
+.field-dialog select,
+.field-dialog textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.field-kind-fixed {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.field-kind-fixed dd {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  .field-dialog button,
+  .field-dialog select,
+  .field-dialog input:not([type='checkbox']) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
+
 @media (max-width: 767px) {
   .share-dialog button,
   .share-dialog select,

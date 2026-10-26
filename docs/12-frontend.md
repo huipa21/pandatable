@@ -69,7 +69,8 @@ Routes:
   first Grid (otherwise first visible view). Missing/mismatched parents/views,
   hidden or removed resources show neutral localized not-found copy. This is a
   schema-only shell: no grid import or row/query/field/view editing. T1.12 adds
-  sharing below without expanding that boundary.
+  sharing below without expanding that boundary. T1.14 adds the field panel
+  below; still no grid/rows.
 - en/zh-CN use static translation keys and precompiled runtime-only messages.
   Explicit local preferences, memory-only auth, production CSP and the
   <600,000-byte/no-initial-grid bundle gate remain unchanged. Unit mocks are
@@ -109,6 +110,28 @@ Routes:
   unimplemented rows/editors/shared-view APIs in full AT-204..207. D-112 expands
   only scenario/global harness bounds to 150/360 seconds, retaining request,
   assertion, login, dashboard and PG deadlines, one worker and zero retries.
+
+### T1.14 field panel (D-123..D-130)
+
+- The schema page lazily loads `components/fields/FieldPanel.vue` (its own
+  chunk; initial shell has no grid/registry imports). It lists live fields in
+  position order (system fields last, marked), with type, required/unique and
+  display-field badges. Readers/writers get the read-only list and a notice.
+- Table owners get "Add field" and a per-field native `<details>` header menu:
+  Edit, Move up/down (non-system), Use as display field (eligible non-system,
+  non-checkbox kinds) and Delete (confirm dialog, soft delete). System fields
+  allow name/description edits only.
+- The native modal editor (`fieldForm.ts` keeps pure draft/body logic) shows
+  name, kind (create only), description, kind options from the registry
+  (length/size/precision/scale, date/time formats, zone, choices with label/
+  color/remove/order), required/unique/default and an explicit "fill empty
+  cells with default" option. PATCH sends only changed members.
+- Requests are serialized, ten-second, aborted on unmount and send `If-Match`.
+  Success replaces state with the returned schema. A version conflict reloads
+  and re-seeds the open editor. 401/403/404 and uncertain outcomes (5xx/network)
+  reload the schema, and 403/404 also refresh nav. Errors are translated from
+  code/reason/option/count, never server text. Nav-revision refreshes keep the
+  current schema visible and only replace it with a same-table, not-older one.
 
 T0.5 introduced a separate `preferences` store for unauthenticated display
 preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2 provides the

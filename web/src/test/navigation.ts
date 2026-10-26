@@ -72,6 +72,7 @@ export function tableSchema(): TableSchema {
         isSystem: false,
         isRequired: false,
         isUnique: false,
+        default: null,
         position: 1024,
         version: 1,
       },

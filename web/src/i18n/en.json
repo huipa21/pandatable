@@ -66,7 +66,7 @@
       "write": "Write",
       "owner": "Owner"
     },
-    "tableShellNotice": "Table schema loaded. The grid, rows, field editing and view editing are not implemented yet."
+    "tableShellNotice": "Table schema loaded. Rows, the grid and view editing are not available yet."
   },
   "sharing": {
     "open": "Share",
@@ -385,7 +385,12 @@
     "ERR_MEMBERSHIP_EXISTS": "That user is already a member of this group.",
     "ERR_PRINCIPAL_DISABLED": "Disabled users cannot receive new grants or be added to a group. Refresh and choose an active user.",
     "ERR_PRINCIPAL_NOT_FOUND": "This user or group no longer exists. Search again or remove the obsolete grant.",
-    "ERR_LAST_OWNER": "This workspace must keep at least one active direct user owner. Add another user owner before removing or downgrading this owner."
+    "ERR_LAST_OWNER": "This workspace must keep at least one active direct user owner. Add another user owner before removing or downgrading this owner.",
+    "ERR_FIELD_NAME_CONFLICT": "Another field in this table already uses that name.",
+    "ERR_VERSION_CONFLICT": "This field changed elsewhere. The latest version has been loaded; review it and try again.",
+    "ERR_REQUIRED_HAS_EMPTY": "{count} existing rows are empty. Fill them first or choose a default to fill them.",
+    "ERR_UNIQUE_HAS_DUPLICATES": "{count} existing values are duplicated. Remove the duplicates first.",
+    "ERR_DISPLAY_FIELD_REQUIRED": "The table needs another eligible field to use as its display field first."
   },
   "field": {
     "kind": {
@@ -448,6 +453,105 @@
       "multilineHint": "Press Ctrl+Enter to save",
       "datePlaceholder": "YYYY-MM-DD",
       "datetimePlaceholder": "YYYY-MM-DD HH:mm"
+    },
+    "panel": {
+      "title": "Fields",
+      "add": "Add field",
+      "readOnly": "Only table owners can change fields.",
+      "system": "System",
+      "required": "Required",
+      "unique": "Unique",
+      "display": "Display field",
+      "actions": "Actions for field {name}",
+      "edit": "Edit",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "setDisplay": "Use as display field",
+      "delete": "Delete",
+      "confirmDelete": "Delete the field “{name}”? It is hidden from the table; stored data is retained.",
+      "confirm": "Delete field",
+      "createTitle": "New field",
+      "editTitle": "Edit field",
+      "name": "Name",
+      "description": "Description",
+      "kind": "Type",
+      "settings": "Settings",
+      "maxLength": "Maximum length (optional)",
+      "size": "Size",
+      "precision": "Total digits",
+      "scale": "Decimal places",
+      "displayDecimals": "Decimal places shown (optional)",
+      "thousandSep": "Use a thousands separator",
+      "dateFormat": "Date format",
+      "timeFormat": "Time format",
+      "timezone": "Time zone",
+      "fixedTz": "Fixed time zone (IANA name)",
+      "choices": "Options",
+      "choiceLabel": "Option {n} label",
+      "choiceColor": "Option {n} color",
+      "addChoice": "Add option",
+      "removeChoice": "Remove option {n}",
+      "defaultValue": "Default value",
+      "noDefault": "No default",
+      "checked": "Checked",
+      "unchecked": "Not checked",
+      "fillEmpty": "Fill existing empty values with the default",
+      "storageFixed": "Storage settings are fixed after creation.",
+      "systemNotice": "System fields are read-only; only the name and description can change.",
+      "save": "Save",
+      "create": "Create",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "saved": "Field saved.",
+      "deleted": "Field deleted.",
+      "displaySet": "Display field updated.",
+      "nameInvalid": "Enter a name of 1 to 100 characters without control characters.",
+      "descriptionInvalid": "The description must be at most 1000 characters without control characters.",
+      "defaultInvalid": "Default value: {message}",
+      "noChanges": "There are no changes to save.",
+      "reason": {
+        "system_field": "System fields allow only name and description changes.",
+        "constraint_unsupported": "This field type does not support that setting.",
+        "storage_change": "Storage settings cannot be changed after creation.",
+        "display_ineligible": "This field cannot be the display field."
+      },
+      "sizes": {
+        "small": "Small integer",
+        "int": "Integer",
+        "big": "Big integer",
+        "real": "Single precision",
+        "double": "Double precision"
+      },
+      "dateFormats": {
+        "iso": "2026-01-31",
+        "slash": "2026/01/31",
+        "us": "01/31/2026",
+        "eu": "31/01/2026"
+      },
+      "timeFormats": {
+        "h24": "24-hour",
+        "h12": "12-hour"
+      },
+      "timezones": {
+        "user": "Viewer time zone",
+        "fixed": "Fixed time zone"
+      },
+      "colors": {
+        "gray": "Gray",
+        "red": "Red",
+        "orange": "Orange",
+        "amber": "Amber",
+        "yellow": "Yellow",
+        "lime": "Lime",
+        "green": "Green",
+        "teal": "Teal",
+        "cyan": "Cyan",
+        "blue": "Blue",
+        "indigo": "Indigo",
+        "purple": "Purple",
+        "pink": "Pink"
+      },
+      "remove": "Remove"
     }
   }
 }

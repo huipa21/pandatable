@@ -446,11 +446,11 @@ Responses are no-store with the normal ten-second deadline/redacted errors.
 | PATCH/DELETE | `/workspaces/{id}` | PATCH `{ name?, icon?, color? }` (null clears icon/color); delete → trash |
 | POST | `/workspaces/{id}/books` | `{ name }` → 201 `{ book, eventId }` |
 | PATCH/DELETE | `/books/{id}` | PATCH `{ name?, index? }`; delete → trash |
-| POST | `/books/{id}/tables` | `{ name }` → 201 table schema + `eventId` (T1.14 adds `fields?`) |
-| PATCH/DELETE | `/tables/{id}` | PATCH `{ name?, index? }` (`displayFieldId` arrives with T1.14); delete → trash |
+| POST | `/books/{id}/tables` | `{ name }` → 201 table schema + `eventId` |
+| PATCH/DELETE | `/tables/{id}` | PATCH `{ name?, index?, displayFieldId? }` (display field needs table owner, T1.14); delete → trash |
 | GET | `/tables/{id}/schema` | table, fields, relations, views, schemaVersion, myLevel |
-| POST | `/tables/{id}/fields` | create field (incl. link → creates relation + reverse field) |
-| PATCH/DELETE | `/fields/{id}` | rename/options/constraints; delete → trash |
+| POST | `/tables/{id}/fields` | create field (T1.14 batch-1 kinds; link → relation + reverse field arrives with T2.3) |
+| PATCH/DELETE | `/fields/{id}` | rename/description/options/constraints/default/reorder; delete → soft delete; `If-Match` required |
 | POST | `/fields/{id}/convert:dry-run` | `{ uiType, pgType?, options }` |
 | POST | `/fields/{id}/convert` | `{ …, onFail: "abort"\|"null" }` |
 | POST | `/formula:check` | `{ tableId, expr }` → type / error position |
@@ -507,6 +507,38 @@ focus/visibility return and at a visible-tab 30-second interval (D-104).
 `GET /tables/{id}/schema`; no row/query/field/view mutation route is implied.
 Both locales translate `ERR_NOT_FOUND` without naming a resource type or
 distinguishing hidden from removed resources.
+
+#### T1.14 field contract (D-123..D-130)
+
+- `POST /tables/{id}/fields` `{name, uiType, description?, options?,
+  isRequired?, isUnique?, default?, fillEmpty?}` → 201; `PATCH /fields/{id}`
+  `{name?, description?, options?, isRequired?, isUnique?, default?, index?,
+  fillEmpty?}` → 200; `DELETE /fields/{id}` → 200. PATCH/DELETE require
+  `If-Match: <field version>`: missing/malformed is 400 `ERR_VALIDATION`, stale
+  409 `ERR_VERSION_CONFLICT`. Responses are `{field?, schema, eventId}` with the
+  full authoritative schema (no physical names). `PATCH /tables/{id}` accepts
+  `displayFieldId` (live, non-system, non-checkbox field of that table).
+- Every field and display-field mutation requires **effective owner of the
+  target table**, rechecked uncached under the D-080 locks plus
+  `meta.tables … FOR NO KEY UPDATE`. The admin role has no bypass. A
+  hidden/missing/trashed table or field is 404; visible non-owner is 403.
+- Field create/patch bodies use a separate strict **512 KiB** limit (D-125); all
+  other routes keep 4096 bytes. Origin/CSRF/session/deadline checks still apply.
+- `uiType` is a batch-1 writable kind; options/defaults are validated by the
+  bound codec (D-113..D-118) and `fixedTz` additionally by `pg_timezone_names`.
+  Names: trimmed 1..100 code points, unique among live fields under `lower()`
+  → 409 `ERR_FIELD_NAME_CONFLICT`. Descriptions ≤1000 code points.
+  `index` counts live non-system fields only.
+- Errors: 400 `ERR_VALIDATION` with `details.reason` (`system_field`,
+  `constraint_unsupported`, `storage_change`, `display_ineligible`, codec reasons)
+  and optional `details.option`; 409 `ERR_REQUIRED_HAS_EMPTY` /
+  `ERR_UNIQUE_HAS_DUPLICATES` with `details.count`; 409
+  `ERR_DISPLAY_FIELD_REQUIRED`; DDL conflicts/lock timeouts as T1.10. Resending
+  with `fillEmpty:true` and a default fills NULL cells in the same transaction.
+- Every successful mutation bumps the field `version` (if a field changed) and
+  `schemaVersion` once, with DDL, metadata and data rewrites in one transaction.
+  Field delete is soft (column/data kept, NOT NULL and physical default dropped,
+  display field reassigned). Restore/purge are M3; conversion is T2.12.
 
 ### Permissions
 | Method | Path | Notes |
