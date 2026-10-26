@@ -133,6 +133,15 @@ Routes:
   code/reason/option/count, never server text. Nav-revision refreshes keep the
   current schema visible and only replace it with a same-table, not-older one.
 
+### T1.15 row/query API boundary (D-132..D-135)
+
+`web/src/api/types.ts` mirrors the row/query DTOs: canonical bigint row IDs
+remain strings, row values are keyed by field UUID, and `fieldIds` carries the
+visible view order separately from the value map. Row constraint and schema-
+change codes are translated through static en/zh-CN keys. This task adds no
+grid, store, route, optimistic row state or initial grid import; production
+editing remains T1.16 and copy/paste remains T1.17.
+
 T0.5 introduced a separate `preferences` store for unauthenticated display
 preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2 provides the
 auth/profile backend and mirrored [API types](../web/src/api/types.ts); T1.3

@@ -428,6 +428,30 @@ CREATE TABLE b_k3j9x0a2mq.t_8fh2kd9s0p (
 - `updated_at/updated_by` set by the app in every UPDATE (no triggers — keeps writes explicit and cheap).
 - Indexes: PK; every FK column; auto-created for `is_unique`. Owners can't create arbitrary indexes in v1; the engine adds a btree index on a field when it's used in a shared view's sort/group *and* the table has > 10k rows (background, `CREATE INDEX CONCURRENTLY`). See D-020.
 
+### T1.15 row persistence (D-133..D-135)
+
+Row writes resolve only live non-system field UUIDs through `meta.fields`,
+decode each supplied value with its bound codec, and use parameterized SQL
+against generated/validated physical identifiers. Inserts omit unspecified
+user columns so their physical typed defaults apply; they set `created_at` and
+`updated_at` to one transaction timestamp and both authorship columns to the
+actor UUID. Patches set `updated_at`/`updated_by` and preserve creation values.
+Reads encode every live field (including system fields) through its codec;
+deleted fields never enter row I/O. Author UUIDs are returned as UUID values,
+not expanded through the owner-only sharing directory.
+
+Mutations use the D-080 workspace/book/table/actor lock order, reauthorize
+uncached, then hold a table `FOR SHARE` schema lock for the transaction.
+Read/query snapshots also hold `FOR SHARE`; this conflicts with field DDL's
+table `FOR NO KEY UPDATE`. A request therefore sees one stable schema or a
+sanitized lock/schema-conflict error, never a partially changed column layout.
+Bulk insert/patch/delete is one transaction and any invalid cell, constraint
+failure, or missing row rolls back the whole request. Row IDs remain canonical
+positive bigint decimal strings; there is no persisted row-version column.
+Bulk patches lock rows in ascending numeric ID order to prevent overlapping
+batches from taking row locks in opposite order, while returning rows in the
+request's original order (D-137).
+
 ### M:N junction
 
 ```sql

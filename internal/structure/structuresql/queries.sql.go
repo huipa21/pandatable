@@ -116,6 +116,34 @@ func (q *Queries) GetField(ctx context.Context, arg GetFieldParams) (GetFieldRow
 	return i, err
 }
 
+const getRowTable = `-- name: GetRowTable :one
+
+SELECT t.id, t.pg_name, b.pg_schema, t.schema_version
+FROM meta.tables t
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE t.id = $1 AND t.deleted_at IS NULL
+`
+
+type GetRowTableRow struct {
+	ID            pgtype.UUID
+	PgName        string
+	PgSchema      string
+	SchemaVersion int32
+}
+
+// T1.15 row/query metadata. Physical names are validated in Go before quoting.
+func (q *Queries) GetRowTable(ctx context.Context, id pgtype.UUID) (GetRowTableRow, error) {
+	row := q.db.QueryRow(ctx, getRowTable, id)
+	var i GetRowTableRow
+	err := row.Scan(
+		&i.ID,
+		&i.PgName,
+		&i.PgSchema,
+		&i.SchemaVersion,
+	)
+	return i, err
+}
+
 const getTable = `-- name: GetTable :one
 SELECT id, book_id, name, display_field_id, position, schema_version, created_at
 FROM meta.tables
@@ -143,6 +171,44 @@ func (q *Queries) GetTable(ctx context.Context, id pgtype.UUID) (GetTableRow, er
 		&i.Position,
 		&i.SchemaVersion,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getViewForQuery = `-- name: GetViewForQuery :one
+SELECT v.id, v.table_id, v.type, v.scope, v.owner_id, v.config,
+       t.pg_name, b.pg_schema, t.schema_version
+FROM meta.views v
+JOIN meta.tables t ON t.id = v.table_id AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE v.id = $1 AND v.deleted_at IS NULL
+`
+
+type GetViewForQueryRow struct {
+	ID            pgtype.UUID
+	TableID       pgtype.UUID
+	Type          string
+	Scope         string
+	OwnerID       pgtype.UUID
+	Config        []byte
+	PgName        string
+	PgSchema      string
+	SchemaVersion int32
+}
+
+func (q *Queries) GetViewForQuery(ctx context.Context, id pgtype.UUID) (GetViewForQueryRow, error) {
+	row := q.db.QueryRow(ctx, getViewForQuery, id)
+	var i GetViewForQueryRow
+	err := row.Scan(
+		&i.ID,
+		&i.TableID,
+		&i.Type,
+		&i.Scope,
+		&i.OwnerID,
+		&i.Config,
+		&i.PgName,
+		&i.PgSchema,
+		&i.SchemaVersion,
 	)
 	return i, err
 }
@@ -493,6 +559,47 @@ func (q *Queries) ListLiveUserFieldOrder(ctx context.Context, tableID pgtype.UUI
 	return items, nil
 }
 
+const listRowFields = `-- name: ListRowFields :many
+SELECT id, ui_type, pg_column, options, is_system
+FROM meta.fields
+WHERE table_id = $1 AND deleted_at IS NULL
+ORDER BY is_system, position, id
+`
+
+type ListRowFieldsRow struct {
+	ID       pgtype.UUID
+	UiType   string
+	PgColumn pgtype.Text
+	Options  []byte
+	IsSystem bool
+}
+
+func (q *Queries) ListRowFields(ctx context.Context, tableID pgtype.UUID) ([]ListRowFieldsRow, error) {
+	rows, err := q.db.Query(ctx, listRowFields, tableID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRowFieldsRow
+	for rows.Next() {
+		var i ListRowFieldsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UiType,
+			&i.PgColumn,
+			&i.Options,
+			&i.IsSystem,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTableFields = `-- name: ListTableFields :many
 SELECT id, name, description, ui_type, options, is_system, is_required, is_unique, default_json, position, version
 FROM meta.fields
@@ -623,6 +730,72 @@ func (q *Queries) LockFieldTable(ctx context.Context, id pgtype.UUID) (LockField
 		&i.PgName,
 		&i.PgSchema,
 		&i.DisplayFieldID,
+		&i.SchemaVersion,
+	)
+	return i, err
+}
+
+const lockRowTable = `-- name: LockRowTable :one
+SELECT t.id, t.pg_name, b.pg_schema, t.schema_version
+FROM meta.tables t
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE t.id = $1 AND t.deleted_at IS NULL
+FOR SHARE OF t
+`
+
+type LockRowTableRow struct {
+	ID            pgtype.UUID
+	PgName        string
+	PgSchema      string
+	SchemaVersion int32
+}
+
+func (q *Queries) LockRowTable(ctx context.Context, id pgtype.UUID) (LockRowTableRow, error) {
+	row := q.db.QueryRow(ctx, lockRowTable, id)
+	var i LockRowTableRow
+	err := row.Scan(
+		&i.ID,
+		&i.PgName,
+		&i.PgSchema,
+		&i.SchemaVersion,
+	)
+	return i, err
+}
+
+const lockViewForQuery = `-- name: LockViewForQuery :one
+SELECT v.id, v.table_id, v.type, v.scope, v.owner_id, v.config,
+       t.pg_name, b.pg_schema, t.schema_version
+FROM meta.views v
+JOIN meta.tables t ON t.id = v.table_id AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE v.id = $1 AND v.deleted_at IS NULL
+FOR SHARE OF v, t
+`
+
+type LockViewForQueryRow struct {
+	ID            pgtype.UUID
+	TableID       pgtype.UUID
+	Type          string
+	Scope         string
+	OwnerID       pgtype.UUID
+	Config        []byte
+	PgName        string
+	PgSchema      string
+	SchemaVersion int32
+}
+
+func (q *Queries) LockViewForQuery(ctx context.Context, id pgtype.UUID) (LockViewForQueryRow, error) {
+	row := q.db.QueryRow(ctx, lockViewForQuery, id)
+	var i LockViewForQueryRow
+	err := row.Scan(
+		&i.ID,
+		&i.TableID,
+		&i.Type,
+		&i.Scope,
+		&i.OwnerID,
+		&i.Config,
+		&i.PgName,
+		&i.PgSchema,
 		&i.SchemaVersion,
 	)
 	return i, err

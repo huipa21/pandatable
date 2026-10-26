@@ -265,6 +265,56 @@ export interface FieldMutation extends AuthMutation {
   schema: TableSchema
 }
 
+export type RowValue =
+  null | boolean | number | string | RowValue[] | { [key: string]: RowValue }
+
+export interface DataRow {
+  /** Canonical positive bigint decimal string (D-115). */
+  id: string
+  /** Values keyed by field UUID; physical PostgreSQL names are never exposed. */
+  fields: Record<string, RowValue>
+}
+
+export interface RowSort {
+  fieldId: string
+  direction: 'asc' | 'desc'
+}
+
+export interface RowQueryRequest {
+  offset?: number
+  limit?: number
+  sort?: RowSort
+  includeCount?: boolean
+}
+
+export interface RowQueryResult {
+  rows: DataRow[]
+  /** Visible field UUIDs in view-config order. */
+  fieldIds: string[]
+  total: number | null
+  schemaVersion: number
+}
+
+export interface RowInsertRequest {
+  rows: { fields: Record<string, RowValue> }[]
+}
+
+export interface RowPatchRequest {
+  rows: { id: string; fields: Record<string, RowValue> }[]
+}
+
+export interface RowDeleteRequest {
+  ids: string[]
+}
+
+export interface RowMutation extends AuthMutation {
+  rows: DataRow[]
+}
+
+export interface RowPatchMutation extends AuthMutation {
+  row: DataRow
+}
+
 export interface SystemMetric<T> {
   status: 'ready' | 'unavailable'
   reason?:

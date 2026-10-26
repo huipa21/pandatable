@@ -31,6 +31,12 @@ func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Post("/tables/{id}/fields", api.authenticated(api.createField))
 	router.Patch("/fields/{id}", api.authenticated(api.updateField))
 	router.Delete("/fields/{id}", api.authenticated(api.deleteField))
+	router.Post("/views/{id}/query", api.authenticated(api.queryRows))
+	router.Get("/tables/{id}/rows/{rowId}", api.authenticated(api.getRow))
+	router.Post("/tables/{id}/rows", api.authenticated(api.createRows))
+	router.Patch("/tables/{id}/rows", api.authenticated(api.patchRows))
+	router.Patch("/tables/{id}/rows/{rowId}", api.authenticated(api.patchRow))
+	router.Delete("/tables/{id}/rows", api.authenticated(api.deleteRows))
 }
 
 func (api *authHTTP) nav(w http.ResponseWriter, r *http.Request, user auth.User) {

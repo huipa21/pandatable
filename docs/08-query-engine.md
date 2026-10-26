@@ -97,6 +97,34 @@ LIMIT $n OFFSET $m;
 - Total count: separate `count(*)` with the same WHERE, cached per (view, filter hash, data version) for 5 s.
 - Link cells return at most 50 display items + total count.
 
+### T1.15 basic query implementation (D-132..D-135)
+
+`POST /views/{id}/query` currently implements an unfiltered single-table page
+and optional exact count; filters, search, grouping, aggregates, relations and
+data-version caching remain deferred. It accepts `offset` (0..1,000,000,
+default 0), `limit` (1..100, default 100), optional single-column
+`sort:{fieldId,direction}`, and `includeCount` (default true). The result is
+`{rows:[{id,fields}],fieldIds,total,schemaVersion}`; `total` is null when
+`includeCount:false`. Field IDs preserve the view's visible column order.
+Configured visible live fields retain their order; deleted/unknown/duplicate
+IDs are ignored, omitted live user fields append visible in metadata order,
+and system fields are hidden unless explicitly enabled in the view config.
+Sort uses the bound field descriptor and metadata column, NULLS LAST for both
+directions, then row id ascending. Count is a separate exact `count(*)` over
+the same snapshot and is optional so callers that only need a page can avoid
+that work.
+
+The query loads only the selected live table/view and field metadata, quotes
+validated generated identifiers, and binds all values with Squirrel. A
+repeatable-read transaction holds a table `FOR SHARE` lock for the view and
+table, preventing concurrent field DDL from changing columns mid-query.
+
+The opt-in Suite-owned PG18 fixture seeded 200,000 `generate_series` rows in
+579.7 ms; a 100-row page at offset 100,000 without count took 26.2 ms, and a
+100-row page plus exact count took 20.4 ms. These local-fixture timings are API
+evidence only, not the 2-vCPU/4-GB target-host NFR-2 result or full AT-312;
+that acceptance still requires T1.16's production grid and browser scenario.
+
 ## 4. Grouping (server-side)
 
 1. `POST /views/{id}/groups` with `path` (e.g. `[]` for top level, `["Open"]` for level-2 inside "Open") returns group buckets: `{key, count, aggregates}` using `GROUP BY` on the group expression under the full filter.

@@ -92,6 +92,12 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_UNIQUE_HAS_DUPLICATES', { count })
     case 'ERR_DISPLAY_FIELD_REQUIRED':
       return t('errors.ERR_DISPLAY_FIELD_REQUIRED')
+    case 'ERR_REQUIRED_FIELD':
+      return t('errors.ERR_REQUIRED_FIELD')
+    case 'ERR_UNIQUE_CONFLICT':
+      return t('errors.ERR_UNIQUE_CONFLICT')
+    case 'ERR_SCHEMA_CHANGED':
+      return t('errors.ERR_SCHEMA_CHANGED')
     case 'ERR_VALIDATION':
       return t('errors.ERR_VALIDATION')
     case 'ERR_UNAUTHENTICATED':

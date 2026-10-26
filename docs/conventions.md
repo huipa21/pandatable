@@ -61,6 +61,10 @@
   explicitly Go-only. Native field components use static localized errors,
   interpolation, revalidated links and escaped mailto address delimiters.
   Codecs are not permission checks or a reason to wire synthetic grid routes.
+- Row/query DTOs preserve bigint IDs as decimal strings and key values by
+  field UUID. View column order is an explicit ordered `fieldIds` list, not an
+  assumption about JSON object ordering. Do not resolve row authorship UUIDs
+  through the sharing directory.
 
 ## Naming
 - API JSON: camelCase. DB: snake_case. Physical user objects: `b_`, `t_`, `c_`, `j_`, `s_` prefixes + 10-char base32.

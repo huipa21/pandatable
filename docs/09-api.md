@@ -604,18 +604,28 @@ distinguishing hidden from removed resources.
 ### Rows & queries
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/views/{id}/query` | `{ offset, limit, search?, overrides?: {filter, sort}, groupPath? }` → `{ rows, total }` |
+| POST | `/views/{id}/query` | T1.15: `{ offset?, limit?, sort?: { fieldId, direction }, includeCount? }` → `{ rows: [{id, fields}], fieldIds, total, schemaVersion }`; limit ≤100, offset ≤1,000,000; total is null when count is disabled. |
 | POST | `/views/{id}/groups` | `{ path, search?, overrides? }` → buckets |
 | POST | `/views/{id}/aggregates` | footer values |
-| GET | `/tables/{id}/rows/{rowId}` | full row (all fields) |
-| POST | `/tables/{id}/rows` | `{ rows: [{fields}] }` (≤ 1000) |
-| PATCH | `/tables/{id}/rows` | bulk `{ rows: [{id, fields}] }` (paste/fill-down, ≤ 5000 cells) |
-| PATCH | `/tables/{id}/rows/{rowId}` | `{ fields }` |
-| DELETE | `/tables/{id}/rows` | `{ ids: [...] }` → returns deleted rows snapshot (for undo) |
+| GET | `/tables/{id}/rows/{rowId}` | T1.15: `{ id, fields }`, all live fields including read-only system values; row ID is a canonical bigint decimal string. |
+| POST | `/tables/{id}/rows` | T1.15: `{ rows: [{ fields: { fieldId: value } }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. Physical defaults apply to omitted values. |
+| PATCH | `/tables/{id}/rows` | T1.15 atomic bulk `{ rows: [{ id, fields }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. |
+| PATCH | `/tables/{id}/rows/{rowId}` | T1.15: `{ fields: { fieldId: value } }`; 4,096-byte request. |
+| DELETE | `/tables/{id}/rows` | T1.15 atomic `{ ids: [...] }`, ≤1,000 IDs/64 KiB; returns deleted row snapshots. |
 | POST | `/tables/{id}/rows:restore` | `{ rows: [snapshot] }` (undo of delete; same ids) |
 | POST | `/tables/{id}/rows/{rowId}/links/{fieldId}` | `{ add: [ids], remove: [ids] }` |
 | GET | `/tables/{id}/link-candidates/{fieldId}?q=&offset=` | rows of target table for picker |
 | POST | `/views/{id}/form-submit` | form view submission |
+
+T1.15 read requires effective table read and mutation requires effective table
+write/owner; admin role does not bypass data grants. Bulk writes are all-or-
+nothing. `created_by`/`updated_by` are UUIDs, not resolved user names.
+Bulk patch locks use ascending numeric row ID order while response order
+matches the request.
+NOT NULL and unique violations return sanitized `ERR_REQUIRED_FIELD` and
+`ERR_UNIQUE_CONFLICT`; schema lock/serialization outcomes are
+`ERR_DDL_LOCK_TIMEOUT` or `ERR_SCHEMA_CHANGED`. These implemented routes do
+not include the deferred filters/search, restore, links, groups or aggregates.
 
 ### Collaboration
 | GET/POST | `/tables/{id}/rows/{rowId}/comments` | |

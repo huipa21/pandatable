@@ -390,7 +390,10 @@
     "ERR_VERSION_CONFLICT": "该字段已在其他地方被修改。已加载最新版本，请检查后重试。",
     "ERR_REQUIRED_HAS_EMPTY": "现有 {count} 行为空。请先填写，或选择默认值进行填充。",
     "ERR_UNIQUE_HAS_DUPLICATES": "现有 {count} 个值重复。请先删除重复值。",
-    "ERR_DISPLAY_FIELD_REQUIRED": "请先为此表准备另一个可用作显示字段的字段。"
+    "ERR_DISPLAY_FIELD_REQUIRED": "请先为此表准备另一个可用作显示字段的字段。",
+    "ERR_REQUIRED_FIELD": "缺少必填字段。",
+    "ERR_UNIQUE_CONFLICT": "唯一字段中已存在此值。",
+    "ERR_SCHEMA_CHANGED": "表结构已更改，请重新加载后重试。"
   },
   "field": {
     "kind": {

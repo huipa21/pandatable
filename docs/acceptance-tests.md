@@ -343,6 +343,25 @@ Default-parallel Suite cleanup failures and post-auth RSS above 150 MB
 **In progress**. See the
 [exact completion record](task-prompts/T1.14.md#implementation-and-handoff-2026-10-26).
 
+### T1.15 row/query evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-301 | API scope passes; full pending | All 12 batch-1 writable kinds round-trip through native PG18 columns using codecs; inserts apply typed physical defaults when omitted. Owner grid entry, reload persistence and information_schema browser checks remain T1.16. |
+| AT-302 | API scope passes; full pending | Real row writes reject decimal excess nonzero precision, offset-free datetime input and unknown select labels with translated `ERR_VALIDATION`; the real HTTP route rejects an invalid integer. Visible cell error/no-save behavior remains T1.16. |
+| AT-303 | API scope passes; full pending | Required/unique errors map safely; default-on-insert is verified through real PG18 columns. Populated-table field setup and browser new-row defaults remain T1.16. |
+| AT-304 | Partial | Reads return read-only system fields; insert/patch author UUIDs and timestamps are maintained. Fields menu and correct UI last-editor values remain T1.16. |
+| AT-312 | API performance evidence only; full pending | Suite-owned PG18 `generate_series(1,200000)` fixture: seed 579.6752 ms; 100-row page at offset 100,000 with count disabled 26.1817 ms; page plus exact count 20.394 ms. Not the 2-vCPU/4-GB target-host result or browser first-paint/scroll acceptance; production grid is T1.16. |
+| HTTP security/rollback | API tests pass | Real protected HTTP tests cover query/CRUD, row permissions, bounded bodies, CSRF and foreign-Origin rejection; shared middleware deadline behavior is asserted in `auth_test.go`. PG18 tests cover atomic bulk rollback and field-DDL serialization. |
+
+Focused command `go run .\tools\ptdev test -run 'Rows|Query' -v` passed
+with required PG18 integration enabled (seven row/query top-level tests pass;
+the opt-in performance test is skipped unless enabled). Full gate, browser,
+resource and cleanup results are recorded in the
+[T1.15 completion record](task-prompts/T1.15.md#implementation-and-handoff-2026-10-26).
+T1.15 remains **In progress**: no full AT-301/302/303/304 or AT-312 claims are
+made before their real persisted-grid scenarios.
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

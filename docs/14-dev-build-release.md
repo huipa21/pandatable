@@ -167,6 +167,23 @@ T1.14's focused gate is
 The production `ptdev e2e` exercises real owner Field UI/API flows from
 `web/e2e/fields.ts` inside the existing navigation scenario.
 
+T1.15's required row/query integration gate uses the same explicit PG18 DSN
+and `PT_TEST_DATABASE_REQUIRED=1`:
+`go test ./internal/structure ./internal/httpapi -run 'Rows|Query' -count=1`.
+It covers batch-1 codecs against real physical columns, permissions,
+constraint/default handling, atomic rollback and schema DDL serialization,
+plus real HTTP CSRF/body/response behavior. The opt-in
+`PT_RUN_ROW_PERF=1 go test ./internal/structure -run '^TestRowQueryPerformance200k$' -count=1 -v`
+seeds a Suite-owned table with `generate_series(1,200000)` for API paging/count
+timings. It covers all 12 writable batch-1 kinds through real columns,
+precision/offset/select rejection, defaults, required/unique errors, owner/
+writer/reader/stranger/admin permissions, atomic rollback, DDL serialization,
+and actual HTTP query/CRUD, body bounds, CSRF and foreign-Origin rejection.
+The common protected-handler test verifies deadlines. This is a documented
+performance fixture, not browser acceptance for AT-312. Squirrel v1.5.4 is
+the convention-required SQL builder; identifiers remain validated metadata
+and values remain bound parameters.
+
 ### Shared integration helper
 
 Declare a package-level `testdb.Suite`, call `os.Exit(database.Run(m))` in

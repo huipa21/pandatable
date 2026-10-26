@@ -198,6 +198,44 @@ WHERE table_id = sqlc.arg(table_id)::uuid AND deleted_at IS NULL
   AND (scope = 'shared' OR owner_id = sqlc.arg(user_id)::uuid)
 ORDER BY position, id;
 
+-- T1.15 row/query metadata. Physical names are validated in Go before quoting.
+
+-- name: GetRowTable :one
+SELECT t.id, t.pg_name, b.pg_schema, t.schema_version
+FROM meta.tables t
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE t.id = $1 AND t.deleted_at IS NULL;
+
+-- name: LockRowTable :one
+SELECT t.id, t.pg_name, b.pg_schema, t.schema_version
+FROM meta.tables t
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE t.id = $1 AND t.deleted_at IS NULL
+FOR SHARE OF t;
+
+-- name: GetViewForQuery :one
+SELECT v.id, v.table_id, v.type, v.scope, v.owner_id, v.config,
+       t.pg_name, b.pg_schema, t.schema_version
+FROM meta.views v
+JOIN meta.tables t ON t.id = v.table_id AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE v.id = $1 AND v.deleted_at IS NULL;
+
+-- name: LockViewForQuery :one
+SELECT v.id, v.table_id, v.type, v.scope, v.owner_id, v.config,
+       t.pg_name, b.pg_schema, t.schema_version
+FROM meta.views v
+JOIN meta.tables t ON t.id = v.table_id AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE v.id = $1 AND v.deleted_at IS NULL
+FOR SHARE OF v, t;
+
+-- name: ListRowFields :many
+SELECT id, ui_type, pg_column, options, is_system
+FROM meta.fields
+WHERE table_id = $1 AND deleted_at IS NULL
+ORDER BY is_system, position, id;
+
 -- Navigation: the user's effective grants and the live workspaces they touch.
 -- Level arithmetic and path-only pruning happen in Go (internal/structure/nav.go)
 -- and are tested against the resolver. Disabled users and trashed ancestors
