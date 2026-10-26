@@ -106,6 +106,203 @@ a {
   padding: 80px 24px;
 }
 
+.app-body {
+  flex: 1;
+  display: flex;
+}
+
+.with-sidebar .app-main {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 32px 24px;
+}
+
+.sidebar-container {
+  width: 280px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+}
+
+.sidebar-desktop {
+  padding: 16px;
+}
+
+.nav-tree h2 {
+  font-size: 18px;
+}
+
+.nav-tree ul {
+  padding-left: 14px;
+  list-style: none;
+}
+
+.nav-tree > ul {
+  padding: 0;
+}
+
+.nav-tree li {
+  margin: 10px 0;
+}
+
+.nav-row,
+.nav-actions,
+.breadcrumbs,
+.view-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-row a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.nav-row[draggable='true'] {
+  cursor: grab;
+}
+
+.nav-tree .router-link-active,
+.view-links .router-link-exact-active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.path-only,
+.node-actions,
+.structure-name > span:last-child {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.node-actions summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.nav-actions {
+  margin: 10px 0;
+}
+
+.nav-tree button,
+.resource-page button,
+.welcome > button,
+.structure-dialog button,
+.sidebar-container > button,
+.drawer-content > button,
+.nav-error button {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.nav-error {
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+
+.trash-placeholder {
+  margin-top: 16px;
+}
+
+.structure-dialog,
+.nav-drawer {
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.structure-dialog {
+  width: min(460px, calc(100vw - 32px));
+  border-radius: 12px;
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.structure-name {
+  display: grid;
+  gap: 10px;
+}
+
+.structure-name input {
+  width: 100%;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  font: inherit;
+}
+
+.resource-page h1 {
+  overflow-wrap: anywhere;
+}
+
+.resource-list {
+  list-style: none;
+  padding: 0;
+}
+
+.resource-list li {
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+
+.schema-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+}
+
+.schema-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 767px) {
+  .app-body.with-sidebar {
+    flex-direction: column;
+  }
+
+  .sidebar-container {
+    width: 100%;
+    border-right: 0;
+  }
+
+  .drawer-toggle {
+    margin: 12px 24px;
+  }
+
+  .nav-drawer {
+    margin: 0;
+    width: min(340px, 90vw);
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 0;
+  }
+
+  .drawer-content {
+    min-height: 100%;
+    padding: 16px;
+  }
+}
+
 .welcome {
   text-align: center;
 }

@@ -19,6 +19,55 @@
     "localeError": "无法加载语言，请检查网络连接后重试。",
     "backToLogin": "返回欢迎页"
   },
+  "nav": {
+    "notFoundTitle": "这里还没有内容",
+    "notFoundDescription": "此页面暂不可用，请返回欢迎页。",
+    "title": "工作区导航",
+    "open": "打开工作区导航",
+    "close": "关闭工作区导航",
+    "refresh": "刷新导航",
+    "loading": "正在加载导航",
+    "stale": "导航刷新失败，当前显示的内容可能已过期。",
+    "empty": "还没有工作区。你可以创建工作区，或请所有者授予访问权限。",
+    "emptyBooks": "此工作区没有可见的工作簿。",
+    "emptyTables": "此工作簿没有可见的数据表。",
+    "emptyViews": "此数据表没有可见的视图。",
+    "pathOnly": "仅路径",
+    "pathNotice": "此处仅为共享资源提供路径上下文。只显示你可访问的下级资源，不提供设置或结构修改。",
+    "toggle": "展开或折叠 {name}",
+    "expanded": "−",
+    "collapsed": "+",
+    "actions": "{name} 的操作",
+    "create": {
+      "workspace": "新建工作区",
+      "book": "新建工作簿",
+      "table": "新建数据表"
+    },
+    "rename": "重命名",
+    "delete": "移至回收站",
+    "deleteNotice": "将“{name}”及其下级资源移至回收站？它们将从导航中消失。回收站功能实现之前，暂不提供恢复和永久删除操作。",
+    "trashUnavailable": "回收站（M3 提供）",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "dialogTitle": "编辑工作区结构",
+    "name": "名称",
+    "namePolicy": "去除首尾空格后需为 1–100 个字符，不得包含控制字符。",
+    "breadcrumbs": "资源路径",
+    "separator": "›",
+    "removedTitle": "资源未找到或已移除",
+    "unavailable": "无法加载此资源",
+    "displayField": "显示字段",
+    "noDisplayField": "未设置显示字段",
+    "views": "数据表视图",
+    "access": "你的权限",
+    "level": {
+      "none": "无权限",
+      "read": "只读",
+      "write": "读写",
+      "owner": "所有者"
+    },
+    "tableShellNotice": "已加载数据表结构。表格、记录、字段编辑和视图编辑功能尚未实现。"
+  },
   "settings": {
     "title": "设置",
     "appName": "应用名称",
@@ -63,7 +112,7 @@
     "title": "欢迎使用 PandaTable",
     "description": "与团队一起，为结构化数据找到归属。",
     "status": "团队专属空间",
-    "notice": "请使用管理员创建的账号登录。工作区工具将在后续任务中提供。"
+    "notice": "请使用管理员创建的账号登录。"
   },
   "auth": {
     "account": "账号导航",
@@ -72,7 +121,7 @@
     "signIn": "登录",
     "signOut": "退出登录",
     "homeTitle": "你的 PandaTable",
-    "homeNotice": "你已登录。工作区导航将在后续任务中提供。",
+    "homeNotice": "选择或创建工作区，整理你的工作簿和数据表。",
     "changePassword": "修改密码",
     "changeNotice": "使用临时密码登录后，必须先修改密码。修改密码将退出所有登录会话。",
     "passwordPolicy": "请使用 8–32 个 UTF-8 字节（汉字可能占多个字节）。密码不会去除首尾空格。",
@@ -270,10 +319,6 @@
     "requestStale": "过期，已忽略",
     "requestFailed": "失败"
   },
-  "nav": {
-    "notFoundTitle": "这里还没有内容",
-    "notFoundDescription": "此页面暂不可用，请返回欢迎页。"
-  },
   "errors": {
     "ERR_DDL_CONFLICT": "现有数据或约束与此结构更改冲突。",
     "ERR_DDL_LOCK_TIMEOUT": "表正忙，请稍后重试结构更改。",
@@ -291,7 +336,7 @@
     "ERR_LAST_ADMIN": "必须保留至少一名正常的管理员。",
     "ERR_RATE_LIMITED": "登录尝试过多，请一分钟后重试。",
     "ERR_CSRF": "安全检查失败，请刷新页面后重试。",
-    "ERR_NOT_FOUND": "请求的用户或用户组已不存在。",
+    "ERR_NOT_FOUND": "此资源不可用，可能已被移除，或你已无权访问。",
     "ERR_GROUP_NAME_CONFLICT": "该用户组名称已被使用。",
     "ERR_MEMBERSHIP_EXISTS": "该用户已是此用户组的成员。",
     "ERR_PRINCIPAL_DISABLED": "无法将已禁用的用户添加到用户组。"

@@ -19,6 +19,55 @@
     "localeError": "The language could not be loaded. Check your connection and try again.",
     "backToLogin": "Back to welcome"
   },
+  "nav": {
+    "notFoundTitle": "Nothing here yet",
+    "notFoundDescription": "This page is not available. Return to the welcome page to get started.",
+    "title": "Workspace navigation",
+    "open": "Open workspace navigation",
+    "close": "Close workspace navigation",
+    "refresh": "Refresh navigation",
+    "loading": "Loading navigation",
+    "stale": "Navigation could not be refreshed. Previously loaded items may be out of date.",
+    "empty": "No workspaces yet. Create one, or ask an owner to grant you access.",
+    "emptyBooks": "This workspace has no visible books.",
+    "emptyTables": "This book has no visible tables.",
+    "emptyViews": "This table has no visible views.",
+    "pathOnly": "Path only",
+    "pathNotice": "This is context for resources shared with you. Only accessible descendants are shown; settings and structure changes are unavailable here.",
+    "toggle": "Expand or collapse {name}",
+    "expanded": "−",
+    "collapsed": "+",
+    "actions": "Actions for {name}",
+    "create": {
+      "workspace": "New workspace",
+      "book": "New book",
+      "table": "New table"
+    },
+    "rename": "Rename",
+    "delete": "Move to Trash",
+    "deleteNotice": "Move “{name}” and its descendants to Trash? They will disappear from navigation. Restore and permanent deletion are not available until the Trash feature is implemented.",
+    "trashUnavailable": "Trash (available in M3)",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "dialogTitle": "Edit workspace structure",
+    "name": "Name",
+    "namePolicy": "Use 1–100 characters after trimming, without control characters.",
+    "breadcrumbs": "Resource breadcrumbs",
+    "separator": "›",
+    "removedTitle": "Resource not found or removed",
+    "unavailable": "Unable to load this resource",
+    "displayField": "Display field",
+    "noDisplayField": "No display field",
+    "views": "Table views",
+    "access": "Your access",
+    "level": {
+      "none": "No access",
+      "read": "Read",
+      "write": "Write",
+      "owner": "Owner"
+    },
+    "tableShellNotice": "Table schema loaded. The grid, rows, field editing and view editing are not implemented yet."
+  },
   "settings": {
     "title": "Settings",
     "appName": "Application name",
@@ -63,7 +112,7 @@
     "title": "Welcome to PandaTable",
     "description": "A shared home for your team's structured data.",
     "status": "Private team workspace",
-    "notice": "Sign in with an account created by your administrator. Workspace tools are coming next."
+    "notice": "Sign in with an account created by your administrator."
   },
   "auth": {
     "account": "Account navigation",
@@ -72,7 +121,7 @@
     "signIn": "Sign in",
     "signOut": "Sign out",
     "homeTitle": "Your PandaTable",
-    "homeNotice": "You are signed in. Workspace navigation will arrive in a later task.",
+    "homeNotice": "Choose a workspace or create one to organize your books and tables.",
     "changePassword": "Change password",
     "changeNotice": "Temporary passwords must be changed before using PandaTable. Changing your password signs out all your sessions.",
     "passwordPolicy": "Use 8–32 UTF-8 bytes (Chinese characters may use multiple bytes). Passwords are not trimmed.",
@@ -270,10 +319,6 @@
     "requestStale": "Stale; ignored",
     "requestFailed": "Failed"
   },
-  "nav": {
-    "notFoundTitle": "Nothing here yet",
-    "notFoundDescription": "This page is not available. Return to the welcome page to get started."
-  },
   "errors": {
     "ERR_DDL_CONFLICT": "Existing data or constraints conflict with this schema change.",
     "ERR_DDL_LOCK_TIMEOUT": "The table is busy. Try the schema change again shortly.",
@@ -291,7 +336,7 @@
     "ERR_LAST_ADMIN": "At least one active administrator must remain.",
     "ERR_RATE_LIMITED": "Too many sign-in attempts. Try again in one minute.",
     "ERR_CSRF": "The security check failed. Reload this page and try again.",
-    "ERR_NOT_FOUND": "The requested user or group no longer exists.",
+    "ERR_NOT_FOUND": "This resource is unavailable. It may have been removed or you may no longer have access.",
     "ERR_GROUP_NAME_CONFLICT": "That group name is already in use.",
     "ERR_MEMBERSHIP_EXISTS": "That user is already a member of this group.",
     "ERR_PRINCIPAL_DISABLED": "Disabled users cannot be added to a group."

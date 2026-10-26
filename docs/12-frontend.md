@@ -39,6 +39,41 @@ Routes:
 | `undo` | per-tab action stack |
 | `notifications` | unread list/count |
 
+### T1.11 navigation and schema-only table shell (D-104..D-107)
+
+- The authenticated shell (excluding setup and forced password change) has a
+  collapsible workspace/book/table sidebar. Below 768 px it is a modal drawer
+  with Escape/backdrop dismissal, focus restoration and close-on-navigation.
+  Account/admin links remain separate; administrative inventory never grants or
+  populates resource access.
+- The memory-only `nav` store preserves `/nav` order and effective levels,
+  clears/aborts on identity changes, and guards stale responses. Refresh on
+  mount, focus/visibility return, every 30 seconds while visible, after structure
+  mutations and resource 403/404. Ordinary reads coalesce; forced refresh aborts
+  an older read. Requests have ten-second client deadlines. Failed reads keep
+  previous data explicitly stale with retry; there is no realtime subsystem.
+- `/home` lists accessible workspace contexts and offers creation. `/w/:workspaceId`
+  and `/w/:wid/b/:bookId` show only visible children, breadcrumbs and explicit
+  empty states. Path-only ancestors are labeled context, with no structure
+  controls. Book creation/rename/delete/reorder needs workspace owner; table
+  creation/rename/delete/reorder needs book owner. Table ownership alone never
+  grants parent-structure controls.
+- Native modal forms create/rename resources with trimmed 1..100-code-point
+  names, no controls. Confirmed deletion honestly describes moving the item and
+  descendants to Trash; restore/purge are not implemented. The Trash entry is
+  disabled and scoped to M3. Same-parent book/table drag reorder sends `{index}`;
+  Move up/down buttons provide keyboard and touch alternatives. No workspace
+  ordering or cross-parent moves.
+- Lazy `/t/:tableId/v/:viewId` reads real schema and displays table name,
+  display-field name, visible views and `myLevel`. `/t/:tableId` replaces to the
+  first Grid (otherwise first visible view). Missing/mismatched parents/views,
+  hidden or removed resources show neutral localized not-found copy. This is a
+  schema-only shell: no grid import, row/query/field/view editing or sharing UI.
+- en/zh-CN use static translation keys and precompiled runtime-only messages.
+  Explicit local preferences, memory-only auth, production CSP and the
+  <600,000-byte/no-initial-grid bundle gate remain unchanged. Unit mocks are
+  lower-layer evidence only; browser fixtures use real accounts and APIs.
+
 T0.5 introduced a separate `preferences` store for unauthenticated display
 preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2 provides the
 auth/profile backend and mirrored [API types](../web/src/api/types.ts); T1.3

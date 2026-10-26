@@ -65,6 +65,12 @@ T1.10 delivers that orchestration as `internal/structure` plus the doc 09 routes
 (D-097..D-103). AT-201/203/213 pass at the API surface; their sidebar UI parts
 are T1.11, so T1.10 stays In progress until the linked scenarios pass.
 
+T1.11 (2026-10-26, D-104..D-107) closes that M1 browser boundary with real
+production-image desktop/mobile AT-201/208/213/full AT-112 and M1 AT-203 removal.
+T1.10/T1.11 are Done for M1 scope; AT-203 restoration remains M3. T1.8 still
+awaits upload enforcement, and T1.9 still awaits field/filter API acceptance.
+The schema-only table shell does not implement or import the production grid.
+
 ### Fields & rows
 | ID | Task | Details | Docs | AT | Est |
 |---|---|---|---|---|---|

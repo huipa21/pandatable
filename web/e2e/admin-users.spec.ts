@@ -4,6 +4,7 @@ import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyDashboard } from './dashboard'
 import { verifySettings } from './settings'
+import { verifyNavigation } from './navigation'
 
 async function signIn(page: Page, login: string, password: string) {
   await page.goto('/login')
@@ -190,14 +191,15 @@ async function verifyGroups(page: Page, suffix: string) {
     .getByRole('link', { name: en.groups.backUsers, exact: true })
     .click()
   await expect(page).toHaveURL(/\/admin\/users$/)
+  return createdUsers
 }
 
-test('AT-104..110 and scoped AT-111/112: users, groups, dashboard, settings and read-only inventory', async ({
+test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation', async ({
   page,
   browser,
   api,
 }, testInfo) => {
-  test.setTimeout(45_000)
+  test.setTimeout(75_000)
   const username = `alice-${testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop'}`
   const temporary = 'Temporary-password-123'
   const changed = 'Changed-password-123'
@@ -216,7 +218,7 @@ test('AT-104..110 and scoped AT-111/112: users, groups, dashboard, settings and 
   await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/users$/)
   await verifyDashboard(page)
-  await verifyGroups(
+  const participants = await verifyGroups(
     page,
     testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop',
   )
@@ -284,6 +286,8 @@ test('AT-104..110 and scoped AT-111/112: users, groups, dashboard, settings and 
     baseURL: process.env.PT_E2E_BASE_URL,
     viewport: page.viewportSize(),
     locale: 'en-US',
+    isMobile: testInfo.project.name.startsWith('mobile'),
+    hasTouch: testInfo.project.name.startsWith('mobile'),
   })
   const userPage = await userContext.newPage()
   const diagnostics = await observeBrowser(userPage)
@@ -393,6 +397,8 @@ test('AT-104..110 and scoped AT-111/112: users, groups, dashboard, settings and 
     expect(await forbidden.json()).toMatchObject({
       error: { code: 'ERR_PERMISSION_DENIED' },
     })
+
+    await verifyNavigation(page, userPage, browser, participants, username)
 
     await card
       .getByRole('button', { name: en.admin.reset, exact: true })

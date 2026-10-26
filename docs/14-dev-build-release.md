@@ -472,6 +472,40 @@ Sidebar UI parts of AT-201/203/213, full AT-112, AT-202 field rename and full
 AT-804 are **not** claimed; see
 [T1.10 completion record](task-prompts/T1.10.md#implementation-and-handoff-2026-10-26).
 
+### T1.11 navigation checks
+
+The navigation store/component/resource-route tests cover coalescing, forced
+refresh, stale responses and identity resets, owner-of-parent controls,
+path-only contexts, same-parent drag and button reorder, Unicode name bounds,
+localized failures, mobile drawer lifecycle, schema shortcut/view validation
+and explicit initial-load errors. Run from the root:
+
+```powershell
+pnpm --dir web exec vitest run src\stores\nav.test.ts src\components\navigation\navigation.test.ts src\pages\ResourcePage.test.ts src\router\guards.test.ts
+pnpm --dir web lint
+pnpm --dir web build
+go run .\tools\ptdev check
+$env:GOFLAGS = '-p=1'; go run .\tools\ptdev check
+$env:GOFLAGS = '-p=1'; go run .\tools\ptdev e2e
+```
+
+The expanded existing admin scenario reuses real Alice/admin sessions and the
+real Bob/Carol accounts, activating participants through login/password/login.
+No SQL, seeded workspace, mocked nav/schema/grant, auth bypass or changed login
+budget is used. Alice creates W/B/T via UI, reads real Grid/Name schema, renames
+to Chinese, reorders through drag or mobile buttons, and confirms/cancels Trash
+deletion. Bob's read-only controls, Carol's table-only ancestor pruning and
+workspace creation, admin sidebar/table-GET denial versus populated read-only
+inventory, and concurrent removal errors are checked on desktop/mobile.
+
+D-107 raises only the expanded scenario/global **harness** bounds to 75/180 s
+for additional serial actions. Existing request, assertion, dashboard <=10 s,
+login-budget and PG Suite cleanup deadlines are unchanged; one worker/no retries
+and fatal unexpected console/CSP diagnostics remain. Report default-parallel
+cleanup sensitivity separately from the command-scoped serial pass.
+Full AT-111/322, AT-117, AT-202 field rename and AT-804 filter APIs remain pending;
+M3 owns AT-203 restoration, not this M1 deletion scenario.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:
@@ -496,7 +530,7 @@ reported as startup failure, not hidden by connecting to another app.
 
 adjacent controls, no page overflow, and no console/page/CSP errors. API fixtures
 The real embedded shell is checked on desktop and mobile Chromium (one worker,
-zero retries, 120 s global bound): health/JS/history/404/HEAD/method boundaries,
+zero retries, 180 s global bound per D-107): health/JS/history/404/HEAD/method boundaries,
 English/Chinese and light/dark/system persistence, actual Naive UI styles,
 adjacent controls, no page overflow, and no console/page/CSP errors. AT-101 now
 uses the production image and the logged token from the unique owned app

@@ -39,6 +39,13 @@
 - Components PascalCase; composables `useXxx`; stores `useXxxStore`.
 - All visible strings via `t('…')`; keys in both `en.json` and `zh-CN.json`.
 - API types in `src/api/types.ts` mirror Go DTOs (kept in sync manually; consider generation later).
+- Navigation preserves server order/levels; structure controls use owner of the
+  parent, while sharing uses owner of the target scope. Path-only ancestors
+  never gain controls from visible descendants or the admin role.
+- Resource reads/mutations are deadline-bounded; nav/schema requests cancel or
+  ignore stale responses on route/identity changes. Failed refreshes are visibly
+  stale, never an empty success. Native dialogs and drag alternatives must remain
+  keyboard/touch accessible; names are validated by Unicode code points.
 
 ## Naming
 - API JSON: camelCase. DB: snake_case. Physical user objects: `b_`, `t_`, `c_`, `j_`, `s_` prefixes + 10-char base32.

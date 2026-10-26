@@ -11,6 +11,26 @@ export const router = createRouter({
     { path: '/login', component: () => import('../pages/LoginPage.vue') },
     { path: '/home', component: () => import('../pages/HomePage.vue') },
     {
+      path: '/w/:workspaceId',
+      component: () => import('../pages/ResourcePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/w/:wid/b/:bookId',
+      component: () => import('../pages/ResourcePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/t/:tableId/v/:viewId',
+      component: () => import('../pages/ResourcePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/t/:tableId',
+      component: () => import('../pages/ResourcePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/change-password',
       component: () => import('../pages/ChangePasswordPage.vue'),
     },
@@ -67,7 +87,9 @@ router.beforeEach(async (to) => {
     const admin = to.path === '/admin' || to.path.startsWith('/admin/')
     if (
       !auth.user &&
-      (admin || ['/home', '/change-password'].includes(to.path))
+      (admin ||
+        to.meta.requiresAuth ||
+        ['/home', '/change-password'].includes(to.path))
     )
       return '/login'
     if (admin && auth.user?.role !== 'admin') return '/home'

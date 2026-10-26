@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { NAlert, NButton, NButtonGroup } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { usePreferencesStore } from '../stores/preferences'
 import { useAuthStore } from '../stores/auth'
 import { errorMessage, RequestError } from '../api/client'
 import { useAppSettingsStore } from '../stores/appSettings'
+import NavSidebar from '../components/navigation/NavSidebar.vue'
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const appSettings = useAppSettingsStore()
 const router = useRouter()
+const route = useRoute()
+const navigationVisible = computed(
+  () => auth.user && !auth.user.mustChangePassword && route.path !== '/setup',
+)
 const error = ref<unknown>(null)
 const busy = ref(false)
 
@@ -122,12 +127,15 @@ async function logout() {
         {{ t('auth.signOut') }}
       </NButton>
     </nav>
-    <main class="app-main">
-      <NAlert v-if="error" type="error" role="alert">
-        {{ errorMessage(error) }}
-      </NAlert>
-      <slot />
-    </main>
+    <div :class="['app-body', { 'with-sidebar': navigationVisible }]">
+      <NavSidebar v-if="navigationVisible && auth.user" :key="auth.user.id" />
+      <main class="app-main">
+        <NAlert v-if="error" type="error" role="alert">
+          {{ errorMessage(error) }}
+        </NAlert>
+        <slot />
+      </main>
+    </div>
     <footer class="app-footer">{{ t('common.tagline') }}</footer>
   </div>
 </template>

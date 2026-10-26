@@ -144,6 +144,77 @@ export interface WorkspaceListing {
   total: number
 }
 
+export type ResourceKind = 'workspace' | 'book' | 'table'
+export type AccessLevel = 'none' | 'read' | 'write' | 'owner'
+
+export interface NavView {
+  id: string
+  name: string
+  type: string
+  scope: string
+}
+
+export interface NavTable {
+  id: string
+  name: string
+  position: number
+  schemaVersion: number
+  level: AccessLevel
+  views: NavView[]
+}
+
+export interface NavBook {
+  id: string
+  name: string
+  position: number
+  level: AccessLevel
+  pathOnly: boolean
+  tables: NavTable[]
+}
+
+export interface NavWorkspace {
+  id: string
+  name: string
+  icon: string | null
+  color: string | null
+  createdAt: string
+  level: AccessLevel
+  pathOnly: boolean
+  books: NavBook[]
+}
+
+export interface Navigation {
+  workspaces: NavWorkspace[]
+}
+
+export interface TableSchema {
+  table: {
+    id: string
+    bookId: string
+    name: string
+    displayFieldId: string | null
+    position: number
+    schemaVersion: number
+    createdAt: string
+  }
+  fields: {
+    id: string
+    name: string
+    description: string
+    uiType: string
+    options: Record<string, unknown>
+    isSystem: boolean
+    isRequired: boolean
+    isUnique: boolean
+    position: number
+    version: number
+  }[]
+  relations: unknown[]
+  views: (NavView & { locked: boolean; position: number; version: number })[]
+  schemaVersion: number
+  myLevel: AccessLevel
+}
+
 export interface SystemMetric<T> {
   status: 'ready' | 'unavailable'
   reason?:

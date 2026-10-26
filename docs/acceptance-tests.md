@@ -256,6 +256,26 @@ T1.10 stays **In progress** until the UI parts pass. Unit and required PG18 test
 not complete AT-111/117/322, AT-202 field rename or full AT-804. See the
 [T1.10 completion record](task-prompts/T1.10.md#implementation-and-handoff-2026-10-26).
 
+### T1.11 real browser evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-201 | Pass | Alice creates W/B/T through the real UI on desktop/mobile; sidebar hierarchy and real schema show Grid/Name, owner access, five system fields. Required PG18 API/catalog assertions also pass. No SQL browser fixtures or mocked resources. |
+| AT-208 | Pass | Real table-only read grant to Carol: exactly W/B/T, both ancestors path-only, no sibling books/tables or settings/structure controls. Direct path-only context opens only visible children. |
+| AT-213 | Pass | Carol creates W2 through UI with her real account; actual `/nav` reports direct resulting owner access. Fixture cleanup uses her own API rights. |
+| AT-112 | Pass | Alice creates W; independent admin sidebar excludes it and table-schema GET returns 404; populated read-only admin inventory lists W and Alice's ownership without links/controls. Replaces the earlier empty-inventory/API-only boundary. |
+| AT-203 | M1 pass; M3 pending | Cancel and confirmed real UI Trash deletion; tree node disappears immediately, table route is removed/not-found and schema GET is 404. Physical retention verified by PG18. Restore with data intact remains M3, not claimed. |
+| AT-202 | Table rename pass; field rename pending | Real UI Chinese workspace/book/table metadata renames plus required PG18 table-name/data preservation tests pass. Field rename requires T1.14. |
+| AT-802/803 | Preserved | 304 matching keys, negative inline-string fixtures, strict TS, no-inline/no-eval production CSP and real auth/CSRF regressions pass. |
+| AT-111/117/322/804 | Dependencies retained | Upload enforcement T2.2, real datetime/filter behavior and field/filter API injection scenarios remain pending. Sharing/editor UI parts of AT-204..211 remain T1.12 and later grid tasks. |
+
+T1.11 and T1.10 are Done for their M1 scope; AT-203's M3 portion stays pending.
+Full image suite **11 passed / 2 intentional mobile-grid exclusions (2.1m)**;
+52 frontend tests, required uncached PG18 and command-scoped serial full gate pass.
+Default-parallel Suite cleanup still fails separately and NFR-1 is not certified.
+Exact commands, failures, resources and cleanup:
+[T1.11 record](task-prompts/T1.11.md#implementation-and-handoff-2026-10-26).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

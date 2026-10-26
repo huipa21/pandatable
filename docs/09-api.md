@@ -466,6 +466,14 @@ for one hour. See deployment monitoring for scan safety and local-storage limits
   descendants. Order: workspaces by creation, books/tables by position then id.
   Trashed resources never appear and the admin role is not special.
 
+T1.11 consumes these routes without adding or changing HTTP contracts. Its
+memory-only sidebar refetches `/nav` after mutations and resource 403/404, on
+focus/visibility return and at a visible-tab 30-second interval (D-104).
+`eventId` is not a realtime subscription. The schema-only table route reads
+`GET /tables/{id}/schema`; no row/query/field/view mutation route is implied.
+Both locales translate `ERR_NOT_FOUND` without naming a resource type or
+distinguishing hidden from removed resources.
+
 ### Permissions
 | Method | Path | Notes |
 |---|---|---|

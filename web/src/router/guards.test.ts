@@ -29,6 +29,10 @@ function responses(user: { role: string; mustChangePassword: boolean } | null) {
 it('redirects unauthenticated and non-admin deep admin routes', async () => {
   responses(null)
   for (const path of [
+    '/w/workspace',
+    '/w/workspace/b/book',
+    '/t/table/v/view',
+    '/t/table',
     '/admin/dashboard',
     '/admin/settings',
     '/admin/workspaces',

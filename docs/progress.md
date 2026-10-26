@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7 Done. Admin users/groups/dashboard and login/forced-change UI verified; AT-101/103/104..110/803 pass. T1.8 settings/inventory implemented to available scope, but full AT-111/112 await upload/workspace APIs. T1.2 AT-102/116 and full AT-117 remain pending. ACL/grants API verified (AT-204..212 at the API surface); other business services remain future work. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7/T1.10/T1.11 Done for M1 scope. Real sidebar/schema-shell AT-201/208/213/full AT-112 and M1 AT-203 removal pass alongside auth/admin tests. T1.8 still awaits full AT-111/322 upload enforcement; T1.2 AT-102/116/full AT-117, field/filter AT-202/804, sharing/grid/rows and M3 restore remain pending. ACL/grants API verified (AT-204..212); no future UI acceptance inferred. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -33,10 +33,10 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.5 | Admin users | ✅ | 2026-10-26 | Admin-only list/search/create/PATCH/reset, normalized collision-safe identities, last-active-admin and self-management rules, atomic session revocation and ACL invalidation; responsive localized users UI and login/forced change. D-081..083, no migration/dependencies. Required PG18 tests x3, Windows check, production-image AT-104..108 desktop/mobile and 11/2 regression suite pass; T1.6 handoff recorded. |
 | T1.6 | Admin groups | ✅ | 2026-10-26 | Group CRUD/member API, localized group/user detail and immediate ACL invalidation; D-084..087, no migration/dependency. Required PG18 x3 and production desktop/mobile AT-109 pass; full image suite 11/2. Full check passes with command-scoped GOFLAGS=-p=1 after existing testdb cleanup deadline failures under parallel package load; exact caveat/evidence below. T1.7 handoff recorded. |
 | T1.7 | Admin dashboard | ✅ | 2026-10-26 | Read-only cached metrics and localized responsive dashboard; D-088..090, gopsutil v4.25.9, no migration. Required PG18 x3, non-root Linux filesystem tests and production desktop/mobile AT-110 pass; refresh 9904/9855.5 ms. Full image suite 11/2; complete check passes with GOFLAGS=-p=1, default-parallel cleanup caveat retained. Real post-auth RSS exceeds NFR-1 target; not certified. T1.8 handoff recorded. |
-| T1.8 | Admin settings & workspaces list | 🟨 | 2026-10-26 | Implemented available scope: seven atomic settings/default readers/public branding and read-only workspace inventory, D-091..093. Required PG18 x3, serial-package full check and final production image 11/2 pass. Full AT-111/112 await upload/workspace APIs; SQL fixtures are API evidence only. In progress, not Done; T1.9 handoff recorded. |
+| T1.8 | Admin settings & workspaces list | 🟨 | 2026-10-26 | Seven atomic settings/default readers/public branding and read-only workspace inventory, D-091..093. T1.11 now closes full AT-112 with real Alice UI creation/admin sidebar denial/table404/populated inventory. Full AT-111/322 still awaits T2.2 upload enforcement, so In progress. Earlier SQL fixtures remain API-only evidence; original checks/handoff preserved. |
 | T1.9 | DDL module | 🟨 | 2026-10-26 | Physical-only caller-pgx.Tx DDL, strict 50-bit identifiers, typed types/defaults and explicit constraint removal; D-094..096, no migration/dependency. Required PG18 x3 (100% statements), serial-package full check and production image 11/2 pass. Default-parallel cleanup failure remains; AT-202/full AT-804 await real table/field/filter APIs. T1.10 handoff recorded; not Done. |
-| T1.10 | Workspace/Book/Table API | 🟨 | 2026-10-26 | `internal/structure` + 11 routes: atomic workspace+owner grant, book/table metadata+DDL, system fields, Name display field, default Grid, reorder, soft delete, `/nav`, schema read; D-097..103, sqlc `structuresql`, no migration/dependency. Required PG18, default-parallel (known cleanup failure) and serial full check, and image E2E 11/2 pass. AT-201/203/213 pass at API level; sidebar UI (T1.11), AT-202 field rename, AT-112 browser half remain; not Done. T1.11 prompt created. |
-| T1.11 | Sidebar & navigation UI | ⬜ | | |
+| T1.10 | Workspace/Book/Table API | ✅ | 2026-10-26 | API implementation unchanged; T1.11 closes real M1 browser AT-201/203/213 and full AT-112. Required uncached PG18 and scoped-serial complete gate pass; default-parallel cleanup caveat persists. Done for M1 structure scope: AT-203 restoration remains M3, AT-202 field rename T1.14 and full AT-804 T2.6, not claimed. |
+| T1.11 | Sidebar & navigation UI | ✅ | 2026-10-26 | D-104..107: memory-only nav refresh/identity guards, owner-of-parent tree controls, path-only breadcrumbs, native create/rename/Trash dialogs, drag/button reorder, mobile drawer and lazy schema-only table routes. Real desktop/mobile AT-201/208/213/full AT-112 and M1 AT-203 pass. 52 unit tests/304 locale keys, required PG18 and serial full check pass; image suite 11 passed/2 intentional exclusions. Initial gzip 178,390 bytes, no grid imports. Default-parallel cleanup/RSS caveats unchanged; exact record below and T1.12 prompt created. |
 | T1.12 | Share dialog UI | ⬜ | | |
 | T1.13 | Codec framework + batch 1 | ⬜ | | |
 | T1.14 | Field API & UI | ⬜ | | |
@@ -1303,3 +1303,66 @@ command-scoped `GOFLAGS=-p=1` check **PASS** (2m15.5 s); image E2E **11 passed /
 commands, failures, limitations and cleanup:
 [T1.10 completion record](task-prompts/T1.10.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.11 Sidebar & navigation UI](task-prompts/T1.11.md)**.
+
+## T1.11 sidebar/navigation implementation and handoff (2026-10-26)
+
+**Done for the linked M1 scope**: AT-201/208/213 and full AT-112 now pass through
+real UI/accounts/APIs on production-image desktop/mobile Chromium. M1 AT-203
+cancel/confirmed deletion removes the table from the tree/schema immediately;
+M3 Trash restoration is explicitly unimplemented. This also closes T1.10's
+deferred M1 browser boundary; it does not claim field rename, uploads or filters.
+
+- Delivered D-104..D-107: typed nav/schema DTOs, memory-only coalescing/
+  invalidating nav store with ten-second deadlines and identity/stale-response
+  guards; collapsible parent-owner controls and path-only contexts; native
+  Unicode-name/Trash dialogs; same-parent drag and keyboard/touch move buttons;
+  <768 px modal drawer/focus restoration; real guarded workspace/book/table
+  routes, breadcrumbs/empty/error states and lazy schema-only table shell.
+  Admin inventory remains independent; no backend, migration or dependency change.
+- Required focused PG18 structure/httpapi **9.926 / 13.744 s PASS**, uncached,
+  explicit URL/required=1 and Suite-owned DBs. Final full scoped-serial gate:
+  lint **20.193 s**, test **1m34.177 s**, build **16.175 s**, total
+  **2m10.546 s PASS**; all **52 frontend tests / 16 files**, **304** matching
+  locale keys, initial gzip **178,390 bytes**, all assets **320,070 bytes**,
+  no initial grid chunks. ESLint/Prettier/strict TS/go vet pass.
+- Default-parallel full check: lint **21.520 s PASS**, test **26.577 s FAIL**,
+  build **16.261 s PASS**, total **1m4.358 s**. Only the existing owned-DB
+  cleanup sensitivity in `internal/db` and `internal/testdb` fails. No PG
+  assertions/timeouts changed; default-parallel is not certified.
+- Final unique production project **pt-e2e-olyqy6ymvbo3b7ptpbgwwi6z34**:
+  **11 passed / 2 intentional mobile-grid exclusions (2.1m)**, combined admin/
+  navigation desktop **47.3 s**, mobile **40.2 s**; setup **6.7 s**.
+  Real Alice UI hierarchy/default Grid/Name, Chinese renames, both locales/
+  light/dark, button/drag reorder, Bob read-only and 403, Carol table-only
+  three-node tree/path-only controls and owner workspace creation, admin empty
+  sidebar/404 vs populated owner inventory, deletion/cancel and concurrent 404
+  all pass. Console/CSP diagnostics clean. No browser SQL or mocked nav/schema.
+- Five image attempts are recorded honestly: initial setup-status selector
+  collision (fixed by keeping setup sidebar-free); premature URL fixture reads
+  (await actual routes and clean owned workspaces in finally); a stale-removal
+  negative helper incorrectly waiting for dialog success; then the first full
+  run's two obsolete unauthenticated table-route expectations (now test login
+  guard plus a genuinely unknown route). Final full run passes unchanged
+  acceptance assertions. D-107 changes only expanded harness bounds to
+  75/180 s; request/dashboard/assertion/PG deadlines and login budget stay fixed.
+- Image **163,585,503 bytes**, linux/amd64, UID/GID10001:10001. Health ready
+  **6.903 s**; startup **74.01 MB / 536.9 MB, 6.47% CPU**; separate live
+  observation **90.09 MB, 8.54% CPU**. Actual post-auth dashboard RSS
+  **168,689,664 / 172,576,768 bytes** still exceeds 150 MB; **NFR-1 not
+  certified**. Refresh **9834.1 / 9837.9 ms**, container limit 536,870,912 bytes,
+  VM-visible RAM 16,613,822,464 bytes (not the target host). No forced GC/hash
+  weakening, normal-load/Linux-Docker/physical-device/server certification.
+- Final Suite DBs/connections **0 / 0**. All five owned E2E projects' containers,
+  volumes/networks and unique image tags are absent. Retained `pt-dev-pgdata`,
+  `pt-dev-db`, original latest image id `151798547521`, unrelated stopped
+  buildkit/anonymous storage/networks and Caddy preserved. Dev DB and VM restored
+  **stopped**. No broad prune/reset, remote deployment or hosted CI.
+
+Go1.27.0, Node24.15.0, pnpm11.2.2, PG18.6, Podman5.8.2/5.8.4,
+Vue3.5.44/Pinia3.0.4/Router4.6.4/NaiveUI2.45.3/vue-i18n11.4.16,
+Vite7.3.7/TS5.9.3/Vitest4.1.12, Playwright1.64.1/Chromium156.0.8078.4.
+golangci-lint remains absent (explicit warning); no optional-linter/race claim.
+Exact commands/failures/log names:
+[T1.11 completion record](task-prompts/T1.11.md#implementation-and-handoff-2026-10-26).
+Next: **[T1.12 Share dialog UI](task-prompts/T1.12.md)**. Full AT-111/322 uploads,
+AT-117 datetime/filter, AT-202 field rename and AT-804 filters remain pending.

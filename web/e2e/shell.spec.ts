@@ -40,6 +40,11 @@ test('real embedded shell, health, assets and history boundaries', async ({
   expect(deep.status()).toBe(200)
   expect(await deep.text()).toBe(await index.text())
   await page.goto('/t/future/v/example')
+  await expect(page).toHaveURL(/\/login$/)
+  await expect(
+    page.getByRole('heading', { name: en.login.title }),
+  ).toBeVisible()
+  await page.goto('/not-yet-implemented')
   await expect(
     page.getByRole('heading', { name: en.nav.notFoundTitle }),
   ).toBeVisible()

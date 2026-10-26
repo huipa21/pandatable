@@ -77,6 +77,10 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_NOT_FOUND')
     case 'ERR_SYSTEM_UNAVAILABLE':
       return t('errors.ERR_SYSTEM_UNAVAILABLE')
+    case 'ERR_DDL_CONFLICT':
+      return t('errors.ERR_DDL_CONFLICT')
+    case 'ERR_DDL_LOCK_TIMEOUT':
+      return t('errors.ERR_DDL_LOCK_TIMEOUT')
     default:
       return t('errors.ERR_INTERNAL')
   }
