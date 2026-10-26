@@ -51,6 +51,13 @@
   membership disclosure. Direct mutations require review and authoritative
   re-fetch, including after uncertain writes. Keep inherited grants read-only
   and distinguish per-principal inheritance from user/group effective access.
+- Batch-1 fields bind pure definitions in `web/src/fields`; Go binds the
+  matching `internal/codec` registry. Never coerce bigint/decimal strings or
+  datetime microseconds through JS numbers. Keep both implementations aligned
+  with shared `internal/codec/testdata/vectors.json`; raw JSON-only cases are
+  explicitly Go-only. Native field components use static localized errors,
+  interpolation, revalidated links and escaped mailto address delimiters.
+  Codecs are not permission checks or a reason to wire synthetic grid routes.
 
 ## Naming
 - API JSON: camelCase. DB: snake_case. Physical user objects: `b_`, `t_`, `c_`, `j_`, `s_` prefixes + 10-char base32.

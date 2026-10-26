@@ -386,5 +386,68 @@
     "ERR_PRINCIPAL_DISABLED": "无法向已禁用的用户新增授权或将其加入用户组。请刷新并选择正常用户。",
     "ERR_PRINCIPAL_NOT_FOUND": "此用户或用户组已不存在。请重新搜索或移除失效的授权。",
     "ERR_LAST_OWNER": "工作区必须保留至少一位正常的直接用户所有者。请先添加另一位用户所有者，再移除当前所有者或降低其权限。"
+  },
+  "field": {
+    "kind": {
+      "text": "文本",
+      "long_text": "长文本",
+      "integer": "整数",
+      "decimal": "小数",
+      "float": "数字",
+      "checkbox": "复选框",
+      "date": "日期",
+      "datetime": "日期时间",
+      "single_select": "单选",
+      "multi_select": "多选",
+      "email": "电子邮件",
+      "url": "网址",
+      "id": "行 ID",
+      "created_at": "创建时间",
+      "created_by": "创建人",
+      "updated_at": "最后修改时间",
+      "updated_by": "最后修改人"
+    },
+    "error": {
+      "unknown_kind": "不支持此字段类型。",
+      "invalid_options": "字段设置无效。",
+      "invalid_type": "该值的类型与字段不符。",
+      "invalid_text": "文本包含不允许的字符。",
+      "too_long": "值过长。",
+      "invalid_integer": "请输入整数。",
+      "invalid_decimal": "请输入小数。",
+      "invalid_number": "请输入数字。",
+      "imprecise_number": "该数字无法精确表示，请以文本形式输入。",
+      "out_of_range": "值超出支持的范围。",
+      "too_many_decimals": "小数位数超过字段设置。",
+      "invalid_boolean": "请输入是或否。",
+      "invalid_date": "请输入有效日期。",
+      "invalid_datetime": "请输入有效的日期和时间。",
+      "nonexistent_local_time": "由于夏令时调整，该本地时间不存在。",
+      "timezone_required": "需要时区才能解析此时间。",
+      "unknown_choice": "字段中不存在此选项。",
+      "duplicate_choice": "同一选项被选择了多次。",
+      "invalid_email": "请输入有效的电子邮件地址。",
+      "invalid_url": "请输入有效的网址。",
+      "url_scheme": "仅允许 http 和 https 链接。",
+      "read_only": "此字段为只读。"
+    },
+    "checkbox": {
+      "checked": "已勾选",
+      "unchecked": "未勾选"
+    },
+    "select": {
+      "unknown": "此选项已不在字段配置中"
+    },
+    "user": {
+      "unknown": "未知用户（{id}）"
+    },
+    "editor": {
+      "value": "字段值",
+      "none": "未选择",
+      "apply": "应用",
+      "multilineHint": "按 Ctrl+Enter 保存",
+      "datePlaceholder": "YYYY-MM-DD",
+      "datetimePlaceholder": "YYYY-MM-DD HH:mm"
+    }
   }
 }

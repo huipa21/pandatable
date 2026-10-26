@@ -47,7 +47,7 @@ The config is validated server-side against current fields; references to delete
 | Field kinds | Operators |
 |---|---|
 | text-like (text, long_text, email, url, phone) | is, is_not, contains, not_contains, starts_with, ends_with, is_empty, is_not_empty |
-| numeric (integer, decimal, float, currency, percent, rating, autonumber) | =, ≠, <, ≤, >, ≥, between, is_empty, is_not_empty |
+| numeric (integer, decimal, float, currency, percent, rating, autonumber) | eq, neq, lt, lte, gt, gte, between, is_empty, is_not_empty |
 | date/datetime | is, is_not, before, after, on_or_before, on_or_after, between, is_within (past/next N days, this week/month/year), is_empty, is_not_empty |
 | time, duration | =, <, >, between, is_empty |
 | checkbox | is_checked, is_not_checked |
@@ -62,6 +62,15 @@ The config is validated server-side against current fields; references to delete
 Relative values: `today`, `yesterday`, `tomorrow`, `me`, `n_days_ago:N`, `n_days_from_now:N`, evaluated in the **requesting user's timezone** (user setting, default app `default_timezone` = Asia/Shanghai), e.g. `today` on a datetime field → `c >= ($tz_midnight) AND c < ($tz_midnight + 1 day)` computed in Go and bound as timestamptz; `date` fields compare against the user's local date. DB sessions run in UTC (D-049).
 
 Text comparisons are case-insensitive (`ILIKE` / `lower()`), with `%`/`_` escaped.
+
+T1.13 only declares batch-1 `FilterOps`/`Aggregates` in the Go and frontend
+registries (D-120); no query/filter/aggregate compiler is implemented.
+System id uses numeric capabilities, system timestamps temporal capabilities,
+and authorship UUIDs use is/is_not/has_any_of/is_empty/is_not_empty.
+NOT NULL system columns omit empty operators. Consumers must intersect
+operations with the bound field's declared capabilities; do not infer support
+from a raw PG type. Bigint/decimal filter values must retain their string wire
+precision, and relative temporal compilation still requires the user's zone.
 
 ## 3. Generated SQL shape
 

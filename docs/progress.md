@@ -38,7 +38,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.10 | Workspace/Book/Table API | ✅ | 2026-10-26 | API implementation unchanged; T1.11 closes real M1 browser AT-201/203/213 and full AT-112. Required uncached PG18 and scoped-serial complete gate pass; default-parallel cleanup caveat persists. Done for M1 structure scope: AT-203 restoration remains M3, AT-202 field rename T1.14 and full AT-804 T2.6, not claimed. |
 | T1.11 | Sidebar & navigation UI | ✅ | 2026-10-26 | D-104..107: memory-only nav refresh/identity guards, owner-of-parent tree controls, path-only breadcrumbs, native create/rename/Trash dialogs, drag/button reorder, mobile drawer and lazy schema-only table routes. Real desktop/mobile AT-201/208/213/full AT-112 and M1 AT-203 pass. 52 unit tests/304 locale keys, required PG18 and serial full check pass; image suite 11 passed/2 intentional exclusions. Initial gzip 178,390 bytes, no grid imports. Default-parallel cleanup/RSS caveats unchanged; exact record below and T1.12 prompt created. |
 | T1.12 | Share dialog UI | 🟨 | 2026-10-26 | M1 sharing implementation verified: D-108..112, target-owner native dialog, direct/inherited review, scoped minimal real directory, localized failures and race-safe nav/schema refresh. Real desktop/mobile sharing AT-204..211 scope and full AT-208..211 pass; full AT-204..207 rows/editors/shared views still await T1.14..T1.19, so In progress. 66 frontend tests/348 keys; required PG18 and scoped-serial full check pass; full image suite 11 passed/2 intentional exclusions, initial gzip 184,252 bytes/no initial grid. Default-parallel Suite cleanup and NFR-1 caveats retained. Exact record below; T1.13 prompt created. | |
-| T1.13 | Codec framework + batch 1 | ⬜ | | |
+| T1.13 | Codec framework + batch 1 | 🟨 | 2026-10-26 | Implementation verified: 12 writable + five read-only system codecs/FieldKinds, typed DDL/defaults, exact wire/paste/copy, safe localized components, shared vectors and required uncached PG18. D-113..D-122; no migration/dependency/routes/grid integration. 384 frontend tests/397 keys, initial gzip 185755 bytes; serial full check passes, final image 11 passed/2 intentional exclusions. Default-parallel Suite cleanup and NFR-1 caveats remain. Full AT-301/302/304 awaits T1.14..T1.16; handoff recorded. |
 | T1.14 | Field API & UI | ⬜ | | |
 | T1.15 | Basic query & rows API | ⬜ | | |
 | T1.16 | DataGrid component | ⬜ | | |
@@ -802,6 +802,37 @@ byte-identically with pinned 1.31.1.
 - Cache/query behavior: one SQL statement per uncached lookup; repeated lookups
   within TTL and epoch cost zero queries; a committed mutation invalidates, a
   rejected one does not.
+
+## T1.13 codec implementation and handoff (2026-10-26)
+
+- D-113..D-122 define bound typed Go codecs and matching pure frontend
+  FieldKinds for 12 writable and five read-only system kinds. Strict options,
+  native DDL/defaults, exact bigint/decimal/microsecond wire values, nullable
+  normalization, DST/date boundaries, choices and safe email/URL components
+  are implemented without new dependencies, migrations or production routes.
+- Shared vectors and native Suite-owned PG18 tests pass; final required
+  uncached PG-only run **0.959 s**. Final frontend **384 tests / 20 files**,
+  **397 matching keys**, lint/strict TS/i18n pass. Initial gzip **185755 bytes**
+  (<600000), no initial grid/codec registry imports; all assets **327517 bytes**.
+- Final command-scoped `GOFLAGS=-p=1` full check passes: lint **26.446 s**,
+  tests **2m12.244 s**, build **13.568 s**, total **2m52.258 s**. Default full
+  check separately fails only Suite cleanup in codec/db/testdb, total
+  **58.936 s**; no deadline/assertion relaxation. golangci-lint absent (warning).
+- Final production-image project `pt-e2e-obbw2axpyjzzmksipdtklhfnpq`:
+  **11 passed / 2 intentional mobile-grid exclusions (3.5m)**. Real auth/
+  admin/navigation/sharing fixtures, both locales/themes and strict diagnostics
+  pass. An intermediate repeat failed the existing desktop nav drag-order
+  assertion; recorded without changing/retrying assertions or harness bounds.
+- Final measured RSS desktop **169738240 / 169869312**, mobile
+  **181809152 / 181809152 bytes**, so NFR-1 remains **not certified**.
+  Disposable stacks/tagged images removed; retained DB and VM restored stopped,
+  two original containers/37 volumes/one network preserved. Six new build-stage
+  cache images retained (137 versus 131), no broad prune or unrelated deletion.
+- T1.13 remains **In progress** until full AT-301/302/304 real field/row/grid/
+  persistence/Fields-menu scenarios pass. No codec/SQL/mock acceptance proxy.
+  Exact commands, iterations/resources/cleanup and limitations are in
+  [T1.13 record](task-prompts/T1.13.md#implementation-and-handoff-2026-10-26);
+  [T1.14 prompt](task-prompts/T1.14.md) carries Field API/UI and T1.15 handoff.
 
 ### Cleanup and next task
 

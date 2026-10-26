@@ -307,6 +307,26 @@ post-auth RSS still exceeds 150 MB, so NFR-1 is not certified. T1.12 remains
 future row/editor functionality passed. Exact commands, failures/resources and
 owned-only cleanup: [T1.12 record](task-prompts/T1.12.md#implementation-and-handoff-2026-10-26).
 
+### T1.13 codec evidence (2026-10-26; lower-layer only)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-301 | Codec/PG scope passes; full pending | All 12 batch-1 writable kinds and five system kinds bind with matching Go/frontend options/capabilities. Suite-owned native PG18 columns round-trip real typed values and validate descriptors/defaults/constraints. Real owner field creation/grid entry/persistence/reload requires T1.14..T1.16. |
+| AT-302 | Codec/component scope passes; full pending | Shared invalid-input/precision/range/Unicode/date/DST/select/email/URL vectors, localized native editor failures, IME handling and escaping pass. No real row API exists to prove invalid grid values are not saved. |
+| AT-304 | Codec/component scope passes; full pending | System fields reject writes/defaults, expose no editor and encode actual PG system columns. Existing table schema creates hidden metadata; Fields-menu visibility/last-editor persistence awaits real fields/rows/grid. |
+| AT-303 | Preparatory evidence only | Typed literal defaults, checkbox forced NOT NULL/default and native range failures pass. No real required/unique/default Field UI or populated-row workflow yet (T1.14+). |
+| AT-112/201/203/208..211/213 | Existing M1 evidence preserved | Final unchanged production-image account/navigation/sharing/admin suite passes. Full row/editor AT-204..207 and M3 restore remain pending. |
+| AT-111/117/202/322/804 | Dependencies retained | Upload enforcement T2.2, real datetime/filter behavior, T1.14 field rename and T2.6 filter/API injection scenarios are not passed by codecs. |
+
+Final **384 frontend tests / 20 files**, **397 locale keys**, required uncached
+PG18, serial full check and production image **11 passed / 2 intentional
+mobile-grid exclusions (3.5m)**. Initial gzip **185755 bytes**, no initial grid
+imports. Default-parallel Suite cleanup failures and post-auth RSS above 150 MB
+remain explicit; NFR-1 is not certified. An intermediate browser run failed the
+existing desktop nav drag-order assertion; no tests/budgets were weakened.
+T1.13 stays **In progress**. See the
+[exact completion record](task-prompts/T1.13.md#implementation-and-handoff-2026-10-26).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

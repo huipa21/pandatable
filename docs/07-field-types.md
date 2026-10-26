@@ -15,9 +15,9 @@ Each field has a **UI type** (how it behaves in the app) backed by a **PostgreSQ
 | Percent | `percent` | `numeric(7,4)` | `displayDecimals` | stored as fraction (0.25 = 25%) |
 | Rating | `rating` | `smallint` | `max: 5`, `icon: star` | CHECK 0..max |
 | Checkbox | `checkbox` | `boolean` | | NOT NULL DEFAULT false |
-| Date | `date` | `date` | `format` | |
+| Date | `date` | `date` | `dateFormat: iso\|slash\|us\|eu` | |
 | Time | `time` | `time` | `format: 24h\|12h` | |
-| Date & time | `datetime` | `timestamptz` | `format`, `timezone: user\|fixed`, `fixedTz?` | stored UTC; displayed in the viewing user's timezone (default Asia/Shanghai) unless field has a fixed timezone |
+| Date & time | `datetime` | `timestamptz` | `dateFormat`, `timeFormat: 24h\|12h`, `timezone: user\|fixed`, `fixedTz?` | stored UTC; displayed in the viewing user's timezone (default Asia/Shanghai) unless field has a fixed timezone |
 | Duration | `duration` | `interval` | `format: h:mm\|h:mm:ss\|human` | |
 | Single select | `single_select` | `text` | `choices: [{id, label, color}]` | value stored = label; rename choice → `UPDATE` values in same tx |
 | Multi select | `multi_select` | `text[]` | `choices` | GIN index when used in filters on large tables |
@@ -89,12 +89,74 @@ Conversions to/from `link`, `lookup`, `rollup`, `formula`, `attachment` are not 
 
 ```go
 type Codec interface {
-    PGType(opts Options) string                      // e.g. "numeric(12,2)"
-    Decode(raw json.RawMessage, opts Options) (any, error) // API JSON → Go value (validated)
-    Encode(v any, opts Options) (any, error)        // DB value → API JSON
-    ParsePaste(s string, opts Options) (any, error) // clipboard text → value (lenient)
-    FormatText(v any, opts Options, loc Locale) string // for CSV export / copy
-    FilterOps() []Op                                // allowed filter operators
-    Aggregates() []Agg                              // allowed footer/rollup aggregates
+    Kind() Kind
+    Bind(options json.RawMessage) (Field, error)
+}
+type Field interface {
+    Kind() Kind
+    Options() json.RawMessage
+    ReadOnly() bool
+    Column() Column
+    Constraints() Constraints
+    Decode(raw json.RawMessage) (any, error)
+    Encode(value any) (json.RawMessage, error)
+    ParsePaste(text string, env Env) (any, error)
+    FormatText(value any, env Env) (string, error)
+    DefaultValue(raw json.RawMessage) (ddl.DefaultValue, error)
+    FilterOps() []Op
+    Aggregates() []Agg
 }
 ```
+
+T1.13 implements this contract in [internal/codec](../internal/codec/) for the
+12 batch-1 writable kinds and all five system kinds (D-113..D-121). `Column`
+contains a typed `ddl.DataType`, forced NOT NULL/default (checkbox), and a
+system-column marker. There is no `PGType` string, SQL interpolation, filter
+compiler, conversion, field/row API or production grid integration.
+
+### Batch-1 normalization and wire contract
+
+- Options are strict objects: unknown/duplicate members and wrong types fail.
+  Absent/null options mean `{}`. Defaults and exact bounds are D-114:
+  text maxLength 1..10000; long text plain only, max 100000 code points;
+  integer int with small/int/big ranges; decimal precision 1..38 (default 18),
+  scale 0..precision (default min(2, precision)); float double by default,
+  optional displayDecimals 0..10. thousandSep defaults true on numeric kinds.
+  Checkbox is forced NOT NULL DEFAULT false.
+- Bigint (including row id) is a canonical decimal **string**, decimal is a
+  fixed-scale string, small/int are JSON numbers, floats finite JSON numbers.
+  Real rounds to float32 and uses its shortest round-trip decimal.
+  Unsafe integer number inputs and decimal number tokens with more than 15
+  significant digits fail; use strings for exact larger values. Excess nonzero
+  fractional digits fail rather than silently rounding numeric values.
+- Empty strings become NULL; multi-select `[]` becomes NULL. Checkbox
+  null/empty becomes false. Text is UTF-8/no lone surrogates or NUL; tab is
+  allowed, LF only in long text. Paste normalizes line breaks/grouping/full-width
+  numeric forms; strict Decode is separate. See D-116 for accepted boolean text.
+- Date is `YYYY-MM-DD`, years 0001..9999, real proleptic Gregorian dates.
+  Datetime is a UTC RFC3339 instant with seconds and up to six fraction digits;
+  input requires an explicit offset. Offset-free paste requires the viewer's
+  effective zone or fixedTz; DST gaps fail, overlaps choose the earlier instant.
+  Copy includes the full time, microseconds and offset (including historical
+  offset seconds) so it re-pastes exactly. Display is not storage.
+  At UTC range boundaries, copy uses +00:00 if the display zone would produce
+  local year 0000/10000 (D-122), keeping the bounded paste parser reversible.
+  Fixed zones must additionally pass PG `pg_timezone_names` validation in T1.14.
+- At most 500 choices, ids `[A-Za-z0-9_-]{1,64}`, trimmed 1..100-code-point
+  labels, no controls/comma, unique ids and lower-case labels; closed 13-color
+  palette (D-118). Values are exact labels; multi-select is in choice order.
+  Paste matches exact then lower-case and de-duplicates; never creates options.
+  Stored removed labels survive Encode and render neutrally.
+- Email is conservative ASCII dot-atom/domain validation (254 bytes maximum).
+  URL is absolute http(s), at most 2048 code points, ASCII LDH host or valid
+  bracketed IPv6, bounded port, no userinfo/whitespace/controls/backslashes or
+  malformed percent escapes. Paste may prepend https://; dangerous schemes
+  fail. Frontend links revalidate, escape mailto address delimiters and use
+  noopener/noreferrer/nofollow; text is never interpreted as HTML.
+- System Decode/paste/defaults fail read_only, with no constraint mutation or
+  editor. Authorship UUIDs are lowercase; a caller resolves user labels without
+  reusing the owner-only sharing directory. Unknown users are localized.
+
+These codec/unit/PG tests are lower-layer evidence only. Full AT-301/302/304
+requires real fields, rows, persistence, grid editors and Fields menu in
+T1.14..T1.16; T1.13 remains In progress.

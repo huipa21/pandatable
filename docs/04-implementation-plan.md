@@ -89,6 +89,13 @@ dependencies remain; real grant/nav/schema checks do not substitute for them.
 | T1.19 | Mobile layout | Drawer sidebar, card list for grid views, full-screen row editor, FAB add, bottom-sheet toolbar. | 12 §5 | AT-313 | 1.5 |
 | T1.20 | Seed & perf baseline | `pandatable dev seed --rows 200000` (dev-only command) + measure NFR-2. | 01 NFR | AT-312 | 0.5 |
 
+T1.13's codec/registry/components and native PG18 round trips are implemented
+(D-113..D-122), without production field/row/grid integration. Keep T1.13
+In progress until its linked full AT-301/302/304 scenarios pass through
+T1.14..T1.16; shared vectors/SQL/component fixtures do not substitute for them.
+See [T1.13 record](task-prompts/T1.13.md#implementation-and-handoff-2026-10-26)
+and [T1.14 handoff](task-prompts/T1.14.md).
+
 **Exit:** team can log in, organise workspaces, share, define basic fields, and edit data in grid/mobile. Tag `v0.1.0`.
 
 ---

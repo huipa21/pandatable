@@ -5,7 +5,8 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 ## 1. Conventions
 
 - **CSRF:** all non-GET requests must send header `X-PT-CSRF: 1` *and* pass Origin check against `PT_BASE_URL` (SameSite=Lax cookie as additional layer).
-- **IDs:** structure objects use UUID strings; rows use integer `id`.
+- **IDs:** structure objects use UUID strings; rows use bigint `id` serialized
+  as a canonical decimal string, never a potentially rounded JS number (D-115).
 - **Errors:**
   ```json
   { "error": { "code": "ERR_PERMISSION_DENIED", "message": "dev-readable text", "details": { } } }
@@ -49,6 +50,17 @@ whole-transaction retry; do not treat every metadata uniqueness error as a
 physical collision. Unexpected driver/cancellation/missing-object/dependency
 errors remain wrapped for standard correlated logging and redacted 500 handling,
 not success/no-op fallbacks. API mapping is preparatory, not a new test endpoint.
+
+T1.13 also adds **no HTTP route**. Future field/row services bind
+`codec.Bind(uiType, options)` and use typed Column/DefaultValue descriptors,
+Decode for request values and Encode for scanned pgx values.
+`codec.APIError` maps validation failures to 400 `ERR_VALIDATION` with
+`details.reason` and optional `details.option` (never the rejected value).
+Unsupported scanned types remain server faults for correlated redaction.
+Translate reasons through static frontend keys, never server messages.
+Bigint/decimal are strings; date/datetime/select/null contracts are specified
+in [field types](07-field-types.md#batch-1-normalization-and-wire-contract).
+No row/field DTO or endpoint is invented to stand in for acceptance.
 
 ## 2. Endpoints
 

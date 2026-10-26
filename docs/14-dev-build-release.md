@@ -149,6 +149,17 @@ Neither save nor deploy silently substitutes a missing app image/archive.
   `deploy/compose.yaml` and `deploy/compose.local.yaml`, independently of `check`.
 - Results of `ptdev check` + `ptdev e2e` are noted in `progress.md` when a milestone is closed.
 
+T1.13's focused lower-layer gate is `go test ./internal/codec -count=1`
+with explicit `PT_TEST_DATABASE_URL` and `PT_TEST_DATABASE_REQUIRED=1`, plus
+`pnpm --dir web exec vitest run src/fields/fields.test.ts src/components/fields/fields.test.ts`.
+Shared vectors cover options, exact wire values, paste/copy and capabilities.
+Suite-owned PG18 tests create columns through actual typed DDL descriptors,
+check native catalog types/forced constraints, round-trip typed pgx parameters
+and exercise defaults/range failures/system columns. They are not full
+AT-301/302/304 evidence without real field/row/grid APIs/UI.
+Record default-parallel Suite cleanup failures separately from command-scoped
+`GOFLAGS=-p=1` results; never relax the helper's assertions or deadlines.
+
 ### Shared integration helper
 
 Declare a package-level `testdb.Suite`, call `os.Exit(database.Run(m))` in

@@ -386,5 +386,68 @@
     "ERR_PRINCIPAL_DISABLED": "Disabled users cannot receive new grants or be added to a group. Refresh and choose an active user.",
     "ERR_PRINCIPAL_NOT_FOUND": "This user or group no longer exists. Search again or remove the obsolete grant.",
     "ERR_LAST_OWNER": "This workspace must keep at least one active direct user owner. Add another user owner before removing or downgrading this owner."
+  },
+  "field": {
+    "kind": {
+      "text": "Text",
+      "long_text": "Long text",
+      "integer": "Integer",
+      "decimal": "Decimal",
+      "float": "Number",
+      "checkbox": "Checkbox",
+      "date": "Date",
+      "datetime": "Date & time",
+      "single_select": "Single select",
+      "multi_select": "Multiple select",
+      "email": "Email",
+      "url": "URL",
+      "id": "Row ID",
+      "created_at": "Created time",
+      "created_by": "Created by",
+      "updated_at": "Last modified time",
+      "updated_by": "Last modified by"
+    },
+    "error": {
+      "unknown_kind": "This field type is not supported.",
+      "invalid_options": "The field settings are invalid.",
+      "invalid_type": "This value has the wrong type for the field.",
+      "invalid_text": "Text contains characters that are not allowed.",
+      "too_long": "The value is too long.",
+      "invalid_integer": "Enter a whole number.",
+      "invalid_decimal": "Enter a decimal number.",
+      "invalid_number": "Enter a number.",
+      "imprecise_number": "This number cannot be represented exactly; enter it as text.",
+      "out_of_range": "The value is outside the supported range.",
+      "too_many_decimals": "Too many decimal places for this field.",
+      "invalid_boolean": "Enter true or false.",
+      "invalid_date": "Enter a valid date.",
+      "invalid_datetime": "Enter a valid date and time.",
+      "nonexistent_local_time": "This local time does not exist because of a daylight-saving change.",
+      "timezone_required": "A time zone is required to interpret this time.",
+      "unknown_choice": "This option does not exist for the field.",
+      "duplicate_choice": "An option was selected more than once.",
+      "invalid_email": "Enter a valid email address.",
+      "invalid_url": "Enter a valid web address.",
+      "url_scheme": "Only http and https links are allowed.",
+      "read_only": "This field is read-only."
+    },
+    "checkbox": {
+      "checked": "Checked",
+      "unchecked": "Not checked"
+    },
+    "select": {
+      "unknown": "This option is no longer configured"
+    },
+    "user": {
+      "unknown": "Unknown user ({id})"
+    },
+    "editor": {
+      "value": "Field value",
+      "none": "No selection",
+      "apply": "Apply",
+      "multilineHint": "Press Ctrl+Enter to save",
+      "datePlaceholder": "YYYY-MM-DD",
+      "datetimePlaceholder": "YYYY-MM-DD HH:mm"
+    }
   }
 }

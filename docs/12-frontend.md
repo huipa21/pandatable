@@ -231,7 +231,16 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 
 - Virtual rows & columns; windowed data fetch (page 100) with placeholders.
 - Frozen columns, resize, reorder (drag header) → saved to view config (if permitted) else local override.
-- Cell renderers/editors per `FieldKind` (in `components/fields/<kind>/`): `Renderer.vue`, `Editor.vue`, `FilterInput.vue`, `parsePaste()`, `formatCopy()`.
+- Batch-1 pure `FieldKind` definitions live in `src/fields`, bound through
+  `bindField(kind, options)`; shared presentation-family components are
+  `components/fields/FieldRenderer.vue` and `FieldEditor.vue` (D-121).
+  The contract includes normalizeOptions/normalize/parsePaste/formatCopy/
+  formatDisplay/readOnly/constraints/filterOps/aggregates. Filter inputs remain
+  later work. System editors render nothing. Native controls commit validated
+  values, preserve IME input and show localized errors; Escape cancels,
+  multiline uses Ctrl/Meta+Enter, select/checkbox use native changes.
+  These components/registry have no current route imports. T1.16 owns real
+  grid integration; the synthetic spike stays isolated.
 - Keyboard: arrows, Tab/Shift+Tab, Enter (edit / commit+down), Esc (cancel), F2, Delete/Backspace (clear), Ctrl/Cmd+C/V/X, Ctrl/Cmd+Z/Y, Ctrl+D (fill down), Ctrl+A, Shift+arrows (range), Space (expand row / toggle checkbox), Home/End, Ctrl+Home/End, PageUp/Down.
 - **Copy:** range → TSV (+ HTML table) to clipboard via `formatCopy`.
 - **Paste:** parse TSV (handles quoted multi-line cells from Excel/Sheets) → map to cells starting at focus → per-cell `parsePaste` → preview errors count → one bulk PATCH; if exceeding last row → confirm "add N rows" → bulk insert. Read-only/computed columns skipped.
@@ -321,7 +330,13 @@ across reload, independently of language.
 ## 7a. Timezone & currency display
 
 - User menu → Profile: timezone picker (searchable IANA list, "Use team default (Asia/Shanghai)" option).
-- All datetime rendering via one `formatDateTime(value, field, userTz)` helper (dayjs + `utc`/`timezone` plugins); editors interpret typed input in the user's timezone.
+- Batch-1 datetime formatting/parsing uses `src/fields/temporal.ts` with
+  `Intl.DateTimeFormat` zone offsets and exact integer seconds/microseconds
+  (D-117/D-121), not lossy JS Date/number wire values or dayjs timezone plugins.
+  Offset-free typed input needs the viewer/fixed zone; DST gaps fail, overlaps
+  use the earlier instant. Copy retains an explicit offset and microseconds.
+  Display without a usable zone explicitly labels UTC. Callers must supply
+  effectiveTimezone from auth when the real grid is integrated.
 - Currency values formatted with `Intl.NumberFormat(locale, { style: 'currency', currency: field.options.currency })`; field editor offers currency selection with app default (CNY) preselected.
 
 ## 8. Quality
