@@ -564,6 +564,51 @@ func (q *Queries) SessionUser(ctx context.Context, idHash []byte) (SessionUserRo
 	return i, err
 }
 
+const systemDatabase = `-- name: SystemDatabase :one
+SELECT pg_database_size(current_database())::bigint AS size_bytes,
+       count(*)::bigint AS connections,
+       count(*) FILTER (WHERE state = 'active')::bigint AS active_connections,
+       pg_size_bytes(current_setting('shared_buffers'))::bigint AS shared_buffers_bytes,
+       current_setting('server_version')::text AS server_version
+FROM pg_stat_activity WHERE datname = current_database()
+`
+
+type SystemDatabaseRow struct {
+	SizeBytes          int64
+	Connections        int64
+	ActiveConnections  int64
+	SharedBuffersBytes int64
+	ServerVersion      string
+}
+
+func (q *Queries) SystemDatabase(ctx context.Context) (SystemDatabaseRow, error) {
+	row := q.db.QueryRow(ctx, systemDatabase)
+	var i SystemDatabaseRow
+	err := row.Scan(
+		&i.SizeBytes,
+		&i.Connections,
+		&i.ActiveConnections,
+		&i.SharedBuffersBytes,
+		&i.ServerVersion,
+	)
+	return i, err
+}
+
+const systemMigration = `-- name: SystemMigration :one
+SELECT COALESCE(max(version_id), 0)::bigint AS migration
+FROM (
+    SELECT DISTINCT ON (version_id) version_id, is_applied
+    FROM public.goose_db_version ORDER BY version_id, id DESC
+) AS latest WHERE is_applied
+`
+
+func (q *Queries) SystemMigration(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, systemMigration)
+	var migration int64
+	err := row.Scan(&migration)
+	return migration, err
+}
+
 const updateGroup = `-- name: UpdateGroup :exec
 UPDATE meta.groups SET name=$2, description=$3 WHERE id=$1
 `

@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { test, expect, observeBrowser, expectHTTPFailure } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
+import { verifyDashboard } from './dashboard'
 
 async function signIn(page: Page, login: string, password: string) {
   await page.goto('/login')
@@ -190,11 +191,12 @@ async function verifyGroups(page: Page, suffix: string) {
   await expect(page).toHaveURL(/\/admin\/users$/)
 }
 
-test('AT-104..109: admin users and groups, forced change, reset, disable and panel visibility', async ({
+test('AT-104..110: admin users, groups and dashboard, forced change, reset, disable and panel visibility', async ({
   page,
   browser,
   api,
 }, testInfo) => {
+  test.setTimeout(45_000)
   const username = `alice-${testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop'}`
   const temporary = 'Temporary-password-123'
   const changed = 'Changed-password-123'
@@ -212,6 +214,7 @@ test('AT-104..109: admin users and groups, forced change, reset, disable and pan
   ).toBeVisible()
   await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
   await expect(page).toHaveURL(/\/admin\/users$/)
+  await verifyDashboard(page)
   await verifyGroups(
     page,
     testInfo.project.name.startsWith('mobile') ? 'mobile' : 'desktop',
@@ -318,6 +321,9 @@ test('AT-104..109: admin users and groups, forced change, reset, disable and pan
       userPage.getByRole('link', { name: en.groups.title, exact: true }),
     ).toHaveCount(0)
     await expect(
+      userPage.getByRole('link', { name: en.dashboard.title, exact: true }),
+    ).toHaveCount(0)
+    await expect(
       userPage.getByRole('link', { name: /sign.?up|register/i }),
     ).toHaveCount(0)
     await userPage.goto('/admin/users')
@@ -325,6 +331,7 @@ test('AT-104..109: admin users and groups, forced change, reset, disable and pan
     await userPage.goto('/admin/future')
     await expect(userPage).toHaveURL(/\/home$/)
     for (const path of [
+      '/admin/dashboard',
       '/admin/groups',
       '/admin/groups/missing',
       '/admin/users/missing',
@@ -335,6 +342,11 @@ test('AT-104..109: admin users and groups, forced change, reset, disable and pan
     expect(
       (await userContext.request.get('/api/v1/admin/groups')).status(),
     ).toBe(403)
+    const systemDenied = await userContext.request.get('/api/v1/admin/system')
+    expect(systemDenied.status()).toBe(403)
+    expect(await systemDenied.json()).toMatchObject({
+      error: { code: 'ERR_PERMISSION_DENIED' },
+    })
     const forbidden = await userContext.request.post('/api/v1/admin/users', {
       headers,
       data: {},

@@ -167,6 +167,23 @@ x3 pass. This caveat is not a default-gate pass or load/platform certification.
 Exact verification, failures, resources and cleanup:
 [T1.6 completion record](task-prompts/T1.6.md#implementation-and-handoff-2026-10-26).
 
+### T1.7 admin dashboard evidence (2026-10-26)
+
+| Test | Status | Evidence |
+|---|---|---|
+| AT-110 | Pass | Real production-image desktop/mobile admin dashboard shows actual CPU, RAM, PG/database connections/shared buffers, disk, RSS/cgroup, exact 4096-byte attachment and 2048-byte backup fixture totals, runtime/server/migration versions and uptime. Rendered refresh measured 9904 / 9855.5 ms (both <=10 s); hourly directory timestamps unchanged. en/zh-CN, loading, explicit stale/error/retry, navigation and independent non-admin deep-route/API denial pass. |
+| AT-101/104..109/802/803 | Preserved | Full production setup/admin/shell/spike suite, required PG18 auth/admin/ACL regressions, 226 matching locale keys and unchanged no-inline/no-eval CSP. Initial gzip 168,887 bytes, no grid imports. Empty directory zero and first CPU sample unavailable are explicitly tested, never fabricated. |
+| AT-801 / NFR-1 | Not certified | Linux collector microbenchmarks are small, but image-backed post-auth RSS is 170,131,456..175,009,792 bytes, above the 150 MB normal-load target. No target-host/load certification or forced GC/password weakening to hide this observation. |
+
+Final full image suite: **11 passed / 2 intentional mobile-grid exclusions
+(1.4m)**. Required PG18 regressions pass x3. Final complete local gate passes
+with command-scoped `GOFLAGS=-p=1`; two default-parallel attempts reproduce
+existing Suite cleanup deadline failures, not claimed green. Linux filesystem
+tests additionally pass non-root under a 2-CPU/512-MiB cap, including symlink,
+permission and special-file policies; this is not full Linux/Docker acceptance.
+Exact commands, failures, costs and cleanup:
+[T1.7 completion record](task-prompts/T1.7.md#implementation-and-handoff-2026-10-26).
+
 ## AT-2xx Structure & Permissions (M1)
 
 ### T1.4 API-surface evidence (2026-10-26)

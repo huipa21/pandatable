@@ -24,6 +24,7 @@ sql:
   - engine: postgresql
     schema:
       - migrations
+      - internal/admin/catalog.sql
     queries: internal/admin/queries.sql
     gen:
       go:

@@ -320,6 +320,53 @@ edit, exact duplicate-name error, empty search/membership, deletion cancel and
 confirmed cleanup. Group/user-detail screenshots are retained under ignored
 results. No auth bypass or extra login budget is introduced.
 
+### T1.7 system dashboard checks
+
+`internal/admin/system*_test.go` covers CPU percent/counter reset/availability,
+exact five-second cache expiry, coalescing, waiter/lifecycle cancellation,
+hourly directory cache, zero/missing/error/bounds policy, rooted symlink skipping,
+cgroup namespace/ancestor/unlimited/unsupported parsing, real PG18 size/settings/
+versions/migration queries and secret-free error/DTO output. The Linux-only
+filesystem test exercises unreadable directories as non-root and special files
+without opening them. Windows may skip symlink creation when the account lacks
+that privilege; run the compiled tests non-root in a uniquely owned Linux
+container as well, not as a substitute for full Linux/Docker acceptance.
+
+```text
+go test ./internal/admin ./internal/httpapi -run "TestSystem|TestAdminSystem" -count=3
+go test ./internal/admin ./internal/auth ./internal/acl ./internal/httpapi -count=3
+go test ./internal/admin -run "^$" -bench BenchmarkSystem -benchtime=1s
+pnpm --dir web exec vitest run src/composables/useSystemMetrics.test.ts src/pages/AdminDashboardPage.test.ts src/router/guards.test.ts
+go run ./tools/ptdev check
+go run ./tools/ptdev e2e -- admin-users.spec.ts
+go run ./tools/ptdev e2e
+```
+
+All PG commands still require explicit URL/required=1 and Suite-owned databases.
+Static system queries use the existing admin sqlc entry with a generator-only
+catalog declaration, never an applied migration. Pinned 1.31.1 regeneration must
+be byte-identical across auth/acl/admin packages.
+
+AT-110 extends the existing desktop/mobile admin scenario without extra sign-ins.
+`ptdev e2e` creates actual **4096-byte attachment and 2048-byte backup fixture
+files** as the app UID only inside its unique disposable volume, before the
+first observation. These are deliberately not attachment metadata/backup jobs
+or a production seed API; the entire owned volume is removed by existing cleanup.
+Metrics remain real: CPU/RAM/DB/disk/RSS/cgroup/version values and exact file
+totals are asserted, followed by an updated snapshot within ten seconds and
+unchanged hourly scan timestamps. Both locales, loading, an exact method/path/
+503-scoped transport-failure fixture with explicit stale/retry UI, screenshots,
+navigation and independent API/deep-route denial are covered.
+
+The combined admin test allows 45 seconds because it now includes a real
+ten-second poll in addition to users/groups/auth flows; its refresh assertion
+remains ten seconds, no retries, and the suite's 120-second bound is unchanged.
+All warnings/errors/CSP diagnostics remain fatal except narrowly expected,
+explicitly asserted HTTP failures. Unit tests additionally prove hidden/unmount
+cancellation, no overlaps, request timeouts, late-result rejection and recovery.
+Record default-parallel check separately from any command-scoped `GOFLAGS=-p=1`
+resource workaround; do not change shared testdb assertions/timeouts.
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:

@@ -38,7 +38,7 @@ Estimates are ideal-days (d) for one developer.
 |---|---|---|---|---|---|
 | T1.5 | Admin users | API + UI: list/search, create, edit, role, disable/enable (revoke sessions), reset password (forced change). | 09 | AT-104…AT-108 | 1.5 |
 | T1.6 | Admin groups | API + UI: CRUD, members management. | 09 | AT-109 | 0.5 |
-| T1.7 | Admin dashboard | gopsutil CPU/mem/disk, PG sizes, files size (cached walker), versions, uptime; UI cards auto-refresh 10 s. | 13 §6 | AT-110 | 1 |
+| T1.7 | Admin dashboard | gopsutil CPU/mem/disk, PG sizes, files size (cached walker), versions, uptime; UI cards auto-refresh 10 s. | 13 §8 | AT-110 | 1 |
 | T1.8 | Admin settings & workspaces list | settings API/UI (app name, default timezone, default currency, default language, upload limit, retention days); read-only workspaces list with owners (transfer in M3). | 09 | AT-111, AT-112 | 0.5 |
 
 ### Structure

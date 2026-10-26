@@ -32,8 +32,8 @@ Internal REST API used only by the SPA. Base path `/api/v1`. JSON in/out. Auth b
 
 T1.2 implements the auth/profile/timezone backend below. T1.3 implements
 first-run setup; T1.4 adds the ACL resolver and grants API; T1.5 adds admin
-users and login/forced-password-change UI. Other business endpoints and profile
-UI remain later-task work.
+users and login/forced-password-change UI; T1.6 adds groups; T1.7 adds system
+observations/dashboard. Other business endpoints and profile UI remain later-task work.
 
 ## 2. Endpoints
 
@@ -253,6 +253,48 @@ administration never grants implicit resource access.
   user-admin actor lock remains unchanged. Membership writes/deletion invalidate
   ACL after commit, also if commit reports an uncertain outcome/error; failed
   or rolled-back operations may conservatively invalidate without changing data.
+
+#### T1.7 system observations (D-088..D-090)
+
+`GET /admin/system` is implemented. It accepts no query parameters and is
+read-only. The existing active-admin namespace guard, independent service
+session check, no-store and ten-second request deadline apply on every request,
+including cache hits. No resource access, grant/membership changes or ACL
+invalidation is performed. A stopped/unconfigured collector returns 503
+`ERR_SYSTEM_UNAVAILABLE`; authorization failures retain the existing 401/403 codes.
+
+The response is a `SystemSnapshot`, mirrored in the frontend API types:
+
+- `collectedAt` (UTC RFC3339), `uptimeSeconds` (app-process lifetime);
+- `cpuPercent`, `load: {one,five,fifteen}`, host-visible
+  `memory: {totalBytes,usedBytes,availableBytes}`, `appRssBytes`;
+- `container: {currentBytes,limitBytes,unlimited}` for Linux cgroup v2 memory;
+- `disk: {totalBytes,usedBytes,freeBytes}` for the configured data filesystem;
+- `database: {sizeBytes,connections,activeConnections,sharedBuffersBytes}` for
+  the current database (connections include the collector; shared buffers is
+  cluster configuration);
+- `filesBytes`, `backupsBytes` (logical regular-file bytes, not allocated blocks);
+- `versions: {app,go,postgres,migration}`. App/Go are strings; PG/migration use
+  metric envelopes from actual server queries, not hard-coded versions.
+
+Every metric above except app/Go/uptime uses
+`{status:"ready"|"unavailable", collectedAt, value, reason?}`. Unavailable
+`value` is **null**, not zero. Reason codes are `initializing`, `unsupported`,
+`notFound`, `permission`, `io`, `limit`, `timeout`, `invalid`, `query`; never
+raw OS/PG error text. Genuine zero is valid, including empty directories and
+idle CPU. Initial/reset CPU samples are unavailable until a second sample.
+An unlimited cgroup has a ready value with `unlimited:true,limitBytes:null`.
+The finite limit is the minimum of visible ancestors, not a claim about hidden
+host ancestors. Cgroup v1/non-Linux are unsupported; native Windows load is
+unsupported rather than starting gopsutil's global load sampler.
+
+Partial source failures are explicit in a 200 snapshot, with safe section/reason
+logging; a failed total is never a partial number. No DSN, hostname, storage path,
+entry name, environment or credential appears in the response or metric logs.
+One on-demand collection is shared and cached five seconds, with a four-second
+application-lifetime deadline. Canceling a waiter does not cancel other waiters.
+Directory results, including failures and their scan timestamps, cache separately
+for one hour. See deployment monitoring for scan safety and local-storage limits.
 
 ### Directory (any user — for pickers)
 | GET | `/directory/users?q=` | active users: id, displayName, username, avatarColor |

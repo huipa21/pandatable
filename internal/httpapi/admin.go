@@ -38,6 +38,7 @@ func (api *authHTTP) mountAdmin(router chi.Router) {
 			})
 		})
 		router.Get("/users", api.adminAction(api.listUsers))
+		router.Get("/system", api.adminAction(api.systemMetrics))
 		router.Get("/users/{id}", api.adminAction(api.getManagedUser))
 		router.Get("/users/{id}/groups", api.adminAction(api.listUserGroups))
 		router.Post("/users", api.adminAction(api.createUser))
@@ -52,6 +53,19 @@ func (api *authHTTP) mountAdmin(router chi.Router) {
 		router.Post("/groups/{id}/members", api.adminAction(api.addGroupMember))
 		router.Delete("/groups/{id}/members/{userId}", api.adminAction(api.removeGroupMember))
 	})
+}
+
+func (api *authHTTP) systemMetrics(w http.ResponseWriter, r *http.Request, _ auth.User, token string) {
+	if r.URL.RawQuery != "" {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "System metrics do not accept query parameters"))
+		return
+	}
+	result, err := api.admin.System(r.Context(), token, api.system)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (api *authHTTP) adminAction(next func(http.ResponseWriter, *http.Request, auth.User, string)) http.HandlerFunc {

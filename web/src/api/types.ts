@@ -106,3 +106,56 @@ export interface GroupListing {
 export interface GroupMutation extends AuthMutation {
   group: AdminGroup
 }
+
+export interface SystemMetric<T> {
+  status: 'ready' | 'unavailable'
+  reason?:
+    | 'initializing'
+    | 'unsupported'
+    | 'notFound'
+    | 'permission'
+    | 'io'
+    | 'limit'
+    | 'timeout'
+    | 'invalid'
+    | 'query'
+  collectedAt: string
+  value: T | null
+}
+
+export interface SystemSnapshot {
+  collectedAt: string
+  cpuPercent: SystemMetric<number>
+  load: SystemMetric<{ one: number; five: number; fifteen: number }>
+  memory: SystemMetric<{
+    totalBytes: number
+    usedBytes: number
+    availableBytes: number
+  }>
+  appRssBytes: SystemMetric<number>
+  container: SystemMetric<{
+    currentBytes: number
+    limitBytes: number | null
+    unlimited: boolean
+  }>
+  disk: SystemMetric<{
+    totalBytes: number
+    usedBytes: number
+    freeBytes: number
+  }>
+  database: SystemMetric<{
+    sizeBytes: number
+    connections: number
+    activeConnections: number
+    sharedBuffersBytes: number
+  }>
+  filesBytes: SystemMetric<number>
+  backupsBytes: SystemMetric<number>
+  versions: {
+    app: string
+    go: string
+    postgres: SystemMetric<string>
+    migration: SystemMetric<number>
+  }
+  uptimeSeconds: number
+}

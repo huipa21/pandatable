@@ -30,6 +30,7 @@ type AuthOptions struct {
 	Service        *auth.Service
 	ACL            *acl.Service
 	Admin          *admin.Service
+	System         *admin.SystemMonitor
 	BaseURL        string
 	TrustedProxies []netip.Prefix
 }
@@ -38,6 +39,7 @@ type authHTTP struct {
 	service *auth.Service
 	acl     *acl.Service
 	admin   *admin.Service
+	system  *admin.SystemMonitor
 	logger  *slog.Logger
 	origin  string
 	secure  bool
@@ -55,7 +57,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 	if !secure {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
-	return &authHTTP{service: options.Service, acl: options.ACL, admin: options.Admin, logger: logger, origin: origin,
+	return &authHTTP{service: options.Service, acl: options.ACL, admin: options.Admin, system: options.System, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 

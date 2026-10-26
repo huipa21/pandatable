@@ -37,6 +37,7 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 	defer cancel()
 	cfg := config.Config{
 		DatabaseURL: databaseURL,
+		DataDir:     t.TempDir(),
 		DBMaxConns:  4,
 		Listen:      "127.0.0.1:0",
 		BaseURL:     "http://127.0.0.1",

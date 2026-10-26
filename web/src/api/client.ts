@@ -75,6 +75,8 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_CSRF')
     case 'ERR_NOT_FOUND':
       return t('errors.ERR_NOT_FOUND')
+    case 'ERR_SYSTEM_UNAVAILABLE':
+      return t('errors.ERR_SYSTEM_UNAVAILABLE')
     default:
       return t('errors.ERR_INTERNAL')
   }

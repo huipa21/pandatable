@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"time"
 
 	"pandatable/internal/acl"
 	"pandatable/internal/admin"
@@ -14,6 +15,8 @@ import (
 	"pandatable/internal/httpapi"
 	"pandatable/internal/web"
 )
+
+var processStarted = time.Now()
 
 func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	pool, err := db.Open(ctx, cfg)
@@ -53,6 +56,11 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure admin service: %w", err)
 	}
+	monitor, err := admin.NewSystemMonitor(ctx, adminService, cfg.DataDir, version, processStarted, logger)
+	if err != nil {
+		return fmt.Errorf("configure system monitor: %w", err)
+	}
+	defer monitor.Close()
 	setupToken, setupNeeded, err := authService.InitializeSetup(ctx)
 	if err != nil {
 		return fmt.Errorf("initialize first-run setup: %w", err)
@@ -61,7 +69,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("SETUP_TOKEN=" + setupToken)
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
-		Service: authService, ACL: aclService, Admin: adminService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Service: authService, ACL: aclService, Admin: adminService, System: monitor, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)

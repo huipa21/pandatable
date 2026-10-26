@@ -15,6 +15,10 @@ export const router = createRouter({
       component: () => import('../pages/ChangePasswordPage.vue'),
     },
     {
+      path: '/admin/dashboard',
+      component: () => import('../pages/AdminDashboardPage.vue'),
+    },
+    {
       path: '/admin/users',
       component: () => import('../pages/AdminUsersPage.vue'),
     },

@@ -192,11 +192,54 @@ See [11-import-export-backup.md §3](11-import-export-backup.md#restore-cli).
 
 ## 8. Monitoring (Admin → Dashboard)
 
-Collected by `gopsutil` + PG queries, cached 5 s:
-- CPU usage % and load avg (container sees host `/proc` values for CPU/load).
-- Memory: host total/used/available; container limit (cgroup) and app RSS; Postgres connection count + shared_buffers.
-- Storage: `pg_database_size()`, attachments dir size (walked hourly, cached), backups dir size, free/used space of the `/data` volume (= host disk where Docker stores volumes).
-- Version info: app, Go, PostgreSQL, migration level; uptime.
+Implemented in T1.7 (D-088..D-090) using pinned BSD-3-Clause
+`github.com/shirou/gopsutil/v4 v4.25.9` and static sqlc PG queries. No privileged
+host mounts, external collector, new config or database migration is required.
+The seven indirect platform dependencies support portable native observations;
+only used packages are linked. Dependency/image/collection costs are recorded
+in the task completion evidence, not inferred as target-host load certification.
+
+- CPU busy % uses deltas of two nonblocking aggregate CPU counter samples,
+  excluding idle/I/O wait and avoiding double-counted guest time. The initial
+  sample or counter reset is unavailable, not fake zero. Host-visible load
+  averages cover 1/5/15 minutes. Local Podman observes its Linux VM, not Windows
+  host CPU/RAM; these are not container CPU quota/utilization measurements.
+- Host-visible total/used/available RAM and app RSS are distinct from Linux
+  cgroup v2 memory.current and the minimum finite memory.max of visible ancestors.
+  Mount/membership mapping respects the process namespace; hidden host ancestors
+  cannot be certified. Unlimited is explicit; cgroup v1/non-Linux are unsupported.
+  Windows load is unsupported to avoid a process-global gopsutil sampling worker.
+- Current-database `pg_database_size`, total/active connections (including the
+  collector), cluster `shared_buffers` converted to bytes; actual server version,
+  latest applied Goose level, build-injected app version, Go runtime and
+  app-process uptime. No workspace enumeration or implicit resource access.
+- Filesystem capacity/used/free-to-app is sampled for **PT_DATA_DIR**, not a
+  hard-coded path or the PG volume. In Compose this is `/data`; it describes the
+  filesystem backing the app volume, not necessarily a dedicated partition.
+  Reserved filesystem blocks may make total differ from used + free-to-app.
+- Attachment/backup logical regular-file totals come from its `files`/`backups`
+  children. Existing empty directories are zero; missing roots are unavailable,
+  and collection never creates directories or changes permissions. Each scan
+  rejects symlink roots, skips symlink entries, rejects special files and counts
+  hardlinks once per entry. Rooted access and directory identity checks prevent
+  symlink traversal outside the scanned root. Totals are observations, not an
+  atomic filesystem snapshot.
+
+One on-demand collector is shared; no idle polling. Snapshots cache five seconds;
+directory successes **and errors** cache independently for one hour and carry
+their original timestamps. Each directory scan uses batches of 128, at most
+100,000 entries/depth 64 and a one-second cooperative deadline, within a
+four-second collection context. No partial totals on permission, I/O, unsupported
+entry, cancellation or bounds failure. **Local storage only:** OS filesystem
+syscalls cannot be forcibly interrupted. A blocked syscall keeps the one worker
+occupied rather than spawning unbounded replacement workers. Shutdown waits for
+that worker; do not mount network/FUSE storage with unbounded I/O waits.
+
+Each metric has ready/unavailable, nullable value and safe reason code. Source
+failures are logged only by fixed section/reason, never raw errors/paths/DSNs.
+An unavailable source does not make healthy sources disappear. The UI refreshes
+every ten seconds while visible, stopping/canceling when hidden/unmounted;
+failed HTTP refreshes keep a visibly stale snapshot with retry.
 
 ## 9. Security checklist
 

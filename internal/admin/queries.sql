@@ -129,3 +129,18 @@ INSERT INTO meta.group_members(group_id,user_id) VALUES ($1,$2) ON CONFLICT DO N
 
 -- name: RemoveGroupMember :execrows
 DELETE FROM meta.group_members WHERE group_id=$1 AND user_id=$2;
+
+-- name: SystemDatabase :one
+SELECT pg_database_size(current_database())::bigint AS size_bytes,
+       count(*)::bigint AS connections,
+       count(*) FILTER (WHERE state = 'active')::bigint AS active_connections,
+       pg_size_bytes(current_setting('shared_buffers'))::bigint AS shared_buffers_bytes,
+       current_setting('server_version')::text AS server_version
+FROM pg_stat_activity WHERE datname = current_database();
+
+-- name: SystemMigration :one
+SELECT COALESCE(max(version_id), 0)::bigint AS migration
+FROM (
+    SELECT DISTINCT ON (version_id) version_id, is_applied
+    FROM public.goose_db_version ORDER BY version_id, id DESC
+) AS latest WHERE is_applied;

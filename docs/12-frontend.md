@@ -80,6 +80,28 @@ semantics and <600,000-byte initial gzip/no-grid gate are unchanged. T1.2
 profile/timezone UI, AT-116 and full AT-117 remain deferred; sign-in capability
 alone does not certify all of AT-102.
 
+### T1.7 system dashboard (D-088..D-090)
+
+- Active admins see a separate **System dashboard** link at `/admin/dashboard`;
+  existing Admin/users and Groups links/routes are preserved. Non-admin deep
+  routes redirect independently of server-side `/admin/system` authorization.
+- Responsive cards show host-visible CPU/load/RAM, app RSS, cgroup v2 memory,
+  configured-volume disk, current PG size/connections/shared buffers, logical
+  attachment/backup totals, actual versions/migration level and process uptime.
+  The explanatory copy distinguishes host/VM from container observations.
+- `useSystemMetrics` fetches immediately then on a fixed ten-second schedule
+  without overlapping requests. Hidden/unmount aborts the request, clears timers
+  and removes the listener; becoming visible fetches immediately. Client waits
+  also have a ten-second abort deadline. A generation guard rejects late results.
+- Both locales include loading, source-unavailable reasons, genuine zeros,
+  localized numbers/IEC byte units, snapshot and hourly-directory timestamps.
+  Failed refreshes retain data with an explicit stale alert, retry action and
+  continued visible-page scheduled retries. Auth errors use existing redirects.
+  No raw server error messages, secrets or filesystem paths are displayed.
+- The dashboard is lazy, has no grid imports and does not change local shell
+  preferences, runtime-only i18n, no-inline/no-eval CSP or initial bundle limits.
+  Settings/workspaces and profile/default-timezone behavior remain later work.
+
 ### T1.6 groups and user detail (D-084..D-087)
 
 - Active admins also see Groups navigation. `/admin/groups` provides paged

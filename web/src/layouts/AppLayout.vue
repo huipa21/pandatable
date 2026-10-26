@@ -100,6 +100,9 @@ async function logout() {
         <RouterLink v-if="auth.user.role === 'admin'" to="/admin/users">
           {{ t('admin.menu') }}
         </RouterLink>
+        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/dashboard">
+          {{ t('dashboard.title') }}
+        </RouterLink>
         <RouterLink v-if="auth.user.role === 'admin'" to="/admin/groups">
           {{ t('groups.title') }}
         </RouterLink>

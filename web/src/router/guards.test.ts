@@ -29,6 +29,7 @@ function responses(user: { role: string; mustChangePassword: boolean } | null) {
 it('redirects unauthenticated and non-admin deep admin routes', async () => {
   responses(null)
   for (const path of [
+    '/admin/dashboard',
     '/admin/users',
     '/admin/groups',
     '/admin/groups/group-id',
@@ -39,6 +40,7 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
   }
   responses({ role: 'user', mustChangePassword: false })
   for (const path of [
+    '/admin/dashboard',
     '/admin/future',
     '/admin/groups',
     '/admin/groups/group-id',
@@ -61,6 +63,8 @@ it('lets cleared admins access the user panel and exposes network failures', asy
   responses({ role: 'admin', mustChangePassword: false })
   await router.push('/admin/users')
   expect(router.currentRoute.value.path).toBe('/admin/users')
+  await router.push('/admin/dashboard')
+  expect(router.currentRoute.value.path).toBe('/admin/dashboard')
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
   await router.push('/home')
   expect(router.currentRoute.value.path).toBe('/connection-error')

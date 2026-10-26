@@ -145,6 +145,13 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 			if err != nil || len(containerIDs) != 1 {
 				return errors.New("find owned app container for resource snapshot")
 			}
+			for _, fixture := range []struct{ directory, size string }{{"files", "4096"}, {"backups", "2048"}} {
+				if err := runner.run(ctx, selected.name, "exec", "--user", "10001:10001", containerIDs[0],
+					"dd", "if=/dev/zero", "of=/data/"+fixture.directory+"/pt-e2e-dashboard-fixture",
+					"bs="+fixture.size, "count=1", "status=none"); err != nil {
+					return errors.New("create dashboard fixture in owned disposable app storage")
+				}
+			}
 			statsArgs := []string{"stats", "--no-stream", "--format", "{{.Name}} {{.MemUsage}} {{.CPUPerc}}"}
 			statsArgs = append(statsArgs, containerIDs...)
 			stats, err := runner.execute(ctx, "", nil, true, selected.name, statsArgs...)
