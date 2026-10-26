@@ -34,7 +34,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.6 | Admin groups | ✅ | 2026-10-26 | Group CRUD/member API, localized group/user detail and immediate ACL invalidation; D-084..087, no migration/dependency. Required PG18 x3 and production desktop/mobile AT-109 pass; full image suite 11/2. Full check passes with command-scoped GOFLAGS=-p=1 after existing testdb cleanup deadline failures under parallel package load; exact caveat/evidence below. T1.7 handoff recorded. |
 | T1.7 | Admin dashboard | ✅ | 2026-10-26 | Read-only cached metrics and localized responsive dashboard; D-088..090, gopsutil v4.25.9, no migration. Required PG18 x3, non-root Linux filesystem tests and production desktop/mobile AT-110 pass; refresh 9904/9855.5 ms. Full image suite 11/2; complete check passes with GOFLAGS=-p=1, default-parallel cleanup caveat retained. Real post-auth RSS exceeds NFR-1 target; not certified. T1.8 handoff recorded. |
 | T1.8 | Admin settings & workspaces list | 🟨 | 2026-10-26 | Implemented available scope: seven atomic settings/default readers/public branding and read-only workspace inventory, D-091..093. Required PG18 x3, serial-package full check and final production image 11/2 pass. Full AT-111/112 await upload/workspace APIs; SQL fixtures are API evidence only. In progress, not Done; T1.9 handoff recorded. |
-| T1.9 | DDL module | ⬜ | | |
+| T1.9 | DDL module | 🟨 | 2026-10-26 | Physical-only caller-pgx.Tx DDL, strict 50-bit identifiers, typed types/defaults and explicit constraint removal; D-094..096, no migration/dependency. Required PG18 x3 (100% statements), serial-package full check and production image 11/2 pass. Default-parallel cleanup failure remains; AT-202/full AT-804 await real table/field/filter APIs. T1.10 handoff recorded; not Done. |
 | T1.10 | Workspace/Book/Table API | ⬜ | | |
 | T1.11 | Sidebar & navigation UI | ⬜ | | |
 | T1.12 | Share dialog UI | ⬜ | | |
@@ -1194,3 +1194,94 @@ Exact implementation/commands/failures/resources/cleanup and session log names:
 [T1.8 completion](task-prompts/T1.8.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.9 DDL module](task-prompts/T1.9.md)**, retaining future
 AT-111/112/117/322 dependencies and mandatory completion/next-prompt handoff.
+
+## T1.9 physical DDL implementation and handoff (2026-10-26)
+
+**In progress**, implementation verified to the available scope. AT-202 is a
+real table/field rename API scenario (T1.10/T1.14); full AT-804 also requires
+filter APIs (T2.6). Catalog/metadata rename and injection tests are lower-layer
+evidence, not complete API/browser acceptance. Clarification was unavailable;
+D-094..D-096 record bounded implementation choices, not user confirmations.
+
+### Delivered
+
+- `internal/ddl`: crypto/rand names with exact kind prefix + ten lowercase
+  RFC 4648 a-z2-7 symbols/50 independent bits; strict metadata validation.
+  Caller-owned bounded whole-transaction collision retries; no silent rename.
+- pgx.Tx-only CreateSchema/CreateTable/AddColumn/DropColumn/SetNotNull/
+  AddUnique/SetDefault. Each validated operation sets LOCAL lock_timeout=3s;
+  no independent transactions, pool API, IF EXISTS/IF NOT EXISTS or CASCADE.
+  Fixed identity/system columns; no authorship FKs/triggers or row APIs.
+- Closed native-type descriptors and safe E-string/cast literals, type-matched
+  now/current_date/uuidv7, no raw SQL type/default surface. Bounded dimensions;
+  varchar literals reject overlength rather than silently truncate.
+  Explicit required/unique/default removal preserves data; NULL-distinct UNIQUE.
+- Sanitized typed validation/conflict/lock errors with bilingual keys; unexpected
+  failures retain the standard logging/redaction boundary. Services still own
+  ACL/locks, metadata/system fields/default Grid/Name, versions/events and commits.
+  No migration, dependency, auth/admin/ACL/settings or production-route changes.
+
+### Exact verification and limitations
+
+Go 1.27.0, Node 24.15.0, pnpm 11.2.2, sqlc 1.31.1, PG18.6
+(dev `18.6-1.pgdg13+2`, image `18.6-1.pgdg12+2`),
+Podman client/server 5.8.2/5.8.4, Playwright 1.64.1/Chromium.
+golangci-lint remains absent (explicit existing-tool warning); no claim that
+its optional checks or a race-detector/platform certification ran.
+
+- First focused PG18 run **failed, 4.071 s**: PG18 represents NOT NULL in
+  pg_constraint (the initial PK-only count was wrong), and duplicate UNIQUE
+  creation returns index-name `42P07`, not only `42710`. Corrected catalog
+  assertions and explicit conflict mapping, without suppressing errors.
+- Focused required uncached PG18 x3 then **10.295 s / 99.2%**; final extended
+  entropy/default/no-CASCADE/UUID-version evidence x3 **10.240 s / 100.0%**
+  statement coverage. Tests observe blocking PIDs before the real three-second
+  lock timeout and prove metadata/version/DDL rollback plus same-session LOCAL
+  reset. Types/defaults/catalog/identity/authorship/constraint removal,
+  metadata-only Chinese/payload rename and both string-conformance injection
+  modes pass. All DB fixtures use the package's Suite-owned disposable DB.
+- All **nine** auth/ACL/admin generated Go files are byte-identical after pinned
+  sqlc regeneration. Applied migrations, go.mod/go.sum and sqlc.yaml unchanged.
+  New Go files are LF/gofmt; patch whitespace passes.
+- Default-parallel `ptdev check`: lint **14.507 s PASS**, tests **16.499 s
+  FAIL**, build **13.566 s PASS**, total **44.572 s**. DDL passes **7.096 s**;
+  only the already documented TestSuiteIsolationPostgreSQL owned-DB cleanup
+  deadline sensitivity fails. No shared timeouts/assertions/diagnostics changed.
+- Command-scoped `GOFLAGS=-p=1` complete gate **92.705 s PASS**:
+  lint **15.939 s**, test **65.474 s**, build **11.291 s**. Required uncached
+  PG18 auth/admin/ACL/HTTP/restart/Suite and **40 frontend tests / 13 files**
+  pass. Default-parallel cleanup is not certified. **263** locale keys;
+  initial gzip **172,214 bytes** (<600,000), all assets **311,597**, no initial
+  grid imports. No unrelated frontend behavior changes.
+- Real production-image project **pt-e2e-35ksiy7napeb6ucg2vyeiofpij**:
+  **11 passed / 2 intentional mobile-grid exclusions (1.6m)**. Setup **6.2 s**,
+  combined admin desktop/mobile **31.2 / 29.8 s**. Existing CSP/browser
+  diagnostics, auth/login budget, settings exact columns/default preferences,
+  inventory/groups/dashboard/shell/spike tests unchanged.
+  Image **163,347,936 bytes**, linux/amd64, UID/GID10001:10001, exec
+  HEALTHCHECK; actual loopback health verified, ready **6.826 s**.
+- Startup **73.95 MB / 536.9 MB, 6.02% CPU**, separate live observation
+  **167.1 MB, 4.66% CPU**. Dashboard genuine 4096/2048-byte fixtures and
+  visible refresh **9876.1 / 9846.7 ms** pass. Actual post-auth RSS
+  **168,820,736 / 178,110,464 bytes** exceeds 150 MB; no forced GC/hash
+  weakening or NFR-1 claim. VM-visible RAM **16,613,830,656 bytes**, container
+  limit **536,870,912 bytes**, not the target 2-vCPU/4-GB host.
+
+### Cleanup and next task
+
+Initial worktree clean; VM and retained dev DB stopped. Initial read-only Podman
+inventory failed while the socket was stopped; started the existing VM, then
+inventoried it before starting the retained dev DB. No shared/developer schema/
+data was changed. After tests, Suite databases/connections **0 / 0**, including
+after the failed default gate. Owned E2E containers/volumes/networks/unique tag
+verified absent. Retained dev DB/volume, release images and unrelated stopped
+buildkit/container/storage/networks/Caddy preserved; no prune/reset.
+Retained dev DB and VM restored **stopped**, dev volume confirmed present.
+No scratch binary or committed generated assets/browser artifacts.
+
+Full AT-111/112/117/322 and earlier platform/load/UI-dependent acceptance stay
+pending with the exact dependencies in the next prompt. No remote/shared
+deployment or hosted CI. Exact commands/results/failures/cleanup and local
+log names: [T1.9 completion](task-prompts/T1.9.md#implementation-and-handoff-2026-10-26).
+Next: **[T1.10 Workspace/Book/Table API](task-prompts/T1.10.md)**, including
+mandatory completion record and following T1.11 prompt.

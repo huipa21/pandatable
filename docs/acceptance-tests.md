@@ -227,6 +227,20 @@ membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
 - **AT-212 — Hidden resources are 404** · M1 *(API)* · dave (no grants) requesting T's rows gets 404, not 403.
 - **AT-213 — Any user creates workspaces** · M1 · carol creates W2 and is its owner.
 
+### T1.9 physical-only evidence (2026-10-26)
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-202 | Pending API scenario | Required Suite-owned PG18 tests demonstrate parameterized Chinese/space/payload display-name metadata changes leave physical names/data unchanged. Real table and field rename APIs await T1.10/T1.14; this is not an API acceptance pass. |
+| AT-804 | Partial lower-layer evidence only | Exact identifier/type/default rejection and safe E-string/cast literals, real catalog/injection tests with both string-conformance modes pass. Real table/field-name and filter-value API scenarios await T1.10/T1.14/T2.6. |
+
+T1.9 remains **In progress**, not Done. Unit/PG18 DDL tests additionally cover
+identity/system columns, typed native storage/defaults, constraint removal,
+metadata+DDL rollback, observed lock contention/three-second timeout and LOCAL
+reset. No test production endpoint, codec, filter engine or browser seed was
+introduced. Full AT-111/112/117/322 dependencies are unchanged. See
+[T1.9 completion record](task-prompts/T1.9.md#implementation-and-handoff-2026-10-26).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

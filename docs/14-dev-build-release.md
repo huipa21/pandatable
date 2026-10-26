@@ -405,6 +405,41 @@ Full AT-111/322 awaits real uploads (T2.2); full AT-112 awaits real workspace
 creation/navigation/table APIs (T1.10/T1.11); full AT-117 still awaits datetime/
 filter UI. T1.8 stays In progress until linked acceptance really passes.
 
+### T1.9 physical DDL checks
+
+`internal/ddl` uses the same package-level Suite and no test-only production
+endpoint. Required uncached focused validation (PowerShell):
+
+```powershell
+$env:PT_TEST_DATABASE_URL = (& go run .\tools\ptdev db status | Select-Object -Last 1)
+$env:PT_TEST_DATABASE_REQUIRED = '1'
+go test .\internal\ddl -count=3 -cover
+```
+
+Tests cover exact prefix/alphabet/50-bit entropy boundaries and rejected
+identifiers/types/defaults; emitted DDL grammar and sanitized error shapes;
+real PG18 native types/defaults/catalogs (including PG18 NOT NULL constraints);
+BY DEFAULT identity/explicit restore IDs, nullable authorship/no FK/no trigger;
+add/drop/set/remove data preservation, NULL-distinct UNIQUE, no CASCADE;
+combined metadata/DDL commit and rollback and metadata-only rename evidence.
+Injection literals are exercised with standard_conforming_strings on **and**
+off. Varchar defaults are character-bounded before explicit casting to avoid
+PostgreSQL's otherwise silent cast truncation.
+
+The contention test first observes the blocking PID using pg_blocking_pids,
+then requires the actual three-second lock timeout and verifies rollback of
+both pending field metadata/schema version and physical column. A same-session
+test verifies LOCAL timeout reset on commit and rollback. All physical objects
+are confined to the Suite-owned disposable DB, not the developer DB.
+
+Then run the full `ptdev check` and `ptdev e2e` gates. Record a default-parallel
+cleanup failure separately from a command-scoped `GOFLAGS=-p=1` workaround;
+never change shared cleanup timeouts/assertions to produce a pass.
+Catalog tests are not real AT-202 or full AT-804 API acceptance: table/field
+rename and filter injection require T1.10/T1.14/T2.6. See the exact results,
+resource observations and cleanup in the
+[T1.9 completion record](task-prompts/T1.9.md#implementation-and-handoff-2026-10-26).
+
 ### Browser setup and isolated E2E
 
 From the root, after installing frontend dependencies:

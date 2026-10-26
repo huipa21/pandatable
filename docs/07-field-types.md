@@ -64,6 +64,17 @@ System fields are read-only, cannot be deleted, can be renamed (display only), f
 | Unique | `UNIQUE` index (dry-run reports duplicates) | text, numeric, date/time, uuid, email, url, phone, inet |
 | Default | `DEFAULT <literal>`; dynamic: `now()`, `current_date`, `uuidv7()`, current user (app-level) | stored types |
 
+The T1.9 physical boundary uses typed `ddl.DataType`/`ColumnSpec` and
+`DefaultValue`, not raw `PGType` output or user expressions. See
+[data model transaction contract](05-data-model.md#t19-caller-transaction-contract-d-095d-096).
+Future codecs/services must construct an allowlisted descriptor and enforce
+UI-specific constraint eligibility/options. Removing required/unique/default
+does not rewrite values. UNIQUE allows multiple NULLs; SET NOT NULL does not
+repair existing NULLs; changing a default affects future writes only.
+Physical DROP is purge; field soft deletion retains the column. No field API,
+type conversion, FK/relation policy or auto-number sequence orchestration is
+implemented by T1.9.
+
 ## 5. Type change (FR-F5)
 
 1. Owner picks new type → `POST /fields/{id}/convert:dry-run`.

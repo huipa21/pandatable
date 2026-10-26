@@ -275,6 +275,8 @@
     "notFoundDescription": "This page is not available. Return to the welcome page to get started."
   },
   "errors": {
+    "ERR_DDL_CONFLICT": "Existing data or constraints conflict with this schema change.",
+    "ERR_DDL_LOCK_TIMEOUT": "The table is busy. Try the schema change again shortly.",
     "ERR_SYSTEM_UNAVAILABLE": "System observations are temporarily unavailable. Try again.",
     "ERR_VALIDATION": "Check the entered details and password byte length, then try again.",
     "ERR_SETUP_TOKEN": "The setup token is invalid or expired. Check the server log for the current token.",

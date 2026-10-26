@@ -55,6 +55,12 @@ linked tests; retain In progress until the real scenarios pass.
 | T1.11 | Sidebar & navigation UI | Tree with create/rename/delete/reorder (drag), path-only nodes, breadcrumbs, empty states, routes. | 12 §2 | AT-201, AT-208 | 1.5 |
 | T1.12 | Share dialog UI | Per scope: list direct grants + inherited summary, add user/group with level, change/remove, warnings (inherited higher, last owner). | 06 | AT-204…AT-211 | 1 |
 
+T1.9 supplies the physical-only caller-transaction boundary (D-094..D-096).
+Its catalog/rename/injection tests do not complete AT-202 or full AT-804:
+the real API scenarios need T1.10 table, T1.14 field and T2.6 filter APIs.
+Keep T1.9 In progress until those linked scenarios pass. T1.10 owns default
+Grid/Name/system-field metadata, ACL/locks, atomic orchestration and events.
+
 ### Fields & rows
 | ID | Task | Details | Docs | AT | Est |
 |---|---|---|---|---|---|

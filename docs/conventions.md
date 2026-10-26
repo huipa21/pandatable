@@ -24,6 +24,12 @@
     monitoring catalogs/Goose metadata for generation only, never runtime DDL.
   - Dynamic data queries via `squirrel` with **identifiers only from meta** (quoted with `pgx.Identifier{}.Sanitize()`), values always as parameters.
   - No string concatenation of user input into SQL — enforced by code review + gosec.
+  - Runtime physical DDL uses `internal/ddl` with caller `pgx.Tx` only
+    (D-094..D-096). Its type/default allowlist handles DDL's lack of ordinary
+    bind placeholders; metadata identifiers must still pass exact kind/alphabet/
+    length validation before pgx quoting. Never pass raw `pg_type`, display
+    names or default expressions as SQL. Services own ACL, metadata/version/event
+    writes, collision retry and transaction completion; physical DROP is purge.
 - Tests: `go test ./...`; integration tests use [internal/testdb](../internal/testdb/) with a package-level Suite and TestMain cleanup, real PostgreSQL 18 from explicit `PT_TEST_DATABASE_URL`, and a fresh migrated database per package. Absent/unreachable DBs clearly skip within a bounded connection attempt; config/auth/SQL/migration errors fail. `ptdev test/check` starts/reuses the dev DB and requires integration tests (no unavailable-DB skips). No testcontainers. See [14, tests](14-dev-build-release.md#3-tests-without-hosted-ci).
 - Cross-platform: code and tooling must work on Windows (dev) and Linux (prod). Use `filepath`, no shell-specific scripts; dev automation goes into `tools/ptdev`.
 - Container engine neutrality: Dockerfile/compose must work with both Podman and Docker (fully qualified image names, no engine-specific features).

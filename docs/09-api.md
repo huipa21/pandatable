@@ -37,6 +37,18 @@ observations/dashboard; T1.8 adds settings, public branding/default language,
 currency catalog and read-only workspace inventory. Other business endpoints
 and profile UI remain later-task work.
 
+T1.9 adds **no HTTP route**. Future structure/field services can propagate its
+sanitized typed errors through the existing HTTP error boundary:
+`ERR_VALIDATION` (400, invalid descriptors/default representations),
+`ERR_DDL_CONFLICT` (409, existing data/constraint/name conflicts) and
+`ERR_DDL_LOCK_TIMEOUT` (409, the three-second schema lock wait expired).
+No PG message/detail/SQL/default value is included. A name collision additionally
+supports `errors.Is(err, ddl.ErrIdentifierCollision)` for bounded caller-owned
+whole-transaction retry; do not treat every metadata uniqueness error as a
+physical collision. Unexpected driver/cancellation/missing-object/dependency
+errors remain wrapped for standard correlated logging and redacted 500 handling,
+not success/no-op fallbacks. API mapping is preparatory, not a new test endpoint.
+
 ## 2. Endpoints
 
 ### Setup & auth

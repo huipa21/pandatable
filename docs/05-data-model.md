@@ -20,6 +20,18 @@ Two layers:
 
 API uses meta UUIDs for structure and bigint `id` for rows.
 
+T1.9/D-094 fixes the exact alphabet to RFC 4648 lowercase `a-z2-7`.
+Each operation checks its own
+`b_`, `t_`, `c_`, `j_` or `s_` prefix plus **exactly ten** alphabet characters.
+Both new and stored identifiers use that strict validation; older illustrative
+names below are not authoritative grammar (some contain `0/1/8/9`).
+`ddl.NewIdentifier` uses crypto/rand, never display names or UUID truncation.
+No catalog lookup or silent regeneration: a physical creation collision returns
+`errors.Is(err, ddl.ErrIdentifierCollision)`. The future service distinguishes
+physical-name metadata unique constraints from display-name conflicts and may
+retry at most three **whole** transactions with fresh names. Existing objects
+are never renamed and trashed physical-name reservations are never reused.
+
 ## 2. Meta schema
 
 The SQL below describes the current schema; the executable source is
@@ -442,3 +454,54 @@ For M:N, `on_delete` = `cascade` deletes the linked rows on the other side (app-
 Every structural change = **one transaction** containing both meta changes and DDL, with `SET LOCAL lock_timeout = '3s'`. On success → `schema_version++` and NOTIFY `schema.changed`. PostgreSQL's transactional DDL guarantees meta and physical schema never diverge.
 
 A startup self-check (`pandatable doctor`, also run at boot in warn-only mode) compares meta vs `information_schema` and reports drift.
+
+### T1.9 caller-transaction contract (D-095/D-096)
+
+`internal/ddl` implements physical operations only. Every function takes
+`context.Context` and **pgx.Tx**, never a pool/connection; it neither begins nor
+commits/rolls back transactions. After input validation, each operation executes
+`SET LOCAL lock_timeout = '3s'`, then DDL on that same transaction. This setting
+also applies to subsequent statements until commit/rollback and does not leak to
+the pooled session. A service needing a bound on its earlier authorization/
+metadata locks must set that bound before those locks itself. Do not catch a
+failed DDL and try to commit partial metadata; return the error and roll back.
+
+| Operation | Contract |
+|---|---|
+| `CreateSchema` | A validated `b_` schema, no IF NOT EXISTS. |
+| `CreateTable` | Validated `b_` + `t_`, exactly the five fixed system columns above, named `<table>_pkey`; bigint BY DEFAULT identity. No user fields/metadata/view creation. |
+| `AddColumn` | Generated `c_` name, typed native type, optional NOT NULL/UNIQUE/default; no raw type or expression strings. PostgreSQL's ordinary ADD default behavior applies to existing rows. |
+| `DropColumn` | Physical purge only, never field soft delete. No CASCADE/IF EXISTS; dependent objects explicitly block removal. |
+| `SetNotNull(..., bool)` | SET/DROP NOT NULL; existing NULLs conflict rather than being backfilled. |
+| `AddUnique(..., bool)` | ADD/DROP the named `<table>_<column>_key` constraint. Ordinary UNIQUE permits multiple NULLs; duplicates conflict. No concurrent/background index work. |
+| `SetDefault` | Set a safe typed literal/dynamic default, or `DefaultValue{}` to DROP DEFAULT. Existing data is never rewritten. |
+
+Alter/drop functions accept generated user-column names only, protecting `id`,
+`created_at/by`, `updated_at/by`. Authorship UUIDs are nullable, without physical
+FKs; deleted users are interpreted by readers. T1.15 owns explicit updated-at/by
+writes. Explicit restored identity IDs do **not** advance the identity sequence;
+future restore/import services must handle sequence coordination if necessary.
+
+The closed `DataType` enum covers doc 07 stored native types, including `uuid[]`.
+`SQL()` validates unused dimensions and returns only allowlisted, pg_catalog-
+qualified syntax: varchar length 1..10485760; numeric precision 1..1000 and
+scale 0..precision. Arbitrary SQL types and negative-scale numeric are not an
+input surface. Codecs will construct descriptors, not pass metadata `pg_type`
+through as SQL.
+
+`DefaultValue` is no-default, `Literal` textual PostgreSQL input, or only
+type-matched `Now`/`CurrentDate`/`UUIDv7`. Literals are valid UTF-8 without NUL,
+escaped as E-strings (both quotes and backslashes), explicitly cast to the
+validated type. Varchar literals exceeding the character bound are rejected
+before execution, not silently truncated. PostgreSQL checks remaining literal
+representations/ranges; numeric scale follows native semantics. DDL grammar does
+not accept ordinary bind placeholders here; this is explicit safe construction,
+not purported parameterization. `Literal: "NULL"` is text, not SQL NULL;
+no-default removes the expression and leaves normal NULL/NOT NULL behavior.
+Current-user defaults remain app-level.
+
+T1.10/T1.14 services still own uncached ACL authorization and resource locking,
+metadata rows (including all five `is_system=true` fields), default Grid/Name
+display field, schema versions, NOTIFY/event IDs and transaction completion.
+Lifecycle commits/uncertain commits must also invalidate ACL. This package does
+not implement doctor, orchestration, relation policy, conversion or row APIs.
