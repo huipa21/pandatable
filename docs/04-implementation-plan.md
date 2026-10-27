@@ -102,13 +102,24 @@ AT-301/303 row/grid scenarios pass through T1.15/T1.16. See the
 [T1.14 record](task-prompts/T1.14.md#implementation-and-handoff-2026-10-26)
 and [T1.15 handoff](task-prompts/T1.15.md).
 
+### M1 completion (added by the 2026-10-27 phase review)
+
+These close the M1 acceptance tests that the in-progress tasks could not finish
+on their own (D-147). They add no M2/M3 feature surface.
+
+| ID | Task | Details | Docs | AT | Est |
+|---|---|---|---|---|---|
+| T1.21 | Grid column ops & keyboard | `PATCH /views/{id}` restricted to the column subset of the view config (`fields[]` order/`visible`/`width`, `frozen`) with `If-Match: <version>`; grid resize/reorder/hide/freeze persisted for write/owner and local-only for read or locked views; complete keyboard map per 12 §4. Closes T1.16. | 08 §1, 09, 12 §4 | AT-305, AT-311 | 1.5 |
+| T1.22 | Self profile UI | `/profile` page over the existing `PATCH /auth/me`: display name, language, theme, timezone; browser login/logout scenario. Closes T1.2. | 09, 12 §2,§7a | AT-102, AT-116, AT-117 (M1 half) | 1 |
+| T1.23 | Field acceptance pass | Complete 12-kind scenarios: creation through the field UI, entry/persistence through the grid, `information_schema` type verification, validation, required/unique/default and system-field visibility/`updated_by`. Closes T1.13–T1.15. | 07 | AT-301…AT-304 | 1 |
+
 **M1 review (2026-10-27).** 11 tasks are Done and 9 remain In progress. Both
 gates are green after D-145/D-146 (`ptdev check` with default parallelism;
 `ptdev e2e` 17 passed / 0 failed / 2 intentional skips). The remaining M1
 feature work is AT-311 column ops (no `PATCH /views/{id}` route yet), AT-305
 keyboard navigation, the missing self-profile UI behind AT-116/AT-117, the
-AT-102 browser scenario and the full AT-301..304 grid scenarios. AT-312/NFR-2
-stay environment-blocked. See
+AT-102 browser scenario and the full AT-301..304 grid scenarios, tracked as
+T1.21-T1.23 above. AT-312/NFR-2 stay environment-blocked. See
 [progress.md](progress.md#m1-phase-review-and-gate-repair-2026-10-27).
 
 **Exit:** team can log in, organise workspaces, share, define basic fields, and edit data in grid/mobile. Tag `v0.1.0`.

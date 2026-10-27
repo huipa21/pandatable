@@ -46,6 +46,9 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.18 | Row expand modal | ✅ | 2026-10-27 | D-140: lazy full-row dialog, Space/icon and direct links; all 12 codec editors, exact values, read-only system/reader fields, bounded single PATCH and stale guards. Full production-image AT-310 passes (desktop 43.8 s/mobile fallback 2.5 s). 441 frontend tests, lint/528 keys, required PG18 and serial full gate pass; initial gzip 190337 bytes. Full E2E 11 pass/4 unrelated mobile fail/2 skips; default Suite cleanup and uncertified NFR/AT-312 caveats remain. T1.19 handoff recorded. |
 | T1.19 | Mobile layout | ✅ | 2026-10-27 | D-141/D-142: lazy <768px cards without RevoGrid, 100-row pages/<=300 cached rows, bounded options/FieldPanel/delete, reused full-screen editors and defaults-preserving FAB creation. Full production-image AT-313 passes at 390x844 (15.6 s/17.3 s); AT-310 and AT-302/306..309 preserved. 485 frontend tests, lint/543 keys, required PG18 and serial full gate pass; initial gzip 190849 bytes. Full E2E 12 pass/5 fail/2 skips (four prior mobile failures plus desktop navigation 404 diagnostic); default Suite cleanup and uncertified AT-312/NFR-1 remain. Exact results/cleanup and T1.20 handoff in [completion record](task-prompts/T1.19.md#implementation-and-handoff-2026-10-27). |
 | T1.20 | Seed & perf baseline | 🟨 | 2026-10-27 | D-143/D-144 safe CLI seed and persistent production-browser workflow implemented/tested. Final local real-200k baseline: 605.7ms first usable paint, 137.8..192.3ms middle scroll/paint, exact fresh requests/100-row pages/<=300 models; preceding strict local run failed 379.3/350.3ms and is retained. No authorized 2-vCPU/4-GB Ubuntu target; configured VM 8 CPUs/2048 MiB, engine reports a different WSL host boundary. AT-312/NFR-1 remain uncertified. 485 frontend tests, lint/543 keys, required PG18 and serial full gate pass; initial gzip 190849 bytes. Full image regression 13 pass/4 prior mobile fail/2 skips; default-parallel Suite cleanup fails separately. Exact evidence/owned cleanup in [record](task-prompts/T1.20.md#implementation-and-handoff-2026-10-27). |
+| T1.21 | Grid column ops & keyboard | ⬜ | 2026-10-27 | Added by the M1 review (D-147) to close AT-305/AT-311 and T1.16. Prompt: [T1.21](task-prompts/T1.21.md). |
+| T1.22 | Self profile UI | ⬜ | 2026-10-27 | Added by the M1 review (D-147) to close AT-102/AT-116, the M1 half of AT-117 and T1.2. Prompt: [T1.22](task-prompts/T1.22.md). |
+| T1.23 | Field acceptance pass | ⬜ | 2026-10-27 | Added by the M1 review (D-147) to close full AT-301..304 and T1.13-T1.15. Prompt: [T1.23](task-prompts/T1.23.md). |
 | T2.1 | Codecs batch 2 | ⬜ | | |
 | T2.2 | Attachments | ⬜ | | |
 | T2.3 | Relations | ⬜ | | |
@@ -1667,6 +1670,11 @@ added. Both gates were run for real before and after the change.
   inventory, reaching the empty state through the escaped `%_` search.
 
 ### Remaining M1 work (not started here)
+
+The three follow-up tasks added by this review (D-147) are
+[T1.21 grid column ops & keyboard](task-prompts/T1.21.md),
+[T1.22 self profile UI](task-prompts/T1.22.md) and
+[T1.23 field acceptance pass](task-prompts/T1.23.md).
 
 - **AT-311** column ops are unimplemented: there is no `PATCH /views/{id}`
   route, and the grid only has RevoGrid local resize plus a session-local field
