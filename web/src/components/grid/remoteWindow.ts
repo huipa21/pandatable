@@ -102,6 +102,14 @@ export class RemoteRowsWindow {
     return row && row.id ? row : null
   }
 
+  indexOfRow(id: string): number {
+    for (const [page, rows] of this.cache) {
+      const localIndex = rows.findIndex((row) => row.id === id)
+      if (localIndex >= 0) return page * remotePageSize + localIndex
+    }
+    return -1
+  }
+
   updateRow(index: number, row: DataRow) {
     if (this.disposed || !this.rowAt(index)) return
     this.slots[index] = row

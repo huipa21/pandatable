@@ -1,19 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, type PropType } from 'vue'
 import type { EditorType } from '@revolist/vue3-datagrid'
 import FieldEditor from '../fields/FieldEditor.vue'
 import type { BoundField } from '../../fields/registry'
 import type { FieldEnv, WireValue } from '../../fields/types'
 
-type GridColumn = EditorType['column'] & {
-  boundField: BoundField
-  fieldEnv: FieldEnv
-}
-type GridEditorProps = Omit<EditorType, 'column'> & { column: GridColumn }
-
-const props = defineProps<GridEditorProps>()
-const field = computed(() => props.column.boundField)
-const env = computed(() => props.column.fieldEnv)
+const props = defineProps({
+  column: { type: Object as PropType<EditorType['column']>, required: true },
+  val: {
+    type: [String, Number, Boolean, Array] as PropType<WireValue>,
+    default: null,
+  },
+  save: { type: Function as PropType<EditorType['save']>, required: true },
+  close: { type: Function as PropType<EditorType['close']>, required: true },
+  boundField: { type: Object as PropType<BoundField>, required: true },
+  fieldEnv: { type: Object as PropType<FieldEnv>, required: true },
+})
+const field = computed(() => props.boundField)
+const env = computed(() => props.fieldEnv)
 const value = computed<WireValue>(() => {
   const normalized = field.value.normalize(props.val ?? null)
   return normalized.ok ? normalized.value : null

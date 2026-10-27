@@ -280,8 +280,14 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   successful cell edits through row PATCH. Add/delete row actions use the row
   APIs and show failures without optimistic success. The Fields menu sends a
   transient ordered `fieldIds` visibility override (D-138), allowing explicit
-  system-field visibility without changing the saved view config. Clipboard
-  and fill-down remain disabled until T1.17.
+  system-field visibility without changing the saved view config. T1.17 enables
+  copy/cut/paste and vertical fill-down on this production grid: copy uses each
+  bound codec's `formatCopy`; paste parses TSV and each cell with `parsePaste`,
+  reports invalid cells, and submits valid existing-row cells in one bounded
+  bulk patch. Pasting beyond the loaded table tail requires confirmation before
+  bounded bulk insertion. Ctrl+D and the fill handle copy the selection's top
+  value down; horizontal fill is not supported. The synthetic spike remains a
+  separate lab-only implementation (D-139).
 - Keyboard: arrows, Tab/Shift+Tab, Enter (edit / commit+down), Esc (cancel), F2, Delete/Backspace (clear), Ctrl/Cmd+C/V/X, Ctrl/Cmd+Z/Y, Ctrl+D (fill down), Ctrl+A, Shift+arrows (range), Space (expand row / toggle checkbox), Home/End, Ctrl+Home/End, PageUp/Down.
 - **Copy:** range → TSV (+ HTML table) to clipboard via `formatCopy`.
 - **Paste:** parse TSV (handles quoted multi-line cells from Excel/Sheets) → map to cells starting at focus → per-cell `parsePaste` → preview errors count → one bulk PATCH; if exceeding last row → confirm "add N rows" → bulk insert. Read-only/computed columns skipped.
@@ -327,11 +333,11 @@ placeholder data is not copied. Clipboard is disabled for the grouped sample.
 D-066..D-068 confirm D-005 for further implementation. This lab does not provide
 production `FieldKind` registries, server writes, ACL, view persistence,
 flattened remote grouping/counts/aggregates, HTML clipboard, add-row confirmation
-or full keyboard/undo coverage. Built-in drag fill can extend horizontally;
-the vertical-only v1 policy still needs enforcement in T1.17. Real clipboard
-round-trips were tested in permission-granted Chromium on loopback, not inside
-Excel/Sheets or every OS/browser. Tablet touch is emulated, not physical-device
-certification. See the [exact results](progress.md#t08-verification-evidence-2026-10-24)
+or full keyboard/undo coverage. The spike's built-in fill behavior is
+lab-only and does not define the production grid's vertical-only policy. Real
+clipboard round-trips were tested in permission-granted Chromium on loopback,
+not inside Excel/Sheets or every OS/browser. Tablet touch is emulated, not
+physical-device certification. See the [exact results](progress.md#t08-verification-evidence-2026-10-24)
 and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
 
 ## 5. Mobile (< 768 px) — D-016
@@ -341,6 +347,8 @@ and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-20
 - Tap card → full-screen **Row editor** (same as row expand modal) with full editing, comments, history.
 - Add row via floating “+” button (opens row editor).
 - Copy/paste and fill-down are desktop features; bulk select + delete available via long-press.
+- Until T1.19 implements the mobile card grid, unsupported small viewports show
+  a localized notice and do not mount the production grid or its T1.17 controls.
 - Form view works natively on mobile.
 
 ## 6. i18n

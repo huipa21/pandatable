@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { test, expect } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
+import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyFields } from './fields'
 import { verifyDataGrid } from './navigation'
 
@@ -34,15 +35,17 @@ async function createResource(
   )
 }
 
-test('T1.16 production grid creates and persists rows with validation and system fields', async ({
+test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fallback', async ({
   page,
   isMobile,
 }) => {
   test.setTimeout(150_000)
-  test.skip(isMobile, 'Production desktop grid is not mounted on mobile')
-
-  await page.setViewportSize({ width: 1440, height: 900 })
+  if (!isMobile) await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await page
+      .getByRole('button', { name: zh.common.languages.en, exact: true })
+      .click()
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -54,6 +57,26 @@ test('T1.16 production grid creates and persists rows with validation and system
   await createResource(page, 'workspace', `Grid workspace ${suffix}`)
   await createResource(page, 'book', `Grid book ${suffix}`)
   await createResource(page, 'table', `Grid table ${suffix}`)
+  if (isMobile) {
+    await expect(page.locator('revo-grid')).toHaveCount(0)
+    await expect(page.getByText(en.grid.mobileNotice)).toBeVisible()
+    await page
+      .getByRole('button', { name: en.common.themes.dark, exact: true })
+      .click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await page
+      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+      .click()
+    await expect(page.getByText(zh.grid.mobileNotice)).toBeVisible()
+    await expect(page.locator('revo-grid')).toHaveCount(0)
+    await page
+      .getByRole('button', { name: zh.common.languages.en, exact: true })
+      .click()
+    await page
+      .getByRole('button', { name: en.common.themes.light, exact: true })
+      .click()
+    return
+  }
   const parts = new URL(page.url()).pathname.split('/')
   const tableId = parts[2]
   const viewId = parts[4]

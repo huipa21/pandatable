@@ -54,12 +54,15 @@ describe('production query window', () => {
     await Promise.resolve()
     expect(window.total).toBe(200_000)
     expect(window.rowAt(0)?.id).toBe('10000000000')
+    expect(window.indexOfRow('10000000025')).toBe(25)
     expect(window.snapshot().cachedRows).toBeLessThanOrEqual(
       remotePageSize * remoteCachePages,
     )
     window.load(100_000)
     await Promise.resolve()
     expect(window.rowAt(100_000)?.id).toBe('10000100000')
+    expect(window.indexOfRow('10000100025')).toBe(100_025)
+    expect(window.indexOfRow('10000000025')).toBe(-1)
     expect(window.snapshot().cachedPages).toEqual([999, 1000, 1001])
     expect(provider.requests.every((item) => item.limit <= 100)).toBe(true)
     expect(provider.requests.filter((item) => item.includeCount)).toHaveLength(

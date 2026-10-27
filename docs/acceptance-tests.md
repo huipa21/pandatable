@@ -362,6 +362,31 @@ resource and cleanup results are recorded in the
 T1.15 remains **In progress**: no full AT-301/302/303/304 or AT-312 claims are
 made before their real persisted-grid scenarios.
 
+### T1.17 copy/paste and fill-down evidence (2026-10-27)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-302 | Pass for specified invalid integer/email grid behavior | Production-grid browser scenario shows both localized cell errors; invalid values are not persisted. Full AT-301 kind coverage remains pending. |
+| AT-306 | Pass | Real production-image desktop scenario pastes a 3x4 TSV containing quoted multiline and Chinese text. It observes exactly one bulk PATCH containing 3 rows/10 valid cells; invalid integer/email cells are reported and absent from saved values. |
+| AT-307 | Pass | Pasting 10 rows at the table tail asks for confirmation, then the confirmed bulk insert produces the expected nine additional rows and total row count 12. |
+| AT-308 | Pass | Grid clipboard readback matches `2026-10-27<TAB>Todo` for date and select fields. This verifies browser clipboard interoperability, not a separately installed Excel/Sheets application. |
+| AT-309 | Pass | Ctrl+D fills the selected six-row vertical range; dragging the fill handle down extends persisted values to the target rows. Horizontal fill is not supported. |
+| Mobile, locale/theme | Pass for T1.17 scope | Production-image mobile scenario confirms no grid is mounted and the localized fallback is visible. Desktop scenario exercises English/Chinese and light/dark. |
+| AT-301/303/304/312 | Pending / partial preserved | The 12-kind create/type-catalog, populated required/unique/default, all system-field display and 200k target-host browser performance criteria are not claimed here. The VM is 8 CPU/2 GiB rather than the 2-vCPU/4-GB target. |
+
+Focused production-image browser runs:
+`go run .\tools\ptdev e2e -- e2e/grid.spec.ts --project=desktop-chromium`
+**2 passed** (setup + grid, 25.5 s) and the corresponding
+`--project=mobile-chromium` **2 passed** (17.0 s). The full production
+`go run .\tools\ptdev e2e` run on the final code reported **8 passed / 5 failed /
+2 skipped in 2.6 min**; both production-grid desktop and mobile scenarios pass
+(10.5 s / 2.6 s). The remaining failures are admin/navigation diagnostics
+(including an unexpected 404), mobile spike and two mobile shell scenarios;
+two mobile-only spike scenarios are skipped by the existing configuration.
+The earlier mobile notice CSS-order issue and stale browser selection were
+fixed and verified. See the
+[T1.17 completion record](task-prompts/T1.17.md#implementation-and-handoff-2026-10-27).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

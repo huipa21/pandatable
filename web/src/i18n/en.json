@@ -85,6 +85,17 @@
     "deleteConfirm": "Delete rows",
     "unsupportedField": "A field uses unsupported metadata and cannot be shown.",
     "loadError": "Rows could not be loaded. Retry by reloading this page.",
+    "clipboardUnavailable": "Clipboard operation could not be completed. Only loaded rows can be changed.",
+    "copyLimit": "Copy and cut are limited to 5,000 loaded cells.",
+    "pasteLimit": "Paste exceeds the supported row, cell, or request-size limit.",
+    "pasteInvalidTsv": "The clipboard does not contain a valid tab-separated range.",
+    "pasteInvalidCell": "Row {row}, field {field}: {reason}",
+    "fillDownLimit": "Fill-down is limited to loaded rows, 1,000 rows, and 5,000 cells, and only works downward.",
+    "addRowsTitle": "Add rows for this paste",
+    "addRowsConfirm": "Add {count} rows to complete this paste?",
+    "addRowsAction": "Add {count} rows",
+    "partialPaste": "Some existing cells were saved, but the new rows could not be added.",
+    "saveFailed": "The row service returned an unexpected response.",
     "mobileNotice": "The desktop grid is not available on small screens yet."
   },
   "sharing": {

@@ -184,6 +184,24 @@ performance fixture, not browser acceptance for AT-312. Squirrel v1.5.4 is
 the convention-required SQL builder; identifiers remain validated metadata
 and values remain bound parameters.
 
+T1.17 frontend/browser verification:
+
+```powershell
+pnpm -C web test
+pnpm -C web lint
+pnpm -C web build
+go run .\tools\ptdev e2e -- e2e/grid.spec.ts --project=desktop-chromium
+go run .\tools\ptdev e2e -- e2e/grid.spec.ts --project=mobile-chromium
+```
+
+The real production-image grid scenario verifies AT-306..309, including the
+one-request valid-cell bulk patch, invalid-cell reporting, confirmed appended
+rows, clipboard formatting, Ctrl+D and vertical fill handle. Unit/API tests
+alone do not establish these acceptance results. The complete `ptdev e2e`
+suite is still required and unrelated failures must be recorded separately.
+AT-312 requires browser measurements on the documented 2-vCPU/4-GB target;
+Podman VM timings or API-only page timings are not substitutes.
+
 ### Shared integration helper
 
 Declare a package-level `testdb.Suite`, call `os.Exit(database.Run(m))` in

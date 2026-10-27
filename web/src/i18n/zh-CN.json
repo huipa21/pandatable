@@ -85,6 +85,17 @@
     "deleteConfirm": "删除行",
     "unsupportedField": "字段元数据不受支持，无法显示。",
     "loadError": "无法加载行。请重新加载此页面后重试。",
+    "clipboardUnavailable": "无法完成剪贴板操作。仅可修改已加载的行。",
+    "copyLimit": "复制和剪切最多支持 5,000 个已加载单元格。",
+    "pasteLimit": "粘贴超出支持的行数、单元格数或请求大小限制。",
+    "pasteInvalidTsv": "剪贴板内容不是有效的制表符分隔区域。",
+    "pasteInvalidCell": "第 {row} 行，字段 {field}：{reason}",
+    "fillDownLimit": "向下填充仅支持已加载行，最多 1,000 行和 5,000 个单元格，且不能向上或横向填充。",
+    "addRowsTitle": "为粘贴添加行",
+    "addRowsConfirm": "添加 {count} 行以完成粘贴吗？",
+    "addRowsAction": "添加 {count} 行",
+    "partialPaste": "部分现有单元格已保存，但无法添加新行。",
+    "saveFailed": "行服务返回了意外响应。",
     "mobileNotice": "小屏幕暂不支持桌面数据网格。"
   },
   "sharing": {

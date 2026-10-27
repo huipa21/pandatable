@@ -42,7 +42,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.14 | Field API & UI | 🟨 | 2026-10-26 | Implementation verified: D-123..D-130 table-owner field create/rename/description/options/required/unique/default/reorder/soft-delete/display field with If-Match, typed DDL, exact preflights, select label rewrites and same-tx schema versions; lazy FieldPanel on the real schema page. 394 frontend tests/487 keys, required PG18, serial full check and production image 11 passed/2 intentional exclusions; real AT-202 field rename passes. Default-parallel cleanup and NFR-1 caveats remain. Full AT-301/303 await T1.15/T1.16 rows/grid; handoff and T1.15 prompt recorded. |
 | T1.15 | Basic query & rows API | 🟨 | 2026-10-26 | Implemented D-132..D-137 query/row routes, typed codec I/O, bounded atomic writes, ACL/schema locking, deterministic bulk-patch lock ordering, API DTOs and localized errors. Focused PG18/API suites, scoped-serial full check and production E2E pass; default-parallel Suite cleanup failures remain. 200k local API timings recorded, but AT-312 and full AT-301/302/303/304 still need the T1.16 production grid. Handoff recorded. |
 | T1.16 | DataGrid component | 🟨 | 2026-10-27 | Production grid is wired on the real table/view route with bounded query paging and row edits; full browser acceptance and target-host performance remain pending. |
-| T1.17 | Copy/paste & fill-down | ⬜ | | |
+| T1.17 | Copy/paste & fill-down | ✅ | 2026-10-27 | Production-grid AT-306..309 pass in desktop Chromium: codec-backed TSV copy/cut/paste, one valid-cell bulk patch with invalid-cell reporting, confirmed tail-row growth, formatted date/select copy, Ctrl+D and vertical fill handle. Desktop and mobile production scenarios pass; en/zh-CN and light/dark covered. 406 frontend tests, lint/typecheck/i18n and 189,948-byte initial gzip gate pass; focused uncached PG18 row/query tests and scoped-serial full check pass. Default-parallel Suite cleanup/restart failures remain; final full E2E is 8 passed/5 failed/2 skipped (failures are outside T1.17); AT-312 target-host performance not measured. |
 | T1.18 | Row expand modal | ⬜ | | |
 | T1.19 | Mobile layout | ⬜ | | |
 | T1.20 | Seed & perf baseline | ⬜ | | |
@@ -1485,3 +1485,76 @@ Full AT-111/322, AT-117, AT-202 field rename, AT-804 filters and M3 restore rema
 pending. Exact record: [T1.12](task-prompts/T1.12.md#implementation-and-handoff-2026-10-26).
 Next: **[T1.13 Codec framework + batch 1](task-prompts/T1.13.md)**, including its
 mandatory completion record and following T1.14 prompt.
+
+## T1.17 copy/paste and fill-down verification (2026-10-27)
+
+T1.17 production-grid acceptance passes for AT-306..309. Copy/cut/paste and
+fill-down use the real `/t/:tableId/v/:viewId` grid, bound codec `formatCopy`
+and `parsePaste`, and existing bounded row APIs; no API, dependency, migration,
+or schema change was needed. D-139 records the clipboard and bounded
+RevoGrid-index policy. Valid cells from the 3x4 TSV are submitted in one
+bulk PATCH while invalid integer/email cells stay unpersisted and are reported.
+The browser scenario covers quoted multiline/Chinese text, a 10-row tail paste
+with explicit confirmation and nine inserted rows, date/select copy formatting,
+Ctrl+D across six rows and vertical fill-handle extension. Both English/Chinese
+and light/dark modes are exercised. The grid remains absent on unsupported
+mobile; its localized fallback notice is now visible at the mobile breakpoint.
+The synthetic spike remains separate.
+
+- `pnpm -C web test`: **406 passed / 24 files**.
+  `pnpm -C web lint`: **PASS**, including ESLint, Prettier, Vue typecheck and
+  518 matching non-empty en/zh-CN keys. `pnpm -C web build`: **PASS**; initial
+  shell gzip **189,948 bytes / 600,000-byte limit**, all assets 357,267 bytes.
+- Required uncached PG18 row/query integration:
+  `$env:PT_TEST_DATABASE_URL = (& go run .\tools\ptdev db status | Select-Object -Last 1); $env:PT_TEST_DATABASE_REQUIRED = '1'; go test .\internal\structure .\internal\httpapi -run 'Rows|Query' -count=1`
+  **PASS** (both packages).
+- `go run .\tools\ptdev check` default parallel: **FAIL** after lint/build
+  passed. It reproduced Suite cleanup/drop failures in codec/db/ddl/testdb and
+  `TestServePostgreSQLRestarts` observing one remaining connection; no test
+  deadline/assertion was changed. Command-scoped
+  `$env:GOFLAGS = '-p=1'; go run .\tools\ptdev check`: **PASS** (lint
+  26.324 s, Go/frontend tests 2m21.305 s, build 15.637 s; 3m3.267 s total).
+  `golangci-lint` is not installed and emitted the existing optional-linter
+  warning.
+- Production-image browser scenario
+  `go run .\tools\ptdev e2e -- e2e/grid.spec.ts --project=desktop-chromium`:
+  **2 passed** (setup + production grid, 25.5 s); grid scenario itself 15.4 s.
+  Actual clipboard paste request assertion: one PATCH with 3 rows/10 valid
+  supplied cells; invalid cells had no persisted values. Mobile counterpart
+  `go run .\tools\ptdev e2e -- e2e/grid.spec.ts --project=mobile-chromium`:
+  **2 passed** (setup + unsupported-mobile fallback, 17.0 s). Production
+  app one-shot snapshots were 73.39 MB / 536.9 MB (6.40% CPU) desktop and
+  73.93 MB / 536.9 MB (6.35% CPU) mobile; final full-suite snapshot was
+  74.7 MB / 536.9 MB (6.77% CPU). These are not load/NFR results.
+- Final `go run .\tools\ptdev e2e`: **8 passed / 5 failed / 2 skipped in
+  2.6 min**. Both production-grid desktop and mobile scenarios pass (10.5 s /
+  2.6 s); two mobile spike-only scenarios are intentionally skipped. Remaining
+  failures are admin/navigation diagnostics (including one unexpected 404),
+  mobile spike, and two mobile shell scenarios. No budgets/retries/assertions
+  were relaxed. The earlier stale-selection failure in the test was resolved
+  by waiting for RevoGrid's selected range before clipboard actions.
+- AT-312 was not measured: the available Podman VM is **8 CPUs / 2 GiB**, not
+  the documented 2-vCPU/4-GB target. No 200k-row production-browser first-paint
+  or middle-page timing is claimed. NFR-1, full AT-301/303/304 and
+  AT-204..207 remain pending; AT-302's invalid integer/email UI/no-persistence
+  scenario is now covered by the real grid browser run.
+- Versions: Go 1.27.0, Node 24.15.0, pnpm 11.2.2, PostgreSQL 18.6,
+  Podman 5.8.2/5.8.4, Vitest 4.1.12, Vite 7.3.7, Playwright 1.64.1,
+  Chromium 156.0.8078.4; no dependency added. Each E2E invocation used
+  a unique `pt-e2e-*` Compose project and its owned resources were cleaned by
+  `ptdev`. Runtime restoration and final branch/worktree verification are
+  recorded below after cleanup.
+
+T1.17's full AT-306..309 scenarios pass; unrelated full-suite failures,
+default-parallel Suite cleanup sensitivity, and the unmeasured AT-312 target
+remain explicitly outside that claim. See
+[T1.17 implementation and handoff](task-prompts/T1.17.md#implementation-and-handoff-2026-10-27).
+Next: [T1.18 row expand](task-prompts/T1.18.md).
+
+Cleanup restored `pt-dev-db` and `podman-machine-default` to stopped (VM
+configuration remains 8 CPUs / 2 GiB). All T1.17-owned E2E projects were
+removed by `ptdev`; pre-existing `pt-e2e-x42ioxb5porjfzr6u36ao2bfvw` exited
+containers, its volumes/networks, `buildx_buildkit_default`, `pt-dev-pgdata`,
+release images and Caddy were preserved. `git branch --list` contains only
+`master`; the Conventional Commit is recorded in the handoff after final
+repository verification.

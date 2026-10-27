@@ -3,19 +3,24 @@ import {
   computed,
   defineComponent,
   h,
-  markRaw,
   onBeforeUnmount,
   onMounted,
   ref,
+  shallowRef,
+  type PropType,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import RevoGrid, { VGridVueEditor } from '@revolist/vue3-datagrid'
+import RevoGrid, { useTemplates, VGridVueEditor } from '@revolist/vue3-datagrid'
 import type { EditorType } from '@revolist/vue3-datagrid'
 import type {
   BeforeSaveDataDetails,
+  BeforeRangeSaveDataDetails,
+  CellTemplateProp,
   ColumnRegular,
   Components,
+  FocusAfterRenderEvent,
+  RangeArea,
   ViewPortScrollEvent,
 } from '@revolist/revogrid'
 import { errorMessage, request, RequestError } from '../../api/client'
@@ -31,12 +36,13 @@ import type {
 import { bindField, type BoundField } from '../../fields/registry'
 import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, WireValue } from '../../fields/types'
-import FieldRenderer from '../fields/FieldRenderer.vue'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
 import GridCellEditor from './GridCellEditor.vue'
+import GridCellContent from './GridCellContent.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
+import { formatTsv, parseTsv, TsvError } from './tsv'
 
 const props = defineProps<{
   schema: TableSchema
@@ -45,6 +51,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ schemaChanged: [] }>()
 const { t, locale } = useI18n()
+const { template } = useTemplates()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
@@ -56,13 +63,28 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref<unknown>(null)
 const cellErrors = ref(new Map<string, string>())
+const clipboardErrors = ref<string[]>([])
+const clipboardMessage = ref('')
 const visibleFieldIds = ref<string[]>([])
 const fieldOverride = ref<string[] | null>(null)
 const selectedRows = ref(new Set<string>())
 const deleteDialog = ref<HTMLDialogElement>()
-const gridSource = markRaw([] as GridModel[])
+const addRowsDialog = ref<HTMLDialogElement>()
+const gridSource = shallowRef<GridModel[]>([])
 const syncedPages = new Set<number>()
+const syncedRows: (DataRow | null)[] = []
 const mutationControllers = new Set<AbortController>()
+let focused: FocusAfterRenderEvent | undefined
+let copyRange: RangeArea | null = null
+let copyColumnType: FocusAfterRenderEvent['colType'] = 'rgCol'
+let cutPending = false
+interface PastePlan {
+  startRow: number
+  addedRows: number
+  patchRows: { id: string; index: number; fields: Record<string, RowValue> }[]
+  insertRows: { fields: Record<string, RowValue> }[]
+}
+const pendingPaste = ref<PastePlan | null>(null)
 const desktop = ref(window.matchMedia('(min-width: 768px)').matches)
 const media = window.matchMedia('(min-width: 768px)')
 const resized = (event: MediaQueryListEvent) => {
@@ -81,6 +103,43 @@ const fieldById = computed(() => {
   }
   return result
 })
+const gridEditorComponent = defineComponent({
+  props: {
+    column: {
+      type: Object as PropType<EditorType['column']>,
+      required: true,
+    },
+    val: {
+      type: [String, Number, Boolean, Array] as PropType<WireValue>,
+      default: null,
+    },
+    save: {
+      type: Function as PropType<EditorType['save']>,
+      required: true,
+    },
+    close: {
+      type: Function as PropType<EditorType['close']>,
+      required: true,
+    },
+    prop: { type: String, required: true },
+    rowIndex: { type: Number, required: true },
+  },
+  setup(editorProps) {
+    return () => {
+      const item = fieldById.value.get(String(editorProps.column.prop))
+      if (!item) {
+        error.value = new Error(t('grid.saveFailed'))
+        return null
+      }
+      return h(GridCellEditor, {
+        ...editorProps,
+        boundField: item.bound,
+        fieldEnv: fieldEnvironment.value,
+      })
+    }
+  },
+})
+const gridCellEditor = VGridVueEditor(gridEditorComponent)
 const gridError = computed(() =>
   typeof error.value === 'string'
     ? error.value
@@ -151,6 +210,8 @@ interface GridModel {
   [key: string]: RowValue | string
 }
 
+const emptyModel: GridModel = { __rowId: '' }
+
 function wireValue(value: unknown): WireValue {
   if (
     value === null ||
@@ -201,23 +262,18 @@ const columns = computed<ColumnRegular[]>(() => {
       pin: field.uiType === 'id' ? 'colPinStart' : undefined,
       readonly: !canWrite.value || bound.readOnly,
       editor: bound.readOnly ? undefined : field.id,
-      cellTemplate: (render, { model }) => {
-        const rowId = String(model.__rowId ?? '')
-        const value = wireValue(model[field.id])
-        const message = cellErrors.value.get(`${rowId}:${field.id}`)
-        const cell = render(FieldRenderer, {
+      cellTemplate: template<CellTemplateProp>(GridCellContent, {
+        props: (context) => ({
           field: bound,
-          value,
+          value: wireValue(context.value),
           env: fieldEnvironment.value,
-        })
-        return message
-          ? render(
-              'div',
-              { class: 'grid-cell-invalid', 'aria-invalid': 'true' },
-              [cell, render('span', { role: 'alert' }, message)],
-            )
-          : cell
-      },
+          message:
+            cellErrors.value.get(
+              `${String(context.model.__rowId)}:${field.id}`,
+            ) ?? '',
+        }),
+        key: (context) => `${String(context.model.__rowId)}:${field.id}`,
+      }),
     })
   }
   return definitions
@@ -228,26 +284,13 @@ const editors = computed(() =>
     visibleFieldIds.value.flatMap((id) => {
       const item = boundFor(id)
       if (!item || item.bound.readOnly) return []
-      const editor = defineComponent({
-        setup(editorProps: EditorType) {
-          return () =>
-            h(GridCellEditor, {
-              ...editorProps,
-              column: {
-                ...editorProps.column,
-                boundField: item.bound,
-                fieldEnv: fieldEnvironment.value,
-              },
-            })
-        },
-      })
-      return [[id, VGridVueEditor(editor)]]
+      return [[id, gridCellEditor]]
     }),
   ),
 )
 
 function modelFor(row: DataRow | null): GridModel {
-  return row ? { __rowId: row.id, ...row.fields } : { __rowId: '' }
+  return row ? { __rowId: row.id, ...row.fields } : emptyModel
 }
 
 function mutate<T>(
@@ -265,47 +308,542 @@ function mutate<T>(
   ).finally(() => mutationControllers.delete(controller))
 }
 
+function clipboardColumn(
+  index: number,
+  columnType: FocusAfterRenderEvent['colType'] = focused?.colType ?? 'rgCol',
+) {
+  const column = columns.value.filter((candidate) =>
+    columnType === 'rgCol' ? !candidate.pin : candidate.pin === columnType,
+  )[index]
+  const prop = column?.prop
+  return typeof prop === 'string' ? fieldById.value.get(prop) : undefined
+}
+
+function requestBodyFits(body: unknown) {
+  return new TextEncoder().encode(JSON.stringify(body)).byteLength <= 512 * 1024
+}
+
+function clipboardFailure(message = t('grid.clipboardUnavailable')) {
+  clipboardMessage.value = message
+}
+
+function rowIndexForVirtual(index: number) {
+  const anchor = focused
+  const id = anchor?.model?.__rowId
+  if (!Number.isInteger(index)) return -1
+  if (typeof id !== 'string') return index
+  if (!anchor) return -1
+  const anchorIndex = rows.indexOfRow(id)
+  return anchorIndex < 0 ? -1 : anchorIndex + index - anchor.rowIndex
+}
+
+function rangeFits(range: RangeArea) {
+  const startRow = rowIndexForVirtual(range.y)
+  const endRow = rowIndexForVirtual(range.y1)
+  const cellCount = (range.y1 - range.y + 1) * (range.x1 - range.x + 1)
+  return (
+    range.x >= 0 &&
+    startRow >= 0 &&
+    range.x1 >= range.x &&
+    range.y1 >= range.y &&
+    endRow < rows.total &&
+    cellCount <= 5000 &&
+    Array.from({ length: range.y1 - range.y + 1 }, (_, index) =>
+      rows.rowAt(startRow + index),
+    ).every(Boolean)
+  )
+}
+
+function escapeClipboardHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+    .replace(/\r\n|\r|\n/g, '<br>')
+}
+
+function beforeCopyRegion(event: CustomEvent<RangeArea | null>) {
+  copyRange = null
+  const range = event.detail
+  if (!range) return
+  if (!rangeFits(range)) {
+    event.preventDefault()
+    clipboardFailure(t('grid.copyLimit'))
+    return
+  }
+  clipboardMessage.value = ''
+  copyRange = range
+  copyColumnType =
+    (range as RangeArea & { colType?: FocusAfterRenderEvent['colType'] })
+      .colType ??
+    focused?.colType ??
+    'rgCol'
+}
+
+function copy(event: CustomEvent<{ event: DataTransfer; data?: string[][] }>) {
+  event.preventDefault()
+  const range = copyRange
+  if (!range || !rangeFits(range)) {
+    clipboardFailure(t('grid.copyLimit'))
+    return
+  }
+  const matrix = Array.from(
+    { length: range.y1 - range.y + 1 },
+    (_, rowOffset) => {
+      const row = rows.rowAt(rowIndexForVirtual(range.y + rowOffset))
+      return Array.from(
+        { length: range.x1 - range.x + 1 },
+        (_, columnOffset) => {
+          const item = clipboardColumn(range.x + columnOffset, copyColumnType)
+          if (!row || !item) return ''
+          return item.bound.formatCopy(
+            wireValue(row.fields[item.field.id]),
+            fieldEnvironment.value,
+          )
+        },
+      )
+    },
+  )
+  event.detail.event.setData('text/plain', formatTsv(matrix))
+  event.detail.event.setData(
+    'text/html',
+    `<table><tbody>${matrix
+      .map(
+        (row) =>
+          `<tr>${row.map((cell) => `<td>${escapeClipboardHtml(cell)}</td>`).join('')}</tr>`,
+      )
+      .join('')}</tbody></table>`,
+  )
+}
+
+async function patchRows(
+  patchRows: { id: string; index: number; fields: Record<string, RowValue> }[],
+) {
+  if (!patchRows.length) return true
+  const body = {
+    rows: patchRows.map(({ id, fields }) => ({ id, fields })),
+  }
+  if (
+    patchRows.length > 1000 ||
+    patchRows.reduce(
+      (count, row) => count + Object.keys(row.fields).length,
+      0,
+    ) > 5000 ||
+    !requestBodyFits(body)
+  ) {
+    clipboardFailure(t('grid.pasteLimit'))
+    return false
+  }
+  try {
+    const result = await mutate<RowMutation>(
+      `/tables/${props.schema.table.id}/rows`,
+      'PATCH',
+      body,
+    )
+    if (disposed.value || props.identity !== auth.user?.id) return false
+    if (
+      result.rows.length !== patchRows.length ||
+      result.rows.some((row, index) => row.id !== patchRows[index]?.id)
+    )
+      throw new Error(t('grid.saveFailed'))
+    result.rows.forEach((row, index) => {
+      const patch = patchRows[index]!
+      rows.updateRow(patch.index, row)
+      for (const fieldId of Object.keys(patch.fields))
+        cellErrors.value.delete(`${row.id}:${fieldId}`)
+    })
+    return true
+  } catch (cause) {
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+    error.value = cause
+    return false
+  }
+}
+
+function planPaste(
+  matrix: string[][],
+  startRow: number,
+  startColumn: number,
+  columnType: FocusAfterRenderEvent['colType'],
+) {
+  const columnCount = columns.value.filter((candidate) =>
+    columnType === 'rgCol' ? !candidate.pin : candidate.pin === columnType,
+  ).length
+  const existing = new Map<
+    number,
+    { id: string; index: number; fields: Record<string, RowValue> }
+  >()
+  const newFields = new Map<number, Record<string, RowValue>>()
+  const issues: string[] = []
+  let lastWritableRow = -1
+
+  for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
+    const rowIndex = startRow + rowOffset
+    for (
+      let columnOffset = 0;
+      columnOffset < matrix[rowOffset]!.length;
+      columnOffset++
+    ) {
+      const columnIndex = startColumn + columnOffset
+      if (columnIndex >= columnCount) {
+        clipboardFailure(t('grid.pasteLimit'))
+        return null
+      }
+      const item = clipboardColumn(columnIndex, columnType)
+      if (!item || item.bound.readOnly) continue
+      const result = item.bound.parsePaste(
+        matrix[rowOffset]![columnOffset]!,
+        fieldEnvironment.value,
+      )
+      const target = rows.rowAt(rowIndex)
+      if (rowIndex < rows.total && !target) {
+        clipboardFailure()
+        return null
+      }
+      if (!result.ok) {
+        const message = t('grid.pasteInvalidCell', {
+          row: rowIndex + 1,
+          field: item.field.name,
+          reason: fieldErrorMessage(result.reason),
+        })
+        issues.push(message)
+        if (target)
+          cellErrors.value.set(`${target.id}:${item.field.id}`, message)
+        continue
+      }
+
+      lastWritableRow = Math.max(lastWritableRow, rowIndex)
+      if (rowIndex < rows.total) {
+        const patch = existing.get(rowIndex) ?? {
+          id: target!.id,
+          index: rowIndex,
+          fields: {},
+        }
+        patch.fields[item.field.id] = result.value
+        existing.set(rowIndex, patch)
+      } else {
+        const fields = newFields.get(rowIndex) ?? {}
+        fields[item.field.id] = result.value
+        newFields.set(rowIndex, fields)
+      }
+    }
+  }
+
+  const addedRows = Math.max(0, lastWritableRow + 1 - rows.total)
+  if (addedRows > 1000) {
+    clipboardFailure(t('grid.pasteLimit'))
+    return null
+  }
+  const insertRows = Array.from({ length: addedRows }, (_, index) => ({
+    fields: newFields.get(rows.total + index) ?? {},
+  }))
+  const patchRows = [...existing.values()].sort(
+    (left, right) => left.index - right.index,
+  )
+  const insertBody = { rows: insertRows }
+  const patchBody = {
+    rows: patchRows.map(({ id, fields }) => ({ id, fields })),
+  }
+  if (
+    patchRows.length > 1000 ||
+    insertRows.reduce(
+      (count, row) => count + Object.keys(row.fields).length,
+      0,
+    ) > 5000 ||
+    !requestBodyFits(insertBody) ||
+    !requestBodyFits(patchBody)
+  ) {
+    clipboardFailure(t('grid.pasteLimit'))
+    return null
+  }
+  clipboardErrors.value = issues
+  return { startRow, addedRows, patchRows, insertRows } satisfies PastePlan
+}
+
+async function savePaste(plan: PastePlan) {
+  if (!canWrite.value || props.identity !== auth.user?.id || saving.value)
+    return
+  saving.value = true
+  error.value = null
+  try {
+    if (!(await patchRows(plan.patchRows))) return
+    if (plan.addedRows > 0) {
+      if (disposed.value || props.identity !== auth.user?.id) return
+      try {
+        const inserted = await mutate<RowMutation>(
+          `/tables/${props.schema.table.id}/rows`,
+          'POST',
+          { rows: plan.insertRows },
+        )
+        if (inserted.rows.length !== plan.insertRows.length)
+          throw new Error(t('grid.saveFailed'))
+      } catch (cause) {
+        if (
+          cause instanceof RequestError &&
+          [401, 403, 404].includes(cause.status)
+        )
+          handleAccessFailure(cause)
+        error.value = cause
+        if (plan.patchRows.length > 0) clipboardFailure(t('grid.partialPaste'))
+        return
+      }
+      if (disposed.value || props.identity !== auth.user?.id) return
+      await initialize(plan.startRow, true)
+    }
+  } finally {
+    if (!disposed.value) saving.value = false
+  }
+}
+
+function paste(
+  event: CustomEvent<{
+    parsed: string[][]
+    dataText: string
+    raw: string
+    event: ClipboardEvent
+  }>,
+) {
+  event.preventDefault()
+  clipboardMessage.value = ''
+  clipboardErrors.value = []
+  if (!canWrite.value || !focused) {
+    clipboardFailure()
+    return
+  }
+  let matrix: string[][]
+  try {
+    matrix = parseTsv(event.detail.dataText || event.detail.raw)
+  } catch (cause) {
+    if (!(cause instanceof TsvError)) throw cause
+    clipboardFailure(t('grid.pasteInvalidTsv'))
+    return
+  }
+  const startRow = rowIndexForVirtual(focused.rowIndex)
+  if (startRow < 0) {
+    clipboardFailure()
+    return
+  }
+  const rowEnd = startRow + matrix.length
+  if (rowEnd > 1_000_001) {
+    clipboardFailure(t('grid.pasteLimit'))
+    return
+  }
+  const plan = planPaste(matrix, startRow, focused.colIndex, focused.colType)
+  if (!plan) return
+  if (plan.addedRows > 0) {
+    pendingPaste.value = plan
+    addRowsDialog.value?.showModal()
+  } else {
+    void savePaste(plan)
+  }
+}
+
+async function confirmPasteRows() {
+  const plan = pendingPaste.value
+  pendingPaste.value = null
+  addRowsDialog.value?.close()
+  if (plan) await savePaste(plan)
+}
+
+function cancelPasteRows() {
+  pendingPaste.value = null
+  addRowsDialog.value?.close()
+}
+
+function beforeCut(event: CustomEvent<{ event: ClipboardEvent }>) {
+  cutPending = canWrite.value
+  if (!cutPending) event.preventDefault()
+}
+
+async function clearCutRange(event: CustomEvent<DataTransfer>) {
+  if (!cutPending) return
+  event.preventDefault()
+  cutPending = false
+  const range = copyRange
+  copyRange = null
+  if (!range || !rangeFits(range)) {
+    clipboardFailure(t('grid.copyLimit'))
+    return
+  }
+  const patchMap = new Map<
+    number,
+    { id: string; index: number; fields: Record<string, RowValue> }
+  >()
+  for (let x = range.x; x <= range.x1; x++) {
+    const item = clipboardColumn(x, copyColumnType)
+    if (!item || item.bound.readOnly) continue
+    const empty = item.bound.parsePaste('', fieldEnvironment.value)
+    if (!empty.ok) {
+      clipboardFailure(fieldErrorMessage(empty.reason))
+      return
+    }
+    for (let y = range.y; y <= range.y1; y++) {
+      const rowIndex = rowIndexForVirtual(y)
+      const target = rows.rowAt(rowIndex)
+      if (!target) {
+        clipboardFailure()
+        return
+      }
+      const patch = patchMap.get(rowIndex) ?? {
+        id: target.id,
+        index: rowIndex,
+        fields: {},
+      }
+      patch.fields[item.field.id] = empty.value
+      patchMap.set(rowIndex, patch)
+    }
+  }
+  saving.value = true
+  clipboardMessage.value = ''
+  try {
+    await patchRows([...patchMap.values()])
+  } finally {
+    if (!disposed.value) saving.value = false
+  }
+}
+
+async function fillDown(
+  oldRange: RangeArea,
+  newRange: RangeArea,
+  keyboard = false,
+  columnType: FocusAfterRenderEvent['colType'] = focused?.colType ?? 'rgCol',
+) {
+  clipboardErrors.value = []
+  const oldStart = rowIndexForVirtual(oldRange.y)
+  const newStart = rowIndexForVirtual(newRange.y)
+  const newEnd = rowIndexForVirtual(newRange.y1)
+  if (
+    !canWrite.value ||
+    oldStart < 0 ||
+    newStart !== oldStart ||
+    newEnd < 0 ||
+    oldRange.x !== newRange.x ||
+    oldRange.x1 !== newRange.x1 ||
+    newRange.y !== oldRange.y ||
+    (keyboard ? newRange.y1 <= oldRange.y : newRange.y1 <= oldRange.y1) ||
+    newEnd >= rows.total
+  ) {
+    clipboardFailure(t('grid.fillDownLimit'))
+    return
+  }
+  const rowCount = newEnd - oldStart
+  const columnCount = newRange.x1 - newRange.x + 1
+  if (rowCount < 1 || rowCount > 1000 || rowCount * columnCount > 5000) {
+    clipboardFailure(t('grid.fillDownLimit'))
+    return
+  }
+  const first = rows.rowAt(oldStart)
+  if (!first) {
+    clipboardFailure()
+    return
+  }
+  const fields: Record<string, RowValue> = {}
+  for (let x = oldRange.x; x <= oldRange.x1; x++) {
+    const item = clipboardColumn(x, columnType)
+    if (!item || item.bound.readOnly) continue
+    fields[item.field.id] = wireValue(first.fields[item.field.id])
+  }
+  if (Object.keys(fields).length === 0) return
+  const patches: {
+    id: string
+    index: number
+    fields: Record<string, RowValue>
+  }[] = []
+  for (let y = oldStart + 1; y <= newEnd; y++) {
+    const row = rows.rowAt(y)
+    if (!row) {
+      clipboardFailure()
+      return
+    }
+    patches.push({ id: row.id, index: y, fields: { ...fields } })
+  }
+  saving.value = true
+  clipboardMessage.value = ''
+  try {
+    await patchRows(patches)
+  } finally {
+    if (!disposed.value) saving.value = false
+  }
+}
+
+function rangeEdit(event: CustomEvent<BeforeRangeSaveDataDetails>) {
+  event.preventDefault()
+  const oldRange = event.detail.oldRange
+  const newRange = event.detail.newRange
+  if (!oldRange || !newRange) {
+    clipboardFailure(t('grid.fillDownLimit'))
+    return
+  }
+  void fillDown(oldRange, newRange)
+}
+
+async function keydown(event: KeyboardEvent) {
+  if (
+    !(event.ctrlKey || event.metaKey) ||
+    event.key.toLowerCase() !== 'd' ||
+    (event.target instanceof Element &&
+      event.target.closest(
+        'input, textarea, select, button, [contenteditable="true"]',
+      ))
+  )
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  const range = await host.value?.$el.getSelectedRange()
+  if (range)
+    await fillDown(
+      range,
+      range,
+      true,
+      range.colType ?? focused?.colType ?? 'rgCol',
+    )
+}
+
 function syncSource() {
-  if (gridSource.length !== rows.slots.length) {
-    gridSource.length = rows.slots.length
-    gridSource.fill(modelFor(null))
+  let source = gridSource.value
+  let changed = false
+  if (source.length !== rows.slots.length) {
+    source = Array.from({ length: rows.slots.length }, () => emptyModel)
+    syncedRows.length = rows.slots.length
+    syncedRows.fill(null)
     syncedPages.clear()
+    changed = true
   }
   const cachedPages = new Set(rows.snapshot().cachedPages)
   for (const page of syncedPages) {
     if (cachedPages.has(page)) continue
     const start = page * remotePageSize
-    const end = Math.min(start + remotePageSize, gridSource.length)
-    gridSource.fill(modelFor(null), start, end)
+    const end = Math.min(start + remotePageSize, source.length)
+    for (let index = start; index < end; index++) {
+      if (!syncedRows[index]) continue
+      source[index] = emptyModel
+      syncedRows[index] = null
+      changed = true
+    }
   }
   for (const page of cachedPages) {
     const start = page * remotePageSize
     const end = Math.min(start + remotePageSize, rows.slots.length)
     for (let index = start; index < end; index++) {
-      gridSource[index] = modelFor(rows.rowAt(index))
+      const row = rows.rowAt(index)
+      if (syncedRows[index] === row) continue
+      source[index] = modelFor(row)
+      syncedRows[index] = row
+      changed = true
     }
   }
   syncedPages.clear()
   for (const page of cachedPages) syncedPages.add(page)
-  void refreshSource()
+  if (changed) gridSource.value = source.slice()
 }
 
-async function refreshSource() {
-  try {
-    const store = await host.value?.$el.getSourceStore('rgRow')
-    if (store && !disposed.value) store.set('source', gridSource.slice())
-  } catch (cause) {
-    if (!disposed.value) {
-      error.value = cause
-      loading.value = false
-    }
-  }
-}
-
-async function initialize(anchor = 0) {
+async function initialize(anchor = 0, preserveCellErrors = false) {
   loading.value = true
   error.value = null
-  cellErrors.value.clear()
+  if (!preserveCellErrors) cellErrors.value.clear()
   try {
     await rows.initialize(anchor)
     if (!disposed.value && !error.value) loading.value = false
@@ -320,6 +858,10 @@ async function initialize(anchor = 0) {
 function created() {
   ready.value = true
   void initialize()
+}
+
+function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
+  focused = event.detail
 }
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
@@ -359,8 +901,15 @@ async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   if (!canWrite.value || disposed.value) return
   if (typeof event.detail.prop !== 'string') return
   const item = boundFor(event.detail.prop)
-  const row = rows.rowAt(event.detail.rowIndex)
-  if (!item || !row || item.bound.readOnly) return
+  const rowId = event.detail.model?.__rowId ?? focused?.model?.__rowId
+  const rowIndex =
+    typeof rowId === 'string' ? rows.indexOfRow(rowId) : event.detail.rowIndex
+  const row = rows.rowAt(rowIndex)
+  if (!item || item.bound.readOnly) return
+  if (!row) {
+    error.value = new Error(t('grid.saveFailed'))
+    return
+  }
   const normalized = item.bound.normalize(event.detail.val)
   const key = `${row.id}:${item.field.id}`
   if (!normalized.ok) {
@@ -376,7 +925,7 @@ async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
       { fields: { [item.field.id]: normalized.value } },
     )
     if (disposed.value || props.identity !== auth.user?.id) return
-    rows.updateRow(event.detail.rowIndex, result.row)
+    rows.updateRow(rowIndex, result.row)
     cellErrors.value.delete(key)
     selectedRows.value.delete(row.id)
   } catch (cause) {
@@ -469,7 +1018,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="data-grid" :aria-label="t('grid.title')">
+  <section
+    class="data-grid"
+    :aria-label="t('grid.title')"
+    @keydown.capture="keydown"
+  >
     <div class="grid-toolbar">
       <button
         type="button"
@@ -511,6 +1064,16 @@ onBeforeUnmount(() => {
     <p v-if="cellErrors.size > 0" class="grid-validation-summary" role="alert">
       {{ [...cellErrors.values()].join(' ') }}
     </p>
+    <p v-if="clipboardMessage" class="grid-validation-summary" role="alert">
+      {{ clipboardMessage }}
+    </p>
+    <p
+      v-if="clipboardErrors.length"
+      class="grid-validation-summary"
+      role="alert"
+    >
+      {{ clipboardErrors.join('\n') }}
+    </p>
     <button v-if="error" type="button" @click="() => initialize()">
       {{ t('auth.retry') }}
     </button>
@@ -528,14 +1091,21 @@ onBeforeUnmount(() => {
       :editors="editors"
       :theme="preferences.isDark ? 'darkCompact' : 'compact'"
       :row-size="32"
-      :range="false"
+      :range="true"
       :resize="true"
       :readonly="!canWrite"
-      :use-clipboard="false"
+      :use-clipboard="true"
       :hide-attribution="true"
       @created="created"
       @viewportscroll="scroll"
       @beforeedit="edit"
+      @afterfocus="focusChanged"
+      @beforecopyregion="beforeCopyRegion"
+      @beforecopyapply="copy"
+      @beforepasteapply="paste"
+      @beforecut="beforeCut"
+      @clearregion="clearCutRange"
+      @beforerangeedit="rangeEdit"
     />
     <p v-if="unsupportedField" role="alert">
       {{ t('grid.unsupportedField') }}
@@ -549,6 +1119,20 @@ onBeforeUnmount(() => {
         </button>
         <button type="button" :disabled="saving" @click="deleteSelected">
           {{ t('grid.deleteConfirm') }}
+        </button>
+      </div>
+    </dialog>
+    <dialog ref="addRowsDialog" :aria-label="t('grid.addRowsTitle')">
+      <h2>{{ t('grid.addRowsTitle') }}</h2>
+      <p>
+        {{ t('grid.addRowsConfirm', { count: pendingPaste?.addedRows ?? 0 }) }}
+      </p>
+      <div class="grid-dialog-actions">
+        <button type="button" :disabled="saving" @click="cancelPasteRows">
+          {{ t('grid.cancel') }}
+        </button>
+        <button type="button" :disabled="saving" @click="confirmPasteRows">
+          {{ t('grid.addRowsAction', { count: pendingPaste?.addedRows ?? 0 }) }}
         </button>
       </div>
     </dialog>
@@ -601,6 +1185,9 @@ onBeforeUnmount(() => {
   font-size: 11px;
   white-space: normal;
 }
+.grid-validation-summary {
+  white-space: pre-wrap;
+}
 .data-grid button,
 .data-grid summary {
   padding: 6px 10px;
@@ -614,12 +1201,12 @@ onBeforeUnmount(() => {
   cursor: default;
   opacity: 0.55;
 }
+.grid-mobile-notice {
+  display: none;
+}
 @media (max-width: 767px) {
   .grid-mobile-notice {
     display: block;
   }
-}
-.grid-mobile-notice {
-  display: none;
 }
 </style>

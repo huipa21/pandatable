@@ -622,6 +622,12 @@ write/owner; admin role does not bypass data grants. Bulk writes are all-or-
 nothing. `created_by`/`updated_by` are UUIDs, not resolved user names.
 Bulk patch locks use ascending numeric row ID order while response order
 matches the request.
+The production grid's T1.17 paste path sends valid edits to existing rows in a
+single bounded bulk PATCH; codec-invalid cells are reported and omitted from
+that request. After explicit confirmation, additional tail rows use the
+bounded bulk-create route. The client must respect the row/cell/body limits
+above and report oversize input rather than silently truncating it; no API
+endpoint or authorization rule is added for clipboard operations (D-139).
 NOT NULL and unique violations return sanitized `ERR_REQUIRED_FIELD` and
 `ERR_UNIQUE_CONFLICT`; schema lock/serialization outcomes are
 `ERR_DDL_LOCK_TIMEOUT` or `ERR_SCHEMA_CHANGED`. These implemented routes do
