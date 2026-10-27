@@ -4,10 +4,33 @@ import type { AdminSettings } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
+export async function restoreSettings(page: Page, settings: AdminSettings) {
+  const restored = await page.request.patch('/api/v1/admin/settings', {
+    headers: { Origin: process.env.PT_E2E_BASE_URL!, 'X-PT-CSRF': '1' },
+    data: settings,
+  })
+  expect(restored.status()).toBe(200)
+}
+
 export async function verifySettings(page: Page, suffix: string) {
   const before = await page.request.get('/api/v1/admin/settings')
   expect(before.status()).toBe(200)
   const previous = (await before.json()) as AdminSettings
+  try {
+    return { previous, appName: await changeSettings(page, suffix, previous) }
+  } catch (failure) {
+    // These settings are instance-wide: an aborted run must not leave the
+    // default language or app name behind for every later test.
+    await restoreSettings(page, previous)
+    throw failure
+  }
+}
+
+async function changeSettings(
+  page: Page,
+  suffix: string,
+  previous: AdminSettings,
+) {
   const appName = `Panda Team ${suffix} <plain>`
   let release!: () => void
   const gate = new Promise<void>((resolve) => {
@@ -159,12 +182,27 @@ export async function verifySettings(page: Page, suffix: string) {
     page.getByText(en.workspaces.loading, { exact: true }),
   ).toBeVisible()
   releaseWorkspaces()
+  // Every project shares one instance, so earlier runs may already own
+  // workspaces; assert the real inventory and reach the empty state through
+  // the escaped-pattern search below.
+  const inventory = (await (
+    await page.request.get('/api/v1/admin/workspaces')
+  ).json()) as { items: unknown[]; total: number }
   await expect(
-    page.getByText(en.workspaces.empty, { exact: true }),
+    page.getByText(
+      en.workspaces.total.replace('{total}', `${inventory.total}`),
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible()
-  expect(
-    await (await page.request.get('/api/v1/admin/workspaces')).json(),
-  ).toEqual({ items: [], total: 0 })
+  await expect(page.locator('.admin-workspaces .workspace-card')).toHaveCount(
+    inventory.items.length,
+  )
+  if (inventory.total === 0)
+    await expect(
+      page.getByText(en.workspaces.empty, { exact: true }),
+    ).toBeVisible()
   await page.getByLabel(en.workspaces.searchHint, { exact: true }).fill('%_')
   await page.getByRole('button', { name: en.admin.search, exact: true }).click()
   await expect(
@@ -211,5 +249,5 @@ export async function verifySettings(page: Page, suffix: string) {
     page.getByText(en.workspaces.empty, { exact: true }),
   ).toBeVisible()
   await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
-  return { previous, appName }
+  return appName
 }

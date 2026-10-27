@@ -149,6 +149,17 @@ Neither save nor deploy silently substitutes a missing app image/archive.
   `deploy/compose.yaml` and `deploy/compose.local.yaml`, independently of `check`.
 - Results of `ptdev check` + `ptdev e2e` are noted in `progress.md` when a milestone is closed.
 
+### Default-parallel gate (M1 review, D-145/D-146)
+
+Since 2026-10-27 both gates pass with plain `go run ./tools/ptdev check` and
+`go run ./tools/ptdev e2e`; the `GOFLAGS=-p=1` workaround required by earlier
+task records is no longer needed and must not be used to hide a new failure.
+The Suite teardown now has a 60 s cleanup budget separate from its unchanged
+3 s connect attempt and retries the forced drop only on `55006` (D-145); the
+E2E settings helper restores instance-wide settings on failure and asserts the
+real shared workspace inventory instead of a globally empty one (D-146).
+Earlier task records keep their original `GOFLAGS=-p=1` evidence as written.
+
 T1.13's focused lower-layer gate is `go test ./internal/codec -count=1`
 with explicit `PT_TEST_DATABASE_URL` and `PT_TEST_DATABASE_REQUIRED=1`, plus
 `pnpm --dir web exec vitest run src/fields/fields.test.ts src/components/fields/fields.test.ts`.

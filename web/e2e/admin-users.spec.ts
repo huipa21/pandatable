@@ -9,7 +9,7 @@ import {
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyDashboard } from './dashboard'
-import { verifySettings } from './settings'
+import { verifySettings, restoreSettings } from './settings'
 import { verifyNavigation } from './navigation'
 
 async function signIn(page: Page, login: string, password: string) {
@@ -457,10 +457,6 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
     expectBrowserClean(userPage, diagnostics)
   } finally {
     await userContext.close()
-    const restored = await page.request.patch('/api/v1/admin/settings', {
-      headers,
-      data: branding.previous,
-    })
-    expect(restored.status()).toBe(200)
+    await restoreSettings(page, branding.previous)
   }
 })

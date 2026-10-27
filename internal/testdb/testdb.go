@@ -24,6 +24,15 @@ import (
 
 const connectTimeout = 3 * time.Second
 
+// cleanupTimeout covers the whole owned-database teardown. `go test ./...`
+// drops every package database against one loaded server, where DROP DATABASE
+// needs far more than a connect budget.
+const cleanupTimeout = 60 * time.Second
+
+// objectInUse is returned when a session reconnected between the FORCE
+// termination and the drop itself.
+const objectInUse = "55006"
+
 type Suite struct {
 	once        sync.Once
 	adminConfig *pgx.ConnConfig
@@ -156,13 +165,15 @@ func (suite *Suite) close() error {
 	if suite.name == "" {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
-	admin, err := pgx.ConnectConfig(ctx, suite.adminConfig.Copy())
+	connectCtx, cancelConnect := context.WithTimeout(ctx, connectTimeout)
+	admin, err := pgx.ConnectConfig(connectCtx, suite.adminConfig.Copy())
+	cancelConnect()
 	if err != nil {
 		return fmt.Errorf("cleanup %s: %w", suite.name, operationError("connect", err))
 	}
-	_, dropErr := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+pgx.Identifier{suite.name}.Sanitize()+" WITH (FORCE)")
+	dropErr := dropDatabase(ctx, admin, suite.name)
 	closeErr := admin.Close(ctx)
 	if dropErr != nil {
 		return fmt.Errorf("cleanup %s: %w", suite.name, operationError("drop owned database", dropErr))
@@ -173,4 +184,20 @@ func (suite *Suite) close() error {
 	fmt.Fprintln(os.Stderr, "testdb: dropped owned database", suite.name)
 	suite.name = ""
 	return nil
+}
+
+func dropDatabase(ctx context.Context, admin *pgx.Conn, name string) error {
+	statement := "DROP DATABASE IF EXISTS " + pgx.Identifier{name}.Sanitize() + " WITH (FORCE)"
+	for {
+		_, err := admin.Exec(ctx, statement)
+		var server *pgconn.PgError
+		if err == nil || !errors.As(err, &server) || server.Code != objectInUse {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(time.Second):
+		}
+	}
 }

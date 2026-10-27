@@ -586,3 +586,22 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-902 — Gallery** · M4 · Gallery cards with cover attachment and selected fields.
 - **AT-903 — Calendar** · M5 · Calendar by date/datetime field (month/week), drag to reschedule.
 - **AT-904 — SMTP** · M5 · Admin configures SMTP and sends test email; user self-service password reset by email; mention emails (opt-in).
+
+## M1 phase review evidence (2026-10-27)
+
+Whole-M1 review of the real gates, not a task completion. No acceptance result
+was promoted and no prior evidence was removed.
+
+| Test | Status | Evidence / remaining requirement |
+|---|---|---|
+| AT-006 (default-parallel gate) | Improved, still M0-partial | `go run .\tools\ptdev check` previously failed with Suite DROP cleanup errors in `internal/codec`, `internal/devseed` and `internal/testdb`; it now passes with default parallelism (lint 27.6 s, test 1m18.8 s, build 14.8 s) after D-145, so `GOFLAGS=-p=1` is no longer required. Linux bash/Docker remains outstanding. |
+| Full production-image suite | 17 passed / 0 failed / 2 intentional skips (5.0m) | Previously 13 passed / 4 failed. The four mobile failures had one root cause: a globally-empty workspace-inventory assumption aborted the run before the caller restored instance-wide settings, leaving `defaultLocale=zh-CN` (D-146). All AT-104..110/112/201/208/213, AT-310, AT-313, AT-302 and AT-306..309 scenarios pass unchanged. |
+| AT-305 / AT-311 | Not implemented | No `PATCH /views/{id}` route exists, so column width/order/hidden/frozen cannot persist to the view; the grid has RevoGrid local resize and a session-local field toggle only. Keyboard navigation relies on RevoGrid defaults with no Delete/Esc/F2/Ctrl+Home/End coverage or E2E. T1.16 remains In progress. |
+| AT-102 / AT-116 / AT-117 | Partial, unchanged | `PATCH /auth/me` exists, but there is no `/profile` page or route, so display name, locale, theme and timezone cannot be changed in a browser and the alice/bob timezone scenario cannot run. No browser scenario asserts the translated wrong-password error or post-logout back-button behavior. |
+| AT-301/302/303/304 | Partial, preserved | Existing grid, modal and card evidence stands; the complete 12-type creation with `information_schema` verification, validation, required/unique/default and system-field/`updated_by` scenarios are still missing. |
+| AT-111 / AT-203 / AT-804 | Deferred by design | Upload enforcement is T2.2, restore is T3.6 and filter-value injection is T2.6; T1.8 and T1.9 stay In progress until those milestones close them. |
+| AT-312 / NFR-1 / NFR-2 | Not certified, unchanged | Still no authorized 2-vCPU/4-GB Ubuntu host; no new performance measurement was taken in this review. |
+| AT-001 / AT-005 | Partial, unchanged | No Linux/Docker runtime or approved Caddy destination was used. |
+
+Exact commands, root-cause analysis and cleanup:
+[progress.md, M1 review](progress.md#m1-phase-review-and-gate-repair-2026-10-27).

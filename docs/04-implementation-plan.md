@@ -102,6 +102,15 @@ AT-301/303 row/grid scenarios pass through T1.15/T1.16. See the
 [T1.14 record](task-prompts/T1.14.md#implementation-and-handoff-2026-10-26)
 and [T1.15 handoff](task-prompts/T1.15.md).
 
+**M1 review (2026-10-27).** 11 tasks are Done and 9 remain In progress. Both
+gates are green after D-145/D-146 (`ptdev check` with default parallelism;
+`ptdev e2e` 17 passed / 0 failed / 2 intentional skips). The remaining M1
+feature work is AT-311 column ops (no `PATCH /views/{id}` route yet), AT-305
+keyboard navigation, the missing self-profile UI behind AT-116/AT-117, the
+AT-102 browser scenario and the full AT-301..304 grid scenarios. AT-312/NFR-2
+stay environment-blocked. See
+[progress.md](progress.md#m1-phase-review-and-gate-repair-2026-10-27).
+
 **Exit:** team can log in, organise workspaces, share, define basic fields, and edit data in grid/mobile. Tag `v0.1.0`.
 
 ---

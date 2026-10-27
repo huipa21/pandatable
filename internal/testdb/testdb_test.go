@@ -106,21 +106,25 @@ func TestSuiteIsolationPostgreSQL(t *testing.T) {
 	}
 	firstPool.Close()
 	name := first.name
+	// The shared budget above is already spent; the forced-cleanup probe and
+	// its verification get their own deadline.
+	cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancelCleanup()
 	// FORCE must also reap forgotten connections, not only cooperative pools.
-	leaked, err := pgx.Connect(ctx, first.databaseURL)
+	leaked, err := pgx.Connect(cleanupCtx, first.databaseURL)
 	if err != nil {
 		t.Fatal("open deliberate cleanup probe connection")
 	}
-	defer leaked.Close(ctx)
+	defer leaked.Close(cleanupCtx)
 	if err := first.close(); err != nil {
 		t.Fatal(err)
 	}
-	admin, err := pgx.Connect(ctx, os.Getenv("PT_TEST_DATABASE_URL"))
+	admin, err := pgx.Connect(cleanupCtx, os.Getenv("PT_TEST_DATABASE_URL"))
 	if err != nil {
 		t.Fatal("connect cleanup verification")
 	}
-	defer admin.Close(ctx)
-	if err := admin.QueryRow(ctx, `SELECT count(*) FROM pg_database WHERE datname = $1`, name).Scan(&count); err != nil || count != 0 {
+	defer admin.Close(cleanupCtx)
+	if err := admin.QueryRow(cleanupCtx, `SELECT count(*) FROM pg_database WHERE datname = $1`, name).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("owned database remains: count=%d, err=%v", count, err)
 	}
 	t.Log("separate migrated databases, same-suite reuse, no shared data, forced connection cleanup and database removal verified")

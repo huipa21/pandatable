@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7/T1.10/T1.11 Done for M1 scope. Real sidebar/schema-shell AT-201/208/213/full AT-112 and M1 AT-203 removal pass alongside auth/admin tests. T1.8 still awaits full AT-111/322 upload enforcement; T1.2 AT-102/116/full AT-117, field/filter AT-202/804, sharing/grid/rows and M3 restore remain pending. ACL/grants API verified (AT-204..212); no future UI acceptance inferred. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7/T1.10/T1.11 Done for M1 scope. Real sidebar/schema-shell AT-201/208/213/full AT-112 and M1 AT-203 removal pass alongside auth/admin tests. T1.8 still awaits full AT-111/322 upload enforcement; T1.2 AT-102/116/full AT-117, field/filter AT-202/804, sharing/grid/rows and M3 restore remain pending. ACL/grants API verified (AT-204..212); no future UI acceptance inferred. 2026-10-27 phase review: 11 tasks Done, 9 In progress; both gates are green (`ptdev check` with default parallelism, `ptdev e2e` 17 passed/0 failed/2 intentional skips) after D-145/D-146. Remaining M1 work: AT-311 column ops (no `PATCH /views/{id}`), AT-305 keyboard navigation, the missing self-profile UI for AT-116/117, the AT-102 browser scenario and full AT-301..304; AT-312/NFR-2 stay environment-blocked. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -1629,3 +1629,65 @@ unrelated volumes/stacks are preserved. The dev DB and Podman VM are both
 restored to **stopped**, with the original **8 CPUs / 2048 MiB** VM settings.
 The worktree began clean; only `master` exists. The T1.18 Conventional Commit
 is made directly on `master`, without generated assets or browser artifacts.
+## M1 phase review and gate repair (2026-10-27)
+
+Scope: review the whole M1 phase, verify whether it is complete, and fix what
+blocks the gates. No feature, API, schema, dependency or acceptance claim was
+added. Both gates were run for real before and after the change.
+
+### Verified M1 status
+
+- Tasks: **11 Done** (T1.1, T1.3-T1.7, T1.10, T1.11, T1.17-T1.19), **9 In
+  progress** (T1.2, T1.8, T1.9, T1.12-T1.16, T1.20). Status unchanged by this
+  review; no task was promoted.
+- Gates **before** the fix: `go run .\tools\ptdev check` **FAIL**
+  (lint PASS, test FAIL, build PASS) and `go run .\tools\ptdev e2e`
+  **13 passed / 4 failed / 2 intentional skips**.
+- Gates **after** the fix: `ptdev check` **PASS** with default parallelism
+  (lint 27.6 s, test 1m18.8 s, build 14.8 s) and `ptdev e2e`
+  **17 passed / 0 failed / 2 intentional skips in 5.0m**. No `GOFLAGS=-p=1`.
+
+### Defects found and fixed
+
+- **Default-parallel Suite cleanup (D-145).** Reproduced with an explicit DSN
+  and `PT_TEST_DATABASE_REQUIRED=1`: `internal/codec`, `internal/devseed` and
+  `internal/testdb` failed with `drop owned database failed`. The diagnostic
+  carried no SQLSTATE, so it was the shared 5 s connect+drop deadline expiring,
+  not a server refusal. Teardown now has its own 60 s budget and retries the
+  forced drop only on `55006`; the isolation test verifies forced removal with
+  a fresh deadline instead of an already spent shared one. All assertions,
+  redaction and package-failing behavior are unchanged.
+- **Four mobile E2E failures, one root cause (D-146).** `verifySettings`
+  asserted a globally empty admin workspace inventory, which only holds for the
+  first project; the desktop project legitimately leaves real workspaces. The
+  mobile run therefore failed at `settings.ts` and aborted before the caller's
+  `finally` restore, leaving instance-wide `defaultLocale=zh-CN` and cascading
+  into the mobile spike notice, shell welcome and `lang=en` assertions. The
+  helper now restores settings itself on failure and asserts the live API
+  inventory, reaching the empty state through the escaped `%_` search.
+
+### Remaining M1 work (not started here)
+
+- **AT-311** column ops are unimplemented: there is no `PATCH /views/{id}`
+  route, and the grid only has RevoGrid local resize plus a session-local field
+  toggle; reorder, freeze and persistence are missing (T1.16).
+- **AT-305** keyboard navigation relies on RevoGrid defaults, with no
+  Delete/Backspace clear, Esc/F2, Ctrl+Home/End coverage or E2E (T1.16).
+- **AT-116 / AT-117 (M1 half)**: no `/profile` page or route, so display name,
+  locale, theme and timezone cannot be changed in the browser although
+  `PATCH /auth/me` exists (T1.2).
+- **AT-102** has no browser scenario for the translated wrong-password error or
+  post-logout back-button behavior (T1.2).
+- **AT-301/302/303/304** still lack the complete grid scenarios (12 types with
+  `information_schema` verification, validation, required/unique/default,
+  system-field display and `updated_by`).
+- Deferred by design: AT-111 upload enforcement (T2.2), full AT-804 (T2.6),
+  AT-203 restore (T3.6), AT-117 relative-date filters (M2). T1.8 and T1.9 stay
+  In progress because their linked tests close only in M2.
+- Environment-blocked and still uncertified: AT-312/NFR-2 (no authorized
+  2-vCPU/4-GB Ubuntu host), AT-001/005/006 (no Linux/Docker or approved Caddy
+  destination) and NFR-1 app RSS.
+
+Owned cleanup: the temporary gate logs were removed and the E2E workflow
+removed its own stack; `pt-dev-db`, `pt-dev-pgdata`, release images and
+unrelated stacks are preserved. The worktree began clean; only `master` exists.
