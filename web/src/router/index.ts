@@ -21,6 +21,11 @@ export const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/t/:tableId/v/:viewId/r/:rowId',
+      component: () => import('../pages/ResourcePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/t/:tableId/v/:viewId',
       component: () => import('../pages/ResourcePage.vue'),
       meta: { requiresAuth: true },

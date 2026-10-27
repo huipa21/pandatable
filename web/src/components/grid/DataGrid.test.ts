@@ -369,6 +369,22 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
   return fetch
 }
 
+it('expands the focused loaded row with Space but leaves native controls and IME alone', async () => {
+  await mountGrid(schemaFor('text', 'read'))
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: ' ', isComposing: true })
+  expect(wrapper!.emitted('expand')).toBeUndefined()
+  await wrapper!.get('.data-grid').trigger('keydown', { key: ' ' })
+  expect(wrapper!.emitted('expand')).toEqual([['9007199254740993']])
+  await wrapper!.get('button').trigger('keydown', { key: ' ' })
+  expect(wrapper!.emitted('expand')).toHaveLength(1)
+})
+
 it('queries the real view and persists a cell edit without coercing bigint row IDs', async () => {
   const schema = schemaFor('text')
   const fetch = await mountGrid(schema)

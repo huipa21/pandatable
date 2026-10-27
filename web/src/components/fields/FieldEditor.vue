@@ -7,8 +7,13 @@ import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, Reason, Result, WireValue } from '../../fields/types'
 
 const props = withDefaults(
-  defineProps<{ field: BoundField; value: WireValue; env?: FieldEnv }>(),
-  { env: () => ({}) },
+  defineProps<{
+    field: BoundField
+    value: WireValue
+    env?: FieldEnv
+    submitLabel?: string
+  }>(),
+  { env: () => ({}), submitLabel: undefined },
 )
 const emit = defineEmits<{ commit: [value: WireValue]; cancel: [] }>()
 const { t } = useI18n()
@@ -63,6 +68,17 @@ function commitSelect() {
 
 function commitCheckbox(event: Event) {
   finish(props.field.normalize((event.target as HTMLInputElement).checked))
+}
+
+function commit() {
+  if (props.field.presentation === 'select') commitSelect()
+  else if (props.field.presentation === 'checkbox')
+    finish(
+      props.field.normalize(
+        input.value instanceof HTMLInputElement && input.value.checked,
+      ),
+    )
+  else commitText()
 }
 
 function keydown(event: KeyboardEvent) {
@@ -138,11 +154,11 @@ function keydown(event: KeyboardEvent) {
       :placeholder="placeholder"
     />
     <button
-      v-if="field.presentation === 'select' && multiple"
+      v-if="submitLabel || (field.presentation === 'select' && multiple)"
       type="button"
-      @click="commitSelect"
+      @click="commit"
     >
-      {{ t('field.editor.apply') }}
+      {{ submitLabel ?? t('field.editor.apply') }}
     </button>
     <p v-if="reason" class="field-editor-error" role="alert">{{ error }}</p>
   </div>

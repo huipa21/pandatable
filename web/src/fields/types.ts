@@ -91,6 +91,16 @@ export type Agg =
 /** Canonical JSON wire value (D-115); null is SQL NULL. */
 export type WireValue = null | string | number | boolean | string[]
 
+export function isWireValue(value: unknown): value is WireValue {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    (Array.isArray(value) && value.every((item) => typeof item === 'string'))
+  )
+}
+
 export type Result<T> =
   { ok: true; value: T } | { ok: false; reason: Reason; option?: string }
 

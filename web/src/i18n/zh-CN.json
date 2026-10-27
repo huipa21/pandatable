@@ -393,6 +393,18 @@
     "requestStale": "过期，已忽略",
     "requestFailed": "失败"
   },
+  "rowExpand": {
+    "open": "展开行 {id}",
+    "title": "行 {id}",
+    "close": "关闭行",
+    "edit": "编辑 {name}",
+    "save": "保存值",
+    "saved": "值已保存。",
+    "hint": "每次编辑一个字段。点击保存或按 Enter 保存；取消将丢弃当前草稿。长文本使用 Ctrl/Command+Enter 保存。",
+    "readOnly": "你对此行只有只读权限。",
+    "system": "只读系统字段",
+    "tooLarge": "此值超过单行请求的 4,096 字节限制，尚未保存。"
+  },
   "errors": {
     "ERR_DDL_CONFLICT": "现有数据或约束与此结构更改冲突。",
     "ERR_DDL_LOCK_TIMEOUT": "表正忙，请稍后重试结构更改。",

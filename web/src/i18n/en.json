@@ -393,6 +393,18 @@
     "requestStale": "Stale; ignored",
     "requestFailed": "Failed"
   },
+  "rowExpand": {
+    "open": "Expand row {id}",
+    "title": "Row {id}",
+    "close": "Close row",
+    "edit": "Edit {name}",
+    "save": "Save value",
+    "saved": "Value saved.",
+    "hint": "Edit one field at a time. Save or press Enter to persist; Cancel discards the current draft. Long text uses Ctrl/Command+Enter.",
+    "readOnly": "You have read-only access to this row.",
+    "system": "Read-only system field",
+    "tooLarge": "This value exceeds the single-row request limit of 4,096 bytes. It has not been saved."
+  },
   "errors": {
     "ERR_DDL_CONFLICT": "Existing data or constraints conflict with this schema change.",
     "ERR_DDL_LOCK_TIMEOUT": "The table is busy. Try the schema change again shortly.",

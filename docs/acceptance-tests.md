@@ -387,6 +387,33 @@ The earlier mobile notice CSS-order issue and stale browser selection were
 fixed and verified. See the
 [T1.17 completion record](task-prompts/T1.17.md#implementation-and-handoff-2026-10-27).
 
+### T1.18 row expansion evidence (2026-10-27)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-310 | Pass | Complete production-image suite: real grid row creation, expand icon and Space, all 12 writable codec editors with exact persisted values, full-field direct row URL/reload, hidden/system/deleted fields, invalid/deleted row/view/table, reader/writer/revoked ACL, delayed route/identity responses, en/zh-CN and light/dark. Desktop scenario 43.8 s; system fields/readers remain read-only by contract. |
+| AT-306..309 / AT-302 | Prior evidence preserved | Existing real production-grid desktop scenario passes in 15.2 s; mobile fallback 2.9 s. Modal coverage does not replace the original clipboard/validation assertions. |
+| Mobile, T1.18 boundary | Pass | New scenario's mobile fallback passes in 2.5 s with no RevoGrid/cards mounted. T1.19 still owns full-screen/mobile cards, FAB and AT-313. |
+| AT-301/303/304, AT-204..207 | Pending full scenarios preserved | Modal kind saves/system renderers and row API denial are not the complete grid/type-catalog/constraints/sharing acceptance tests. |
+| AT-312 / NFR-1 | Not certified | No real 200k-row production-browser first-paint/middle-page measurement on the documented 2-vCPU/4-GB host. Available VM remains 8 CPUs/2 GiB. |
+
+`go run .\tools\ptdev e2e` final result: **11 passed / 4 failed / 2 skipped
+in 4.0 min**. All T1.18 scenarios and existing production-grid scenarios pass.
+Unrelated failures: mobile admin workspace empty-search expectation, mobile
+synthetic-spike English notice, and two mobile shell locale/welcome assertions.
+Two existing spike mobile exclusions remain intentional. Request/assertion/
+scenario/global deadlines, one worker and zero retries are unchanged.
+The neutral **404** for invalid GET row IDs is verified without bypassing ACL;
+intentional browser HTTP failures are pre-registered.
+
+Lower-layer checks: **441 frontend tests / 25 files**, lint/typecheck and
+**528** matching locale keys pass; gzip initial shell **190337 bytes**.
+Explicit required uncached PG18 row/query tests pass. Default full check
+reproduces known parallel Suite DROP cleanup errors in codec/db/testdb;
+command-scoped `GOFLAGS=-p=1` full check passes. Exact failures, versions,
+resource snapshots and cleanup:
+[T1.18 record](task-prompts/T1.18.md#implementation-and-handoff-2026-10-27).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

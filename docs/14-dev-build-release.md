@@ -202,6 +202,29 @@ suite is still required and unrelated failures must be recorded separately.
 AT-312 requires browser measurements on the documented 2-vCPU/4-GB target;
 Podman VM timings or API-only page timings are not substitutes.
 
+T1.18 focused verification:
+
+```powershell
+pnpm -C web exec vitest run RowExpandDialog DataGrid ResourcePage fields.test
+pnpm -C web lint
+pnpm -C web build
+go run .\tools\ptdev e2e -- row-expand --project=desktop-chromium
+go run .\tools\ptdev e2e -- row-expand --project=mobile-chromium
+```
+
+The production-image AT-310 scenario creates real metadata and a row via the
+grid, opens from both the icon and a genuinely focused grid cell's Space key,
+edits every writable kind, checks exact API values, reloads direct row URLs,
+and exercises hidden/system/deleted fields, invalid/deleted resources,
+read/write/revoked access, late responses, locales/themes and mobile fallback.
+Fixtures never bypass row ACL. Failed HTTP responses must be registered before
+navigation/mutation via `expectHTTPFailure`. Component tests also release
+responses after route/schema/identity changes even when fetch ignores abort.
+The same uncached required PG18 row/query command documented above and both
+default/command-scoped serial-package full checks remain mandatory, as does
+the complete production-image `go run .\tools\ptdev e2e`. Do not infer AT-312
+or unrelated full field/sharing acceptance from the row dialog.
+
 ### Shared integration helper
 
 Declare a package-level `testdb.Suite`, call `os.Exit(database.Run(m))` in

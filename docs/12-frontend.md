@@ -296,7 +296,39 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - Highlight: row background from `_hl_row`, cell background from `_hl_cells`; palette tokens map to light/dark-aware colors.
 - Link cells: chips of display values; editor opens picker modal (search target rows, multi-select for many sides).
 - Attachment cells: thumbnails; drag-drop upload onto cell; preview modal.
-- Row expand modal: all fields in a form layout, comments panel, history tab.
+- Row expand modal: all live fields in a form layout. T1.18 implements the
+  field form/deep link below; comments/history remain later collaboration work.
+
+### T1.18 row expansion (D-140)
+
+The lazy [RowExpandDialog](../web/src/components/rows/RowExpandDialog.vue)
+opens at `/t/:tableId/v/:viewId/r/:rowId`. The real grid exposes a labeled
+expand icon for each loaded row; Space on a focused loaded cell opens that row
+without treating virtual row indexes as identities. Native inputs/buttons and
+IME retain their own keyboard behavior. Row-only route changes leave the grid
+and FieldPanel mounted. Closing replaces the URL with the containing view;
+browser Back/Forward and direct reload use the same schema-authorized route.
+
+The dialog reads the full row, not just visible columns or cached page values.
+All live fields are listed in metadata order; system fields use read-only
+renderers, and authorship stays an unresolved UUID (no sharing-directory lookup).
+Readers have no edit controls. Writers/owners edit one field at a time with the
+existing codec-bound FieldEditor. Text has an explicit Save button or Enter;
+long text uses Ctrl/Meta+Enter, checkbox/single-select changes save immediately,
+and multi-select has explicit Save. Cancel/Escape discards the active editor.
+Closing never implicitly saves a draft.
+
+Each save uses single-row PATCH, preserves exact bigint/decimal/microsecond
+wire values and rejects UTF-8 bodies over 4096 bytes visibly. Values/status
+change only on a successful authoritative response; the grid's active bounded
+window refreshes after save. Access failures clear row content and refresh
+nav/schema, schema conflicts reload metadata, and auth/forced-change outcomes
+use existing login/password routes. Reads/writes have ten-second deadlines
+and generation/abort/identity guards, including implementations that ignore
+cancellation. Identical schema refreshes do not restart failed row reads.
+Locale/theme changes stay reactive; the dialog is viewport-bounded and native
+focus trapping/Escape work without a new dependency. Mobile card lists,
+full-screen row layout, FAB, comments and history are not implemented here.
 
 ### T0.8 feasibility lab (not the production grid)
 

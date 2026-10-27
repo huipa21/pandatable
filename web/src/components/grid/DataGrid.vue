@@ -35,7 +35,7 @@ import type {
 } from '../../api/types'
 import { bindField, type BoundField } from '../../fields/registry'
 import { fieldErrorMessage } from '../../fields/messages'
-import type { FieldEnv, WireValue } from '../../fields/types'
+import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
@@ -49,7 +49,7 @@ const props = defineProps<{
   viewId: string
   identity: string
 }>()
-const emit = defineEmits<{ schemaChanged: [] }>()
+const emit = defineEmits<{ schemaChanged: []; expand: [rowId: string] }>()
 const { t, locale } = useI18n()
 const { template } = useTemplates()
 const router = useRouter()
@@ -213,14 +213,7 @@ interface GridModel {
 const emptyModel: GridModel = { __rowId: '' }
 
 function wireValue(value: unknown): WireValue {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    (Array.isArray(value) && value.every((item) => typeof item === 'string'))
-  )
-    return value as WireValue
+  if (isWireValue(value)) return value
   return null
 }
 
@@ -233,21 +226,32 @@ const columns = computed<ColumnRegular[]>(() => {
     {
       prop: '__selected',
       name: '',
-      size: 44,
+      size: 80,
       pin: 'colPinStart',
       readonly: true,
       cellTemplate: (render, { model }) =>
         model.__rowId
-          ? render('input', {
-              type: 'checkbox',
-              checked: selectedRows.value.has(String(model.__rowId)),
-              'aria-label': t('grid.selectRow', { id: model.__rowId }),
-              onChange: (event: Event) =>
-                selectRow(
-                  String(model.__rowId),
-                  (event.target as HTMLInputElement).checked,
-                ),
-            })
+          ? render('span', {}, [
+              render(
+                'button',
+                {
+                  type: 'button',
+                  'aria-label': t('rowExpand.open', { id: model.__rowId }),
+                  onClick: () => emit('expand', String(model.__rowId)),
+                },
+                '\u2197',
+              ),
+              render('input', {
+                type: 'checkbox',
+                checked: selectedRows.value.has(String(model.__rowId)),
+                'aria-label': t('grid.selectRow', { id: model.__rowId }),
+                onChange: (event: Event) =>
+                  selectRow(
+                    String(model.__rowId),
+                    (event.target as HTMLInputElement).checked,
+                  ),
+              }),
+            ])
           : null,
     },
   ]
@@ -782,6 +786,26 @@ function rangeEdit(event: CustomEvent<BeforeRangeSaveDataDetails>) {
 
 async function keydown(event: KeyboardEvent) {
   if (
+    event.isComposing ||
+    (event.target instanceof Element &&
+      event.target.closest(
+        'input, textarea, select, button, [contenteditable="true"]',
+      ))
+  )
+    return
+  if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    const id = focused?.model?.__rowId
+    const index =
+      typeof id === 'string'
+        ? rows.indexOfRow(id)
+        : rowIndexForVirtual(focused?.rowIndex ?? -1)
+    const row = rows.rowAt(index)
+    if (row && props.identity === auth.user?.id) emit('expand', row.id)
+    return
+  }
+  if (
     !(event.ctrlKey || event.metaKey) ||
     event.key.toLowerCase() !== 'd' ||
     (event.target instanceof Element &&
@@ -1007,6 +1031,10 @@ async function deleteSelected() {
 }
 
 onMounted(() => media.addEventListener('change', resized))
+
+defineExpose({
+  refresh: () => initialize(rows.snapshot().activePage * remotePageSize),
+})
 
 onBeforeUnmount(() => {
   disposed.value = true

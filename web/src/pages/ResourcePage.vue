@@ -29,6 +29,10 @@ const FieldPanel = defineAsyncComponent(
 const DataGrid = defineAsyncComponent(
   () => import('../components/grid/DataGrid.vue'),
 )
+const RowExpandDialog = defineAsyncComponent(
+  () => import('../components/rows/RowExpandDialog.vue'),
+)
+const grid = ref<{ refresh: () => Promise<void> }>()
 const loading = ref(false)
 const error = ref<unknown>(null)
 let controller: AbortController | undefined
@@ -139,7 +143,11 @@ async function loadSchema(silent = false) {
 }
 watch(
   [
-    () => route.fullPath,
+    () => route.params.tableId,
+    () => route.params.viewId,
+    () => route.params.bookId,
+    () => route.params.workspaceId,
+    () => route.params.wid,
     () => node.value?.id,
     () => node.value?.name,
     () => node.value?.level,
@@ -257,10 +265,24 @@ onBeforeUnmount(() => {
         />
         <DataGrid
           v-if="view"
+          ref="grid"
           :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
           :schema="schema"
           :view-id="view.id"
           :identity="auth.user?.id ?? ''"
+          @schema-changed="loadSchema(true)"
+          @expand="
+            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+          "
+        />
+        <RowExpandDialog
+          v-if="view && typeof route.params.rowId === 'string'"
+          :schema="schema"
+          :view-id="view.id"
+          :row-id="route.params.rowId"
+          :identity="auth.user?.id ?? ''"
+          @close="router.replace(`/t/${schema!.table.id}/v/${view!.id}`)"
+          @saved="grid?.refresh()"
           @schema-changed="loadSchema(true)"
         />
       </template>

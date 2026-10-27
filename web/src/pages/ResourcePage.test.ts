@@ -30,6 +30,7 @@ async function setup(path: string) {
       { path: '/w/:workspaceId', component: ResourcePage },
       { path: '/w/:wid/b/:bookId', component: ResourcePage },
       { path: '/t/:tableId/v/:viewId', component: ResourcePage },
+      { path: '/t/:tableId/v/:viewId/r/:rowId', component: ResourcePage },
       { path: '/t/:tableId', component: ResourcePage },
     ],
   })
@@ -39,13 +40,38 @@ async function setup(path: string) {
       plugins: [pinia, i18n, router],
       stubs: {
         DataGrid: { template: '<div data-testid="production-grid" />' },
+        RowExpandDialog: {
+          props: ['rowId'],
+          template: '<div data-testid="row-dialog">{{ rowId }}</div>',
+        },
       },
     },
   })
+
   await flushPromises()
   return { wrapper, router, nav }
 }
 
+it('opens row deep links without reloading schema or remounting the grid, and rejects invalid views', async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json(tableSchema()))
+  vi.stubGlobal('fetch', fetcher)
+  const { wrapper, router } = await setup('/t/t/v/v')
+  try {
+    const grid = wrapper.get('[data-testid="production-grid"]').element
+    await router.push('/t/t/v/v/r/9007199254740993')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="row-dialog"]').text()).toBe(
+      '9007199254740993',
+    )
+    expect(wrapper.get('[data-testid="production-grid"]').element).toBe(grid)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    await router.push('/t/t/v/hidden/r/1')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
 it('shows real schema metadata, breadcrumbs, levels, view links and the production grid', async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json(tableSchema()))
   vi.stubGlobal('fetch', fetch)

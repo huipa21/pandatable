@@ -43,7 +43,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.15 | Basic query & rows API | 🟨 | 2026-10-26 | Implemented D-132..D-137 query/row routes, typed codec I/O, bounded atomic writes, ACL/schema locking, deterministic bulk-patch lock ordering, API DTOs and localized errors. Focused PG18/API suites, scoped-serial full check and production E2E pass; default-parallel Suite cleanup failures remain. 200k local API timings recorded, but AT-312 and full AT-301/302/303/304 still need the T1.16 production grid. Handoff recorded. |
 | T1.16 | DataGrid component | 🟨 | 2026-10-27 | Production grid is wired on the real table/view route with bounded query paging and row edits; full browser acceptance and target-host performance remain pending. |
 | T1.17 | Copy/paste & fill-down | ✅ | 2026-10-27 | Production-grid AT-306..309 pass in desktop Chromium: codec-backed TSV copy/cut/paste, one valid-cell bulk patch with invalid-cell reporting, confirmed tail-row growth, formatted date/select copy, Ctrl+D and vertical fill handle. Desktop and mobile production scenarios pass; en/zh-CN and light/dark covered. 406 frontend tests, lint/typecheck/i18n and 189,948-byte initial gzip gate pass; focused uncached PG18 row/query tests and scoped-serial full check pass. Default-parallel Suite cleanup/restart failures remain; final full E2E is 8 passed/5 failed/2 skipped (failures are outside T1.17); AT-312 target-host performance not measured. |
-| T1.18 | Row expand modal | ⬜ | | |
+| T1.18 | Row expand modal | ✅ | 2026-10-27 | D-140: lazy full-row dialog, Space/icon and direct links; all 12 codec editors, exact values, read-only system/reader fields, bounded single PATCH and stale guards. Full production-image AT-310 passes (desktop 43.8 s/mobile fallback 2.5 s). 441 frontend tests, lint/528 keys, required PG18 and serial full gate pass; initial gzip 190337 bytes. Full E2E 11 pass/4 unrelated mobile fail/2 skips; default Suite cleanup and uncertified NFR/AT-312 caveats remain. T1.19 handoff recorded. |
 | T1.19 | Mobile layout | ⬜ | | |
 | T1.20 | Seed & perf baseline | ⬜ | | |
 | T2.1 | Codecs batch 2 | ⬜ | | |
@@ -1558,3 +1558,74 @@ containers, its volumes/networks, `buildx_buildkit_default`, `pt-dev-pgdata`,
 release images and Caddy were preserved. `git branch --list` contains only
 `master`; the Conventional Commit is recorded in the handoff after final
 repository verification.
+
+## T1.18 row expansion verification (2026-10-27)
+
+T1.18's linked **AT-310 passes** in the complete production-image browser
+run. The lazy full-row native dialog uses the existing GET/single PATCH
+routes and FieldEditor/FieldRenderer, with exact codec wire values, all live
+fields (including hidden and read-only system fields), read/write access
+controls, neutral resource errors, ten-second requests and generation/identity/
+schema/route guards. Space and labeled expand controls work on the real grid;
+row-only URL changes retain the grid/FieldPanel, and direct reload opens the
+requested row. D-140 records per-field save behavior and the unchanged
+4096-byte single-PATCH limit, including explicit UTF-8 oversize rejection.
+No backend API, migration, row version or dependency was added.
+
+- Focused initial row/grid/page/editor tests: **56 pass / 4 files**;
+  final row-dialog suite **33 pass**, including exact 4096/4097-byte
+  boundaries, all kinds, removed labels, hidden/system values, invalid input,
+  failure/no-success state, read-only/auth outcomes and stale read/write results.
+- Final `pnpm -C web test` through the full gate: **441 pass / 25 files**.
+  `pnpm -C web lint`: **PASS**, ESLint/Prettier, strict frontend/E2E
+  typecheck and **528** matching non-empty en/zh-CN keys.
+  `pnpm -C web build`: **PASS**, conservative initial gzip **190337 bytes**
+  (<600000); all assets **361491 bytes**. Grid/dialog/editors stay lazy.
+- Required uncached explicit-DSN PG18
+  `go test .\internal\structure .\internal\httpapi -run 'Rows|Query' -count=1`
+  with `PT_TEST_DATABASE_REQUIRED=1`: **PASS**, **3.154 s / 3.099 s**.
+- Default `go run .\tools\ptdev check`: lint/build pass; Go tests **FAIL**
+  with the existing parallel Suite DROP cleanup failures in **codec/db/testdb**
+  (`TestSuiteIsolationPostgreSQL`). No deadline/assertion changed. This run
+  did not reproduce the prior restart remaining-connection error.
+  Final command-scoped
+  `$env:GOFLAGS = '-p=1'; go run .\tools\ptdev check`: **PASS**,
+  lint **22.626 s**, tests **2m11.961 s**, build **17.098 s**, total
+  **2m51.685 s**. `golangci-lint` remains absent (existing warning).
+- Complete `go run .\tools\ptdev e2e`: **11 passed / 4 failed / 2 skipped
+  in 4.0 min**, one worker/zero retries, unchanged D-112 budgets and
+  five-second assertions. **AT-310 desktop 43.8 s** covers real grid create,
+  icon/Space, all 12 editor saves and exact API values, direct reload, hidden/
+  system/deleted fields, invalid/deleted row/view/table, reader/writer/revoked
+  access, late route/identity responses, English/Chinese and light/dark.
+  Its mobile fallback passes **2.5 s**, with no RevoGrid/cards mounted.
+  T1.17 real grid desktop/mobile scenarios also pass (**15.2 s / 2.9 s**).
+- The four full-suite failures are outside T1.18: mobile admin workspace
+  empty-search expectation (`settings.ts:164`), mobile synthetic-spike English
+  notice, mobile shell English welcome, and mobile shell expecting `lang=en`
+  but receiving `zh-CN`. Two spike mobile exclusions remain intentional.
+  Desktop admin/navigation now passes; no unrelated fix or acceptance promotion.
+- Final production app startup snapshot: **74.6 MB / 536.9 MB, 5.48% CPU**.
+  Earlier focused startup snapshots were **73.95 MB / 536.9 MB (5.74%)**,
+  **74.81 MB (5.64%)**, **74.66 MB (5.60%)**, **74.65 MB (6.98%)**.
+  These are not load/NFR results. VM remains **8 CPUs / 2 GiB**;
+  **AT-312/NFR-1 are not certified** and no 200k production-browser measurement
+  on the 2-vCPU/4-GB target is claimed.
+
+Intermediate browser-selector, pinned-index, delayed-route and expected-status
+test failures were corrected without weakening assertions. Invalid GET row
+IDs intentionally return neutral 404; the real server was not changed.
+One attempt failed because the VM became stopped/unreachable before browser
+startup; it was restarted without resetting storage. Exact versions, commands,
+limitations and final cleanup are in
+[T1.18 record](task-prompts/T1.18.md#implementation-and-handoff-2026-10-27).
+Full AT-301/303/304, AT-204..207, uploads, restore and filter acceptance
+remain pending. Prior evidence is preserved. Next:
+[T1.19 mobile layout](task-prompts/T1.19.md).
+
+Final owned-only cleanup was verified: no new E2E containers remain;
+`pt-dev-pgdata`, baseline exited stack/image, release images, Caddy and
+unrelated volumes/stacks are preserved. The dev DB and Podman VM are both
+restored to **stopped**, with the original **8 CPUs / 2048 MiB** VM settings.
+The worktree began clean; only `master` exists. The T1.18 Conventional Commit
+is made directly on `master`, without generated assets or browser artifacts.

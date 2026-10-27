@@ -633,6 +633,16 @@ NOT NULL and unique violations return sanitized `ERR_REQUIRED_FIELD` and
 `ERR_DDL_LOCK_TIMEOUT` or `ERR_SCHEMA_CHANGED`. These implemented routes do
 not include the deferred filters/search, restore, links, groups or aggregates.
 
+T1.18's row-expand deep link uses the existing GET full-row response and
+single-row PATCH `{fields:{fieldId:value}}`/`{row,eventId}` response, without
+any new route or row-version requirement. The frontend edits one field at a
+time and rejects JSON bodies exceeding the existing 4096-byte UTF-8 limit;
+it never silently truncates long text or falls back to the larger bulk route.
+The view in the URL must remain present in the caller's authorized table
+schema before the dialog mounts; the row endpoint still independently enforces
+table ACL. Hidden grid columns are not a permission boundary: every live field
+is readable through the full-row endpoint, with system fields read-only.
+
 ### Collaboration
 | GET/POST | `/tables/{id}/rows/{rowId}/comments` | |
 | PATCH/DELETE | `/comments/{id}` | author only (owner can delete) |
