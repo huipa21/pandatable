@@ -123,6 +123,11 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 		"PT_DB_PASSWORD": password, "PT_LOCAL_HTTP_PORT": port,
 		"PT_BASE_URL": baseURL, "PT_TRUSTED_PROXIES": "",
 		"PT_E2E_BASE_URL": baseURL, "PT_E2E_RESULTS_DIR": results,
+		"PT_DB_NAME": "pandatable", "PT_E2E_PERF": "",
+	}
+	if opts.perf {
+		env["PT_DB_NAME"] = "pt_seed_" + strings.ToLower(rand.Text())
+		env["PT_E2E_PERF"] = "1"
 	}
 	compose := func(ctx context.Context, capture bool, args ...string) (string, error) {
 		return runner.execute(ctx, "", env, capture, selected.name, e2eComposeArgs(runner.root, envFile, project, args...)...)
@@ -172,6 +177,9 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 				testEnv[key] = value
 			}
 			testEnv["PT_E2E_SETUP_TOKEN"] = setupToken
+			if opts.perf {
+				return runner.performance(ctx, selected.name, project, baseURL, results, testEnv, compose)
+			}
 			args := append([]string{filepath.Join(runner.root, "web", "e2e", "run.mjs"), "test"}, opts.e2eArgs...)
 			command := runner.command(ctx, "web", testEnv, "node", args...)
 			return runCooperative(command)

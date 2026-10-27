@@ -107,6 +107,12 @@ Extensions: `pg_trgm`, `pg_stat_statements` (created by migration).
 
 Server-side `.env` (next to compose.yaml): `PT_VERSION`, `PT_DB_PASSWORD`, `PT_BASE_URL`, `PT_PROXY_NETWORK`.
 
+Compose also accepts optional `PT_DB_NAME` (default `pandatable`), used by the
+T1.20 isolated performance workflow for its uniquely named disposable seed DB.
+Do not change it for an existing volume: it does not rename/reset the database.
+The [developer seed](14-dev-build-release.md#t120-safe-seed-and-production-browser-baseline-d-143d-144)
+is explicit CLI-only tooling, never a production startup action or HTTP route.
+
 App-level defaults configured in Admin → Settings (stored in DB, not env): `default_timezone` (Asia/Shanghai), `default_currency` (CNY), `default_locale`, upload limit, retention days (D-049, D-050).
 
 T1.8 implements these settings plus app name without a migration, restart or

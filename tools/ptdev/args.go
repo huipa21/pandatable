@@ -13,6 +13,7 @@ type options struct {
 	noDB           bool
 	testArgs       []string
 	e2eArgs        []string
+	perf           bool
 	withPostgres   bool
 	releaseVersion string
 	host           string
@@ -45,7 +46,12 @@ func parseArgs(args []string) (options, error) {
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
+		case result.command == "e2e" && arg == "--perf":
+			result.perf = true
 		case result.command == "e2e" && arg == "--":
+			if result.perf {
+				return result, usageError{"e2e --perf selects its fixed benchmark; do not combine with Playwright arguments"}
+			}
 			result.e2eArgs = append(result.e2eArgs, args[index+1:]...)
 			return result, nil
 		case result.command == "build" && arg == "--linux":

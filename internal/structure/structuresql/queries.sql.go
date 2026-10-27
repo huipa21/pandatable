@@ -466,6 +466,25 @@ func (q *Queries) InsertWorkspaceOwnerGrant(ctx context.Context, arg InsertWorks
 	return err
 }
 
+const inspectDevSeedTarget = `-- name: InspectDevSeedTarget :one
+SELECT current_database()::text AS database_name,
+       current_setting('server_version_num')::integer AS server_version,
+       NOT EXISTS (SELECT 1 FROM meta.workspaces) AS empty
+`
+
+type InspectDevSeedTargetRow struct {
+	DatabaseName  string
+	ServerVersion int32
+	Empty         bool
+}
+
+func (q *Queries) InspectDevSeedTarget(ctx context.Context) (InspectDevSeedTargetRow, error) {
+	row := q.db.QueryRow(ctx, inspectDevSeedTarget)
+	var i InspectDevSeedTargetRow
+	err := row.Scan(&i.DatabaseName, &i.ServerVersion, &i.Empty)
+	return i, err
+}
+
 const listLiveBookOrder = `-- name: ListLiveBookOrder :many
 SELECT id, position FROM meta.books
 WHERE workspace_id = $1 AND deleted_at IS NULL
@@ -1101,6 +1120,17 @@ func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWo
 	return items, nil
 }
 
+const releaseDevSeedLock = `-- name: ReleaseDevSeedLock :one
+SELECT pg_advisory_unlock(hashtextextended('pandatable.dev.seed', 0))::boolean
+`
+
+func (q *Queries) ReleaseDevSeedLock(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, releaseDevSeedLock)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const renameBook = `-- name: RenameBook :one
 UPDATE meta.books SET name = $2
 WHERE id = $1 AND deleted_at IS NULL
@@ -1380,6 +1410,17 @@ func (q *Queries) TrashWorkspace(ctx context.Context, arg TrashWorkspaceParams) 
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const tryDevSeedLock = `-- name: TryDevSeedLock :one
+SELECT pg_try_advisory_lock(hashtextextended('pandatable.dev.seed', 0))::boolean
+`
+
+func (q *Queries) TryDevSeedLock(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, tryDevSeedLock)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const updateField = `-- name: UpdateField :one

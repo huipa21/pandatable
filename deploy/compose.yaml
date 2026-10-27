@@ -4,7 +4,7 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     environment:
-      POSTGRES_DB: pandatable
+      POSTGRES_DB: ${PT_DB_NAME:-pandatable}
       POSTGRES_USER: pandatable
       POSTGRES_PASSWORD: ${PT_DB_PASSWORD:?set PT_DB_PASSWORD to a random URL-safe password}
       TZ: UTC
@@ -13,7 +13,7 @@ services:
       - ./postgresql.conf:/etc/postgresql/postgresql.conf:ro
     command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "pandatable", "-d", "pandatable"]
+      test: ["CMD", "pg_isready", "-U", "pandatable", "-d", "${PT_DB_NAME:-pandatable}"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
     depends_on: [db]
     environment:
-      PT_DATABASE_URL: postgres://pandatable:${PT_DB_PASSWORD:?set PT_DB_PASSWORD}@db:5432/pandatable?sslmode=disable
+      PT_DATABASE_URL: postgres://pandatable:${PT_DB_PASSWORD:?set PT_DB_PASSWORD}@db:5432/${PT_DB_NAME:-pandatable}?sslmode=disable
       PT_DATA_DIR: /data
       PT_LISTEN: ":8080"
       PT_BASE_URL: ${PT_BASE_URL:?set PT_BASE_URL}

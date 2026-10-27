@@ -299,6 +299,16 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - Row expand modal: all live fields in a form layout. T1.18 implements the
   field form/deep link below; comments/history remain later collaboration work.
 
+T1.20 adds an opt-in **production-image** browser measurement, not a second
+grid/provider or synthetic seed UI. The
+[performance workflow](14-dev-build-release.md#t120-safe-seed-and-production-browser-baseline-d-143d-144)
+measures fresh authenticated document navigation to an exact usable real row
+across a rendering opportunity and five real global middle-page jumps.
+Request/header/body/render boundaries are independent; page size 100,
+<=300 loaded models, D-139 identity/global mapping and all existing lazy
+grid/editor/card imports remain unchanged. Timing results on a non-target VM
+do not certify AT-312 or NFR-1.
+
 ### T1.18 row expansion (D-140)
 
 The lazy [RowExpandDialog](../web/src/components/rows/RowExpandDialog.vue)

@@ -35,13 +35,16 @@ export default defineConfig({
     },
     {
       name: 'desktop-chromium',
-      testIgnore: '**/setup.spec.ts',
+      testIgnore:
+        process.env.PT_E2E_PERF === '1'
+          ? '**/setup.spec.ts'
+          : ['**/setup.spec.ts', '**/performance.spec.ts'],
       dependencies: ['setup-chromium'],
       use: { ...devices['Desktop Chrome'] },
     },
     {
       name: 'mobile-chromium',
-      testIgnore: '**/setup.spec.ts',
+      testIgnore: ['**/setup.spec.ts', '**/performance.spec.ts'],
       dependencies: ['setup-chromium'],
       use: { ...devices['Pixel 7'], defaultBrowserType: 'chromium' },
     },

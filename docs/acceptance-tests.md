@@ -445,6 +445,56 @@ writes and exact 4096/4097-byte single PATCH and 524288/524289-byte atomic creat
 bounds. Versions, exact commands, intermediate failures, resource observations
 and owned-only cleanup: [T1.19 record](task-prompts/T1.19.md#implementation-and-handoff-2026-10-27).
 
+### T1.20 seed and performance workflow (2026-10-27; target acceptance pending)
+
+The CLI-only seed and explicit production-image measurement workflow are
+implemented under D-143/D-144. Focused Suite-owned PG18 tests verify the
+ordinary non-admin owner's real metadata/schema/query/typed rows, all writable
+codecs and exact bigint/decimal/microsecond values, physical omitted defaults,
+required/unique behavior, explicit target/rerun/concurrent refusal, atomic
+failed batches and bounded cancellation/session-lock cleanup. These are seed/
+service tests, not full field/grid/sharing acceptance.
+
+The benchmark must confirm 200000 physical rows before starting a fresh
+authenticated production browser. It records navigation/request/header/body/
+usable-render boundaries and verifies five exact global middle offsets,
+100-row pages and <=300 loaded row models. It asserts the unchanged **<1500ms**
+first usable paint and **<300ms per middle page** thresholds, not averaged or
+API-only timers. The normal complete production-image suite remains separate.
+Exact invocation results, limitations, versions and owned cleanup are recorded
+in the [T1.20 implementation/handoff](task-prompts/T1.20.md).
+
+Final local production-image workflow: **200000 rows** confirmed, seed
+**1m0.962s**; fresh 1440x900 Chromium first usable paint **605.7ms**.
+Five fresh global middle pages (100000, 100500, 99900, 101000, 100100) render in
+**192.3/157.1/141.6/137.8/155.8ms**; request-to-body
+**169.6/118.1/104.4/99.7/108.3ms**. Every exact first ID/100-row page,
+fresh-request boundary and <=300 loaded-model assertion passes. A preceding
+strict run rendered two pages in **379.3/350.3ms**, failing the unchanged
+300ms budget; that failure is not erased by the final pass. Both are local
+observations, not target-host acceptance. The final standalone JSON report,
+navigation/40 asset timings, seed/host JSON and seven resource samples persist
+outside Playwright's cleared browser-output subdirectory (ignored, not tracked).
+
+Complete regression `ptdev e2e`: **13 passed / 4 failed / 2 intentional skips
+in 4.3m**. AT-310 desktop **44.3s**, AT-313 **14.3s/13.7s**, existing production
+grid **12.4s/3.0s** pass. Four earlier mobile empty-search/English notice/
+welcome/locale failures remain. Desktop nav and spike cancellation pass in this
+run; their earlier intermittent failures remain recorded, not allowlisted.
+Final scoped-serial full check passes (**485** frontend tests, strict types/
+**543** locale keys and required uncached PG18); initial gzip **190849 bytes**.
+Default-parallel cleanup failures in codec/db/devseed/testdb are reported
+separately, without relaxed deadlines; exact failed DB IDs were checked absent.
+
+**AT-312 and T1.20 remain pending/In progress.** No authorized 2-vCPU/4-GB
+Ubuntu 24.04 host was supplied; the available Podman VM remains 8 CPUs /
+2048 MiB, unchanged. Local browser timing/resource observations, even passing
+ones, do not certify target-host NFR-2 or normal-load app-RSS NFR-1. Preserve
+all prior AT-310/302/306..309/313 evidence and reported failures. Full
+AT-301/303/304 and AT-204..207 remain pending unless their complete linked
+scenarios pass; AT-203 restore is M3, AT-111/322 await T2.2 uploads, AT-117
+awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

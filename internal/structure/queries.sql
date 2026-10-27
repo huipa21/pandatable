@@ -307,3 +307,13 @@ FROM meta.views
 WHERE table_id = ANY(sqlc.arg(table_ids)::uuid[]) AND deleted_at IS NULL
   AND (scope = 'shared' OR owner_id = sqlc.arg(user_id)::uuid)
 ORDER BY position, id;
+-- name: TryDevSeedLock :one
+SELECT pg_try_advisory_lock(hashtextextended('pandatable.dev.seed', 0))::boolean;
+
+-- name: ReleaseDevSeedLock :one
+SELECT pg_advisory_unlock(hashtextextended('pandatable.dev.seed', 0))::boolean;
+
+-- name: InspectDevSeedTarget :one
+SELECT current_database()::text AS database_name,
+       current_setting('server_version_num')::integer AS server_version,
+       NOT EXISTS (SELECT 1 FROM meta.workspaces) AS empty;

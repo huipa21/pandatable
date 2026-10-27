@@ -430,6 +430,14 @@ CREATE TABLE b_k3j9x0a2mq.t_8fh2kd9s0p (
 
 ### T1.15 row persistence (D-133..D-135)
 
+T1.20's CLI-only developer seed (D-143) creates real metadata and physical
+typed rows through these same authorized services, without a migration,
+alternate codec or seed HTTP route. It is restricted to an explicitly
+confirmed, otherwise workspace-empty disposable database. See the
+[seed/workflow operational contract](14-dev-build-release.md#t120-safe-seed-and-production-browser-baseline-d-143d-144)
+for deterministic fixture characteristics, atomic-batch/partial-failure
+boundaries and owned-only disposal.
+
 Row writes resolve only live non-system field UUIDs through `meta.fields`,
 decode each supplied value with its bound codec, and use parameterized SQL
 against generated/validated physical identifiers. Inserts omit unspecified

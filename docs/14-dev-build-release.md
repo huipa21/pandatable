@@ -31,7 +31,7 @@ go run ./tools/ptdev <command> [flags]
 | `build [--linux]` | Build web assets if present, then `go build -trimpath -ldflags "-s -w -X main.version=…" -o bin/pandatable[.exe] ./cmd/pandatable`; `--linux` emits `bin/pandatable-linux-amd64` (`GOOS=linux GOARCH=amd64 CGO_ENABLED=0`) |
 | `lint` | `gofmt -l`, `go vet`, `golangci-lint run` (if installed), `pnpm lint`, `vue-tsc --noEmit`, i18n key parity |
 | `test [--no-db]` | Start dev DB and require integration tests via `PT_TEST_DATABASE_URL`; uncached `go test ./...`; `--no-db` skips DB startup and retains explicit environment; forwards `-run`, `-v`, `-count`; `pnpm test` if present |
-| `e2e [-- <args>]` | Build a disposable image, start an isolated stack with the local override, run Playwright, retain failure artifacts, tear down only owned resources |
+| `e2e [--perf \| -- <args>]` | Build a disposable image and isolated stack; run the complete regression suite or the explicit real-200k browser benchmark, retain evidence, tear down only owned resources |
 | `check` | `lint` → `test` → `build`, with per-step pass/fail and duration summary; any failed step causes non-zero exit (D-051) |
 | `image build [--version VERSION]` | Build `localhost/pandatable:<tag>` + `:latest` for `linux/amd64`; preserve original version in the binary |
 | `image save [--version VERSION] [--with-postgres]` | Export version-tagged image to `dist/pandatable-<tag>.tar.gz`; optionally pull/export pinned PG18 to `dist/postgres-18.tar.gz` |
@@ -248,6 +248,145 @@ assertions now check the real cards, not the superseded notice, without removing
 the desktop AT-310/302/306..309 assertions or earlier evidence. No D-112 budget
 or retry/worker/assertion/performance limit changes. These checks do not certify
 AT-312 or NFR-1 on the required 2-vCPU/4-GB target.
+
+### T1.20 safe seed and production-browser baseline (D-143/D-144)
+
+The application command is **`pandatable dev seed --rows 200000`**, not a
+production HTTP endpoint or a database reset. Its additional safety flags are
+mandatory:
+
+```powershell
+# Provision/reserve your own unique PG18 disposable database first.
+# Migrate it with the existing CLI and complete normal web setup/password change.
+# Use the existing active user's UUID from the normal /auth/me response.
+$env:PT_DATABASE_URL = '<explicit disposable PostgreSQL connection URL>'
+.\bin\pandatable.exe dev seed --rows 200000 `
+  --confirm-database pt_seed_local_unique --owner-id <existing-user-uuid> `
+  --yes-dev-seed
+```
+
+`--database-url` overrides `PT_DATABASE_URL` by the normal CLI convention.
+The configured database must match `--confirm-database` exactly and match
+`pt_seed_` or Suite-owned `pt_test_` followed by 1..48 lowercase letters,
+digits or underscores. No implicit localhost/developer DSN. The command checks
+the connected database name, major 18, no workspaces **including Trash**, an
+existing active owner without forced password change, and a nonblocking
+database advisory session lock on a reserved connection (no idle transaction
+between batches), with independent bounded unlock/close on every exit.
+Reserve the DB exclusively; do not make concurrent
+ordinary UI mutations while seeding. An admin role is neither required nor an
+ACL bypass. The command does **not** create a database/user/session, run
+migrations, infer credentials, alter an existing table, reset, resume or purge.
+
+The fixture uses the ordinary authorized services: one workspace with a real
+direct user owner grant, book/physical schema, table/default shared Grid and
+system fields. The Name display field is required and unique. Twelve additional
+fields exercise long text, ordinary integer, bigint, precision-38/scale-6
+decimal, real float, checkbox, date, datetime, single/multi-select, email and
+URL. Values are deterministic by one-based index (`Seed row 000001`, etc.);
+bigints above 2^53 and decimal/microsecond strings retain exact precision.
+Every tenth row has explicit optional NULLs; odd checkboxes omit their forced
+false default; every fifth status omits its physical `"Todo"` default.
+Metadata UUIDs/physical identifiers, actor UUIDs and transaction timestamps
+are genuinely generated, not deterministic snapshots. No new codec.
+
+Bounds are 1..200000 rows (default 200000), 300 rows and at most 3900 supplied
+cells per atomic batch, ten seconds per batch and ten minutes overall. Metadata
+and batches commit separately; this is **not** a single atomic 200k operation.
+The terminal JSON manifest reports database, owned IDs/field mapping, stage,
+requested/confirmed-committed/attempted counts and `complete`. Failed batches
+roll back, cancellation propagates, no automatic retry/split of a failed
+operation. A canceled/lost commit can be uncertain: confirmed count is a lower
+bound, attempted count identifies the uncertain batch. Do not retry/resume.
+An occupied target is refused, including after partial failure. Preserve the
+manifest/explicit target; inspect it and drop **only that operator-provisioned
+disposable database** when finished. No broad name-pattern cleanup. SIGKILL or
+power loss may prevent a final manifest; the explicitly reserved DB remains
+the ownership boundary. Never seed an unrelated/production database.
+
+Focused required PG18 verification (explicit Suite admin DSN as above):
+
+```powershell
+$env:PT_TEST_DATABASE_REQUIRED = '1'
+go test .\cmd\pandatable .\internal\devseed .\tools\ptdev -count=1
+```
+
+Tests cover CLI refusal/redaction, exact serialized row/cell/body bounds,
+existing codecs, ordinary non-admin ownership, physical defaults and exact
+values, PG18 concurrent-seed exclusion, occupied/mismatched/disabled/forced
+targets, atomic unique failure and real lock-wait cancellation. The existing
+Suite owns and drops its whole test DB, including physical schemas; no shared
+dev database cleanup or relaxed deadline.
+
+Run the real production-browser workflow:
+
+```powershell
+go run .\tools\ptdev e2e --perf
+```
+
+On an **authorized target host** the same Go command works with Docker and
+the documented Go/Node/pnpm/Chromium prerequisites (POSIX uses `./tools/ptdev`).
+Do not reconfigure a shared VM to approximate the target. `--perf` selects a
+fixed scenario; it cannot be combined with arbitrary Playwright arguments.
+The regular complete `ptdev e2e` remains unchanged and required separately.
+The perf harness owns one unique `pt-e2e-*` stack/image and `pt_seed_*` DB.
+Compose's optional `PT_DB_NAME` defaults to `pandatable`; only this workflow
+selects its unique DB name. Do not change this setting for an existing volume.
+Normal setup browser acceptance runs first, the owner is obtained by normal
+login, and the production binary inside the owned app runs the CLI seed.
+Only after all 200000 rows are confirmed does the benchmark start. No
+seed-only UI, fake rows, HTTP seed endpoint, session-storage artifact or
+production authorization shortcut. Preparation has the seed's own deadline;
+browser budgets remain 150 seconds/scenario, 360 global, one worker, zero
+retries, five-second assertions.
+
+Measurement boundaries:
+
+- Fresh authenticated context, no preceding SPA visit/asset prewarming.
+  Start at document navigation (`performance.timeOrigin`), including auth/nav/
+  schema requests, lazy grid/editor chunks and first query. End only when the
+  exact first real Name cell is in the grid viewport and an enabled native row
+  action exists across two consecutive animation frames. This includes a real
+  rendering opportunity, not a compositor/GPU trace or generic FCP of a spinner.
+- Middle samples start **before** public `scrollToRow(globalIndex)` at offsets
+  100000, 100500, 99900, 101000, 100100; nonadjacent jumps force real page loads.
+  End at the matching exact visible row/action across two frames. Match the
+  actual query's global offset, 100 limit and exact decimal-string first ID;
+  never use viewport/RevoGrid DOM indexes as data offsets (D-139).
+- Separately record fetch start, headers and cloned response-body completion,
+  plus navigation and asset resource timing. Assert first usable paint
+  **<1500 ms**, **every** middle scroll-to-paint **<300 ms** and every measured
+  middle request/body **<300 ms**. No averaging, adjusted thresholds, synthetic
+  spike timers or API-only substitution. Reports are attached before threshold
+  assertions, including failures.
+- Verify 200000 addressable source slots and **<=300 loaded row models** at
+  each sample; existing window tests preserve active +/-1 and eviction. No
+  production telemetry API or initial-bundle import is added.
+
+Ignored per-project results include `seed.json`, `host.json` (engine-visible
+CPU/RAM/OS/kernel, not guessed container quota), timestamped app+DB
+`resources.jsonl` samples during browser load, and `performance.json` with
+request/render/asset boundaries (also attached as `performance-baseline`).
+Harness evidence lives outside the browser output subdirectory so Playwright
+cannot erase it between the setup and measured invocations. The workflow fails
+explicitly if the standalone browser report was not persisted.
+Record the image, tool versions, physical/VM CPU allocation and RAM separately,
+browser machine/network topology, viewport, cold-context and database-cache
+conditions, and other host load. Seeded DB buffers are warm; browser assets
+are cold. Resource samples are container usage, **not app RSS or NFR-1
+certification**. Build/startup snapshots alone are not normal-load evidence.
+An engine-visible host with 2 CPUs does not prove a two-vCPU allocation; on a
+VM record the hypervisor configuration as well. A timing pass on the local
+8-CPU/2048-MiB Podman VM is not target-host acceptance. T1.20/AT-312 stay
+pending until the complete strict scenario passes on the documented authorized
+2-vCPU/4-GB Ubuntu 24.04 host. No approved target is currently provided.
+
+Existing owned-project teardown runs on seed/browser/measurement failure or
+cancellation and removes only that project's volumes/containers/network/image.
+The original dev DB/volume, shared Caddy, release images and unrelated stacks
+are never targets. Preserve explicit port-collision/startup failures, strict
+browser diagnostics, default-parallel Suite cleanup failures and regression
+failures in the handoff; do not hide them with retries or allowlists.
 
 ### Shared integration helper
 

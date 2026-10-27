@@ -43,6 +43,8 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 	}
 
 	switch command {
+	case "dev":
+		return runDev(commandArgs, stdout, stderr)
 	case "healthcheck":
 		listen, err := config.HealthcheckListen(commandArgs)
 		if errors.Is(err, flag.ErrHelp) {
@@ -143,6 +145,7 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, `Usage: pandatable <command> [flags]
 
 Commands:
+  dev seed              Create an explicitly confirmed disposable developer fixture (T1.20)
   serve                 Validate configuration and start the HTTP server (T0.4)
   migrate               Validate configuration and run database migrations (T0.3)
   healthcheck           Probe HTTP /healthz without database configuration (T0.6)
