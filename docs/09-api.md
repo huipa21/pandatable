@@ -597,9 +597,40 @@ distinguishing hidden from removed resources.
   [06](06-permissions.md#implementation).
 
 ### Views
+| Method | Path | Notes |
+|---|---|---|
 | POST | `/tables/{id}/views` | `{ name, type, scope }` |
-| PATCH/DELETE | `/views/{id}` | name, config (If-Match), locked, position |
+| PATCH | `/views/{id}` | T1.21 column-only `{config:{fields:[{id,visible,width?}],frozen}}`, required `If-Match`; returns `{view,eventId}`. |
+| DELETE | `/views/{id}` | Deferred T2.10. |
 | POST | `/views/{id}/duplicate` | |
+
+T1.21/D-148 does **not** implement view management: create/delete/duplicate,
+name/scope/locked/position and every non-column config member remain T2.10/M2.
+PATCH rejects those members at either level, including filter, sort, group,
+highlight, aggregates, rowHeight, form, kanban and calendar. Both fields and
+frozen are required; `fields` is an ordered array (empty allowed), each entry
+requires an ID and boolean visible, width is optional but, when supplied,
+must be a non-null integer 60..1000. IDs must be unique current live fields
+of the same table. Omitted live user fields append visible in metadata order;
+system fields append hidden. Frozen is an integer 0..effective visible count.
+
+The route retains the 4096-byte known-member/single-value JSON bound, exact
+Origin and CSRF, ten-second deadline, no-store, standard session/forced-change
+checks and safe correlated errors. Missing/malformed If-Match is 400
+`ERR_VALIDATION`; stale is 409 `ERR_VERSION_CONFLICT`. Accepted saves bump
+only the view version exactly once, even when the submitted config is equal.
+Existing non-column config is preserved. Table read alone is insufficient:
+write/owner is checked uncached before and after the existing path/active-user
+locks, then the table schema and view row are locked. Locked views reject
+column saves even for owners; all users retain local-only column adjustments.
+Missing/hidden/trashed resources or someone else's personal view are 404;
+visible insufficient table access or a locked view is 403. No admin bypass.
+Three-second lock waits and serialization retain the existing safe mappings.
+
+Table schema `views[]` and the mutation's `view` include
+`config:{fields,frozen}` with cleaned live IDs and the same order/defaults.
+No physical names or future config members are exposed. Unimplemented views
+routes listed above are design-only, not available controls.
 
 ### Rows & queries
 | Method | Path | Notes |

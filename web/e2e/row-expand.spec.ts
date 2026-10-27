@@ -93,6 +93,14 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   }
   const initial = await schemaOf()
   const viewId = initial.views[0]!.id
+  expect(
+    (
+      await page.request.patch(`/api/v1/views/${viewId}`, {
+        headers: { ...h, 'If-Match': String(initial.views[0]!.version) },
+        data: { config: { ...initial.views[0]!.config, frozen: 0 } },
+      })
+    ).status(),
+  ).toBe(200)
   const base = `/t/${tid}/v/${viewId}`
   const choices = {
     choices: [

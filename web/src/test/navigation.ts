@@ -86,6 +86,7 @@ export function tableSchema(): TableSchema {
         locked: false,
         position: 1024,
         version: 1,
+        config: { fields: [], frozen: 0 },
       },
     ],
     relations: [],

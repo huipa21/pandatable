@@ -227,6 +227,22 @@ export interface Navigation {
   workspaces: NavWorkspace[]
 }
 
+export interface ViewColumns {
+  fields: { id: string; visible: boolean; width?: number }[]
+  frozen: number
+}
+
+export interface TableView extends NavView {
+  locked: boolean
+  position: number
+  version: number
+  config: ViewColumns
+}
+
+export interface ViewMutation extends AuthMutation {
+  view: TableView
+}
+
 export interface TableSchema {
   table: {
     id: string
@@ -252,7 +268,7 @@ export interface TableSchema {
     version: number
   }[]
   relations: unknown[]
-  views: (NavView & { locked: boolean; position: number; version: number })[]
+  views: TableView[]
   schemaVersion: number
   myLevel: AccessLevel
 }

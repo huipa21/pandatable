@@ -97,6 +97,33 @@ export class RemoteRowsWindow {
     this.changed()
   }
 
+  async ensureLoaded(index: number): Promise<DataRow | null> {
+    if (
+      this.disposed ||
+      !this.initialized ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= this.total
+    )
+      return null
+    if (this.rowAt(index)) {
+      this.load(index)
+      return this.rowAt(index)
+    }
+    // Keep logical length stable so keyboard focus is not clamped to an empty source.
+    this.cancelPending()
+    const generation = ++this.generation
+    const page = Math.floor(index / remotePageSize)
+    this.activePage = page
+    this.evictOutside(page)
+    this.changed()
+    await this.fetchPage(page, generation, false)
+    if (this.disposed || generation !== this.generation) return null
+    this.loadNeighbors(page, generation)
+    this.changed()
+    return this.rowAt(index)
+  }
+
   rowAt(index: number): DataRow | null {
     const row = this.slots[index]
     return row && row.id ? row : null

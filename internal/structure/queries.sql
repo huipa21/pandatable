@@ -192,11 +192,21 @@ RETURNING id;
 -- Shared views plus the caller's own personal views.
 
 -- name: ListTableViews :many
-SELECT id, name, type, scope, locked, position, version
+SELECT id, name, type, scope, locked, position, version, config
 FROM meta.views
 WHERE table_id = sqlc.arg(table_id)::uuid AND deleted_at IS NULL
   AND (scope = 'shared' OR owner_id = sqlc.arg(user_id)::uuid)
 ORDER BY position, id;
+
+-- name: LockViewColumns :one
+SELECT id, name, type, scope, owner_id, locked, position, version, config
+FROM meta.views
+WHERE id = $1 AND table_id = $2 AND deleted_at IS NULL
+FOR NO KEY UPDATE;
+
+-- name: SaveViewColumns :exec
+UPDATE meta.views SET config = config || sqlc.arg(columns)::jsonb, version = version + 1, updated_at = now()
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
 
 -- T1.15 row/query metadata. Physical names are validated in Go before quoting.
 

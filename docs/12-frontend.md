@@ -278,9 +278,10 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   against route/schema/identity changes, uses table `myLevel` for write
   controls, validates editor commits with the bound `FieldKind`, and persists
   successful cell edits through row PATCH. Add/delete row actions use the row
-  APIs and show failures without optimistic success. The Fields menu sends a
-  transient ordered `fieldIds` visibility override (D-138), allowing explicit
-  system-field visibility without changing the saved view config. T1.17 enables
+  APIs and show failures without optimistic success. T1.21 connects the Fields
+  menu and native header resize/drag to versioned column config (D-148/D-149).
+  A transient ordered `fieldIds` query override (D-138) still supports immediate
+  local visibility, including explicit system fields. T1.17 enables
   copy/cut/paste and vertical fill-down on this production grid: copy uses each
   bound codec's `formatCopy`; paste parses TSV and each cell with `parsePaste`,
   reports invalid cells, and submits valid existing-row cells in one bounded
@@ -288,7 +289,35 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   bounded bulk insertion. Ctrl+D and the fill handle copy the selection's top
   value down; horizontal fill is not supported. The synthetic spike remains a
   separate lab-only implementation (D-139).
-- Keyboard: arrows, Tab/Shift+Tab, Enter (edit / commit+down), Esc (cancel), F2, Delete/Backspace (clear), Ctrl/Cmd+C/V/X, Ctrl/Cmd+Z/Y, Ctrl+D (fill down), Ctrl+A, Shift+arrows (range), Space (expand row / toggle checkbox), Home/End, Ctrl+Home/End, PageUp/Down.
+- Keyboard (T1.21/D-150):
+  - Arrows move between cells; Tab/Shift+Tab move forward/back.
+  - Enter starts editing; validated editor Enter commits and moves down.
+    Multiline keeps plain Enter as a newline and uses Ctrl/Cmd+Enter to commit.
+    F2 opens the existing editor; Esc cancels its draft without a row write.
+  - Delete/Backspace clear the selected bounded loaded range using each
+    writable field's ordinary empty-value codec (nullable values become null,
+    checkbox false). Read-only/computed/system columns are skipped. The atomic
+    bulk PATCH retains 1000 rows/5000 cells/512 KiB and normal required/unique
+    failures; no row version or alternate validator.
+  - Ctrl/Cmd+C/V/X use codec-backed clipboard operations; Ctrl/Cmd+D fills down.
+    Ctrl/Cmd+A selects the current column viewport's data range;
+    Shift+arrows extend a range in that viewport. Frozen and unpinned columns
+    are distinct RevoGrid selection viewports; cross-viewport range copying
+    is not implied. Existing bounded clipboard limits remain explicit.
+  - Space toggles a writable checkbox cell; on other data cells it opens the
+    row dialog. A read-only checkbox is untouched. Native controls/IME keep
+    their own Space, navigation, editing and clipboard behavior.
+  - Home/End select the first/last visible data column of the current row.
+    Ctrl/Cmd+Home/End select the first/last data cell in the view, loading the
+    destination's bounded real page when needed. PageUp/Down move one visible
+    viewport of rows, clamped to the first/last row.
+  - Global jumps resolve row identity through RemoteRowsWindow before calling
+    public global-coordinate grid methods. DOM/afterfocus indexes remain
+    virtual, never assumed to be global offsets (D-139). Native RevoGrid
+    arrows/Tab/range/clipboard behavior is exercised on the production grid,
+    not inferred from defaults. Undo/redo Ctrl/Cmd+Z/Y remains later work.
+    D-151's awaited bounded destination load preserves logical source length
+    while fetching, so a far jump cannot clamp focus against an empty grid.
 - **Copy:** range → TSV (+ HTML table) to clipboard via `formatCopy`.
 - **Paste:** parse TSV (handles quoted multi-line cells from Excel/Sheets) → map to cells starting at focus → per-cell `parsePaste` → preview errors count → one bulk PATCH; if exceeding last row → confirm "add N rows" → bulk insert. Read-only/computed columns skipped.
 - **Fill-down:** Ctrl+D copies top cell of selection down; drag fill handle extends the selection down (vertical only in v1).
@@ -308,6 +337,31 @@ Request/header/body/render boundaries are independent; page size 100,
 <=300 loaded models, D-139 identity/global mapping and all existing lazy
 grid/editor/card imports remain unchanged. Timing results on a non-target VM
 do not certify AT-312 or NFR-1.
+
+### T1.21 desktop column state (D-148/D-149)
+
+The ordered column config drives width, visibility and leading frozen user
+columns; the selection/expand utility column is pinned separately and does
+not count toward frozen. Header drag/resize have labeled numeric width/frozen
+and left/right button alternatives in the Fields menu. Moving a visible
+column skips hidden fields; hiding/showing retains its configured position.
+Number-input drafts survive unrelated asynchronous renders until commit.
+
+Write/owner users on unlocked views send debounced (350 ms), coalesced,
+serialized column-only PATCHes with the current view version. Saves do not
+disable row editing or scrolling. New intents during an in-flight save are
+retained for the next version. Reads, writes and reconciliation have independent
+abort/deadline/generation/identity guards. A failed save restores authoritative
+columns, reloads schema and rebases retained intents against live fields.
+One version conflict retries automatically; repeated conflicts or other
+failures retain the authoritative display with an explicit translated Retry.
+No failed save leaves optimistic column state or a pretend saved marker.
+
+Readers, locked views (including owners), and non-writable views never send
+column PATCHes and show a local-only notice. Their memory overrides disappear
+on reload/navigation. Below 768 px cards remain the provider, with only their
+existing transient visibility: no RevoGrid or desktop column controls mount.
+Grid, editors and registry stay lazy; the initial shell budget is unchanged.
 
 ### T1.18 row expansion (D-140)
 

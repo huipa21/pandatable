@@ -516,6 +516,17 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
       ).status(),
     ).toBe(200)
     const reader = await readerContext.newPage()
+    const pendingQueries = new Set<import('@playwright/test').Request>()
+    reader.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname ===
+          `/api/v1/views/${schema.views[0]!.id}/query`
+      )
+        pendingQueries.add(request)
+    })
+    reader.on('requestfinished', (request) => pendingQueries.delete(request))
+    reader.on('requestfailed', (request) => pendingQueries.delete(request))
     const diagnostics = await observeBrowser(reader)
     await reader.goto(base)
     if ((await reader.locator('html').getAttribute('lang')) === 'zh-CN')
@@ -573,6 +584,11 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
       en.errors.ERR_PERMISSION_DENIED,
     )
     await readerDialog.getByRole('button', { name: en.rowExpand.close }).click()
+    await expect(
+      reader.getByText(en.nav.level.read, { exact: true }),
+    ).toBeVisible()
+    await expect(reader.locator('.mobile-card')).toHaveCount(100)
+    await expect.poll(() => pendingQueries.size).toBe(0)
     expect(
       (
         await page.request.delete(

@@ -21,6 +21,9 @@ const gridState = vi.hoisted(() => ({
   fillRange: { x: 0, y: 0, x1: 0, y1: 0 },
   focus: { rowIndex: 0, colIndex: 0, colType: 'rgCol' },
   clipboard: new Map<string, string>(),
+  editCell: vi.fn(),
+  focusCells: vi.fn(),
+  scrollRow: vi.fn(),
 }))
 
 vi.mock('@revolist/vue3-datagrid', async () => {
@@ -30,6 +33,7 @@ vi.mock('@revolist/vue3-datagrid', async () => {
       template: () => () => null,
     }),
     default: vue.defineComponent({
+      name: 'RevoGrid',
       props: ['source', 'columns', 'editors', 'readonly', 'useClipboard'],
       emits: [
         'created',
@@ -42,6 +46,8 @@ vi.mock('@revolist/vue3-datagrid', async () => {
         'beforecut',
         'clearregion',
         'beforerangeedit',
+        'aftercolumnresize',
+        'columndragend',
       ],
       setup(_props, { emit }) {
         const root = vue.ref<HTMLElement>()
@@ -55,6 +61,12 @@ vi.mock('@revolist/vue3-datagrid', async () => {
           if (element) {
             element.getSourceStore = async () => ({ set: vi.fn() })
             element.getSelectedRange = async () => gridState.range
+            Object.assign(element, {
+              setCellEdit: gridState.editCell,
+              setCellsFocus: gridState.focusCells,
+              scrollToRow: gridState.scrollRow,
+              scrollToColumnProp: vi.fn(),
+            })
           }
           emit('created')
         })
@@ -85,7 +97,16 @@ vi.mock('@revolist/vue3-datagrid', async () => {
                 onClick: () =>
                   emit(
                     'afterfocus',
-                    new CustomEvent('afterfocus', { detail: gridState.focus }),
+                    new CustomEvent('afterfocus', {
+                      detail: {
+                        model: _props.source[gridState.focus.rowIndex],
+                        column: _props.columns.filter(
+                          (column: { pin?: string }) =>
+                            (column.pin ?? 'rgCol') === gridState.focus.colType,
+                        )[gridState.focus.colIndex],
+                        ...gridState.focus,
+                      },
+                    }),
                   ),
               },
               'focus',
@@ -236,7 +257,12 @@ function addField(
     isRequired: false,
     isUnique: false,
     default: null,
-    position: schema.fields.length,
+    position:
+      Math.max(
+        ...schema.fields
+          .filter((field) => !field.isSystem)
+          .map((field) => field.position),
+      ) + 1024,
     version: 1,
   })
 }
@@ -276,6 +302,9 @@ beforeEach(async () => {
   gridState.fillRange = { x: 0, y: 0, x1: 0, y1: 0 }
   gridState.focus = { rowIndex: 0, colIndex: 0, colType: 'rgCol' }
   gridState.clipboard.clear()
+  gridState.editCell.mockReset()
+  gridState.focusCells.mockReset()
+  gridState.scrollRow.mockReset()
 })
 
 afterEach(() => {
@@ -315,6 +344,19 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
       return Response.json(
         queryResponse(schema, body?.fieldIds ?? gridState.visibleFieldIds),
       )
+    if (path === '/api/v1/views/v' && init?.method === 'PATCH') {
+      const { config } = JSON.parse(String(init.body)) as {
+        config: TableSchema['views'][number]['config']
+      }
+      return Response.json({
+        view: {
+          ...schema.views[0],
+          config,
+          version: schema.views[0]!.version + 1,
+        },
+        eventId: 'event',
+      })
+    }
     if (init?.method === 'PATCH') {
       const requestBody = JSON.parse(String(init.body)) as {
         fields?: Record<string, unknown>
@@ -627,6 +669,7 @@ it('fills down with Ctrl+D and the vertical fill handle through one bulk patch e
     key: 'd',
     ctrlKey: true,
   })
+
   await flushPromises()
   let patchCalls = fetch.mock.calls.filter(
     ([, init]) => init?.method === 'PATCH',
@@ -665,4 +708,188 @@ it('fills down with Ctrl+D and the vertical fill handle through one bulk patch e
     fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH'),
   ).toHaveLength(2)
   expect(wrapper!.text()).toContain('only works downward')
+})
+
+it.each(['Delete', 'Backspace'])(
+  'clears a writable range with %s through ordinary bounded codecs',
+  async (key) => {
+    const schema = schemaFor('text')
+    addField(schema, 'check', 'checkbox')
+    gridState.rowCount = 2
+    gridState.rowFields = [
+      { name: 'first', check: true },
+      { name: 'second', check: true },
+    ]
+    gridState.range = {
+      x: 0,
+      y: 0,
+      x1: 1,
+      y1: 1,
+      rgCol: 'rgCol',
+      rgRow: 'rgRow',
+    }
+    const fetch = await mountGrid(schema)
+    await wrapper!
+      .findAll('button')
+      .find((button) => button.text() === 'focus')!
+      .trigger('click')
+    await wrapper!.get('.data-grid').trigger('keydown', { key })
+    await flushPromises()
+    const patch = fetch.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
+      rows: [
+        { id: '9007199254740993', fields: { name: null, check: false } },
+        { id: '9007199254740994', fields: { name: null, check: false } },
+      ],
+    })
+  },
+)
+
+it('skips read-only/system columns on clear and never writes for readers', async () => {
+  const schema = schemaFor('text', 'read')
+  const fetch = await mountGrid(schema)
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  await wrapper!.get('.data-grid').trigger('keydown', { key: 'Delete' })
+  await flushPromises()
+  expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(
+    false,
+  )
+  schema.myLevel = 'owner'
+  schema.views[0]!.config = {
+    fields: [
+      { id: 'system-id', visible: true },
+      { id: 'name', visible: true },
+    ],
+    frozen: 0,
+  }
+  await wrapper!.setProps({ schema: { ...schema } })
+  await flushPromises()
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  gridState.range = {
+    x: 0,
+    y: 0,
+    x1: 1,
+    y1: 0,
+    rgCol: 'rgCol',
+    rgRow: 'rgRow',
+  }
+  await wrapper!.get('.data-grid').trigger('keydown', { key: 'Delete' })
+  await flushPromises()
+  const patch = fetch.mock.calls.find(([, init]) => init?.method === 'PATCH')
+  expect(JSON.parse(String(patch?.[1]?.body)).rows[0].fields).toEqual({
+    name: null,
+  })
+})
+
+it('starts Enter/F2 editing but leaves native editor Escape and IME behavior untouched', async () => {
+  await mountGrid(schemaFor('text'))
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  await wrapper!.get('.data-grid').trigger('keydown', { key: 'F2' })
+  await wrapper!.get('.data-grid').trigger('keydown', { key: 'Enter' })
+  expect(gridState.editCell).toHaveBeenNthCalledWith(1, 0, 'name')
+  expect(gridState.editCell).toHaveBeenCalledTimes(2)
+  await wrapper!.get('input').trigger('keydown', { key: 'F2' })
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: 'F2', isComposing: true })
+  expect(gridState.editCell).toHaveBeenCalledTimes(2)
+})
+
+it('maps Home/End and Ctrl/Cmd+Home/End through loaded row identity, not viewport indexes', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'other', 'text')
+  gridState.rowCount = 50
+  const fetch = await mountGrid(schema)
+  Object.assign(gridState.focus, {
+    rowIndex: 3,
+    colIndex: 0,
+    model: { __rowId: String(BigInt('9007199254740993') + 45n) },
+    column: { prop: 'name' },
+  })
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  for (const [key, ctrlKey, metaKey, expectedRow, expectedX] of [
+    ['Home', false, false, 45, 0],
+    ['End', false, false, 45, 1],
+    ['Home', true, false, 0, 0],
+    ['End', false, true, 49, 1],
+  ] as const) {
+    await wrapper!
+      .get('.data-grid')
+      .trigger('keydown', { key, ctrlKey, metaKey })
+    await flushPromises()
+    expect(gridState.focusCells).toHaveBeenLastCalledWith(
+      { x: expectedX, y: expectedRow },
+      { x: expectedX, y: expectedRow },
+      'rgCol',
+    )
+  }
+  expect(fetch.mock.calls.every(([, init]) => init?.method !== 'PATCH')).toBe(
+    true,
+  )
+})
+
+it('coalesces resize/drag/hide/freeze into a column-only save with If-Match', async () => {
+  vi.useFakeTimers()
+  try {
+    const schema = schemaFor('text')
+    addField(schema, 'other', 'text')
+    const fetch = await mountGrid(schema)
+    const grid = wrapper!.findComponent({ name: 'RevoGrid' })
+    grid.vm.$emit(
+      'aftercolumnresize',
+      new CustomEvent('aftercolumnresize', {
+        detail: { 0: { prop: 'name', size: 260 } },
+      }),
+    )
+    grid.vm.$emit(
+      'columndragend',
+      new CustomEvent('columndragend', {
+        detail: { columns: [{ prop: 'other' }, { prop: 'name' }] },
+      }),
+    )
+    await wrapper!.get('input[aria-label="Width of Name"]').setValue(275)
+    const frozen = wrapper!.get('input[type="number"][min="0"]')
+    ;(frozen.element as HTMLInputElement).value = '2'
+    await frozen.trigger('input')
+    grid.vm.$emit(
+      'aftercolumnresize',
+      new CustomEvent('aftercolumnresize', {
+        detail: { 0: { prop: 'other', size: 220 } },
+      }),
+    )
+    await flushPromises()
+    expect((frozen.element as HTMLInputElement).value).toBe('2')
+    await frozen.trigger('change')
+    await vi.advanceTimersByTimeAsync(350)
+    await flushPromises()
+    const saves = fetch.mock.calls.filter(
+      ([path]) => String(path) === '/api/v1/views/v',
+    )
+    expect(saves).toHaveLength(1)
+    expect(saves[0]?.[1]?.headers).toMatchObject({ 'If-Match': '1' })
+    const config = (
+      JSON.parse(String(saves[0]?.[1]?.body)) as {
+        config: TableSchema['views'][number]['config']
+      }
+    ).config
+    expect(
+      config.fields.filter((field) => field.visible).map((field) => field.id),
+    ).toEqual(['other', 'name'])
+    expect(config.fields.find((field) => field.id === 'name')?.width).toBe(275)
+    expect(config.frozen).toBe(2)
+  } finally {
+    vi.useRealTimers()
+  }
 })

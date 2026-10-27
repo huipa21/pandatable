@@ -46,6 +46,35 @@ function source(total = 200_000) {
 afterEach(() => vi.useRealTimers())
 
 describe('production query window', () => {
+  it('loads an uncached keyboard destination without resetting row count, source length or count queries', async () => {
+    const provider = source(401)
+    const lengths: number[] = []
+    const window = new RemoteRowsWindow(
+      provider,
+      () => lengths.push(window.slots.length),
+      vi.fn(),
+    )
+    await window.initialize()
+    await Promise.resolve()
+    expect(window.rowAt(400)).toBeNull()
+    lengths.length = 0
+    expect((await window.ensureLoaded(400))?.id).toBe('10000000400')
+    await Promise.resolve()
+    expect(lengths.length).toBeGreaterThan(0)
+    expect(lengths.every((length) => length === 401)).toBe(true)
+    expect(
+      provider.requests.filter((request) => request.includeCount),
+    ).toHaveLength(1)
+    expect(provider.requests.every((request) => request.limit === 100)).toBe(
+      true,
+    )
+    expect(window.rowAt(0)).toBeNull()
+    expect(window.snapshot().cachedRows).toBeLessThanOrEqual(300)
+    expect((await window.ensureLoaded(0))?.id).toBe('10000000000')
+    expect(window.rowAt(400)).toBeNull()
+    window.dispose()
+  })
+
   it('keeps only the active page and its neighbors for 200k arbitrary bigint IDs', async () => {
     const provider = source()
     const changed = vi.fn()

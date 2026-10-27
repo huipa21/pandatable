@@ -23,11 +23,11 @@ type fieldResponse struct {
 	EventID string `json:"eventId"`
 }
 
-// ifMatch reads the required field version: a positive integer, optionally
+// ifMatch reads the required resource version: a positive integer, optionally
 // quoted as an entity tag.
 func ifMatch(r *http.Request) (int32, error) {
 	values := r.Header.Values("If-Match")
-	invalid := apperr.New(400, "ERR_VALIDATION", "If-Match must carry the field version")
+	invalid := apperr.New(400, "ERR_VALIDATION", "If-Match must carry the resource version")
 	if len(values) != 1 {
 		return 0, invalid
 	}

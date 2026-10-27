@@ -35,7 +35,7 @@ function readDetails(value: unknown): ErrorDetails {
 }
 
 export interface RequestOptions {
-  /** Field version for optimistic concurrency (D-123). */
+  /** Field/view version for optimistic concurrency. */
   ifMatch?: number
 }
 

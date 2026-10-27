@@ -674,7 +674,7 @@ func (q *Queries) ListTableFields(ctx context.Context, tableID pgtype.UUID) ([]L
 
 const listTableViews = `-- name: ListTableViews :many
 
-SELECT id, name, type, scope, locked, position, version
+SELECT id, name, type, scope, locked, position, version, config
 FROM meta.views
 WHERE table_id = $1::uuid AND deleted_at IS NULL
   AND (scope = 'shared' OR owner_id = $2::uuid)
@@ -694,6 +694,7 @@ type ListTableViewsRow struct {
 	Locked   bool
 	Position float64
 	Version  int32
+	Config   []byte
 }
 
 // Shared views plus the caller's own personal views.
@@ -714,6 +715,7 @@ func (q *Queries) ListTableViews(ctx context.Context, arg ListTableViewsParams) 
 			&i.Locked,
 			&i.Position,
 			&i.Version,
+			&i.Config,
 		); err != nil {
 			return nil, err
 		}
@@ -777,6 +779,47 @@ func (q *Queries) LockRowTable(ctx context.Context, id pgtype.UUID) (LockRowTabl
 		&i.PgName,
 		&i.PgSchema,
 		&i.SchemaVersion,
+	)
+	return i, err
+}
+
+const lockViewColumns = `-- name: LockViewColumns :one
+SELECT id, name, type, scope, owner_id, locked, position, version, config
+FROM meta.views
+WHERE id = $1 AND table_id = $2 AND deleted_at IS NULL
+FOR NO KEY UPDATE
+`
+
+type LockViewColumnsParams struct {
+	ID      pgtype.UUID
+	TableID pgtype.UUID
+}
+
+type LockViewColumnsRow struct {
+	ID       pgtype.UUID
+	Name     string
+	Type     string
+	Scope    string
+	OwnerID  pgtype.UUID
+	Locked   bool
+	Position float64
+	Version  int32
+	Config   []byte
+}
+
+func (q *Queries) LockViewColumns(ctx context.Context, arg LockViewColumnsParams) (LockViewColumnsRow, error) {
+	row := q.db.QueryRow(ctx, lockViewColumns, arg.ID, arg.TableID)
+	var i LockViewColumnsRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.Scope,
+		&i.OwnerID,
+		&i.Locked,
+		&i.Position,
+		&i.Version,
+		&i.Config,
 	)
 	return i, err
 }
@@ -1226,6 +1269,21 @@ WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
 
 func (q *Queries) RenumberTables(ctx context.Context, ids []pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, renumberTables, ids)
+	return err
+}
+
+const saveViewColumns = `-- name: SaveViewColumns :exec
+UPDATE meta.views SET config = config || $1::jsonb, version = version + 1, updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type SaveViewColumnsParams struct {
+	Columns []byte
+	ID      pgtype.UUID
+}
+
+func (q *Queries) SaveViewColumns(ctx context.Context, arg SaveViewColumnsParams) error {
+	_, err := q.db.Exec(ctx, saveViewColumns, arg.Columns, arg.ID)
 	return err
 }
 

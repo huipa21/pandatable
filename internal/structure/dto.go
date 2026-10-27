@@ -52,13 +52,14 @@ type Field struct {
 }
 
 type View struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	Scope    string  `json:"scope"`
-	Locked   bool    `json:"locked"`
-	Position float64 `json:"position"`
-	Version  int32   `json:"version"`
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Type     string      `json:"type"`
+	Scope    string      `json:"scope"`
+	Locked   bool        `json:"locked"`
+	Position float64     `json:"position"`
+	Version  int32       `json:"version"`
+	Config   ViewColumns `json:"config"`
 }
 
 // TableSchema is the table-level schema read (doc 09). Relations stay empty

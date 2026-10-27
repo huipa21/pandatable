@@ -3,22 +3,26 @@ import {
   computed,
   defineComponent,
   h,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
   shallowRef,
+  watch,
   type PropType,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import RevoGrid, { useTemplates, VGridVueEditor } from '@revolist/vue3-datagrid'
 import type { EditorType } from '@revolist/vue3-datagrid'
+import { ColumnMovePlugin } from '@revolist/revogrid'
 import type {
   BeforeSaveDataDetails,
   BeforeRangeSaveDataDetails,
   CellTemplateProp,
   ColumnRegular,
   Components,
+  ColumnDragEventData,
   FocusAfterRenderEvent,
   RangeArea,
   ViewPortScrollEvent,
@@ -32,6 +36,7 @@ import type {
   RowValue,
   TableField,
   TableSchema,
+  TableView,
 } from '../../api/types'
 import { bindField, type BoundField } from '../../fields/registry'
 import { fieldErrorMessage } from '../../fields/messages'
@@ -43,13 +48,18 @@ import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { formatTsv, parseTsv, TsvError } from './tsv'
+import { useViewColumns, minColumnWidth, maxColumnWidth } from './viewColumns'
 
 const props = defineProps<{
   schema: TableSchema
   viewId: string
   identity: string
 }>()
-const emit = defineEmits<{ schemaChanged: []; expand: [rowId: string] }>()
+const emit = defineEmits<{
+  schemaChanged: []
+  expand: [rowId: string]
+  viewUpdated: [view: TableView]
+}>()
 const { t, locale } = useI18n()
 const { template } = useTemplates()
 const router = useRouter()
@@ -65,12 +75,12 @@ const error = ref<unknown>(null)
 const cellErrors = ref(new Map<string, string>())
 const clipboardErrors = ref<string[]>([])
 const clipboardMessage = ref('')
-const visibleFieldIds = ref<string[]>([])
-const fieldOverride = ref<string[] | null>(null)
 const selectedRows = ref(new Set<string>())
 const deleteDialog = ref<HTMLDialogElement>()
 const addRowsDialog = ref<HTMLDialogElement>()
 const gridSource = shallowRef<GridModel[]>([])
+const columnWidthDrafts = ref<Record<string, string>>({})
+const frozenDraft = ref<string | null>(null)
 const syncedPages = new Set<number>()
 const syncedRows: (DataRow | null)[] = []
 const mutationControllers = new Set<AbortController>()
@@ -152,10 +162,29 @@ const canWrite = computed(
     props.identity === auth.user?.id &&
     (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
 )
-const allFields = computed(() =>
-  [...props.schema.fields].sort(
-    (left, right) => left.position - right.position,
-  ),
+const columnState = useViewColumns({
+  schema: () => props.schema,
+  viewId: () => props.viewId,
+  identity: () => (props.identity === auth.user?.id ? props.identity : ''),
+  canWrite: () => canWrite.value,
+  failure: (cause) => {
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+  },
+  updated: (view) => emit('viewUpdated', view),
+  message: (cause) =>
+    t('grid.columnSaveFailed', { message: errorMessage(cause) }),
+})
+const visibleFieldIds = computed(() =>
+  columnState.config.value.fields
+    .filter((field) => field.visible)
+    .map((field) => field.id),
+)
+const columnFields = computed(() =>
+  columnState.config.value.fields.flatMap((column) => {
+    const field = props.schema.fields.find((field) => field.id === column.id)
+    return field ? [{ ...column, name: field.name }] : []
+  }),
 )
 const unsupportedField = computed(() =>
   props.schema.fields.some((field) => !fieldById.value.has(field.id)),
@@ -173,7 +202,9 @@ function fetchPage(
     offset,
     limit,
     includeCount,
-    ...(fieldOverride.value === null ? {} : { fieldIds: fieldOverride.value }),
+    ...(columnState.localQuery.value
+      ? { fieldIds: visibleFieldIds.value }
+      : {}),
   }
   return request<RowQueryResult>(
     `/views/${props.viewId}/query`,
@@ -185,7 +216,6 @@ function fetchPage(
       emit('schemaChanged')
       throw new Error('Grid schema changed during query')
     }
-    if (fieldOverride.value === null) visibleFieldIds.value = result.fieldIds
     return result
   })
 }
@@ -255,15 +285,19 @@ const columns = computed<ColumnRegular[]>(() => {
           : null,
     },
   ]
-  for (const id of visibleFieldIds.value) {
+  for (const [index, id] of visibleFieldIds.value.entries()) {
     const item = boundFor(id)
     if (!item) continue
     const { field, bound } = item
     definitions.push({
       prop: field.id,
       name: field.name,
-      size: 180,
-      pin: field.uiType === 'id' ? 'colPinStart' : undefined,
+      size:
+        columnState.config.value.fields.find((column) => column.id === id)
+          ?.width ?? 180,
+      minSize: minColumnWidth,
+      maxSize: maxColumnWidth,
+      pin: index < columnState.config.value.frozen ? 'colPinStart' : undefined,
       readonly: !canWrite.value || bound.readOnly,
       editor: bound.readOnly ? undefined : field.id,
       cellTemplate: template<CellTemplateProp>(GridCellContent, {
@@ -668,6 +702,14 @@ async function clearCutRange(event: CustomEvent<DataTransfer>) {
   cutPending = false
   const range = copyRange
   copyRange = null
+  await clearCells(range, copyColumnType)
+}
+
+async function clearCells(
+  range: RangeArea | null,
+  columnType: FocusAfterRenderEvent['colType'],
+) {
+  if (!canWrite.value || saving.value) return
   if (!range || !rangeFits(range)) {
     clipboardFailure(t('grid.copyLimit'))
     return
@@ -677,7 +719,7 @@ async function clearCutRange(event: CustomEvent<DataTransfer>) {
     { id: string; index: number; fields: Record<string, RowValue> }
   >()
   for (let x = range.x; x <= range.x1; x++) {
-    const item = clipboardColumn(x, copyColumnType)
+    const item = clipboardColumn(x, columnType)
     if (!item || item.bound.readOnly) continue
     const empty = item.bound.parsePaste('', fieldEnvironment.value)
     if (!empty.ok) {
@@ -786,6 +828,7 @@ function rangeEdit(event: CustomEvent<BeforeRangeSaveDataDetails>) {
 
 async function keydown(event: KeyboardEvent) {
   if (
+    event.defaultPrevented ||
     event.isComposing ||
     (event.target instanceof Element &&
       event.target.closest(
@@ -793,16 +836,90 @@ async function keydown(event: KeyboardEvent) {
       ))
   )
     return
+  const shortcut = event.ctrlKey || event.metaKey
+  const stop = () => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  if (!shortcut && ['Delete', 'Backspace'].includes(event.key)) {
+    stop()
+    if (focusedRowIndex() < 0) return
+    const range = await host.value?.$el.getSelectedRange()
+    await clearCells(
+      range ?? null,
+      range?.colType ?? focused?.colType ?? 'rgCol',
+    )
+    return
+  }
+  if (!shortcut && ['F2', 'Enter'].includes(event.key)) {
+    stop()
+    const rowIndex = focusedRowIndex()
+    const column =
+      focused?.column?.prop ??
+      clipboardColumn(focused?.colIndex ?? -1)?.field.id
+    const item = typeof column === 'string' ? boundFor(column) : undefined
+    if (canWrite.value && item && !item.bound.readOnly && rowIndex >= 0)
+      await host.value?.$el.setCellEdit(rowIndex, item.field.id)
+    return
+  }
+  if (['Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
+    stop()
+    let rowIndex = focusedRowIndex()
+    const prop =
+      focused?.column?.prop ??
+      clipboardColumn(focused?.colIndex ?? -1)?.field.id
+    let fieldIndex = visibleFieldIds.value.indexOf(String(prop))
+    if (rowIndex < 0 || !visibleFieldIds.value.length) return
+    if (event.key === 'Home') {
+      fieldIndex = 0
+      if (shortcut) rowIndex = 0
+    } else if (event.key === 'End') {
+      fieldIndex = visibleFieldIds.value.length - 1
+      if (shortcut) rowIndex = rows.total - 1
+    } else {
+      const page = Math.max(
+        1,
+        Math.floor(((host.value?.$el.clientHeight ?? 352) - 32) / 32),
+      )
+      rowIndex = Math.max(
+        0,
+        Math.min(
+          rows.total - 1,
+          rowIndex + (event.key === 'PageDown' ? page : -page),
+        ),
+      )
+    }
+    await focusGlobalCell(rowIndex, Math.max(0, fieldIndex))
+    return
+  }
   if (event.key === ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) {
     event.preventDefault()
     event.stopPropagation()
-    const id = focused?.model?.__rowId
-    const index =
-      typeof id === 'string'
-        ? rows.indexOfRow(id)
-        : rowIndexForVirtual(focused?.rowIndex ?? -1)
+    const index = focusedRowIndex()
     const row = rows.rowAt(index)
-    if (row && props.identity === auth.user?.id) emit('expand', row.id)
+    const column =
+      focused?.column?.prop ??
+      clipboardColumn(focused?.colIndex ?? -1)?.field.id
+    const item = typeof column === 'string' ? boundFor(column) : undefined
+    if (row && props.identity === auth.user?.id) {
+      if (item?.field.uiType === 'checkbox') {
+        if (canWrite.value) {
+          const value = item.bound.normalize(row.fields[item.field.id] !== true)
+          if (!value.ok) {
+            error.value = fieldErrorMessage(value.reason)
+            return
+          }
+          saving.value = true
+          try {
+            await patchRows([
+              { id: row.id, index, fields: { [item.field.id]: value.value } },
+            ])
+          } finally {
+            if (!disposed.value) saving.value = false
+          }
+        }
+      } else emit('expand', row.id)
+    }
     return
   }
   if (
@@ -824,6 +941,51 @@ async function keydown(event: KeyboardEvent) {
       true,
       range.colType ?? focused?.colType ?? 'rgCol',
     )
+}
+
+let keyboardGeneration = 0
+function focusedRowIndex() {
+  const id = focused?.model?.__rowId
+  return typeof id === 'string' ? rows.indexOfRow(id) : -1
+}
+
+async function focusGlobalCell(rowIndex: number, fieldIndex: number) {
+  const own = ++keyboardGeneration
+  const identity = props.identity
+  const id = visibleFieldIds.value[fieldIndex]
+  if (!id || rowIndex < 0 || rowIndex >= rows.total) return
+  if (!(await rows.ensureLoaded(rowIndex))) return
+  if (
+    own !== keyboardGeneration ||
+    disposed.value ||
+    identity !== auth.user?.id ||
+    !rows.rowAt(rowIndex)
+  )
+    return
+  const column = columns.value.find((column) => column.prop === id)
+  if (!column) return
+  const type = column.pin ?? 'rgCol'
+  const x = columns.value
+    .filter((candidate) => (candidate.pin ?? 'rgCol') === type)
+    .findIndex((candidate) => candidate.prop === id)
+  await nextTick()
+  await host.value?.$el.scrollToRow(rowIndex)
+  if (type === 'rgCol') await host.value?.$el.scrollToColumnProp(id)
+  await nextTick()
+  await host.value?.$el.setCellsFocus(
+    { x, y: rowIndex },
+    { x, y: rowIndex },
+    type,
+  )
+}
+
+function documentKeydown(event: KeyboardEvent) {
+  if (
+    focused &&
+    event.target instanceof Element &&
+    !event.target.closest('.data-grid')
+  )
+    void keydown(event)
 }
 
 function syncSource() {
@@ -982,19 +1144,76 @@ async function addRow() {
 }
 
 function toggleField(id: string, visible: boolean) {
-  const next = new Set(fieldOverride.value ?? visibleFieldIds.value)
-  if (visible) next.add(id)
-  else next.delete(id)
-  fieldOverride.value = allFields.value
-    .filter((field) => next.has(field.id))
-    .map((field) => field.id)
-  visibleFieldIds.value = [...fieldOverride.value]
-  void initialize()
+  columnState.change({ kind: 'visible', id, visible })
 }
 
 function selectedField(id: string) {
-  return (fieldOverride.value ?? visibleFieldIds.value).includes(id)
+  return visibleFieldIds.value.includes(id)
 }
+
+function moveColumn(id: string, direction: number) {
+  const ids = columnFields.value.map((field) => field.id)
+  const index = ids.indexOf(id)
+  const next = ids.indexOf(columnNeighbor(id, direction) ?? '')
+  if (index < 0 || next < 0) return
+  ;[ids[index], ids[next]] = [ids[next]!, ids[index]!]
+  columnState.change({ kind: 'order', ids })
+}
+
+function columnNeighbor(id: string, direction: number) {
+  const field = columnFields.value.find((field) => field.id === id)
+  const fields = field?.visible
+    ? columnFields.value.filter((field) => field.visible)
+    : columnFields.value
+  return fields[fields.findIndex((field) => field.id === id) + direction]?.id
+}
+
+function commitColumnWidth(id: string, event: Event) {
+  columnState.change({
+    kind: 'width',
+    id,
+    width: Number((event.target as HTMLInputElement).value),
+  })
+  delete columnWidthDrafts.value[id]
+}
+
+function commitFrozen(event: Event) {
+  columnState.change({
+    kind: 'frozen',
+    count: Number((event.target as HTMLInputElement).value),
+  })
+  frozenDraft.value = null
+}
+
+function resizeColumns(event: CustomEvent<Record<number, ColumnRegular>>) {
+  for (const column of Object.values(event.detail)) {
+    const id = String(column.prop)
+    if (!fieldById.value.has(id) || typeof column.size !== 'number') continue
+    columnState.change({ kind: 'width', id, width: column.size })
+  }
+}
+
+function dragColumns(event: CustomEvent<ColumnDragEventData>) {
+  const ids = event.detail.columns
+    .map((column) => String(column.prop))
+    .filter((id) => fieldById.value.has(id))
+  const affected = new Set(ids)
+  let index = 0
+  const order = columnState.config.value.fields.map((column) =>
+    affected.has(column.id) ? ids[index++]! : column.id,
+  )
+  columnState.change({ kind: 'order', ids: order })
+}
+
+watch(
+  () => visibleFieldIds.value.join(','),
+  () => {
+    if (ready.value) {
+      focused = undefined
+      void initialize(rows.snapshot().activePage * remotePageSize)
+    }
+  },
+)
 
 function askDelete() {
   if (selectedRows.value.size > 0) deleteDialog.value?.showModal()
@@ -1030,7 +1249,10 @@ async function deleteSelected() {
   }
 }
 
-onMounted(() => media.addEventListener('change', resized))
+onMounted(() => {
+  media.addEventListener('change', resized)
+  document.addEventListener('keydown', documentKeydown, true)
+})
 
 defineExpose({
   refresh: () => initialize(rows.snapshot().activePage * remotePageSize),
@@ -1038,7 +1260,9 @@ defineExpose({
 
 onBeforeUnmount(() => {
   disposed.value = true
+  keyboardGeneration++
   media.removeEventListener('change', resized)
+  document.removeEventListener('keydown', documentKeydown, true)
   for (const controller of mutationControllers) controller.abort()
   mutationControllers.clear()
   rows.dispose()
@@ -1070,24 +1294,86 @@ onBeforeUnmount(() => {
         <summary>{{ t('grid.fields') }}</summary>
         <fieldset>
           <legend>{{ t('grid.visibleFields') }}</legend>
-          <label v-for="field in allFields" :key="field.id">
+          <div
+            v-for="field in columnFields"
+            :key="field.id"
+            class="grid-column-control"
+          >
+            <label>
+              <input
+                type="checkbox"
+                :checked="selectedField(field.id)"
+                @change="
+                  toggleField(
+                    field.id,
+                    ($event.target as HTMLInputElement).checked,
+                  )
+                "
+              />
+              <span>{{ field.name }}</span>
+            </label>
             <input
-              type="checkbox"
-              :checked="selectedField(field.id)"
-              @change="
-                toggleField(
-                  field.id,
-                  ($event.target as HTMLInputElement).checked,
-                )
+              type="number"
+              :min="minColumnWidth"
+              :max="maxColumnWidth"
+              :value="columnWidthDrafts[field.id] ?? field.width ?? 180"
+              :aria-label="t('grid.columnWidth', { name: field.name })"
+              @input="
+                columnWidthDrafts[field.id] = (
+                  $event.target as HTMLInputElement
+                ).value
               "
+              @change="commitColumnWidth(field.id, $event)"
             />
-            <span>{{ field.name }}</span>
+            <button
+              type="button"
+              :disabled="!columnNeighbor(field.id, -1)"
+              :aria-label="t('grid.columnLeft', { name: field.name })"
+              @click="moveColumn(field.id, -1)"
+            >
+              {{ t('grid.moveLeft') }}
+            </button>
+            <button
+              type="button"
+              :disabled="!columnNeighbor(field.id, 1)"
+              :aria-label="t('grid.columnRight', { name: field.name })"
+              @click="moveColumn(field.id, 1)"
+            >
+              {{ t('grid.moveRight') }}
+            </button>
+          </div>
+          <label>
+            <span>{{ t('grid.frozenColumns') }}</span>
+            <input
+              type="number"
+              min="0"
+              :max="visibleFieldIds.length"
+              :value="frozenDraft ?? columnState.config.value.frozen"
+              @input="frozenDraft = ($event.target as HTMLInputElement).value"
+              @change="commitFrozen"
+            />
           </label>
         </fieldset>
       </details>
+      <span v-if="!columnState.canPersist.value" role="status">{{
+        t('grid.columnsLocal')
+      }}</span>
+      <span v-else-if="columnState.saving.value" role="status">{{
+        t('grid.columnsSaving')
+      }}</span>
       <span v-if="saving" role="status">{{ t('grid.saving') }}</span>
       <span v-else-if="loading" role="status">{{ t('grid.loading') }}</span>
     </div>
+    <p v-if="columnState.failure.value" role="alert">
+      {{ columnState.failure.value }}
+    </p>
+    <button
+      v-if="columnState.retryable.value"
+      type="button"
+      @click="columnState.retry"
+    >
+      {{ t('grid.columnsRetry') }}
+    </button>
     <p v-if="error" role="alert">{{ gridError }}</p>
     <p v-if="cellErrors.size > 0" class="grid-validation-summary" role="alert">
       {{ [...cellErrors.values()].join(' ') }}
@@ -1114,9 +1400,11 @@ onBeforeUnmount(() => {
     <RevoGrid
       v-if="desktop"
       ref="host"
+      tabindex="0"
       :source="gridSource"
       :columns="columns"
       :editors="editors"
+      :plugins="[ColumnMovePlugin]"
       :theme="preferences.isDark ? 'darkCompact' : 'compact'"
       :row-size="32"
       :range="true"
@@ -1134,6 +1422,8 @@ onBeforeUnmount(() => {
       @beforecut="beforeCut"
       @clearregion="clearCutRange"
       @beforerangeedit="rangeEdit"
+      @aftercolumnresize="resizeColumns"
+      @columndragend="dragColumns"
     />
     <p v-if="unsupportedField" role="alert">
       {{ t('grid.unsupportedField') }}
@@ -1172,6 +1462,8 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 .data-grid revo-grid {
+  position: relative;
+  z-index: 0;
   display: block;
   height: min(65vh, 680px);
   min-height: 320px;
@@ -1185,6 +1477,10 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   margin-bottom: 8px;
 }
+.grid-toolbar {
+  position: relative;
+  z-index: 1;
+}
 .grid-fields {
   position: relative;
 }
@@ -1193,12 +1489,22 @@ onBeforeUnmount(() => {
   z-index: 2;
   top: 100%;
   left: 0;
-  min-width: 220px;
+  min-width: min(460px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
   max-height: 50vh;
   overflow: auto;
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
+}
+.grid-column-control {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 75px auto auto;
+  align-items: center;
+  gap: 4px;
+}
+.grid-column-control > input {
+  width: 75px;
 }
 .grid-fields label {
   display: flex;

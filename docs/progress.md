@@ -8,7 +8,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|---|
 | Planning | ✅ | 2026-10-24 | 2026-10-24 | — | Interview completed; docs created |
 | M0 Foundation | 🟨 | 2026-10-24 | | | T0.1–T0.3 scoped checks complete; T0.4/T0.6/T0.7 implementations verified; T0.5/T0.8 done. D-005 confirmed by the isolated spike. AT-002/003/004 and AT-802 pass; full AT-001/005/006 remain pending Linux/Docker and an approved server. |
-| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | T1.1/T1.3/T1.4/T1.5/T1.6/T1.7/T1.10/T1.11 Done for M1 scope. Real sidebar/schema-shell AT-201/208/213/full AT-112 and M1 AT-203 removal pass alongside auth/admin tests. T1.8 still awaits full AT-111/322 upload enforcement; T1.2 AT-102/116/full AT-117, field/filter AT-202/804, sharing/grid/rows and M3 restore remain pending. ACL/grants API verified (AT-204..212); no future UI acceptance inferred. 2026-10-27 phase review: 11 tasks Done, 9 In progress; both gates are green (`ptdev check` with default parallelism, `ptdev e2e` 17 passed/0 failed/2 intentional skips) after D-145/D-146. Remaining M1 work: AT-311 column ops (no `PATCH /views/{id}`), AT-305 keyboard navigation, the missing self-profile UI for AT-116/117, the AT-102 browser scenario and full AT-301..304; AT-312/NFR-2 stay environment-blocked. |
+| M1 Core | 🟨 | 2026-10-24 | | v0.1.0 | 2026-10-28: 13 tasks Done, 8 In progress. T1.21 closes T1.16 with full AT-305/311; both gates green (default-parallel check; complete production E2E 19 passed/0 failed/2 intentional skips). AT-302/306..310/313 and prior admin/navigation evidence preserved. Remaining M1 feature/acceptance work is T1.22 self-profile/auth browser coverage and T1.23 full AT-301..304. T1.8 uploads AT-111/322 await T2.2, full AT-804 awaits T2.6, AT-203 restore is M3; sharing/field/row scope boundaries remain recorded below. AT-312/NFR-1/2 stay uncertified without the authorized target host. |
 | M2 Data power | ⬜ | | | v0.2.0 | |
 | M3 Collaboration & ops | ⬜ | | | v1.0.0 | |
 | M4 More views | ⬜ | | | v1.1.0 | |
@@ -41,12 +41,12 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T1.13 | Codec framework + batch 1 | 🟨 | 2026-10-26 | Implementation verified: 12 writable + five read-only system codecs/FieldKinds, typed DDL/defaults, exact wire/paste/copy, safe localized components, shared vectors and required uncached PG18. D-113..D-122; no migration/dependency/routes/grid integration. 384 frontend tests/397 keys, initial gzip 185755 bytes; serial full check passes, final image 11 passed/2 intentional exclusions. Default-parallel Suite cleanup and NFR-1 caveats remain. Full AT-301/302/304 awaits T1.14..T1.16; handoff recorded. |
 | T1.14 | Field API & UI | 🟨 | 2026-10-26 | Implementation verified: D-123..D-130 table-owner field create/rename/description/options/required/unique/default/reorder/soft-delete/display field with If-Match, typed DDL, exact preflights, select label rewrites and same-tx schema versions; lazy FieldPanel on the real schema page. 394 frontend tests/487 keys, required PG18, serial full check and production image 11 passed/2 intentional exclusions; real AT-202 field rename passes. Default-parallel cleanup and NFR-1 caveats remain. Full AT-301/303 await T1.15/T1.16 rows/grid; handoff and T1.15 prompt recorded. |
 | T1.15 | Basic query & rows API | 🟨 | 2026-10-26 | Implemented D-132..D-137 query/row routes, typed codec I/O, bounded atomic writes, ACL/schema locking, deterministic bulk-patch lock ordering, API DTOs and localized errors. Focused PG18/API suites, scoped-serial full check and production E2E pass; default-parallel Suite cleanup failures remain. 200k local API timings recorded, but AT-312 and full AT-301/302/303/304 still need the T1.16 production grid. Handoff recorded. |
-| T1.16 | DataGrid component | 🟨 | 2026-10-27 | Production grid is wired on the real table/view route with bounded query paging and row edits; full browser acceptance and target-host performance remain pending. |
+| T1.16 | DataGrid component | ✅ | 2026-10-28 | Closed by T1.21 in this change: full production-image AT-305 keyboard and AT-311 persisted/local column operations pass; prior grid/clipboard/row/card assertions preserved. Bounded paging/cache and lazy imports remain. Target-host AT-312/NFR performance belongs to T1.20 and remains uncertified, not inferred from this completion. |
 | T1.17 | Copy/paste & fill-down | ✅ | 2026-10-27 | Production-grid AT-306..309 pass in desktop Chromium: codec-backed TSV copy/cut/paste, one valid-cell bulk patch with invalid-cell reporting, confirmed tail-row growth, formatted date/select copy, Ctrl+D and vertical fill handle. Desktop and mobile production scenarios pass; en/zh-CN and light/dark covered. 406 frontend tests, lint/typecheck/i18n and 189,948-byte initial gzip gate pass; focused uncached PG18 row/query tests and scoped-serial full check pass. Default-parallel Suite cleanup/restart failures remain; final full E2E is 8 passed/5 failed/2 skipped (failures are outside T1.17); AT-312 target-host performance not measured. |
 | T1.18 | Row expand modal | ✅ | 2026-10-27 | D-140: lazy full-row dialog, Space/icon and direct links; all 12 codec editors, exact values, read-only system/reader fields, bounded single PATCH and stale guards. Full production-image AT-310 passes (desktop 43.8 s/mobile fallback 2.5 s). 441 frontend tests, lint/528 keys, required PG18 and serial full gate pass; initial gzip 190337 bytes. Full E2E 11 pass/4 unrelated mobile fail/2 skips; default Suite cleanup and uncertified NFR/AT-312 caveats remain. T1.19 handoff recorded. |
 | T1.19 | Mobile layout | ✅ | 2026-10-27 | D-141/D-142: lazy <768px cards without RevoGrid, 100-row pages/<=300 cached rows, bounded options/FieldPanel/delete, reused full-screen editors and defaults-preserving FAB creation. Full production-image AT-313 passes at 390x844 (15.6 s/17.3 s); AT-310 and AT-302/306..309 preserved. 485 frontend tests, lint/543 keys, required PG18 and serial full gate pass; initial gzip 190849 bytes. Full E2E 12 pass/5 fail/2 skips (four prior mobile failures plus desktop navigation 404 diagnostic); default Suite cleanup and uncertified AT-312/NFR-1 remain. Exact results/cleanup and T1.20 handoff in [completion record](task-prompts/T1.19.md#implementation-and-handoff-2026-10-27). |
 | T1.20 | Seed & perf baseline | 🟨 | 2026-10-27 | D-143/D-144 safe CLI seed and persistent production-browser workflow implemented/tested. Final local real-200k baseline: 605.7ms first usable paint, 137.8..192.3ms middle scroll/paint, exact fresh requests/100-row pages/<=300 models; preceding strict local run failed 379.3/350.3ms and is retained. No authorized 2-vCPU/4-GB Ubuntu target; configured VM 8 CPUs/2048 MiB, engine reports a different WSL host boundary. AT-312/NFR-1 remain uncertified. 485 frontend tests, lint/543 keys, required PG18 and serial full gate pass; initial gzip 190849 bytes. Full image regression 13 pass/4 prior mobile fail/2 skips; default-parallel Suite cleanup fails separately. Exact evidence/owned cleanup in [record](task-prompts/T1.20.md#implementation-and-handoff-2026-10-27). |
-| T1.21 | Grid column ops & keyboard | ⬜ | 2026-10-27 | Added by the M1 review (D-147) to close AT-305/AT-311 and T1.16. Prompt: [T1.21](task-prompts/T1.21.md). |
+| T1.21 | Grid column ops & keyboard | ✅ | 2026-10-28 | Full AT-305/311 pass and T1.16 flips Done in the same change. D-148..152: strict column-only versioned PATCH, locked/personal/ACL checks, coalesced guarded saves/reconciliation, desktop resize/reorder/hide/freeze and complete keyboard map with stable uncached jumps. 504 frontend tests, lint/553 keys, required PG18, default-parallel check and complete E2E 19/0/2 pass; initial gzip 191255 bytes. Failed iterations, fixed-budget coverage and cleanup retained in [record](task-prompts/T1.21.md#implementation-and-verification-record-2026-10-27). |
 | T1.22 | Self profile UI | ⬜ | 2026-10-27 | Added by the M1 review (D-147) to close AT-102/AT-116, the M1 half of AT-117 and T1.2. Prompt: [T1.22](task-prompts/T1.22.md). |
 | T1.23 | Field acceptance pass | ⬜ | 2026-10-27 | Added by the M1 review (D-147) to close full AT-301..304 and T1.13-T1.15. Prompt: [T1.23](task-prompts/T1.23.md). |
 | T2.1 | Codecs batch 2 | ⬜ | | |
@@ -1699,3 +1699,51 @@ The three follow-up tasks added by this review (D-147) are
 Owned cleanup: the temporary gate logs were removed and the E2E workflow
 removed its own stack; `pt-dev-db`, `pt-dev-pgdata`, release images and
 unrelated stacks are preserved. The worktree began clean; only `master` exists.
+
+## T1.21 column operations and keyboard completion (2026-10-28)
+
+**T1.21 Done; T1.16 flips to Done in the same change.** Full AT-305 and
+AT-311 pass in the complete production-image suite. D-148..D-152 record the
+strict versioned column-only API, existing-lock/ACL reuse, guarded/coalesced
+desktop saves and authoritative reconciliation, complete keyboard map,
+stable-cardinality uncached jumps and bounded locale/theme coverage.
+No migration, dependency or deferred view-management feature was added.
+
+- Required explicit-DSN, uncached PG18 column and existing row/query tests
+  pass using the existing package Suites.
+- Focused affected frontend tests: **31 passed / 3 files**; complete frontend
+  suite **504 passed / 27 files**. Lint/strict typecheck/Prettier and **553**
+  matching locale keys pass. Initial shell **191255 bytes gzip <600000**,
+  all assets **371561 bytes gzip**; grid/editors/registry stay lazy.
+- Final `go run .\tools\ptdev check`: **PASS**, default parallelism and empty
+  GOFLAGS. Lint **27.011 s**, test **1m18.313 s**, build **15.414 s**,
+  total **2m0.738 s**.
+- Final `go run .\tools\ptdev e2e`: **PASS**, **19 passed / 0 failed /
+  2 intentional spike skips in 5.6m**, project
+  `pt-e2e-bpz4kfr5himml35rwojkmxc2kg`, health **7.549 s**.
+  AT-305/311 desktop **26.0 s**, mobile honest no-grid smoke **2.7 s**.
+  Preserved AT-302/306..309 **14.7 s / 3.0 s**, AT-310 **47.1 s / 2.6 s**
+  and AT-313 **15.4 s / 16.7 s**. All original assertions remain; scenario/
+  global/assertion deadlines, one worker and zero retries are unchanged.
+- Earlier failed fixture/race, uncached-focus, dashboard freshness and global
+  budget iterations remain in the [task record](task-prompts/T1.21.md).
+  The new scenario observes async conditions at 50..100 ms rather than
+  spending the default polling backoff idle; its five-second assertion
+  deadline is unchanged. No default-parallel workaround was introduced.
+
+Final startup observation: **73.8 MB / 536.9 MB**, **7.31% CPU**, not a load/
+performance result. VM is still **8 CPUs / 2048 MiB**, not the authorized
+2-vCPU/4-GB Ubuntu target; AT-312/NFR-1/2 remain uncertified.
+
+Initial/final worktree context: only `master`, initially clean. The initially
+stopped dev DB was stopped after its last check use, preserving
+`pt-dev-pgdata`; the initially stopped VM is restored to stopped with unchanged
+allocation. Every newly owned E2E stack/tag/volume/network was removed by ptdev.
+The pre-existing exited E2E stack, BuildKit, release images, Caddy and unrelated
+resources were preserved; no broad prune/reset or hosted CI. Ignored browser
+evidence and generated assets are not committed.
+
+Next M1 handoffs: **[T1.22 self-profile/auth browser coverage](task-prompts/T1.22.md)**
+and **[T1.23 complete field acceptance](task-prompts/T1.23.md)**. Upload
+AT-111/322 remains T2.2, full AT-804 T2.6, AT-203 restore M3 and the approved
+Linux/Docker/Caddy/target-host acceptance boundaries remain unchanged.

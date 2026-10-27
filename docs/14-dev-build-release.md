@@ -160,6 +160,31 @@ E2E settings helper restores instance-wide settings on failure and asserts the
 real shared workspace inventory instead of a globally empty one (D-146).
 Earlier task records keep their original `GOFLAGS=-p=1` evidence as written.
 
+T1.21's focused required PG18 gate (explicit `PT_TEST_DATABASE_URL` and
+`PT_TEST_DATABASE_REQUIRED=1`) is
+`go test .\internal\structure .\internal\httpapi -run 'ViewColumns' -count=1`.
+It uses the existing package Suites and covers strict column payloads,
+live/deleted/unknown/duplicate IDs, widths/frozen bounds, missing/stale/valid
+If-Match, ACL/personal/locked views, transport, preservation/cleanup and
+concurrent saves with exactly one version winner. Frontend focused tests:
+`pnpm --dir web exec vitest run src/components/grid/DataGrid.test.ts src/components/grid/viewColumns.test.ts src/components/grid/remoteWindow.test.ts`.
+The production-image AT-305/311 scenario is
+`go run .\tools\ptdev e2e -- e2e/grid-columns-keyboard.spec.ts --project=desktop-chromium`.
+It exercises every documented key in both locales and themes, real header
+resize/drag, accessible hide/reorder/freeze, reload/shared writer persistence,
+reader local-only state and a real stale-version reconciliation. Existing
+clipboard fixtures explicitly select an unfrozen viewport through the public
+view API, preserving their complete original range/value assertions now that
+the default stored frozen count is honored. Run lint/bundle, focused PG18,
+then complete default-parallel check and the unfiltered production E2E suite;
+no scenario/global/assertion deadline, retries, worker or resource budget changes.
+The keyboard fixture has 401 real rows, so Ctrl+End must load an uncached page;
+PageUp/Down asserts the exact viewport row count and all four Shift+arrow
+directions are covered. D-151 keeps logical source length stable during jumps.
+The mobile ACL helper waits for its own downgrade-triggered schema/card reload
+and pending queries before final grant removal, avoiding a stray read across
+the second revocation without ignoring any HTTP diagnostic.
+
 T1.13's focused lower-layer gate is `go test ./internal/codec -count=1`
 with explicit `PT_TEST_DATABASE_URL` and `PT_TEST_DATABASE_REQUIRED=1`, plus
 `pnpm --dir web exec vitest run src/fields/fields.test.ts src/components/fields/fields.test.ts`.

@@ -605,3 +605,21 @@ was promoted and no prior evidence was removed.
 
 Exact commands, root-cause analysis and cleanup:
 [progress.md, M1 review](progress.md#m1-phase-review-and-gate-repair-2026-10-27).
+
+## T1.21 completed column/keyboard evidence (2026-10-28)
+
+This supersedes only the earlier AT-305/AT-311 "not implemented" verdict.
+Prior evidence and limitations above remain; **T1.21 and T1.16 are Done**.
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-305 | Pass | Real production Grid: all four arrows, Tab/Shift+Tab, Enter edit/commit+down, Esc/F2, Delete/Backspace codec clear, Ctrl+C/V/X/D/A, all four Shift+arrow directions, Space checkbox/row, Home/End, Ctrl+Home/End and exact viewport PageUp/Down. Paired en/light and zh-CN/dark run every key; earlier focused four-combination evidence is retained. A 401-row fixture forces uncached first/last jumps, exact row IDs and bounded source/cache; no viewport index is treated as row identity. Read-only/system clears are skipped. |
+| AT-311 | Pass | Real pointer header resize/drag plus accessible width/order/hide/show/freeze controls; first two data columns frozen (utility column excluded), persisted config/readback/reload for owner and another user promoted to write. Reader changes width/order/visibility/freeze locally with zero column PATCHes and no server version/config change, then reload restores the shared config. A real stale If-Match produces the pre-registered 409, authoritative reload and intent rebase preserving another writer's width. Both locales and light/dark are exercised; locked/personal/hidden/permission/concurrent-save cases also pass required PG18 and focused component tests. |
+| AT-302 / AT-306..309 | Pass preserved | Unfiltered production suite: original validation, exact TSV/invalid-cell atomic patch/tail insert/readback/fill-handle assertions pass **14.7 s desktop / 3.0 s mobile cards smoke**. Fixtures explicitly select an unfrozen viewport through the public API; no original assertion or budget was removed. |
+| AT-310 / AT-313 | Pass preserved | Complete original modal/card, exact codecs/defaults/deep links/ACL/stale-response scenarios pass **47.1 s / 2.6 s** and **15.4 s / 16.7 s**, respectively. The mobile helper drains its own downgrade-triggered queries before another revocation, without ignoring 404s or loosening diagnostics. |
+| Full gates | Pass | Default-parallel `ptdev check`: **504 frontend tests / 27 files**, required Go/PG18, lint/typecheck/**553** locale keys and build; **2m0.738 s**. Unfiltered production `ptdev e2e`: **19 passed / 0 failed / 2 intentional spike skips in 5.6m**, unchanged 150 s scenario/360 s global/5 s assertion budgets, one worker and zero retries. Initial shell **191255 bytes gzip** with no grid/registry import. |
+| Remaining acceptance | Unchanged | T1.22 owns AT-102/116/M1 AT-117, T1.23 full AT-301..304; uploads AT-111/322 T2.2, full AT-804 T2.6, restore AT-203 M3. AT-312/NFR-1/2 remain uncertified without the authorized 2-vCPU/4-GB host; no target performance claim. |
+
+All failed iterations, exact versions/commands, startup-only observations,
+owned cleanup and handoff are retained in the
+[T1.21 record](task-prompts/T1.21.md#implementation-and-verification-record-2026-10-27).

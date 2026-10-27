@@ -296,6 +296,14 @@ onBeforeUnmount(() => {
           :view-id="view.id"
           :identity="auth.user?.id ?? ''"
           @schema-changed="loadSchema(true)"
+          @view-updated="
+            (updated) => {
+              if (schema)
+                schema.views = schema.views.map((item) =>
+                  item.id === updated.id ? updated : item,
+                )
+            }
+          "
           @expand="
             (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
           "

@@ -242,8 +242,12 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tableID, user pgty
 		}
 	}
 	for index, row := range views {
+		config, err := readViewColumns(row.Config, schema.Fields)
+		if err != nil {
+			return TableSchema{}, err
+		}
 		schema.Views[index] = View{ID: row.ID.String(), Name: row.Name, Type: row.Type, Scope: row.Scope,
-			Locked: row.Locked, Position: row.Position, Version: row.Version}
+			Locked: row.Locked, Position: row.Position, Version: row.Version, Config: config}
 	}
 	return schema, nil
 }

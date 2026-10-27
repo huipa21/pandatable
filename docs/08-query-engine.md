@@ -40,6 +40,24 @@ All row reads go through `internal/query`, which compiles a **view config** (+ a
 
 The config is validated server-side against current fields; references to deleted fields are dropped silently on read and cleaned on next save. View config updates use optimistic concurrency (`version`); conflicts → client reloads and re-applies.
 
+T1.21 implements only the Grid column subset (D-148): ordered
+`fields:[{id,visible,width?}]` and `frozen`. Schema/view responses include that
+sanitized subset, not arbitrary future config. Live configured fields retain
+their order; omitted user fields append visible in metadata order, omitted
+system fields append hidden. Read drops unknown/deleted/duplicate references
+and clamps the frozen count after removals. PATCH rejects non-live or duplicate
+IDs, validates integer widths 60..1000 and a frozen count from zero to the
+effective visible-column count. Missing widths render at 180 px; the existing
+default display field retains its stored 240 px.
+
+`PATCH /views/{id}` requires `{config:{fields,frozen}}` and a view version in
+`If-Match`. It updates those two members only, preserving `rowHeight` and all
+other stored members, cleans the column list, and increments the view version
+once (not the table schema version). Effective write/owner and an unlocked
+Grid are required, including for personal views; another user's personal view
+is 404. Readers and locked views use memory-only desktop overrides. The
+D-138 transient query override remains available and does not persist anything.
+
 **Personal overrides (not saved):** a user may temporarily change filter/sort in a locked or shared view without saving ("unsaved changes — save as personal view?").
 
 ## 2. Filter operators

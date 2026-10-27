@@ -351,6 +351,15 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
   const finalSchema = (await (
     await owner.request.get(`/api/v1/tables/${tid}/schema`)
   ).json()) as TableSchema
+  const clipboardView = finalSchema.views.find((view) => view.id === viewId)!
+  expect(
+    (
+      await owner.request.patch(`/api/v1/views/${viewId}`, {
+        headers: { ...h, 'If-Match': String(clipboardView.version) },
+        data: { config: { ...clipboardView.config, frozen: 0 } },
+      })
+    ).status(),
+  ).toBe(200)
   const date = finalSchema.fields.find((field) => field.name === 'Date')!
   const stage = finalSchema.fields.find((field) => field.name === 'Stage')!
   result = await query()
