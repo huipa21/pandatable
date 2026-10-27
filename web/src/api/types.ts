@@ -285,6 +285,8 @@ export interface RowQueryRequest {
   limit?: number
   sort?: RowSort
   includeCount?: boolean
+  /** Local grid visibility override; explicit IDs may include system fields. */
+  fieldIds?: string[]
 }
 
 export interface RowQueryResult {

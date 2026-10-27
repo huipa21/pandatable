@@ -35,10 +35,11 @@ type RowSort struct {
 }
 
 type RowQueryRequest struct {
-	Offset       *int     `json:"offset"`
-	Limit        *int     `json:"limit"`
-	Sort         *RowSort `json:"sort"`
-	IncludeCount *bool    `json:"includeCount"`
+	Offset       *int      `json:"offset"`
+	Limit        *int      `json:"limit"`
+	Sort         *RowSort  `json:"sort"`
+	IncludeCount *bool     `json:"includeCount"`
+	FieldIDs     *[]string `json:"fieldIds"`
 }
 
 type RowRecord struct {
@@ -476,7 +477,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err := json.Unmarshal(lockedView.Config, &config); err != nil {
 		return RowQueryResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
-	fields := visibleRowFields(table, config.Fields)
+	fields := visibleRowFields(table, config.Fields, request.FieldIDs)
 	sortField, direction, err := configuredRowSort(table, config.Sort, request.Sort)
 	if err != nil {
 		return RowQueryResult{}, err
@@ -526,7 +527,23 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 func visibleRowFields(table rowTable, config []struct {
 	ID      string `json:"id"`
 	Visible bool   `json:"visible"`
-}) []rowField {
+}, override *[]string) []rowField {
+	if override != nil {
+		visible := make([]rowField, 0, len(*override))
+		seen := make(map[string]bool, len(*override))
+		for _, id := range *override {
+			if seen[id] {
+				continue
+			}
+			field, ok := table.byID[id]
+			if !ok {
+				continue
+			}
+			seen[id] = true
+			visible = append(visible, field)
+		}
+		return visible
+	}
 	visible := make([]rowField, 0, len(table.fields))
 	seen := make(map[string]bool, len(table.fields))
 	for _, item := range config {

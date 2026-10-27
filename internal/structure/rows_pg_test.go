@@ -313,6 +313,13 @@ func TestQueryUsesViewColumnsCountSortAndBounds(t *testing.T) {
 		wireString(t, result.Rows[0].Fields[sysID.ID]) != result.Rows[0].ID {
 		t.Fatalf("configured sort/system values = %+v", result.Rows)
 	}
+	requested := []string{sysID.ID, text.ID, sysID.ID, "00000000-0000-0000-0000-000000000000"}
+	result, err = f.service.QueryRows(f.ctx, owner, viewID, RowQueryRequest{FieldIDs: &requested})
+	if err != nil || len(result.FieldIDs) != 2 ||
+		result.FieldIDs[0] != sysID.ID || result.FieldIDs[1] != text.ID ||
+		wireString(t, result.Rows[0].Fields[sysID.ID]) != result.Rows[0].ID {
+		t.Fatalf("explicit field query = %+v, %v", result, err)
+	}
 	_, err = f.service.QueryRows(f.ctx, owner, viewID, RowQueryRequest{Offset: intPtr(-1)})
 	expectRowError(t, err, 400, "ERR_VALIDATION")
 	_, err = f.service.QueryRows(f.ctx, owner, viewID, RowQueryRequest{Limit: intPtr(maxQueryLimit + 1)})

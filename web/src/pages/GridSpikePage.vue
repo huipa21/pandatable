@@ -5,7 +5,7 @@ import { syntheticSource } from '../spikes/synthetic'
 import type { WindowStats } from '../components/grid/window'
 
 const DataGrid = defineAsyncComponent(
-  () => import('../components/grid/DataGrid.vue'),
+  () => import('../components/grid/SpikeDataGrid.vue'),
 )
 const { t } = useI18n()
 const running = ref(false)

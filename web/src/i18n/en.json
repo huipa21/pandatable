@@ -68,6 +68,25 @@
     },
     "tableShellNotice": "Table schema loaded. Rows, the grid and view editing are not available yet."
   },
+  "grid": {
+    "title": "Data grid",
+    "fields": "Fields",
+    "visibleFields": "Visible fields",
+    "addRow": "Add row",
+    "deleteRows": "Delete selected ({count})",
+    "selectRow": "Select row {id}",
+    "selectionLimit": "Select no more than 1,000 rows at a time.",
+    "saving": "Saving row changes",
+    "loading": "Loading rows",
+    "empty": "No rows yet. Add a row to get started.",
+    "confirmDeleteTitle": "Delete selected rows",
+    "confirmDelete": "Delete {count} selected rows?",
+    "cancel": "Cancel",
+    "deleteConfirm": "Delete rows",
+    "unsupportedField": "A field uses unsupported metadata and cannot be shown.",
+    "loadError": "Rows could not be loaded. Retry by reloading this page.",
+    "mobileNotice": "The desktop grid is not available on small screens yet."
+  },
   "sharing": {
     "open": "Share",
     "title": "Manage sharing",

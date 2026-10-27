@@ -1,4 +1,5 @@
 import type { Browser, Page } from '@playwright/test'
+import type { Components } from '@revolist/revogrid'
 import {
   test,
   expect,
@@ -6,7 +7,7 @@ import {
   expectHTTPFailure,
   expectBrowserClean,
 } from './fixtures'
-import type { Navigation, TableSchema } from '../src/api/types'
+import type { Navigation, RowQueryResult, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
@@ -106,6 +107,172 @@ async function noOverflow(page: Page) {
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true)
+}
+
+export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
+  const h = headers()
+  const query = async () => {
+    const response = await owner.request.post(`/api/v1/views/${viewId}/query`, {
+      headers: h,
+      data: { offset: 0, limit: 100, includeCount: true },
+    })
+    expect(response.status()).toBe(200)
+    return (await response.json()) as RowQueryResult
+  }
+  const panel = owner.getByRole('region', { name: en.field.panel.title })
+  await panel
+    .getByRole('button', { name: en.field.panel.add, exact: true })
+    .click()
+  const fieldDialog = owner.getByRole('dialog', {
+    name: en.field.panel.createTitle,
+    exact: true,
+  })
+  await fieldDialog
+    .getByRole('textbox', { name: en.field.panel.name, exact: true })
+    .fill('Email')
+  await fieldDialog
+    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
+    .selectOption('email')
+  await fieldDialog
+    .getByRole('button', { name: en.field.panel.create, exact: true })
+    .click()
+  await expect(fieldDialog).not.toBeVisible()
+  await expect(
+    owner.getByRole('status').filter({ hasText: en.field.panel.saved }),
+  ).toBeVisible()
+  const schemaResponse = await owner.request.get(`/api/v1/tables/${tid}/schema`)
+  expect(schemaResponse.status()).toBe(200)
+  const schema = (await schemaResponse.json()) as TableSchema
+  const name = schema.fields.find((field) => field.name === 'Name')!
+  const qty = schema.fields.find((field) => field.name === '数量')!
+  const email = schema.fields.find((field) => field.name === 'Email')!
+  const updatedBy = schema.fields.find(
+    (field) => field.uiType === 'updated_by',
+  )!
+
+  const gridRegion = owner.getByRole('region', { name: en.grid.title })
+  await expect(gridRegion).toBeVisible()
+  await expect(
+    owner.getByRole('button', { name: en.grid.addRow }),
+  ).toBeEnabled()
+  await owner.getByRole('button', { name: en.grid.addRow }).click()
+  await expect.poll(async () => (await query()).total).toBe(1)
+  let result = await query()
+  expect(result.rows[0]?.fields[qty.id]).toBe(7)
+  expect(result.fieldIds).toContain(name.id)
+  expect(result.fieldIds).toContain(qty.id)
+  expect(result.fieldIds).toContain(email.id)
+  await expect(owner.getByText('7', { exact: true })).toBeVisible()
+
+  const gridElement = owner.locator('revo-grid')
+  const openEditor = async (fieldId: string) => {
+    await gridElement.evaluate(
+      async (element, prop) =>
+        (element as HTMLElement & Components.RevoGrid).setCellEdit(
+          0,
+          prop,
+          'rgRow',
+        ),
+      fieldId,
+    )
+  }
+  const edit = async (fieldId: string, value: string) => {
+    await openEditor(fieldId)
+    const editor = owner.getByRole('textbox', {
+      name: en.field.editor.value,
+      exact: true,
+    })
+    await expect(editor).toBeVisible()
+    await editor.fill(value)
+    await editor.press('Enter')
+    return editor
+  }
+
+  expectHTTPFailure(owner, 'POST', `/api/v1/tables/${tid}/rows`, 409)
+  await owner.getByRole('button', { name: en.grid.addRow }).click()
+  await expect(owner.getByRole('alert')).toContainText(
+    en.errors.ERR_UNIQUE_CONFLICT,
+  )
+  expect((await query()).total).toBe(1)
+
+  await openEditor(qty.id)
+  let editor = owner.getByRole('textbox', {
+    name: en.field.editor.value,
+    exact: true,
+  })
+  await editor.fill('abc')
+  await editor.press('Enter')
+  await expect(owner.getByRole('alert')).toContainText(
+    en.field.error.invalid_integer,
+  )
+  expect((await query()).rows[0]?.fields[qty.id]).toBe(7)
+  await editor.fill('8')
+  await editor.press('Enter')
+  await expect.poll(async () => (await query()).rows[0]?.fields[qty.id]).toBe(8)
+
+  await owner.getByRole('button', { name: en.grid.addRow }).click()
+  await expect.poll(async () => (await query()).total).toBe(2)
+  result = await query()
+  expect(result.rows[1]?.fields[qty.id]).toBe(7)
+
+  await openEditor(email.id)
+  editor = owner.getByRole('textbox', {
+    name: en.field.editor.value,
+    exact: true,
+  })
+  await editor.fill('x@')
+  await editor.press('Enter')
+  await expect(owner.getByRole('alert')).toContainText(
+    en.field.error.invalid_email,
+  )
+  expect((await query()).rows[0]?.fields[email.id]).toBeNull()
+  await editor.fill('grid@example.test')
+  await editor.press('Enter')
+  await expect
+    .poll(async () => (await query()).rows[0]?.fields[email.id])
+    .toBe('grid@example.test')
+
+  await edit(name.id, 'Persisted from the grid')
+  result = await query()
+  expect(result.rows[0]?.fields[name.id]).toBe('Persisted from the grid')
+  const me = await (await owner.request.get('/api/v1/auth/me')).json()
+  expect(result.rows[0]?.fields[updatedBy.id]).toBe(me.user.id)
+
+  const fieldsMenu = owner.locator('details.grid-fields')
+  await fieldsMenu.locator('summary').click()
+  await owner
+    .getByRole('checkbox', { name: updatedBy.name, exact: true })
+    .check()
+  await expect
+    .poll(async () => (await query()).fieldIds)
+    .toContain(updatedBy.id)
+  result = await query()
+  expect(result.rows[0]?.fields[updatedBy.id]).toBe(me.user.id)
+  await expect(owner.getByText(me.user.id, { exact: true })).toBeVisible()
+
+  await owner.reload()
+  await expect(owner.getByRole('region', { name: en.grid.title })).toBeVisible()
+  await expect
+    .poll(async () => (await query()).rows[0]?.fields[name.id])
+    .toBe('Persisted from the grid')
+
+  await owner
+    .getByRole('button', { name: en.common.themes.dark, exact: true })
+    .click()
+  await expect(owner.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await owner
+    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+    .click()
+  await expect(
+    owner.getByRole('button', { name: zh.grid.addRow, exact: true }),
+  ).toBeVisible()
+  await owner
+    .getByRole('button', { name: zh.common.languages.en, exact: true })
+    .click()
+  await owner
+    .getByRole('button', { name: en.common.themes.light, exact: true })
+    .click()
+  await expect(owner.locator('html')).toHaveAttribute('data-theme', 'light')
 }
 
 export async function verifyNavigation(

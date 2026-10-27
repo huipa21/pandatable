@@ -26,6 +26,9 @@ const schema = ref<TableSchema | null>(null)
 const FieldPanel = defineAsyncComponent(
   () => import('../components/fields/FieldPanel.vue'),
 )
+const DataGrid = defineAsyncComponent(
+  () => import('../components/grid/DataGrid.vue'),
+)
 const loading = ref(false)
 const error = ref<unknown>(null)
 let controller: AbortController | undefined
@@ -150,6 +153,10 @@ watch(
     if (!loading.value) void loadSchema(true)
   },
 )
+watch(
+  () => auth.user?.id,
+  () => void loadSchema(),
+)
 onBeforeUnmount(() => {
   generation++
   controller?.abort()
@@ -248,7 +255,14 @@ onBeforeUnmount(() => {
           @update="applySchema"
           @reload="loadSchema(true)"
         />
-        <p>{{ t('nav.tableShellNotice') }}</p>
+        <DataGrid
+          v-if="view"
+          :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
+          :schema="schema"
+          :view-id="view.id"
+          :identity="auth.user?.id ?? ''"
+          @schema-changed="loadSchema(true)"
+        />
       </template>
     </template>
     <button

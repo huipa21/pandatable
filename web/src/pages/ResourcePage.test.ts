@@ -35,13 +35,18 @@ async function setup(path: string) {
   })
   await router.push(path)
   const wrapper = mount(ResourcePage, {
-    global: { plugins: [pinia, i18n, router] },
+    global: {
+      plugins: [pinia, i18n, router],
+      stubs: {
+        DataGrid: { template: '<div data-testid="production-grid" />' },
+      },
+    },
   })
   await flushPromises()
   return { wrapper, router, nav }
 }
 
-it('shows real schema metadata, breadcrumbs, levels and view links without any grid', async () => {
+it('shows real schema metadata, breadcrumbs, levels, view links and the production grid', async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json(tableSchema()))
   vi.stubGlobal('fetch', fetch)
   const { wrapper } = await setup('/t/t/v/v')
@@ -52,8 +57,7 @@ it('shows real schema metadata, breadcrumbs, levels and view links without any g
     expect(
       wrapper.findAll('.breadcrumbs a').map((item) => item.text()),
     ).toEqual(['Your PandaTable', 'Workspace', 'Book', 'Table'])
-    expect(wrapper.text()).toContain('not available yet')
-    expect(wrapper.find('revo-grid').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="production-grid"]').exists()).toBe(true)
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/tables/t/schema',
       expect.objectContaining({

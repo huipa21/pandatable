@@ -604,7 +604,7 @@ distinguishing hidden from removed resources.
 ### Rows & queries
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/views/{id}/query` | T1.15: `{ offset?, limit?, sort?: { fieldId, direction }, includeCount? }` → `{ rows: [{id, fields}], fieldIds, total, schemaVersion }`; limit ≤100, offset ≤1,000,000; total is null when count is disabled. |
+| POST | `/views/{id}/query` | T1.15: `{ offset?, limit?, sort?: { fieldId, direction }, includeCount? }` → `{ rows: [{id, fields}], fieldIds, total, schemaVersion }`; limit ≤100, offset ≤1,000,000; total is null when count is disabled. T1.16 optionally accepts `fieldIds` as a transient visibility override (D-138), without changing stored view config. |
 | POST | `/views/{id}/groups` | `{ path, search?, overrides? }` → buckets |
 | POST | `/views/{id}/aggregates` | footer values |
 | GET | `/tables/{id}/rows/{rowId}` | T1.15: `{ id, fields }`, all live fields including read-only system values; row ID is a canonical bigint decimal string. |

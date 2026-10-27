@@ -271,8 +271,17 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   later work. System editors render nothing. Native controls commit validated
   values, preserve IME input and show localized errors; Escape cancels,
   multiline uses Ctrl/Meta+Enter, select/checkbox use native changes.
-  These components/registry have no current route imports. T1.16 owns real
-  grid integration; the synthetic spike stays isolated.
+  The real table route lazy-loads these components through T1.16's production
+  grid. The synthetic spike stays isolated in `SpikeDataGrid.vue`.
+- T1.16's production grid fetches 100-row query pages and keeps only the active
+  page plus its two neighbors in the row cache. It guards queries and writes
+  against route/schema/identity changes, uses table `myLevel` for write
+  controls, validates editor commits with the bound `FieldKind`, and persists
+  successful cell edits through row PATCH. Add/delete row actions use the row
+  APIs and show failures without optimistic success. The Fields menu sends a
+  transient ordered `fieldIds` visibility override (D-138), allowing explicit
+  system-field visibility without changing the saved view config. Clipboard
+  and fill-down remain disabled until T1.17.
 - Keyboard: arrows, Tab/Shift+Tab, Enter (edit / commit+down), Esc (cancel), F2, Delete/Backspace (clear), Ctrl/Cmd+C/V/X, Ctrl/Cmd+Z/Y, Ctrl+D (fill down), Ctrl+A, Shift+arrows (range), Space (expand row / toggle checkbox), Home/End, Ctrl+Home/End, PageUp/Down.
 - **Copy:** range → TSV (+ HTML table) to clipboard via `formatCopy`.
 - **Paste:** parse TSV (handles quoted multi-line cells from Excel/Sheets) → map to cells starting at focus → per-cell `parsePaste` → preview errors count → one bulk PATCH; if exceeding last row → confirm "add N rows" → bulk insert. Read-only/computed columns skipped.
@@ -291,7 +300,8 @@ only after explicit opt-in at >=768 px; smaller viewports show a translated
 mobile-card-intent notice, not a grid or an M1 card editor. Welcome and other
 deep-route behavior remain unchanged.
 
-[DataGrid.vue](../web/src/components/grid/DataGrid.vue) owns all engine imports,
+[SpikeDataGrid.vue](../web/src/components/grid/SpikeDataGrid.vue) owns the
+synthetic lab's engine imports,
 event adaptation, source-store updates, renderer/editor, TSV and fill-down
 handling. Its external boundary accepts an engine-independent `WindowSource`
 (`total`, abortable `fetch(offset, limit, signal)`) and emits window statistics.

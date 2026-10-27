@@ -68,6 +68,25 @@
     },
     "tableShellNotice": "表结构已加载。行、网格和视图编辑暂不可用。"
   },
+  "grid": {
+    "title": "数据网格",
+    "fields": "字段",
+    "visibleFields": "可见字段",
+    "addRow": "添加行",
+    "deleteRows": "删除所选行（{count}）",
+    "selectRow": "选择行 {id}",
+    "selectionLimit": "每次最多选择 1,000 行。",
+    "saving": "正在保存行更改",
+    "loading": "正在加载行",
+    "empty": "还没有行。添加一行以开始使用。",
+    "confirmDeleteTitle": "删除所选行",
+    "confirmDelete": "要删除所选的 {count} 行吗？",
+    "cancel": "取消",
+    "deleteConfirm": "删除行",
+    "unsupportedField": "字段元数据不受支持，无法显示。",
+    "loadError": "无法加载行。请重新加载此页面后重试。",
+    "mobileNotice": "小屏幕暂不支持桌面数据网格。"
+  },
   "sharing": {
     "open": "共享",
     "title": "管理共享",

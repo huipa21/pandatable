@@ -114,6 +114,13 @@ directions, then row id ascending. Count is a separate exact `count(*)` over
 the same snapshot and is optional so callers that only need a page can avoid
 that work.
 
+T1.16 adds an optional `fieldIds` query member for a transient display override
+used by the Fields menu. Omitting it preserves the stored view configuration.
+When supplied, it is an ordered list of live field UUIDs (including explicitly
+selected system fields); duplicate, unknown and deleted IDs are ignored. The
+override is not persisted. Table read permission and metadata-derived SQL
+identifier validation are unchanged (D-138).
+
 The query loads only the selected live table/view and field metadata, quotes
 validated generated identifiers, and binds all values with Squirrel. A
 repeatable-read transaction holds a table `FOR SHARE` lock for the view and

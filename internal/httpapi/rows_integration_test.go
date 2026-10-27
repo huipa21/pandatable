@@ -42,6 +42,22 @@ func TestRowsHTTPAPIQueryMutationsAndGuards(t *testing.T) {
 		len(query.FieldIDs) != 2 || query.SchemaVersion != table.SchemaVersion+1 {
 		t.Fatalf("query = %+v", query)
 	}
+	var systemID string
+	for _, field := range table.Fields {
+		if field.UIType == "id" {
+			systemID = field.ID
+			break
+		}
+	}
+	if systemID == "" {
+		t.Fatal("table schema is missing the system id field")
+	}
+	requested := decode[structure.RowQueryResult](f, f.api(owner, "POST",
+		"/views/"+table.Views[0].ID+"/query", fmt.Sprintf(`{"fieldIds":[%q]}`, systemID)), 200)
+	if len(requested.FieldIDs) != 1 || requested.FieldIDs[0] != systemID ||
+		requested.Rows[0].Fields[systemID] == nil {
+		t.Fatalf("explicit system-field query = %+v", requested)
+	}
 	row := decode[structure.RowRecord](f, f.api(owner, "GET",
 		"/tables/"+table.Table.ID+"/rows/"+created.Rows[0].ID, ""), 200)
 	if row.ID != created.Rows[0].ID || string(row.Fields[field.ID]) != `"first"` {
