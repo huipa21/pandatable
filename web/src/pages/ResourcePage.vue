@@ -3,6 +3,7 @@ import {
   computed,
   defineAsyncComponent,
   onBeforeUnmount,
+  onMounted,
   ref,
   watch,
 } from 'vue'
@@ -29,10 +30,21 @@ const FieldPanel = defineAsyncComponent(
 const DataGrid = defineAsyncComponent(
   () => import('../components/grid/DataGrid.vue'),
 )
+const MobileCardList = defineAsyncComponent(
+  () => import('../components/rows/MobileCardList.vue'),
+)
 const RowExpandDialog = defineAsyncComponent(
   () => import('../components/rows/RowExpandDialog.vue'),
 )
 const grid = ref<{ refresh: () => Promise<void> }>()
+const media = window.matchMedia('(min-width: 768px)')
+const desktop = ref(media.matches)
+const newRow = ref(false)
+const resized = (event: MediaQueryListEvent) => {
+  desktop.value = event.matches
+  newRow.value = false
+}
+onMounted(() => media.addEventListener('change', resized))
 const loading = ref(false)
 const error = ref<unknown>(null)
 let controller: AbortController | undefined
@@ -165,9 +177,21 @@ watch(
   () => auth.user?.id,
   () => void loadSchema(),
 )
+watch(
+  [
+    () => route.params.tableId,
+    () => route.params.viewId,
+    () => route.params.rowId,
+    () => auth.user?.id,
+  ],
+  () => {
+    newRow.value = false
+  },
+)
 onBeforeUnmount(() => {
   generation++
   controller?.abort()
+  media.removeEventListener('change', resized)
 })
 </script>
 
@@ -258,13 +282,14 @@ onBeforeUnmount(() => {
         </nav>
         <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
         <FieldPanel
+          v-if="desktop"
           :key="schema.table.id"
           :schema="schema"
           @update="applySchema"
           @reload="loadSchema(true)"
         />
         <DataGrid
-          v-if="view"
+          v-if="view && desktop"
           ref="grid"
           :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
           :schema="schema"
@@ -275,14 +300,47 @@ onBeforeUnmount(() => {
             (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
           "
         />
-        <RowExpandDialog
-          v-if="view && typeof route.params.rowId === 'string'"
+        <MobileCardList
+          v-else-if="view"
+          ref="grid"
+          :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
           :schema="schema"
           :view-id="view.id"
-          :row-id="route.params.rowId"
           :identity="auth.user?.id ?? ''"
-          @close="router.replace(`/t/${schema!.table.id}/v/${view!.id}`)"
+          @schema-changed="loadSchema(true)"
+          @expand="
+            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+          "
+          @add="newRow = true"
+        >
+          <FieldPanel
+            :schema="schema"
+            @update="applySchema"
+            @reload="loadSchema(true)"
+          />
+        </MobileCardList>
+        <RowExpandDialog
+          v-if="view && (typeof route.params.rowId === 'string' || newRow)"
+          :schema="schema"
+          :view-id="view.id"
+          :row-id="
+            typeof route.params.rowId === 'string' ? route.params.rowId : null
+          "
+          :identity="auth.user?.id ?? ''"
+          @close="
+            () => {
+              newRow = false
+              router.replace(`/t/${schema!.table.id}/v/${view!.id}`)
+            }
+          "
           @saved="grid?.refresh()"
+          @created="
+            (id) => {
+              newRow = false
+              grid?.refresh()
+              router.replace(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+            }
+          "
           @schema-changed="loadSchema(true)"
         />
       </template>

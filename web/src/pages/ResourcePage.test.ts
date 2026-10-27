@@ -7,14 +7,19 @@ import { useNavStore } from '../stores/nav'
 import { navigation, tableSchema } from '../test/navigation'
 import ResourcePage from './ResourcePage.vue'
 import { errorMessage, RequestError } from '../api/client'
+import { ThemeMedia } from '../test/setup'
 
 let pinia: ReturnType<typeof createPinia>
+let media: ThemeMedia
 beforeEach(async () => {
   pinia = createPinia()
   setActivePinia(pinia)
   await loadLocale('en')
   await loadLocale('zh-CN')
   i18n.global.locale.value = 'en'
+  media = new ThemeMedia()
+  media.matches = true
+  vi.stubGlobal('matchMedia', () => media)
 })
 afterEach(() => {
   disposePinia(pinia)
@@ -40,6 +45,10 @@ async function setup(path: string) {
       plugins: [pinia, i18n, router],
       stubs: {
         DataGrid: { template: '<div data-testid="production-grid" />' },
+        MobileCardList: {
+          template:
+            '<div data-testid="mobile-cards"><button @click="$emit(\'add\')">+</button></div>',
+        },
         RowExpandDialog: {
           props: ['rowId'],
           template: '<div data-testid="row-dialog">{{ rowId }}</div>',
@@ -52,6 +61,31 @@ async function setup(path: string) {
   return { wrapper, router, nav }
 }
 
+it('switches at 768px without mounting the grid for mobile cards, preserves row links and closes new drafts on navigation', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(Response.json(tableSchema())),
+  )
+  media.matches = false
+  const { wrapper, router } = await setup('/t/t/v/v')
+  try {
+    expect(wrapper.find('[data-testid="production-grid"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="mobile-cards"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(true)
+    await router.push('/t/t/v/v/r/9007199254740993')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="row-dialog"]').text()).toBe(
+      '9007199254740993',
+    )
+    media.setDark(true)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="mobile-cards"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="production-grid"]').exists()).toBe(true)
+  } finally {
+    wrapper.unmount()
+  }
+})
 it('opens row deep links without reloading schema or remounting the grid, and rejects invalid views', async () => {
   const fetcher = vi.fn().mockResolvedValue(Response.json(tableSchema()))
   vi.stubGlobal('fetch', fetcher)

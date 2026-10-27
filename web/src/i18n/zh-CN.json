@@ -98,6 +98,23 @@
     "saveFailed": "行服务返回了意外响应。",
     "mobileNotice": "小屏幕暂不支持桌面数据网格。"
   },
+  "mobileRows": {
+    "title": "数据行",
+    "options": "视图选项",
+    "closeOptions": "关闭视图选项",
+    "refresh": "重新加载行",
+    "paging": "行分页",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {page} 页，共 {pages} 页 · {total} 行",
+    "untitled": "未命名行 {id}",
+    "plus": "+",
+    "newRow": "新建行",
+    "defaults": "逐个应用编辑值到草稿后再创建行。未编辑的字段使用数据库默认值。关闭将丢弃草稿。",
+    "create": "创建行",
+    "createLimit": "草稿超过 5,000 个单元格或 512 KiB 的创建请求限制，未发送任何内容。",
+    "uncertain": "尚未确认创建成功。连接失败后，请先检查行列表再重试，以免重复创建。"
+  },
   "sharing": {
     "open": "共享",
     "title": "管理共享",

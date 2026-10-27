@@ -1,0 +1,573 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
+import { errorMessage, request, RequestError } from '../../api/client'
+import type {
+  DataRow,
+  RowMutation,
+  RowQueryRequest,
+  RowQueryResult,
+  TableSchema,
+} from '../../api/types'
+import { bindField } from '../../fields/registry'
+import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
+import { useAuthStore } from '../../stores/auth'
+import { useNavStore } from '../../stores/nav'
+import FieldRenderer from '../fields/FieldRenderer.vue'
+import { RemoteRowsWindow, remotePageSize } from '../grid/remoteWindow'
+
+const props = defineProps<{
+  schema: TableSchema
+  viewId: string
+  identity: string
+}>()
+const emit = defineEmits<{
+  expand: [rowId: string]
+  add: []
+  schemaChanged: []
+}>()
+const { t, locale } = useI18n()
+const router = useRouter()
+const auth = useAuthStore()
+const nav = useNavStore()
+const options = ref<HTMLDialogElement>()
+const confirmation = ref<HTMLDialogElement>()
+const heading = ref<HTMLElement>()
+const error = ref<unknown>(null)
+const initializing = ref(false)
+const saving = ref(false)
+const page = ref(0)
+const revision = ref(0)
+const selected = ref(new Set<string>())
+const override = ref<string[] | null>(null)
+let rows: RemoteRowsWindow | undefined
+let generation = 0
+let disposed = false
+let mutation: AbortController | undefined
+const env = computed<FieldEnv>(() => ({
+  timeZone: auth.user?.effectiveTimezone,
+  locale: locale.value,
+}))
+const canWrite = computed(
+  () =>
+    props.identity === auth.user?.id &&
+    (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
+)
+const fields = computed(() =>
+  [...props.schema.fields]
+    .sort((a, b) => a.position - b.position)
+    .map((field) => ({
+      ...field,
+      bound: bindField(field.uiType, field.options),
+    })),
+)
+const display = computed(() =>
+  fields.value.find((field) => field.id === props.schema.table.displayFieldId),
+)
+const state = computed(() => {
+  void revision.value
+  return rows?.snapshot()
+})
+const visibleIds = computed(() => {
+  void revision.value
+  return override.value ?? rows?.fieldIds ?? []
+})
+const preview = computed(() =>
+  visibleIds.value
+    .filter((id) => id !== display.value?.id)
+    .slice(0, 4)
+    .map((id) => fields.value.find((field) => field.id === id))
+    .filter((field) => field !== undefined),
+)
+const cards = computed(() => {
+  void revision.value
+  const start = page.value * remotePageSize
+  const count = Math.max(
+    0,
+    Math.min(remotePageSize, (rows?.total ?? 0) - start),
+  )
+  return Array.from({ length: count }, (_, index) =>
+    rows?.rowAt(start + index),
+  ).filter((row) => row !== null && row !== undefined)
+})
+const loading = computed(
+  () =>
+    initializing.value ||
+    ((state.value?.total ?? 0) > 0 && cards.value.length === 0 && !error.value),
+)
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil((state.value?.total ?? 0) / remotePageSize)),
+)
+
+function current(token: number) {
+  return !disposed && token === generation && props.identity === auth.user?.id
+}
+function wireValue(value: unknown): WireValue {
+  if (!isWireValue(value)) throw new Error('Unsupported card field value')
+  return value
+}
+function hasTitle(row: DataRow) {
+  const value = display.value ? row.fields[display.value.id] : undefined
+  return isWireValue(value) && value !== null
+}
+
+function failure(cause: unknown, token: number) {
+  if (!current(token)) return
+  error.value = cause
+  if (!(cause instanceof RequestError)) return
+  if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
+    rows?.dispose()
+    void router.replace('/change-password')
+  } else if ([401, 403, 404].includes(cause.status)) {
+    rows?.dispose()
+    selected.value.clear()
+    if (cause.status === 401) {
+      auth.setUser(null)
+      void router.replace('/login')
+    } else {
+      void nav.refresh(true)
+      emit('schemaChanged')
+    }
+  } else if (cause.code === 'ERR_SCHEMA_CHANGED') {
+    rows?.dispose()
+    emit('schemaChanged')
+  }
+}
+
+async function refresh(anchor = page.value * remotePageSize) {
+  mutation?.abort()
+  rows?.dispose()
+  const token = ++generation
+  saving.value = false
+  selected.value.clear()
+  initializing.value = true
+  if (!current(token)) {
+    initializing.value = false
+    return
+  }
+  error.value = null
+  const schemaVersion = props.schema.schemaVersion
+  const viewId = props.viewId
+  const displayId = display.value?.id
+  const fieldIds = override.value === null ? undefined : [...override.value]
+  const query = (body: RowQueryRequest, signal: AbortSignal) =>
+    request<RowQueryResult>(
+      `/views/${viewId}/query`,
+      'POST',
+      body,
+      AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    )
+  const window = new RemoteRowsWindow(
+    {
+      fetch: async (offset, limit, includeCount, signal) => {
+        const body = {
+          offset,
+          limit,
+          includeCount,
+          ...(fieldIds ? { fieldIds } : {}),
+        }
+        let result = await query(body, signal)
+        if (!current(token) || signal.aborted) return result
+        const visible = result.fieldIds
+        if (displayId && !visible.includes(displayId)) {
+          const extra = await query(
+            { ...body, fieldIds: [...visible, displayId] },
+            signal,
+          )
+          if (extra.schemaVersion !== result.schemaVersion)
+            throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+          result = { ...extra, fieldIds: visible }
+        }
+        if (
+          current(token) &&
+          !signal.aborted &&
+          result.schemaVersion !== schemaVersion
+        )
+          throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+        return result
+      },
+    },
+    () => {
+      revision.value++
+    },
+    (cause) => failure(cause, token),
+  )
+  rows = window
+  await window.initialize(anchor)
+  if (current(token)) {
+    page.value = Math.max(0, window.snapshot().activePage)
+    initializing.value = false
+    revision.value++
+  }
+}
+
+async function move(delta: number) {
+  const next = page.value + delta
+  if (saving.value || loading.value || next < 0 || next >= pageCount.value)
+    return
+  page.value = next
+  selected.value.clear()
+  rows?.load(next * remotePageSize)
+  revision.value++
+  await nextTick()
+  heading.value?.focus()
+}
+
+function toggleField(id: string, checked: boolean) {
+  const next = new Set(visibleIds.value)
+  if (checked) next.add(id)
+  else next.delete(id)
+  override.value = fields.value
+    .filter((field) => next.has(field.id))
+    .map((field) => field.id)
+  void refresh()
+}
+
+function askDelete() {
+  options.value?.close()
+  confirmation.value?.showModal()
+}
+
+async function deleteSelected() {
+  if (!canWrite.value || saving.value || !selected.value.size) return
+  const token = generation
+  const ids = [...selected.value]
+  mutation = new AbortController()
+  saving.value = true
+  error.value = null
+  try {
+    await request<RowMutation>(
+      `/tables/${props.schema.table.id}/rows`,
+      'DELETE',
+      { ids },
+      AbortSignal.any([mutation.signal, AbortSignal.timeout(10_000)]),
+    )
+    if (!current(token)) return
+    confirmation.value?.close()
+    await refresh()
+  } catch (cause) {
+    failure(cause, token)
+  } finally {
+    if (current(token)) saving.value = false
+  }
+}
+
+watch(
+  [
+    () => props.schema.table.id,
+    () => props.viewId,
+    () => props.schema.schemaVersion,
+    () => props.schema.myLevel,
+    () => props.identity,
+    () => auth.user?.id,
+  ],
+  () => {
+    confirmation.value?.close()
+    override.value = null
+    page.value = 0
+    void refresh(0)
+  },
+  { immediate: true },
+)
+watch(
+  [
+    () => props.schema.table.id,
+    () => props.viewId,
+    () => props.identity,
+    () => auth.user?.id,
+  ],
+  () => options.value?.close(),
+)
+defineExpose({ refresh: () => refresh() })
+onBeforeUnmount(() => {
+  disposed = true
+  generation++
+  mutation?.abort()
+  rows?.dispose()
+  options.value?.close()
+  confirmation.value?.close()
+})
+</script>
+
+<template>
+  <section
+    class="mobile-rows"
+    :aria-label="t('mobileRows.title')"
+    :data-cached-rows="state?.cachedRows ?? 0"
+    :data-page="page"
+  >
+    <header class="mobile-toolbar">
+      <h2 ref="heading" tabindex="-1">{{ t('mobileRows.title') }}</h2>
+      <button type="button" @click="options?.showModal()">
+        {{ t('mobileRows.options') }}
+      </button>
+    </header>
+    <p v-if="loading" role="status">{{ t('grid.loading') }}</p>
+    <div v-if="error" role="alert">
+      <p>{{ errorMessage(error) }}</p>
+      <button type="button" :disabled="saving" @click="refresh()">
+        {{ t('auth.retry') }}
+      </button>
+    </div>
+    <template v-else-if="!loading && identity === auth.user?.id">
+      <p v-if="state?.total === 0">{{ t('grid.empty') }}</p>
+      <ul class="mobile-card-list">
+        <li v-for="row in cards" :key="row.id" :data-row-id="row.id">
+          <button
+            type="button"
+            class="mobile-card"
+            :aria-label="t('rowExpand.open', { id: row.id })"
+            :aria-describedby="`row-title-${row.id}`"
+            @click="emit('expand', row.id)"
+          >
+            <span :id="`row-title-${row.id}`" class="card-title">
+              <FieldRenderer
+                v-if="display?.bound.ok && hasTitle(row)"
+                :field="display.bound.value"
+                :value="wireValue(row.fields[display.id])"
+                :env="env"
+                :links="false"
+              />
+              <span v-else>{{ t('mobileRows.untitled', { id: row.id }) }}</span>
+            </span>
+            <span v-for="field in preview" :key="field.id" class="card-field">
+              <span class="card-label">{{ field.name }}</span>
+              <FieldRenderer
+                v-if="field.bound.ok && isWireValue(row.fields[field.id])"
+                :field="field.bound.value"
+                :value="wireValue(row.fields[field.id])"
+                :env="env"
+                :links="false"
+              />
+              <span v-else>{{ t('grid.unsupportedField') }}</span>
+            </span>
+          </button>
+          <label v-if="canWrite" class="card-selection">
+            <input
+              v-model="selected"
+              type="checkbox"
+              :value="row.id"
+              :disabled="saving"
+              :aria-label="t('grid.selectRow', { id: row.id })"
+            />
+            {{ t('grid.selectRow', { id: row.id }) }}
+          </label>
+        </li>
+      </ul>
+    </template>
+    <nav class="mobile-paging" :aria-label="t('mobileRows.paging')">
+      <button
+        type="button"
+        :disabled="page === 0 || loading || saving || !!error"
+        @click="move(-1)"
+      >
+        {{ t('mobileRows.previous') }}
+      </button>
+      <span role="status">{{
+        t('mobileRows.page', {
+          page: page + 1,
+          pages: pageCount,
+          total: state?.total ?? 0,
+        })
+      }}</span>
+      <button
+        type="button"
+        :disabled="page + 1 >= pageCount || loading || saving || !!error"
+        @click="move(1)"
+      >
+        {{ t('mobileRows.next') }}
+      </button>
+    </nav>
+    <button
+      v-if="canWrite"
+      type="button"
+      class="mobile-add"
+      :disabled="saving"
+      :aria-label="t('grid.addRow')"
+      @click="emit('add')"
+    >
+      {{ t('mobileRows.plus') }}
+    </button>
+    <dialog
+      ref="options"
+      class="mobile-sheet"
+      :aria-label="t('mobileRows.options')"
+      @click="
+        (event) => {
+          if (event.target === options) options.close()
+        }
+      "
+    >
+      <header class="mobile-toolbar">
+        <h2>{{ t('mobileRows.options') }}</h2>
+        <button type="button" @click="options?.close()">
+          {{ t('mobileRows.closeOptions') }}
+        </button>
+      </header>
+      <button type="button" :disabled="saving || loading" @click="refresh()">
+        {{ t('mobileRows.refresh') }}
+      </button>
+      <button
+        v-if="canWrite"
+        type="button"
+        :disabled="!selected.size || saving"
+        @click="askDelete"
+      >
+        {{ t('grid.deleteRows', { count: selected.size }) }}
+      </button>
+      <fieldset :disabled="saving || loading">
+        <legend>{{ t('grid.visibleFields') }}</legend>
+        <label v-for="field in fields" :key="field.id" class="field-choice">
+          <input
+            type="checkbox"
+            :checked="visibleIds.includes(field.id)"
+            @change="
+              toggleField(field.id, ($event.target as HTMLInputElement).checked)
+            "
+          />
+          {{ field.name }}
+        </label>
+      </fieldset>
+      <slot />
+    </dialog>
+    <dialog
+      ref="confirmation"
+      class="mobile-sheet"
+      :aria-label="t('grid.confirmDeleteTitle')"
+      @cancel="
+        ($event) => {
+          if (saving) $event.preventDefault()
+        }
+      "
+    >
+      <h2>{{ t('grid.confirmDeleteTitle') }}</h2>
+      <p>{{ t('grid.confirmDelete', { count: selected.size }) }}</p>
+      <p v-if="error" role="alert">{{ errorMessage(error) }}</p>
+      <button type="button" :disabled="saving" @click="deleteSelected">
+        {{ t('grid.deleteConfirm') }}
+      </button>
+      <button type="button" :disabled="saving" @click="confirmation?.close()">
+        {{ t('grid.cancel') }}
+      </button>
+    </dialog>
+  </section>
+</template>
+
+<style scoped>
+.mobile-rows {
+  min-width: 0;
+  padding-bottom: 80px;
+}
+.mobile-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+h2 {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+button,
+.field-choice,
+.card-selection {
+  min-height: 44px;
+  font-size: 16px;
+}
+.mobile-card-list {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+.mobile-card-list li {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.mobile-card {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+  text-align: start;
+  padding: 12px;
+}
+.card-title {
+  font-weight: 700;
+}
+.card-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 8px;
+}
+.card-label {
+  color: var(--muted);
+}
+.card-title,
+.card-label,
+.card-field > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mobile-card :deep(.field-value) {
+  max-height: 4.5em;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.card-selection,
+.field-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+input[type='checkbox'] {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.mobile-paging {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mobile-paging span {
+  text-align: center;
+}
+.mobile-rows .mobile-add {
+  position: fixed;
+  z-index: 2;
+  right: 20px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 32px;
+}
+.mobile-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 85dvh;
+  margin: 0;
+  padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  color: var(--text);
+  background: var(--surface);
+}
+.mobile-sheet::backdrop {
+  background: #0008;
+}
+fieldset {
+  min-width: 0;
+  margin-top: 16px;
+}
+</style>

@@ -59,7 +59,9 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
   await createResource(page, 'table', `Grid table ${suffix}`)
   if (isMobile) {
     await expect(page.locator('revo-grid')).toHaveCount(0)
-    await expect(page.getByText(en.grid.mobileNotice)).toBeVisible()
+    await expect(
+      page.getByRole('region', { name: en.mobileRows.title, exact: true }),
+    ).toBeVisible()
     await page
       .getByRole('button', { name: en.common.themes.dark, exact: true })
       .click()
@@ -67,7 +69,9 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
     await page
       .getByRole('button', { name: en.common.languages.zhCN, exact: true })
       .click()
-    await expect(page.getByText(zh.grid.mobileNotice)).toBeVisible()
+    await expect(
+      page.getByRole('region', { name: zh.mobileRows.title, exact: true }),
+    ).toBeVisible()
     await expect(page.locator('revo-grid')).toHaveCount(0)
     await page
       .getByRole('button', { name: zh.common.languages.en, exact: true })

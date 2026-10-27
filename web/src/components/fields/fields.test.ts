@@ -30,6 +30,17 @@ const choices = {
 }
 
 describe('FieldRenderer', () => {
+  it('can render safe links as plain text inside a card button', () => {
+    const wrapper = mount(FieldRenderer, {
+      props: {
+        field: field('url'),
+        value: 'https://example.com',
+        links: false,
+      },
+    })
+    expect(wrapper.find('a').exists()).toBe(false)
+    expect(wrapper.text()).toBe('https://example.com')
+  })
   it('renders text by interpolation only', () => {
     const wrapper = mount(FieldRenderer, {
       props: { field: field('text'), value: '<img src=x onerror=alert(1)>' },

@@ -225,6 +225,30 @@ default/command-scoped serial-package full checks remain mandatory, as does
 the complete production-image `go run .\tools\ptdev e2e`. Do not infer AT-312
 or unrelated full field/sharing acceptance from the row dialog.
 
+T1.19 focused verification:
+
+```powershell
+pnpm -C web exec vitest run MobileCardList RowExpandDialog ResourcePage fields.test
+pnpm -C web lint
+pnpm -C web build
+go run .\tools\ptdev e2e -- mobile-rows --project=mobile-chromium
+```
+
+The AT-313 production-image scenario explicitly uses **390x844**, real accounts,
+field/row APIs and existing codecs. It covers twelve editors, exact values,
+required creation failure, omitted physical defaults, save/deep-link/reload,
+hidden display-field retrieval, 100-row paging and <=300 cached rows, keyboard
+card activation/Escape/focus return, full-screen layout/overflow, both locales/
+themes, reader/writer/revoked/hidden access and real held read/write responses.
+Component tests additionally exercise route/schema/identity/unmount guards even
+when providers ignore abort. The complete production-image E2E suite and both
+default and command-scoped serial full checks remain required; failed expected
+HTTP requests are registered before the operation. Existing mobile fallback
+assertions now check the real cards, not the superseded notice, without removing
+the desktop AT-310/302/306..309 assertions or earlier evidence. No D-112 budget
+or retry/worker/assertion/performance limit changes. These checks do not certify
+AT-312 or NFR-1 on the required 2-vCPU/4-GB target.
+
 ### Shared integration helper
 
 Declare a package-level `testdb.Suite`, call `os.Exit(database.Run(m))` in

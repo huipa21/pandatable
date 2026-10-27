@@ -44,6 +44,10 @@ async function save(
 export async function verifyFields(owner: Page, tid: string) {
   const h = headers()
   const panel = owner.getByRole('region', { name: en.field.panel.title })
+  if (owner.viewportSize()!.width < 768)
+    await owner
+      .getByRole('button', { name: en.mobileRows.options, exact: true })
+      .click()
   await expect(panel).toBeVisible()
   const initial = await schemaOf(owner, tid)
   const name = byName(initial, 'Name')!
@@ -257,6 +261,10 @@ export async function verifyFieldReader(
 ) {
   const h = headers()
   const panel = page.getByRole('region', { name: en.field.panel.title })
+  if (page.viewportSize()!.width < 768)
+    await page
+      .getByRole('button', { name: en.mobileRows.options, exact: true })
+      .click()
   await expect(panel).toContainText(en.field.panel.readOnly)
   await expect(panel).toContainText('数量')
   await expect(panel.getByRole('button')).toHaveCount(0)
@@ -279,4 +287,8 @@ export async function verifyFieldReader(
     data: { displayFieldId: field.id },
   })
   expect(display.status()).toBe(403)
+  if (page.viewportSize()!.width < 768)
+    await page
+      .getByRole('button', { name: en.mobileRows.closeOptions, exact: true })
+      .click()
 }

@@ -329,6 +329,8 @@ cancellation. Identical schema refreshes do not restart failed row reads.
 Locale/theme changes stay reactive; the dialog is viewport-bounded and native
 focus trapping/Escape work without a new dependency. Mobile card lists,
 full-screen row layout, FAB, comments and history are not implemented here.
+T1.19 adds cards/full-screen layout/FAB as described in section 5; comments
+and history remain deferred.
 
 ### T0.8 feasibility lab (not the production grid)
 
@@ -379,9 +381,47 @@ and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-20
 - Tap card → full-screen **Row editor** (same as row expand modal) with full editing, comments, history.
 - Add row via floating “+” button (opens row editor).
 - Copy/paste and fill-down are desktop features; bulk select + delete available via long-press.
-- Until T1.19 implements the mobile card grid, unsupported small viewports show
-  a localized notice and do not mount the production grid or its T1.17 controls.
 - Form view works natively on mobile.
+
+### T1.19 implemented mobile grid (D-141/D-142)
+
+The bullets above describe the eventual mobile product; T1.19 implements only
+existing M1 operations. Below 768 px the real authorized table/view route
+lazy-loads MobileCardList instead of DataGrid, with no RevoGrid engine/provider
+mount. At 768 px and above the existing production grid/clipboard behavior is
+preserved. The synthetic spike remains isolated.
+
+- Cards render the display value plus the first four other visible fields via
+  FieldRenderer. A hidden display field is fetched using the existing transient
+  fieldIds override, without changing stored visibility. Card buttons suppress
+  nested links; full-row rendering still offers validated links.
+- Reuse RemoteRowsWindow, 100 rows per page, active plus adjacent pages and
+  <=300 cached row objects. Only the active page is rendered. Previous/Next
+  controls announce page/count and focus the heading. Page changes/refresh clear
+  selection; explicit labeled checkboxes support touch and keyboard without
+  long-press-only behavior.
+- A bounded native bottom sheet offers reload, transient field visibility,
+  the existing FieldPanel and confirmed selected-row deletion. There are no
+  working-looking filter/group/highlight controls or persisted view mutations.
+  The existing navigation drawer/sharing remain available independently.
+- Tapping/keyboard-activating a card uses the same full-row deep link and
+  RowExpandDialog. Below 768 px the dialog fills the viewport, with a sticky
+  header, safe-area padding, scrolling and 44px editor/button targets.
+- The write/owner FAB opens that dialog in local-draft mode. Existing codec
+  editors Apply one value at a time, then Create sends one atomic row POST.
+  Untouched fields are omitted so physical defaults apply; explicit nulls are
+  retained. There is no auto-insert on FAB/open/field Apply or close.
+  Creation is bounded to 5000 supplied cells/512 KiB; existing-row saves retain
+  the 4096-byte single-PATCH limit. Failed writes do not show saved state;
+  uncertain creation instructs checking the row list before retry.
+- All state is memory-only. Abort/generation/identity/schema guards discard
+  late reads/writes; schema changes reset the new draft with a translated
+  notice. Success opens the authoritative new row URL and refreshes the bounded
+  list. Readers have no FAB/selection/write controls; server ACL remains final.
+
+No mobile comments/history, uploads, relations/formulas, search/filter/group/
+highlight builders, realtime, restore/purge or out-of-scope features are added.
+Locale/theme changes use static matching en/zh-CN keys and existing tokens.
 
 ## 6. i18n
 

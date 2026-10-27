@@ -3,7 +3,12 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../../api/client'
-import type { DataRow, RowPatchMutation, TableSchema } from '../../api/types'
+import type {
+  DataRow,
+  RowMutation,
+  RowPatchMutation,
+  TableSchema,
+} from '../../api/types'
 import { bindField } from '../../fields/registry'
 import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
 import { useAuthStore } from '../../stores/auth'
@@ -14,10 +19,15 @@ import FieldRenderer from '../fields/FieldRenderer.vue'
 const props = defineProps<{
   schema: TableSchema
   viewId: string
-  rowId: string
+  rowId: string | null
   identity: string
 }>()
-const emit = defineEmits<{ close: []; saved: []; schemaChanged: [] }>()
+const emit = defineEmits<{
+  close: []
+  saved: []
+  created: [rowId: string]
+  schemaChanged: []
+}>()
 const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
@@ -29,6 +39,14 @@ const saving = ref(false)
 const error = ref<unknown>(null)
 const editing = ref<string | null>(null)
 const saved = ref(false)
+const draft = ref<Record<string, WireValue>>({})
+const blocked = ref(false)
+const creating = computed(() => props.rowId === null)
+const title = computed(() =>
+  creating.value
+    ? t('mobileRows.newRow')
+    : t('rowExpand.title', { id: props.rowId }),
+)
 let controller: AbortController | undefined
 let generation = 0
 let disposed = false
@@ -45,7 +63,11 @@ const fields = computed(() =>
   [...props.schema.fields]
     .sort((a, b) => a.position - b.position)
     .map((field) => {
-      const value = row.value?.fields[field.id]
+      const value = creating.value
+        ? Object.hasOwn(draft.value, field.id)
+          ? draft.value[field.id]
+          : field.default
+        : row.value?.fields[field.id]
       return {
         field,
         result: bindField(field.uiType, field.options),
@@ -81,10 +103,13 @@ function failure(cause: unknown) {
   saved.value = false
   if (!(cause instanceof RequestError)) return
   if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
+    blocked.value = true
     row.value = null
+    draft.value = {}
     editing.value = null
     void router.replace('/change-password')
   } else if ([401, 403, 404].includes(cause.status)) {
+    blocked.value = true
     row.value = null
     editing.value = null
     if (cause.status === 401) {
@@ -95,23 +120,32 @@ function failure(cause: unknown) {
       emit('schemaChanged')
     }
   } else if (cause.code === 'ERR_SCHEMA_CHANGED') {
+    blocked.value = true
     row.value = null
     editing.value = null
     emit('schemaChanged')
   }
 }
 
-async function load() {
+async function load(schemaChanged = false) {
   const { token, signal } = begin()
   row.value = null
+  draft.value = {}
+  blocked.value = false
   editing.value = null
-  error.value = null
+  error.value = schemaChanged
+    ? new RequestError('ERR_SCHEMA_CHANGED', 409)
+    : null
   saved.value = false
   saving.value = false
   loading.value = true
   await nextTick()
   if (!current(token)) return
   if (!dialog.value?.open) dialog.value?.showModal()
+  if (props.rowId === null) {
+    loading.value = false
+    return
+  }
   try {
     const result = await request<DataRow>(
       `/tables/${props.schema.table.id}/rows/${encodeURIComponent(props.rowId)}`,
@@ -128,10 +162,23 @@ async function load() {
 }
 
 async function save(value: WireValue) {
-  if (!canWrite.value || saving.value || !row.value || !editing.value) return
+  if (
+    !canWrite.value ||
+    saving.value ||
+    (!row.value && !creating.value) ||
+    !editing.value
+  )
+    return
   const item = fields.value.find((item) => item.field.id === editing.value)
   if (!item?.result.ok || item.field.isSystem || item.result.value.readOnly)
     return
+  if (creating.value) {
+    draft.value = { ...draft.value, [item.field.id]: value }
+    editing.value = null
+    error.value = null
+    return
+  }
+  if (props.rowId === null) return
   const body = { fields: { [item.field.id]: value } }
   saved.value = false
   if (new TextEncoder().encode(JSON.stringify(body)).length > 4096) {
@@ -153,6 +200,45 @@ async function save(value: WireValue) {
     editing.value = null
     saved.value = true
     emit('saved')
+  } catch (cause) {
+    if (current(token)) failure(cause)
+  } finally {
+    if (current(token)) saving.value = false
+  }
+}
+
+async function create() {
+  if (
+    !creating.value ||
+    !canWrite.value ||
+    blocked.value ||
+    saving.value ||
+    editing.value
+  )
+    return
+  const body = { rows: [{ fields: draft.value }] }
+  if (
+    Object.keys(draft.value).length > 5000 ||
+    new TextEncoder().encode(JSON.stringify(body)).length > 512 * 1024
+  ) {
+    error.value = t('mobileRows.createLimit')
+    return
+  }
+  const { token, signal } = begin()
+  saving.value = true
+  error.value = null
+  try {
+    const result = await request<RowMutation>(
+      `/tables/${props.schema.table.id}/rows`,
+      'POST',
+      body,
+      signal,
+    )
+    if (!current(token)) return
+    const created = result.rows[0]
+    if (result.rows.length !== 1 || !created || !/^[1-9]\d*$/.test(created.id))
+      throw new Error('Row creation returned an unsupported response')
+    emit('created', created.id)
   } catch (cause) {
     if (current(token)) failure(cause)
   } finally {
@@ -182,12 +268,16 @@ watch(
     () => props.identity,
     () => auth.user?.id,
   ],
-  () => {
-    if (props.identity === auth.user?.id) void load()
+  (next, previous) => {
+    if (props.identity === auth.user?.id)
+      void load(
+        creating.value && previous.length > 0 && next[3] !== previous[3],
+      )
     else {
       generation++
       controller?.abort()
       row.value = null
+      draft.value = {}
       editing.value = null
       loading.value = false
       saving.value = false
@@ -196,6 +286,21 @@ watch(
     }
   },
   { immediate: true },
+)
+watch(
+  () => props.schema.myLevel,
+  () => {
+    if (loading.value) {
+      void load()
+      return
+    }
+    generation++
+    controller?.abort()
+    saving.value = false
+    editing.value = null
+    saved.value = false
+    if (creating.value) draft.value = {}
+  },
 )
 onBeforeUnmount(() => {
   disposed = true
@@ -209,22 +314,23 @@ onBeforeUnmount(() => {
   <dialog
     ref="dialog"
     class="row-expand"
-    :aria-label="t('rowExpand.title', { id: rowId })"
+    :aria-label="title"
     @cancel.prevent="close"
   >
     <header>
-      <h2>{{ t('rowExpand.title', { id: rowId }) }}</h2>
+      <h2>{{ title }}</h2>
       <button type="button" @click="close">{{ t('rowExpand.close') }}</button>
     </header>
     <p v-if="loading" role="status">{{ t('grid.loading') }}</p>
     <p v-if="message" role="alert">{{ message }}</p>
-    <button v-if="error && !saving" type="button" @click="load">
+    <button v-if="error && !saving && !creating" type="button" @click="load()">
       {{ t('auth.retry') }}
     </button>
     <p v-if="saved" role="status">{{ t('rowExpand.saved') }}</p>
-    <template v-if="row">
+    <template v-if="row || (creating && canWrite && !blocked)">
       <p v-if="!canWrite">{{ t('rowExpand.readOnly') }}</p>
-      <p>{{ t('rowExpand.hint') }}</p>
+      <p>{{ creating ? t('mobileRows.defaults') : t('rowExpand.hint') }}</p>
+      <p v-if="creating && error">{{ t('mobileRows.uncertain') }}</p>
       <section
         v-for="item in fields"
         :key="item.field.id"
@@ -234,7 +340,10 @@ onBeforeUnmount(() => {
       >
         <h3>{{ item.field.name }}</h3>
         <p v-if="item.field.description">{{ item.field.description }}</p>
-        <template v-if="item.result.ok && item.value.ok">
+        <p v-if="creating && item.field.isSystem">
+          {{ t('rowExpand.system') }}
+        </p>
+        <template v-else-if="item.result.ok && item.value.ok">
           <template v-if="editing === item.field.id && canWrite">
             <fieldset :disabled="saving">
               <legend>{{ item.field.name }}</legend>
@@ -242,7 +351,9 @@ onBeforeUnmount(() => {
                 :field="item.result.value"
                 :value="item.value.value"
                 :env="env"
-                :submit-label="t('rowExpand.save')"
+                :submit-label="
+                  creating ? t('field.editor.apply') : t('rowExpand.save')
+                "
                 @commit="save"
                 @cancel="editing = null"
               />
@@ -275,6 +386,15 @@ onBeforeUnmount(() => {
         </template>
         <p v-else role="alert">{{ t('grid.unsupportedField') }}</p>
       </section>
+      <button
+        v-if="creating"
+        class="create-row"
+        type="button"
+        :disabled="saving || editing !== null"
+        @click="create"
+      >
+        {{ saving ? t('grid.saving') : t('mobileRows.create') }}
+      </button>
     </template>
   </dialog>
 </template>
@@ -328,5 +448,38 @@ button:disabled {
 .row-field :deep(.field-value) {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+@media (max-width: 767px) {
+  .row-expand {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0 16px max(16px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+  }
+  header {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    padding: 12px 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  button,
+  :deep(.field-editor input),
+  :deep(.field-editor select),
+  :deep(.field-editor button) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .row-field p {
+    overflow-wrap: anywhere;
+  }
+  :deep(.field-editor input[type='checkbox']) {
+    min-width: 44px;
+  }
 }
 </style>

@@ -11,10 +11,11 @@ const props = withDefaults(
     field: BoundField
     value: WireValue
     env?: FieldEnv
+    links?: boolean
     /** Caller-supplied display name lookup for user ids (D-120). */
     resolveUser?: (id: string) => string | null
   }>(),
-  { env: () => ({}), resolveUser: undefined },
+  { env: () => ({}), links: true, resolveUser: undefined },
 )
 const { t } = useI18n()
 
@@ -68,7 +69,7 @@ const user = computed(() => {
       <span v-if="user !== null" class="field-user">{{ user }}</span>
     </template>
     <a
-      v-else-if="href"
+      v-else-if="href && links"
       class="field-link"
       :href="href"
       target="_blank"

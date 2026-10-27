@@ -98,6 +98,23 @@
     "saveFailed": "The row service returned an unexpected response.",
     "mobileNotice": "The desktop grid is not available on small screens yet."
   },
+  "mobileRows": {
+    "title": "Rows",
+    "options": "View options",
+    "closeOptions": "Close view options",
+    "refresh": "Reload rows",
+    "paging": "Row pages",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {page} of {pages} · {total} rows",
+    "untitled": "Untitled row {id}",
+    "plus": "+",
+    "newRow": "New row",
+    "defaults": "Apply each edited value to this draft, then create the row. Untouched fields use their database defaults. Closing discards the draft.",
+    "create": "Create row",
+    "createLimit": "The draft exceeds the 5,000-cell or 512 KiB create-request limit. Nothing was sent.",
+    "uncertain": "Creation has not been confirmed. After a connection failure, check the row list before retrying to avoid a duplicate."
+  },
   "sharing": {
     "open": "Share",
     "title": "Manage sharing",

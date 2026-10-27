@@ -414,6 +414,37 @@ command-scoped `GOFLAGS=-p=1` full check passes. Exact failures, versions,
 resource snapshots and cleanup:
 [T1.18 record](task-prompts/T1.18.md#implementation-and-handoff-2026-10-27).
 
+### T1.19 mobile layout evidence (2026-10-27)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-313 | Pass | Complete production-image suite at exactly 390x844: real cards (no RevoGrid), display plus four visible fields, hidden display-field query, required creation failure, twelve shared codec editors/exact API values, omitted physical defaults, FAB creation, tap/keyboard full-screen editing/save/direct-link/reload, 301-row 100-row paging/<=300 cached rows, confirmed deletion, readers/writers/revoked/hidden ACL, held real read/write/identity responses, focus/Escape/overflow, both locales and light/dark. Desktop-project emulated phone 15.6 s; mobile project 17.3 s. |
+| AT-310 | Pass preserved | Existing complete desktop production-image scenario passes 48.3 s, without removing its exact editors, hidden/system/deleted fields, direct links, permissions or stale-response checks. Its mobile smoke now verifies real cards/no RevoGrid (3.0 s), superseding only the former no-cards fallback behavior. |
+| AT-302 / AT-306..309 | Prior evidence preserved | Existing production-grid scenario passes 14.1 s desktop; mobile cards smoke 3.8 s. Original desktop validation/clipboard/fill assertions remain; card/editor evidence is not substituted for them. |
+| AT-301/303/304, AT-204..207 | Pending full scenarios preserved | Mobile exact editors/defaults and scoped ACL checks are not complete grid/type-catalog/constraints/sharing acceptance. AT-203 restore remains M3; AT-111/322 await uploads, AT-117 real datetime/filter UI, AT-804 T2.6. |
+| AT-312 / NFR-1 | Not certified | No real 200k-row production-browser first-paint/middle-page measurement on the documented 2-vCPU/4-GB host. Available VM stays 8 CPUs/2048 MiB; startup snapshots are not load/performance evidence. |
+
+Final complete `go run .\tools\ptdev e2e`: **12 passed / 5 failed / 2 skipped
+in 5.0 min**. All AT-313/310 and existing production-grid scenarios pass.
+The four earlier mobile failures remain: admin workspace empty-search,
+synthetic-spike English notice, shell English welcome and locale. The additional
+desktop admin/navigation failure is an unregistered 404 console diagnostic
+during ACL revocation (trace includes the existing view query); the preceding
+complete run passed desktop admin/navigation but failed the isolated desktop
+spike's cancellation-observation assertion. Neither desktop path was relaxed
+or rewritten. Two existing mobile spike exclusions stay intentional.
+One worker, zero retries, five-second assertions and D-112 budgets are unchanged.
+
+Lower layers: **485 frontend tests / 26 files**; lint/strict types and **543**
+matching locale keys; initial gzip **190849 bytes** (<600000); required explicit-
+DSN uncached PG18 row/query gate all pass. Command-scoped serial full check passes.
+Default-parallel full check reproduces Suite DROP cleanup failures in
+codec/db/ddl/testdb, recorded separately without weaker deadlines. Unit/component
+coverage includes late table/view/schema/permission/identity/unmount reads and
+writes and exact 4096/4097-byte single PATCH and 524288/524289-byte atomic create
+bounds. Versions, exact commands, intermediate failures, resource observations
+and owned-only cleanup: [T1.19 record](task-prompts/T1.19.md#implementation-and-handoff-2026-10-27).
+
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).

@@ -643,6 +643,17 @@ schema before the dialog mounts; the row endpoint still independently enforces
 table ACL. Hidden grid columns are not a permission boundary: every live field
 is readable through the full-row endpoint, with system fields read-only.
 
+T1.19 mobile cards use the same query and row contracts. Their hidden display
+field is requested using transient fieldIds only; no view config is persisted.
+The FAB opens a local draft in the existing row dialog; Apply does not issue
+writes. Create sends exactly one row through POST `/tables/{id}/rows`, omitting
+all untouched fields so PostgreSQL physical defaults apply. Explicit nulls
+remain supplied values. The client checks the existing 5000-cell/512-KiB bounds
+without truncation or splitting; existing-row saves remain single PATCH with
+the 4096-byte bound. Failures never create optimistic rows. The new row URL
+uses only the successful authoritative response ID. No mobile-specific API,
+row version, validator, migration or relaxed authorization/body limit exists.
+
 ### Collaboration
 | GET/POST | `/tables/{id}/rows/{rowId}/comments` | |
 | PATCH/DELETE | `/comments/{id}` | author only (owner can delete) |

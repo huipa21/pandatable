@@ -183,7 +183,9 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   await page.goto(base)
   if (isMobile) {
     await expect(page.locator('revo-grid')).toHaveCount(0)
-    await expect(page.getByText(en.grid.mobileNotice)).toBeVisible()
+    await expect(
+      page.getByRole('region', { name: en.mobileRows.title, exact: true }),
+    ).toBeVisible()
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
