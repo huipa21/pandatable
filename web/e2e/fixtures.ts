@@ -10,6 +10,15 @@ const expectedHTTPFailures = new WeakMap<
   { method: string; path: string; status: number }[]
 >()
 
+function matchPath(expected: string, actual: string) {
+  if (!expected.includes('*')) return expected === actual
+  const pattern = expected
+    .split('*')
+    .map((segment) => segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('.*')
+  return new RegExp(`^${pattern}$`).test(actual)
+}
+
 export function expectHTTPFailure(
   page: Page,
   method: string,
@@ -29,7 +38,7 @@ export async function observeBrowser(page: Page) {
     const expected = expectedHTTPFailures.get(page) ?? []
     const index = expected.findIndex(
       (failure) =>
-        failure.path === path &&
+        matchPath(failure.path, path) &&
         failure.method === response.request().method() &&
         failure.status === response.status(),
     )
@@ -71,10 +80,9 @@ export function expectBrowserClean(
   page: Page,
   diagnostics: { errors: string[]; pendingFailures: number[] },
 ) {
-  expect(
-    expectedHTTPFailures.get(page) ?? [],
-    'every explicit HTTP failure occurred',
-  ).toEqual([])
+  const remaining = expectedHTTPFailures.get(page) ?? []
+  if (remaining.length) console.error('remaining expected failures', remaining)
+  expect(remaining, 'every explicit HTTP failure occurred').toEqual([])
   expect(
     diagnostics.pendingFailures,
     'only matched expected HTTP console diagnostics',

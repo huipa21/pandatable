@@ -119,6 +119,12 @@ No row/field DTO or endpoint is invented to stand in for acceptance.
   returns 403 until the password changes. Future protected routes must enforce
   this flag too. Disabled users are denied even if a session row remains;
   future admin disable/reset must lock the user and revoke sessions atomically.
+- T1.22 consumes these existing routes from a lazy authenticated `/profile`
+  page: it reads only the current user's `/auth/me`, loads the live timezone
+  catalog, and PATCHes only changed fields. The explicit app-default choice is
+  sent as JSON `null`; no profile/admin endpoint or other-user identifier is
+  introduced. Successful locale/theme changes update the existing local
+  preference store after the API response.
 - Ten login requests/minute/IP after CSRF/client-IP validation, including malformed
   JSON/unsupported content types; five consecutive failures for a resolved
   user ID cause a one-minute lock, rejecting even a correct password and shared

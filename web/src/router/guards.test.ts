@@ -33,10 +33,12 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
     '/w/workspace/b/book',
     '/t/table/v/view',
     '/t/table',
+    '/profile',
     '/admin/dashboard',
     '/admin/settings',
     '/admin/workspaces',
     '/admin/users',
+    '/profile',
     '/admin/groups',
     '/admin/groups/group-id',
     '/admin/users/user-id',
@@ -65,6 +67,8 @@ it('forces password change before every other client route, even the spike', asy
   expect(router.currentRoute.value.path).toBe('/change-password')
   await router.push('/setup')
   expect(router.currentRoute.value.path).toBe('/change-password')
+  await router.push('/profile')
+  expect(router.currentRoute.value.path).toBe('/change-password')
 })
 
 it('lets cleared admins access the user panel and exposes network failures', async () => {
@@ -77,6 +81,8 @@ it('lets cleared admins access the user panel and exposes network failures', asy
   expect(router.currentRoute.value.path).toBe('/admin/settings')
   await router.push('/admin/workspaces')
   expect(router.currentRoute.value.path).toBe('/admin/workspaces')
+  await router.push('/profile')
+  expect(router.currentRoute.value.path).toBe('/profile')
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))
   await router.push('/home')
   expect(router.currentRoute.value.path).toBe('/connection-error')

@@ -373,7 +373,7 @@ login, and the production binary inside the owned app runs the CLI seed.
 Only after all 200000 rows are confirmed does the benchmark start. No
 seed-only UI, fake rows, HTTP seed endpoint, session-storage artifact or
 production authorization shortcut. Preparation has the seed's own deadline;
-browser budgets remain 150 seconds/scenario, 360 global, one worker, zero
+browser budgets remain 150 seconds/scenario, 600 global, one worker, zero
 retries, five-second assertions.
 
 Measurement boundaries:
@@ -488,6 +488,24 @@ shipped in T1.2. Existing `ptdev e2e` remains the real shell/spike gate; it is
 **not** browser acceptance for AT-102/116. API coverage and stored profile
 timezone/default checks do not complete full AT-117's real datetime/filter/
 admin-default scenarios. T1.2 remains in progress until linked acceptance passes.
+
+### T1.22 self-profile and auth browser acceptance
+
+The `ProfilePage` unit tests cover changed-only `/auth/me` patches, timezone
+catalog/default handling (`null`, not an empty string), shared locale/theme
+preference persistence, load retry and expired-session redirection. The
+production-image `profile.spec.ts` scenario owns its uniquely suffixed users
+and restores the previous instance-wide admin settings in `finally`. It covers
+username/email login, translated bad credentials, logout/back navigation,
+display-name/password persistence and the M1 real datetime/timezone path; it
+must use real APIs and the real grid/row editor. Preserve the existing
+150-second scenario, 600-second global, five-second assertion, one-worker and
+zero-retry limits set by D-155. T1.22 is not accepted unless this scenario
+passes in the complete production-image run; the M2 relative-date filter half
+of AT-117 is not part of this test. The complete scenario runs once in desktop
+Chromium; inside it, a separate 390x844 touch-enabled Chromium context checks
+the mobile profile route, native controls, password link and horizontal overflow.
+The mobile project does not replay the full profile scenario.
 
 ### T1.3 setup checks
 
@@ -841,7 +859,7 @@ reported as startup failure, not hidden by connecting to another app.
 
 adjacent controls, no page overflow, and no console/page/CSP errors. API fixtures
 The real embedded shell is checked on desktop and mobile Chromium (one worker,
-zero retries, 360 s global bound per D-112): health/JS/history/404/HEAD/method boundaries,
+zero retries, 600 s global bound per D-155): health/JS/history/404/HEAD/method boundaries,
 English/Chinese and light/dark/system persistence, actual Naive UI styles,
 adjacent controls, no page overflow, and no console/page/CSP errors. AT-101 now
 uses the production image and the logged token from the unique owned app

@@ -104,6 +104,7 @@ async function logout() {
     <nav v-if="auth.user" class="session-nav" :aria-label="t('auth.account')">
       <template v-if="!auth.user.mustChangePassword">
         <RouterLink to="/home">{{ t('auth.homeTitle') }}</RouterLink>
+        <RouterLink to="/profile">{{ t('profile.title') }}</RouterLink>
         <RouterLink v-if="auth.user.role === 'admin'" to="/admin/users">
           {{ t('admin.menu') }}
         </RouterLink>

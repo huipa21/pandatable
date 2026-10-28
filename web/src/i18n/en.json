@@ -234,6 +234,18 @@
     "connectionError": "Unable to connect",
     "retry": "Try again"
   },
+  "profile": {
+    "title": "Profile",
+    "displayName": "Display name",
+    "language": "Language",
+    "theme": "Theme",
+    "timezone": "Time zone",
+    "useAppDefault": "Use app default",
+    "loading": "Loading your profile",
+    "save": "Save profile",
+    "reload": "Reload profile",
+    "saved": "Profile saved."
+  },
   "admin": {
     "menu": "Admin",
     "users": "User management",

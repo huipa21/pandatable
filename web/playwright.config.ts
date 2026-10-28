@@ -16,7 +16,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 30_000,
-  globalTimeout: 360_000,
+  globalTimeout: 600_000,
   expect: { timeout: 5_000 },
   forbidOnly: true,
   reporter: [['list']],
@@ -44,7 +44,11 @@ export default defineConfig({
     },
     {
       name: 'mobile-chromium',
-      testIgnore: ['**/setup.spec.ts', '**/performance.spec.ts'],
+      testIgnore: [
+        '**/setup.spec.ts',
+        '**/performance.spec.ts',
+        '**/profile.spec.ts',
+      ],
       dependencies: ['setup-chromium'],
       use: { ...devices['Pixel 7'], defaultBrowserType: 'chromium' },
     },

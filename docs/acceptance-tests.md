@@ -623,3 +623,19 @@ Prior evidence and limitations above remain; **T1.21 and T1.16 are Done**.
 All failed iterations, exact versions/commands, startup-only observations,
 owned cleanup and handoff are retained in the
 [T1.21 record](task-prompts/T1.21.md#implementation-and-verification-record-2026-10-27).
+
+## T1.22 implementation checkpoint (2026-10-28)
+
+No acceptance verdict is promoted by this implementation checkpoint. The
+authenticated self-profile route and page, focused unit tests, and a
+production-browser scenario for AT-102, AT-116, and the M1 portion of AT-117
+are implemented. The focused profile/router tests pass (6/6); lint, strict
+typecheck, locale-key validation (563 matching keys), and the production
+bundle gate pass. Playwright discovers the desktop and 390px mobile scenarios,
+but neither has run against the production image. AT-102, AT-116, and AT-117
+therefore remain Partial until their complete browser scenarios pass. The
+Podman VM was visible but its socket refused connections; `pt-dev-db` state
+could not be inspected, so no database-dependent gate or E2E stack was started.
+No shared container, image, or volume was changed. See the
+[T1.22 implementation checkpoint](task-prompts/T1.22.md#implementation-checkpoint-2026-10-28)
+for exact commands, versions, limitations, and handoff.

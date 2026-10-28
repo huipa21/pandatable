@@ -11,6 +11,11 @@ export const router = createRouter({
     { path: '/login', component: () => import('../pages/LoginPage.vue') },
     { path: '/home', component: () => import('../pages/HomePage.vue') },
     {
+      path: '/profile',
+      component: () => import('../pages/ProfilePage.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
       path: '/w/:workspaceId',
       component: () => import('../pages/ResourcePage.vue'),
       meta: { requiresAuth: true },

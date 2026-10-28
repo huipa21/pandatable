@@ -108,7 +108,7 @@ Routes:
   promising realtime. No new dependency, auth persistence or CSP relaxation.
 - Acceptance is real M1 grants/nav/schema/structure-denial behavior, not the
   unimplemented rows/editors/shared-view APIs in full AT-204..207. D-112 expands
-  only scenario/global harness bounds to 150/360 seconds, retaining request,
+  only scenario/global harness bounds to 150/600 seconds, retaining request,
   assertion, login, dashboard and PG deadlines, one worker and zero retries.
 
 ### T1.14 field panel (D-123..D-130)
@@ -143,13 +143,14 @@ grid, store, route, optimistic row state or initial grid import; production
 editing remains T1.16 and copy/paste remains T1.17.
 
 T0.5 introduced a separate `preferences` store for unauthenticated display
-preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2 provides the
-auth/profile backend and mirrored [API types](../web/src/api/types.ts); T1.3
-adds only the localized `/setup` form and initial-setup route redirect. Setup
+preferences (`pandatable.locale`, `pandatable.theme` in localStorage). T1.2
+provides the auth/profile backend and mirrored [API types](../web/src/api/types.ts);
+T1.3 adds the localized `/setup` form and initial-setup route redirect. Setup
 success shows the authenticated first-admin identity without adding a sign-in
-form. T1.5 adds the auth store and login/forced-change/admin surfaces below;
-profile UI and full server preference synchronization remain deferred. T1.8
-adds only the explicit team-default fallback described below.
+form. T1.5 adds the auth store and login/forced-change/admin surfaces below.
+T1.22 adds the authenticated self-profile page, using the existing preference
+store rather than a second mechanism. T1.8 adds the explicit team-default
+fallback described below.
 Unknown routes have a localized not-found page after setup.
 
 ### T1.5 authentication and admin users (D-081..D-083)
@@ -180,9 +181,31 @@ Unknown routes have a localized not-found page after setup.
   generation-guarded; stale identity reads cannot overwrite a newer sign-out.
 
 The no-inline/no-eval CSP, lazy synthetic-only grid lab, local preference
-semantics and <600,000-byte initial gzip/no-grid gate are unchanged. T1.2
-profile/timezone UI, AT-116 and full AT-117 remain deferred; sign-in capability
-alone does not certify all of AT-102.
+semantics and <600,000-byte initial gzip/no-grid gate are unchanged. T1.2's
+backend remains unchanged; AT-102/116 and the real datetime/default-timezone
+browser scenarios are tracked by T1.22 and must not be inferred from the
+login/profile APIs alone.
+
+### T1.22 self profile (D-153)
+
+- `/profile` is a lazy authenticated route available to ordinary users and
+  admins alike. It can only read the current user's `/auth/me`; there is no
+  user-id parameter or admin-style profile access.
+- The form loads the live `/meta/timezones` catalog, keeps edits in memory,
+  sends only changed values to `PATCH /auth/me`, and reloads canonical server
+  values on entry/retry. Its explicit "Use app default" option sends `null`,
+  never an empty timezone string. Password changes link to the existing
+  `/change-password` screen, which clears memory auth and requires sign-in
+  after server-wide session revocation.
+- After successful profile persistence, locale/theme update through the
+  existing preferences store and its `pandatable.locale` /
+  `pandatable.theme` values; the shared header and profile therefore use the
+  same runtime state. An unsubmitted profile draft is not stored. Profile
+  requests use the established no-store same-origin API helper with a ten-
+  second deadline and visible load/error/retry/saved states.
+- Native labeled controls and the single-column form at <=767 px preserve
+  keyboard/touch use and avoid adding initial grid imports. Both locale catalogs
+  contain matching profile strings.
 
 ### T1.8 settings and read-only workspace inventory (D-091..D-093)
 
