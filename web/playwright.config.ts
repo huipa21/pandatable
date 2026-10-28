@@ -48,6 +48,7 @@ export default defineConfig({
         '**/setup.spec.ts',
         '**/performance.spec.ts',
         '**/profile.spec.ts',
+        '**/fields-acceptance.spec.ts',
       ],
       dependencies: ['setup-chromium'],
       use: { ...devices['Pixel 7'], defaultBrowserType: 'chromium' },

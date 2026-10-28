@@ -254,7 +254,12 @@ edits every writable kind, checks exact API values, reloads direct row URLs,
 and exercises hidden/system/deleted fields, invalid/deleted resources,
 read/write/revoked access, late responses, locales/themes and mobile fallback.
 Fixtures never bypass row ACL. Failed HTTP responses must be registered before
-navigation/mutation via `expectHTTPFailure`. Component tests also release
+navigation/mutation via `expectHTTPFailure` (exactly once each). Only a
+background revalidation that races a deliberate revocation may use the per-page
+`allowHTTPFailure`, which tolerates zero or more matching failures on that one
+page; there is no suite-wide tolerance (D-157). Logins go through the shared
+`paceLogin` helper so the per-IP login limit holds across scenarios.
+Component tests also release
 responses after route/schema/identity changes even when fetch ignores abort.
 The same uncached required PG18 row/query command documented above and both
 default/command-scoped serial-package full checks remain mandatory, as does
@@ -950,9 +955,12 @@ and manifests, with additional secret/generated/test exclusions. Host assets,
 node_modules, data, docs, tools, Git metadata and local configuration are not
 the build context. Real assets come only from the frontend stage.
 
-Optional `GOPROXY`, `NPM_REGISTRY`, `APT_MIRROR` environment variables are
-passed as named build arguments without echoing their values in ptdev's
-command lines. `APT_MIRROR` replaces Debian's base repository URL (default
-`http://deb.debian.org/debian`); PGDG remains its official HTTPS repository.
+Optional `GOPROXY`, `NPM_REGISTRY`, `APT_MIRROR`, `PGDG_MIRROR` environment
+variables are passed as named build arguments without echoing their values in
+ptdev's command lines. `APT_MIRROR` replaces Debian's base repository URL
+(default `http://deb.debian.org/debian`); `PGDG_MIRROR` replaces the PGDG apt
+repository URL (default `https://apt.postgresql.org/pub/repos/apt`) while the
+signing key is still fetched from postgresql.org and enforced by `signed-by`
+(D-156).
 Use public/credential-free mirror URLs: build args are not secret storage.
 No dependencies or hosted CI are added.

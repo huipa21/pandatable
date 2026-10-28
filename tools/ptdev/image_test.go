@@ -31,7 +31,7 @@ func TestImageTag(t *testing.T) {
 }
 
 func TestImageCommands(t *testing.T) {
-	for _, name := range []string{"GOPROXY", "NPM_REGISTRY", "APT_MIRROR"} {
+	for _, name := range []string{"GOPROXY", "NPM_REGISTRY", "APT_MIRROR", "PGDG_MIRROR"} {
 		t.Setenv(name, "private-mirror-not-for-command-output")
 	}
 	for _, engine := range []string{"podman", "docker"} {

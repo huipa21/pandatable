@@ -6,6 +6,7 @@ import {
   expectHTTPFailure,
   observeBrowser,
   expectBrowserClean,
+  paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema, ViewColumns } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
@@ -24,6 +25,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   isMobile,
 }) => {
   test.setTimeout(150_000)
+  await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
     await page

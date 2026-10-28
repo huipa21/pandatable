@@ -48,7 +48,7 @@ func imageBuildArgs(engine, version, tag string, latest bool) []string {
 	if latest {
 		args = append(args, "-t", "localhost/pandatable:latest")
 	}
-	for _, name := range []string{"GOPROXY", "NPM_REGISTRY", "APT_MIRROR"} {
+	for _, name := range []string{"GOPROXY", "NPM_REGISTRY", "APT_MIRROR", "PGDG_MIRROR"} {
 		if _, ok := os.LookupEnv(name); ok {
 			args = append(args, "--build-arg", name)
 		}

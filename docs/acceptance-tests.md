@@ -639,3 +639,20 @@ could not be inspected, so no database-dependent gate or E2E stack was started.
 No shared container, image, or volume was changed. See the
 [T1.22 implementation checkpoint](task-prompts/T1.22.md#implementation-checkpoint-2026-10-28)
 for exact commands, versions, limitations, and handoff.
+
+## T1.23 field acceptance evidence (2026-10-28)
+
+This supersedes only the earlier AT-301/303/304 "pending/partial" verdicts.
+Prior evidence above remains. **T1.23, T1.13, T1.14 and T1.15 are Done.**
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-301 | Pass | Production image, desktop, real login and real workspace/book/table creation. The owner adds the 12 M1 kinds through the real Field panel (Name is the table's default text field; an extra `text` field is also added). Values are typed into the real localized grid editors, committed with Enter, read back through the view query API and again after a page reload, all exact (`42`, `"99.95"`, `4.5`, `true`, ISO date, UTC instant, select label, ordered multi-select array, email, URL). The PostgreSQL storage type of each kind (`character varying`/`text`/`integer`/`numeric`/`double precision`/`boolean`/`date`/`timestamp with time zone`/`ARRAY`) and checkbox `NOT NULL DEFAULT false` are checked against `information_schema.columns` in the required uncached PG18 test `TestFieldAPIAcceptancePassAT301To304`. No browser endpoint exposes the catalog, so that check is API-level only (D-157). |
+| AT-302 | Pass preserved and re-run | Same scenario: `abc` in the integer cell and `x@` in the email cell show the localized cell errors and leave the stored values unchanged. The original T1.16 validation scenario still passes. |
+| AT-303 | Pass | Real Field panel on a populated table: setting `required` with two empty cells shows the translated `ERR_REQUIRED_HAS_EMPTY` count of 2 (pre-registered 409). Retrying with an explicit default and `fillEmpty` succeeds. Setting `unique` with one duplicate shows `ERR_UNIQUE_HAS_DUPLICATES` with count 1 (409); after the duplicate is resolved, unique is accepted. A duplicate grid write shows the translated `ERR_UNIQUE_CONFLICT`. A newly added row receives the physical default. The same preflights pass in the PG18 test. |
+| AT-304 | Pass | A new table's default view hides `id`, `created_at`, `created_by`, `updated_at` and `updated_by`; the Fields control reveals all five. `created_by` and `updated_by` equal the creator. An admin-created second account (forced password change, write grant) edits a cell through its own real grid; afterwards `updated_by` is that account and `created_by` is still the creator, in the API and after an owner reload. PG18 verifies the system column types and the same authorship transitions. |
+| Full gates | Pass | Default-parallel `go run .\tools\ptdev check` (no `GOFLAGS`): 507 frontend tests, required Go/PG18, lint/strict typecheck/**563** keys, bundle gate, **1m47s**; initial shell **191482 bytes gzip** (< 600000). Complete production `go run .\tools\ptdev e2e`: **23 passed / 0 failed / 2 intentional spike skips, 7.6 min** Playwright time with unchanged 150 s per-scenario, one worker, zero retries and five-second assertions. Field scenarios took 11.7 s / 6.1 s / 7.1 s. Earlier evidence (AT-202, AT-302, AT-305..311, AT-313, admin/auth/sharing/profile) passes unchanged. |
+| Remaining | Unchanged | AT-312/NFR-1/2 remain uncertified without the authorized host; AT-111/322 await T2.2, full AT-804 awaits T2.6, AT-203 restore is M3. |
+
+Exact commands, failed attempts, cleanup and handoff are in the
+[T1.23 record](task-prompts/T1.23.md#implementation-and-verification-record-2026-10-28).

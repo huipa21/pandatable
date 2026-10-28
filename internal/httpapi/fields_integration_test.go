@@ -178,3 +178,200 @@ func TestFieldAPIIfMatchBodiesAndGuards(t *testing.T) {
 		t.Fatalf("default error details: %s", response.Body)
 	}
 }
+
+func TestFieldAPIAcceptancePassAT301To304(t *testing.T) {
+	f := newACLFixture(t)
+	alice := f.user("user", false)
+	bob := f.user("user", false)
+	workspace := f.newWorkspace(alice, "Acceptance Space")
+	book := f.newBook(alice, workspace.ID, "Acceptance Book")
+	table := f.newTable(alice, book.ID, "Acceptance Table")
+	f.grantOK(alice, acl.Table, table.Table.ID, "user", bob.id, acl.Write)
+
+	// AT-301: Create all 12 batch-1 field kinds through the HTTP API.
+	type spec struct {
+		name, kind, options string
+		wantDataType        string
+		sampleValue         any
+	}
+	specs := []spec{
+		{"Code", "text", `{"maxLength":50}`, "character varying", "CODE-1"},
+		{"Notes", "long_text", `{}`, "text", "Long\nNotes"},
+		{"Qty", "integer", `{"size":"int"}`, "integer", float64(42)},
+		{"Price", "decimal", `{"precision":10,"scale":2}`, "numeric", "99.95"},
+		{"Score", "float", `{"size":"double"}`, "double precision", float64(4.5)},
+		{"Active", "checkbox", `{}`, "boolean", true},
+		{"DueDate", "date", `{}`, "date", "2026-11-20"},
+		{"EventAt", "datetime", `{}`, "timestamp with time zone", "2026-11-20T10:00:00.000000Z"},
+		{"Stage", "single_select", `{"choices":[{"id":"c1","label":"Todo","color":"gray"},{"id":"c2","label":"Done","color":"green"}]}`, "text", "Todo"},
+		{"Tags", "multi_select", `{"choices":[{"id":"t1","label":"Alpha","color":"blue"},{"id":"t2","label":"Beta","color":"red"}]}`, "ARRAY", []any{"Alpha"}},
+		{"Contact", "email", `{}`, "text", "contact@example.test"},
+		{"Website", "url", `{}`, "text", "https://example.test"},
+	}
+
+	createdFields := make(map[string]structure.Field)
+	for _, s := range specs {
+		body := fmt.Sprintf(`{"name":%q,"uiType":%q,"options":%s}`, s.name, s.kind, s.options)
+		created := f.newField(alice, table.Table.ID, body)
+		createdFields[s.name] = created
+	}
+
+	// Authoritative verification against information_schema.columns (AT-301).
+	var pgSchema, pgName string
+	if err := f.pool.QueryRow(f.ctx, `SELECT b.pg_schema, t.pg_name FROM meta.tables t
+		JOIN meta.books b ON b.id=t.book_id WHERE t.id=$1`, table.Table.ID).Scan(&pgSchema, &pgName); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, s := range specs {
+		field := createdFields[s.name]
+		var pgColumn string
+		if err := f.pool.QueryRow(f.ctx, "SELECT pg_column FROM meta.fields WHERE id=$1", field.ID).Scan(&pgColumn); err != nil {
+			t.Fatalf("%s column: %v", s.name, err)
+		}
+		var dataType, isNullable string
+		var colDefault *string
+		if err := f.pool.QueryRow(f.ctx, `SELECT data_type, is_nullable, column_default
+			FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2 AND column_name=$3`,
+			pgSchema, pgName, pgColumn).Scan(&dataType, &isNullable, &colDefault); err != nil {
+			t.Fatalf("%s information_schema: %v", s.name, err)
+		}
+		if dataType != s.wantDataType {
+			t.Errorf("%s: data_type = %q, want %q", s.name, dataType, s.wantDataType)
+		}
+		if s.kind == "checkbox" {
+			if isNullable != "NO" || colDefault == nil || *colDefault != "false" {
+				t.Errorf("checkbox physical constraint: nullable=%s default=%v", isNullable, colDefault)
+			}
+		}
+	}
+
+	// Verify system columns in information_schema (AT-304).
+	sysCols := map[string]string{
+		"id":         "bigint",
+		"created_at": "timestamp with time zone",
+		"created_by": "uuid",
+		"updated_at": "timestamp with time zone",
+		"updated_by": "uuid",
+	}
+	for colName, wantType := range sysCols {
+		var dataType string
+		if err := f.pool.QueryRow(f.ctx, `SELECT data_type FROM information_schema.columns
+			WHERE table_schema=$1 AND table_name=$2 AND column_name=$3`,
+			pgSchema, pgName, colName).Scan(&dataType); err != nil {
+			t.Fatalf("system col %s: %v", colName, err)
+		}
+		if dataType != wantType {
+			t.Errorf("system col %s: data_type = %q, want %q", colName, dataType, wantType)
+		}
+	}
+
+	// Insert row with all 12 kinds (AT-301).
+	insertFields := make(map[string]any)
+	for _, s := range specs {
+		insertFields[createdFields[s.name].ID] = s.sampleValue
+	}
+	insertPayload, _ := json.Marshal(map[string]any{"rows": []map[string]any{{"fields": insertFields}}})
+	createRowsRes := decode[rowsResponse](f, f.api(alice, "POST", "/tables/"+table.Table.ID+"/rows", string(insertPayload)), 201)
+	if len(createRowsRes.Rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(createRowsRes.Rows))
+	}
+	rowID := createRowsRes.Rows[0].ID
+
+	// Read row back (AT-301) and assert values.
+	readRow := decode[structure.RowRecord](f, f.api(alice, "GET", "/tables/"+table.Table.ID+"/rows/"+rowID, ""), 200)
+	for _, s := range specs {
+		field := createdFields[s.name]
+		val, ok := readRow.Fields[field.ID]
+		if !ok || val == nil {
+			t.Errorf("%s missing in row fields", s.name)
+		}
+	}
+
+	// AT-304: authorship values.
+	schemaResp := decode[structure.TableSchema](f, f.api(alice, "GET", "/tables/"+table.Table.ID+"/schema", ""), 200)
+	var createdByField, updatedByField structure.Field
+	for _, fld := range schemaResp.Fields {
+		if fld.UIType == "created_by" {
+			createdByField = fld
+		}
+		if fld.UIType == "updated_by" {
+			updatedByField = fld
+		}
+	}
+	if string(readRow.Fields[createdByField.ID]) != `"`+alice.id+`"` {
+		t.Errorf("created_by = %s, want %s", readRow.Fields[createdByField.ID], alice.id)
+	}
+	if string(readRow.Fields[updatedByField.ID]) != `"`+alice.id+`"` {
+		t.Errorf("updated_by = %s, want %s", readRow.Fields[updatedByField.ID], alice.id)
+	}
+
+	// Bob edits the row (AT-304).
+	bobPatchPayload, _ := json.Marshal(map[string]any{"fields": map[string]any{createdFields["Code"].ID: "CODE-BOB"}})
+	decode[rowResponse](f, f.api(bob, "PATCH", "/tables/"+table.Table.ID+"/rows/"+rowID, string(bobPatchPayload)), 200)
+
+	// Verify authorship after Bob's edit: created_by stays Alice, updated_by becomes Bob.
+	readRowBob := decode[structure.RowRecord](f, f.api(alice, "GET", "/tables/"+table.Table.ID+"/rows/"+rowID, ""), 200)
+	if string(readRowBob.Fields[createdByField.ID]) != `"`+alice.id+`"` {
+		t.Errorf("after edit created_by = %s, want %s", readRowBob.Fields[createdByField.ID], alice.id)
+	}
+	if string(readRowBob.Fields[updatedByField.ID]) != `"`+bob.id+`"` {
+		t.Errorf("after edit updated_by = %s, want %s", readRowBob.Fields[updatedByField.ID], bob.id)
+	}
+
+	// AT-303: Required and unique preflights on populated table.
+	// Add an empty second row.
+	decode[rowsResponse](f, f.api(alice, "POST", "/tables/"+table.Table.ID+"/rows", `{"rows":[{"fields":{}}]}`), 201)
+
+	// Create a new text field "ReqTest".
+	reqField := f.newField(alice, table.Table.ID, `{"name":"ReqTest","uiType":"text"}`)
+	// Setting required without default or fillEmpty fails with 409 ERR_REQUIRED_HAS_EMPTY (count = 2).
+	reqFail := f.fieldCall(alice, "PATCH", "/fields/"+reqField.ID, `{"isRequired":true}`, "1")
+	f.expectStatus(reqFail, 409, "ERR_REQUIRED_HAS_EMPTY")
+
+	// Setting required with fillEmpty and explicit default succeeds.
+	reqOK := decode[fieldBody](f, f.fieldCall(alice, "PATCH", "/fields/"+reqField.ID, `{"isRequired":true,"fillEmpty":true,"default":"INIT"}`, "1"), 200)
+	if !reqOK.Field.IsRequired {
+		t.Error("expected IsRequired to be true")
+	}
+
+	// Setting unique on ReqTest (where both rows have "INIT") fails with 409 ERR_UNIQUE_HAS_DUPLICATES.
+	uniqFail := f.fieldCall(alice, "PATCH", "/fields/"+reqField.ID, `{"isUnique":true}`, "2")
+	f.expectStatus(uniqFail, 409, "ERR_UNIQUE_HAS_DUPLICATES")
+
+	// Query rows to get row 2 ID.
+	queryRes := decode[structure.RowQueryResult](f, f.api(alice, "POST", "/views/"+table.Views[0].ID+"/query", `{"offset":0,"limit":10}`), 200)
+	if len(queryRes.Rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(queryRes.Rows))
+	}
+	row2ID := queryRes.Rows[1].ID
+
+	// Bob updates row 2 to "INIT-2" so values are distinct.
+	patchRow2, _ := json.Marshal(map[string]any{"fields": map[string]any{reqField.ID: "INIT-2"}})
+	decode[rowResponse](f, f.api(bob, "PATCH", "/tables/"+table.Table.ID+"/rows/"+row2ID, string(patchRow2)), 200)
+
+	// Now setting unique succeeds.
+	uniqOK := decode[fieldBody](f, f.fieldCall(alice, "PATCH", "/fields/"+reqField.ID, `{"isUnique":true}`, "2"), 200)
+	if !uniqOK.Field.IsUnique {
+		t.Error("expected IsUnique to be true")
+	}
+
+	// Unique rejects duplicate row update.
+	patchDup, _ := json.Marshal(map[string]any{"fields": map[string]any{reqField.ID: "INIT"}})
+	f.expectStatus(f.api(bob, "PATCH", "/tables/"+table.Table.ID+"/rows/"+row2ID, string(patchDup)), 409, "ERR_UNIQUE_CONFLICT")
+
+	// Default applies to newly inserted row.
+	// Make row 1's ReqTest unique so "INIT" is free for the default on new row.
+	patchRow1, _ := json.Marshal(map[string]any{"fields": map[string]any{reqField.ID: "INIT-1"}})
+	decode[rowResponse](f, f.api(alice, "PATCH", "/tables/"+table.Table.ID+"/rows/"+rowID, string(patchRow1)), 200)
+
+	createRow3 := decode[rowsResponse](f, f.api(alice, "POST", "/tables/"+table.Table.ID+"/rows", `{"rows":[{"fields":{}}]}`), 201)
+	if len(createRow3.Rows) != 1 {
+		t.Fatalf("expected 1 row created, got %d", len(createRow3.Rows))
+	}
+	row3ID := createRow3.Rows[0].ID
+	row3 := decode[structure.RowRecord](f, f.api(alice, "GET", "/tables/"+table.Table.ID+"/rows/"+row3ID, ""), 200)
+	if string(row3.Fields[reqField.ID]) != `"INIT"` {
+		t.Errorf("new row default = %s, want %q", row3.Fields[reqField.ID], "INIT")
+	}
+}

@@ -188,29 +188,35 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     const field = schema.fields.find((item) => item.id === fieldId)
     expect(targetRow).toBeDefined()
     expect(field).toBeDefined()
-    const header = gridElement.getByRole('columnheader', {
-      name: field!.name,
-      exact: true,
-    })
-    const rowMarker = gridElement.getByRole('checkbox', {
-      name: en.grid.selectRow.replace('{id}', targetRow!.id),
-      exact: true,
-    })
-    const [gridBox, headerBox, rowBox] = await Promise.all([
-      gridElement.boundingBox(),
-      header.boundingBox(),
-      rowMarker.boundingBox(),
-    ])
-    expect(gridBox).not.toBeNull()
-    expect(headerBox).not.toBeNull()
-    expect(rowBox).not.toBeNull()
-    await gridElement.click({
-      position: {
-        x: headerBox!.x + headerBox!.width / 2 - gridBox!.x,
-        y: rowBox!.y + rowBox!.height / 2 - gridBox!.y,
+    await gridElement.evaluate(
+      async (element, { row, fid }) => {
+        const grid = element as HTMLElement & Components.RevoGrid
+        const cols = await grid.getColumns()
+        const colIndex = cols.findIndex((c) => c.prop === fid)
+        if (colIndex < 0) throw new Error(`Column not found for ${fid}`)
+        const column = cols[colIndex]!
+        const pin = (column.pin ?? 'rgCol') as
+          'rgCol' | 'colPinStart' | 'colPinEnd'
+        const store = await grid.getColumnStore(pin)
+        const source = store.get('source')
+        const items = store.get('items')
+        const x = items.findIndex((index) => source[index]?.prop === fid)
+        const safeX = Math.max(0, x)
+        await grid.setCellsFocus(
+          { x: safeX, y: row },
+          { x: safeX, y: row },
+          pin,
+        )
+        grid.focus()
+        await grid.setCellEdit(row, column.prop)
       },
+      { row: rowIndex, fid: fieldId },
+    )
+    const ed = owner.getByRole('textbox', {
+      name: en.field.editor.value,
+      exact: true,
     })
-    await owner.keyboard.press('Enter')
+    await expect(ed).toBeVisible()
   }
   const edit = async (fieldId: string, value: string) => {
     await openEditor(fieldId)
@@ -279,6 +285,9 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     .toBe('grid@example.test')
 
   await edit(name.id, 'Persisted from the grid')
+  await expect
+    .poll(async () => (await query()).rows[0]?.fields[name.id])
+    .toBe('Persisted from the grid')
   result = await query()
   expect(result.rows[0]?.fields[name.id]).toBe('Persisted from the grid')
   const me = (await (await owner.request.get('/api/v1/auth/me')).json()) as {

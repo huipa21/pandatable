@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect } from './fixtures'
+import { test, expect, paceLogin } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyFields } from './fields'
@@ -41,6 +41,7 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
 }) => {
   test.setTimeout(150_000)
   if (!isMobile) await page.setViewportSize({ width: 1440, height: 900 })
+  await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
     await page

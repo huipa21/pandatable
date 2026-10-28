@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { test, expect, expectHTTPFailure } from './fixtures'
+import { test, expect, expectHTTPFailure, allowHTTPFailure } from './fixtures'
 import type {
   GrantLevel,
   GrantListing,
@@ -332,8 +332,10 @@ export async function verifySharing(
     await expect(carol.locator('.schema-summary')).toContainText(
       en.nav.level.write,
     )
-    expectHTTPFailure(carol, 'POST', '/api/v1/views/*/query', 404)
-    expectHTTPFailure(carol, 'GET', '/api/v1/grants', 404)
+    // Carol's open table may revalidate any number of times after revocation.
+    allowHTTPFailure(carol, 'POST', '/api/v1/views/*/query', 404)
+    allowHTTPFailure(carol, 'GET', '/api/v1/tables/*/schema', 404)
+    allowHTTPFailure(carol, 'GET', '/api/v1/grants', 404)
     const revokedAt = Date.now()
     expect(
       (

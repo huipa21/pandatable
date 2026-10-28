@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import {
   test as base,
   expect,
@@ -30,6 +32,57 @@ export function expectHTTPFailure(
   expectedHTTPFailures.set(page, failures)
 }
 
+// Optional failures may occur any number of times (including zero) on one page,
+// e.g. background revalidation racing a deliberate permission revocation.
+const optionalHTTPFailures = new WeakMap<
+  Page,
+  { method: string; path: string; status: number }[]
+>()
+
+export function allowHTTPFailure(
+  page: Page,
+  method: string,
+  path: string,
+  status: number,
+) {
+  const failures = optionalHTTPFailures.get(page) ?? []
+  failures.push({ method, path, status })
+  optionalHTTPFailures.set(page, failures)
+}
+
+const paceFile = path.resolve(
+  process.env.PT_E2E_RESULTS_DIR ?? './test-results',
+  'login-pace.json',
+)
+
+export async function paceLogin(page?: Page) {
+  let timestamps: number[] = []
+  try {
+    if (fs.existsSync(paceFile)) {
+      timestamps = JSON.parse(fs.readFileSync(paceFile, 'utf8'))
+    }
+  } catch {
+    timestamps = []
+  }
+  let now = Date.now()
+  timestamps = timestamps.filter((t) => now - t <= 60_000)
+  if (timestamps.length >= 5) {
+    const oldest = timestamps[0] ?? now
+    const waitMs = Math.max(0, 61_000 - (now - oldest))
+    if (page) await page.waitForTimeout(waitMs)
+    else await new Promise((resolve) => setTimeout(resolve, waitMs))
+    now = Date.now()
+    timestamps = timestamps.filter((t) => now - t <= 60_000)
+  }
+  timestamps.push(now)
+  try {
+    fs.mkdirSync(path.dirname(paceFile), { recursive: true })
+    fs.writeFileSync(paceFile, JSON.stringify(timestamps), 'utf8')
+  } catch {
+    // ignore
+  }
+}
+
 export async function observeBrowser(page: Page) {
   const errors: string[] = []
   const pendingFailures: number[] = []
@@ -51,7 +104,13 @@ export async function observeBrowser(page: Page) {
     // is the normal identity-probe result on public routes.
     if (
       (path === '/api/v1/setup' && [401, 410].includes(response.status())) ||
-      (path === '/api/v1/auth/me' && response.status() === 401)
+      (path === '/api/v1/auth/me' && response.status() === 401) ||
+      (optionalHTTPFailures.get(page) ?? []).some(
+        (failure) =>
+          matchPath(failure.path, path) &&
+          failure.method === response.request().method() &&
+          failure.status === response.status(),
+      )
     )
       pendingFailures.push(response.status())
   })

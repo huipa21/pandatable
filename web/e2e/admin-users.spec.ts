@@ -5,6 +5,7 @@ import {
   observeBrowser,
   expectHTTPFailure,
   expectBrowserClean,
+  paceLogin,
 } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
@@ -13,6 +14,7 @@ import { verifySettings, restoreSettings } from './settings'
 import { verifyNavigation } from './navigation'
 
 async function signIn(page: Page, login: string, password: string) {
+  await paceLogin(page)
   await page.goto('/login')
   await page.getByLabel(en.auth.login, { exact: true }).fill(login)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)

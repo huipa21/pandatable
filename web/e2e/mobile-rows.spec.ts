@@ -5,6 +5,7 @@ import {
   expectHTTPFailure,
   observeBrowser,
   expectBrowserClean,
+  paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
@@ -51,6 +52,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
 }) => {
   test.setTimeout(150_000)
   await page.setViewportSize({ width: 390, height: 844 })
+  await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
     await page

@@ -5,6 +5,7 @@ import {
   expectBrowserClean,
   expectHTTPFailure,
   observeBrowser,
+  paceLogin,
 } from './fixtures'
 import type {
   AdminSettings,
@@ -28,23 +29,8 @@ async function useEnglish(page: Page) {
       .click()
 }
 
-// The server allows 10 login attempts per minute per IP and every project
-// shares one IP, so this scenario paces itself and leaves headroom for others.
-const loginTimes: number[] = []
-
 async function signIn(page: Page, login: string, password: string) {
-  const now = Date.now()
-  while (loginTimes.length > 0) {
-    const oldest = loginTimes[0] ?? now
-    if (now - oldest <= 60_000) break
-    loginTimes.shift()
-  }
-  if (loginTimes.length >= 5) {
-    const oldest = loginTimes[0] ?? now
-    await page.waitForTimeout(Math.max(0, 61_000 - (now - oldest)))
-    loginTimes.length = 0
-  }
-  loginTimes.push(Date.now())
+  await paceLogin(page)
   await page.goto('/login')
   await useEnglish(page)
   await page.getByLabel(en.auth.login, { exact: true }).fill(login)
@@ -320,6 +306,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
     await expect(alicePage.getByLabel(en.profile.displayName)).toHaveCount(0)
 
     expectHTTPFailure(alicePage, 'POST', '/api/v1/auth/login', 401)
+    await paceLogin(alicePage)
     await alicePage.getByLabel(en.auth.login).fill(aliceName)
     await alicePage.getByLabel(en.auth.password).fill('Wrong-password-123')
     await alicePage.getByRole('button', { name: en.auth.signIn }).click()
@@ -377,6 +364,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
       'Alice-new-password-456',
     )
     expectHTTPFailure(alicePage, 'POST', '/api/v1/auth/login', 401)
+    await paceLogin(alicePage)
     await alicePage.getByLabel(en.auth.login).fill(aliceName)
     await alicePage.getByLabel(en.auth.password).fill('Alice-password-123')
     await alicePage.getByRole('button', { name: en.auth.signIn }).click()

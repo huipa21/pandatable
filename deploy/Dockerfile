@@ -29,10 +29,11 @@ RUN sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g" /etc/apt/sources.lis
 
 FROM docker.io/library/debian:bookworm-slim
 ARG APT_MIRROR=http://deb.debian.org/debian
+ARG PGDG_MIRROR=https://apt.postgresql.org/pub/repos/apt
 COPY --from=pgdg-key /pgdg.asc /usr/share/keyrings/pgdg.asc
 RUN sed -i "s|http://deb.debian.org/debian|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata \
-    && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] ${PGDG_MIRROR} bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 pandatable \

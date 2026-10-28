@@ -6,6 +6,7 @@ import {
   expectHTTPFailure,
   observeBrowser,
   expectBrowserClean,
+  paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
@@ -46,6 +47,7 @@ async function holdRowResponse(page: Page, path: string) {
 }
 
 async function login(page: Page) {
+  await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
     await page
