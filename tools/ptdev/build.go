@@ -21,6 +21,10 @@ func binaryName(goos string, linux bool) string {
 }
 
 func (runner runner) build(ctx context.Context, linux bool) error {
+	return runner.buildVersion(ctx, linux, runner.version(ctx))
+}
+
+func (runner runner) buildVersion(ctx context.Context, linux bool, version string) error {
 	if runner.webExists() {
 		if err := runner.buildWeb(ctx); err != nil {
 			return err
@@ -35,7 +39,7 @@ func (runner runner) build(ctx context.Context, linux bool) error {
 	if linux {
 		env = map[string]string{"GOOS": "linux", "GOARCH": "amd64", "CGO_ENABLED": "0"}
 	}
-	_, err := runner.execute(ctx, "", env, false, "go", "build", "-trimpath", "-ldflags", "-s -w -X main.version="+runner.version(ctx), "-o", filepath.Join("bin", binaryName(runtime.GOOS, linux)), "./cmd/pandatable")
+	_, err := runner.execute(ctx, "", env, false, "go", "build", "-trimpath", "-ldflags", "-s -w -X main.version="+version, "-o", filepath.Join("bin", binaryName(runtime.GOOS, linux)), "./cmd/pandatable")
 	return err
 }
 

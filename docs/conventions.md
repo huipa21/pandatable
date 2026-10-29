@@ -5,7 +5,7 @@
   `master`; do not create feature/task branches, merge commits or squash
   merges. Run `git switch master` before starting if needed; `git branch`
   must list only `master`.
-- **No hosted CI**: run `go run ./tools/ptdev check` before every commit to `master` and before every tag; `ptdev e2e` before milestone tags (D-048).
+- **No hosted CI**: run `go run ./tools/ptdev check` before every commit to `master` and before every tag. Per task, run `ptdev e2e --fast -- <touched specs>`; the complete production-image `ptdev e2e` runs once at phase/milestone end and before tags (D-048, D-158).
 - Commits: Conventional Commits — `feat(grid): fill-down`, `fix(acl): …`, `docs: …`, `chore: …`. Reference task IDs: `feat(auth): login endpoint [T1.3]`.
 - Versioning: SemVer; `v0.x` until M3 complete → `v1.0.0`.
 

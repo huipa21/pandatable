@@ -22,7 +22,7 @@ Test users used throughout: `admin` (role admin), `alice`, `bob`, `carol` (role 
 | AT-006 | Pending | Windows local gate passes; Linux tooling cross-compiles and POSIX deploy-script unit tests pass under Podman. Linux/Docker runtime and T0.7 shared harness remain required. |
 
 Exact versions, image/archive identifiers, cleanup and failure-path evidence:
-[progress.md, T0.6](progress.md#t06-verification-evidence-2026-10-24).
+[progress.md, T0.6](archive/progress-m0-m1.md#t06-verification-evidence-2026-10-24).
 
 ### T0.7 scoped evidence (2026-10-24)
 
@@ -37,7 +37,7 @@ Exact versions, image/archive identifiers, cleanup and failure-path evidence:
 | AT-802 | Pass preserved | Strict frontend/E2E TS, ESLint/Prettier, 21-key locale parity and negative i18n fixtures pass in the local gate. |
 
 Real browser failure/cancellation/partial-start cleanup and exact commands:
-[progress.md, T0.7](progress.md#t07-verification-evidence-2026-10-24).
+[progress.md, T0.7](archive/progress-m0-m1.md#t07-verification-evidence-2026-10-24).
 T0.7 remains in progress until its linked **full AT-006** passes.
 
 ### T0.8 scoped evidence (2026-10-24)
@@ -56,7 +56,7 @@ T0.8 has no linked AT row; its explicitly scoped spike demonstrations are
 complete. `ptdev e2e` reports **8 passed, 2 intentionally skipped in 27.3 s**:
 four existing shell checks, desktop windowing, desktop interactions, mobile
 isolation and a tablet observation. Exact measurements, limits and D-005
-conclusion: [progress](progress.md#t08-verification-evidence-2026-10-24) and
+conclusion: [progress](archive/progress-m0-m1.md#t08-verification-evidence-2026-10-24) and
 [T0.8 record](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
 M0/T0.4/T0.6/T0.7 remain in progress for their unrelated pending platform checks.
 
@@ -74,7 +74,7 @@ M0/T0.4/T0.6/T0.7 remain in progress for their unrelated pending platform checks
 Final image-backed E2E: **8 passed, 2 intentional mobile exclusions in 32.9 s**.
 The earlier supplemental image probe's engine-format error, corrected rerun,
 exact commands, assertions and cleanup are recorded in
-[progress](progress.md#t11-verification-evidence-2026-10-24) and the
+[progress](archive/progress-m0-m1.md#t11-verification-evidence-2026-10-24) and the
 [T1.1 completion record](task-prompts/T1.1.md#implementation-and-handoff-2026-10-24).
 T1.1 is Done; unrelated M0/platform and future auth/business acceptance are not.
 
@@ -114,7 +114,7 @@ Final image E2E: **8 passed / 2 intentional mobile exclusions in 34.7 s**,
 health **8.003 s**, no browser/CSP errors. This is the preserved shell/spike
 suite, **not auth UI acceptance**. T1.2 remains in progress, not Done.
 Exact commands, failure corrections, CPU/memory observations and owned cleanup:
-[progress](progress.md#t12-backend-verification-and-handoff-2026-10-25).
+[progress](archive/progress-m0-m1.md#t12-backend-verification-and-handoff-2026-10-25).
 
 ### T1.3 scoped evidence (2026-10-25)
 
@@ -131,7 +131,7 @@ The required `ptdev check` passes with uncached PG18. Final image E2E reports
 and no browser/CSP errors. The one-shot app snapshot was **72.8 MB / 536.9 MB**
 at **11.63% CPU**; this is not AT-801 load certification. Exact commands,
 versions, resolved failures and owned cleanup are recorded in
-[progress](progress.md#t13-setup-verification-and-handoff-2026-10-25) and the
+[progress](archive/progress-m0-m1.md#t13-setup-verification-and-handoff-2026-10-25) and the
 [T1.3 completion record](task-prompts/T1.3.md#implementation-and-handoff-2026-10-25).
 
 ### T1.5 admin users evidence (2026-10-26)
@@ -211,7 +211,7 @@ Exact verification, resource caveats and cleanup:
 
 Tests: `internal/acl` and `internal/httpapi` (required PG18, `-count=3`);
 membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
-[progress](progress.md#t14-acl-verification-and-handoff-2026-10-26).
+[progress](archive/progress-m0-m1.md#t14-acl-verification-and-handoff-2026-10-26).
 
 - **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`.
 - **AT-202 — Rename is metadata only** · M1 *(API)* · Renaming T/field to Chinese names with spaces works; physical names unchanged.
@@ -604,7 +604,7 @@ was promoted and no prior evidence was removed.
 | AT-001 / AT-005 | Partial, unchanged | No Linux/Docker runtime or approved Caddy destination was used. |
 
 Exact commands, root-cause analysis and cleanup:
-[progress.md, M1 review](progress.md#m1-phase-review-and-gate-repair-2026-10-27).
+[progress.md, M1 review](archive/progress-m0-m1.md#m1-phase-review-and-gate-repair-2026-10-27).
 
 ## T1.21 completed column/keyboard evidence (2026-10-28)
 

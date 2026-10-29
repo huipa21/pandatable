@@ -458,7 +458,7 @@ or full keyboard/undo coverage. The spike's built-in fill behavior is
 lab-only and does not define the production grid's vertical-only policy. Real
 clipboard round-trips were tested in permission-granted Chromium on loopback,
 not inside Excel/Sheets or every OS/browser. Tablet touch is emulated, not
-physical-device certification. See the [exact results](progress.md#t08-verification-evidence-2026-10-24)
+physical-device certification. See the [exact results](archive/progress-m0-m1.md#t08-verification-evidence-2026-10-24)
 and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
 
 ## 5. Mobile (< 768 px) — D-016

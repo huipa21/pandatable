@@ -120,7 +120,7 @@ feature work is AT-311 column ops (no `PATCH /views/{id}` route yet), AT-305
 keyboard navigation, the missing self-profile UI behind AT-116/AT-117, the
 AT-102 browser scenario and the full AT-301..304 grid scenarios, tracked as
 T1.21-T1.23 above. AT-312/NFR-2 stay environment-blocked. See
-[progress.md](progress.md#m1-phase-review-and-gate-repair-2026-10-27).
+[progress.md](archive/progress-m0-m1.md#m1-phase-review-and-gate-repair-2026-10-27).
 
 **Exit:** team can log in, organise workspaces, share, define basic fields, and edit data in grid/mobile. Tag `v0.1.0`.
 

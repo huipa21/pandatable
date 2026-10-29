@@ -31,6 +31,19 @@ func TestE2EArguments(t *testing.T) {
 	if strings.Contains(strings.Join(imageBuildArgs("podman", "test", "test", false), "|"), ":latest") {
 		t.Fatal("disposable build must not overwrite the shared latest tag")
 	}
+	fast, err := parseArgs([]string{"e2e", "--fast", "--", "grid.spec.ts"})
+	if err != nil || !fast.fast || fast.perf || !reflect.DeepEqual(fast.e2eArgs, []string{"grid.spec.ts"}) {
+		t.Fatalf("fast arguments: %+v, %v", fast, err)
+	}
+	if _, err := parseArgs([]string{"e2e", "--fast", "--perf"}); err == nil {
+		t.Fatal("--perf must measure the production image, not --fast")
+	}
+	if joined := strings.Join(e2eImageBuildArgs("podman", "t", true), "|"); !strings.HasSuffix(joined, "|--target|prebuilt|.") {
+		t.Fatalf("fast build must target the prebuilt stage: %s", joined)
+	}
+	if joined := strings.Join(e2eImageBuildArgs("podman", "t", false), "|"); strings.Contains(joined, "--target") {
+		t.Fatalf("full E2E must build the release target: %s", joined)
+	}
 }
 
 func TestSetupTokenLogHandling(t *testing.T) {

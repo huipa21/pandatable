@@ -14,6 +14,7 @@ type options struct {
 	testArgs       []string
 	e2eArgs        []string
 	perf           bool
+	fast           bool
 	withPostgres   bool
 	releaseVersion string
 	host           string
@@ -46,8 +47,12 @@ func parseArgs(args []string) (options, error) {
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
-		case result.command == "e2e" && arg == "--perf":
-			result.perf = true
+		case result.command == "e2e" && (arg == "--perf" || arg == "--fast"):
+			result.perf = result.perf || arg == "--perf"
+			result.fast = result.fast || arg == "--fast"
+			if result.perf && result.fast {
+				return result, usageError{"e2e --perf measures the production image; do not combine with --fast"}
+			}
 		case result.command == "e2e" && arg == "--":
 			if result.perf {
 				return result, usageError{"e2e --perf selects its fixed benchmark; do not combine with Playwright arguments"}

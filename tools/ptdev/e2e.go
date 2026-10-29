@@ -56,9 +56,11 @@ func runE2E(ctx context.Context, steps e2eSteps) (err error) {
 		defer cancelImage()
 		err = errors.Join(err, steps.removeImage(imageCtx))
 	}()
+	buildStart := time.Now()
 	if err := steps.build(ctx); err != nil {
 		return fmt.Errorf("e2e image build: %w", errors.Join(err, ctx.Err()))
 	}
+	fmt.Printf("E2E image build: %s\n", time.Since(buildStart).Round(time.Second))
 	start := time.Now()
 	readyCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -81,6 +83,14 @@ func e2eComposeArgs(root, envFile, project string, args ...string) []string {
 		"-f", filepath.Join(root, "deploy", "compose.yaml"),
 		"-f", filepath.Join(root, "deploy", "compose.local.yaml")}
 	return append(base, args...)
+}
+
+func e2eImageBuildArgs(engine, tag string, fast bool) []string {
+	args := imageBuildArgs(engine, tag, tag, false)
+	if !fast {
+		return args
+	}
+	return append(args[:len(args)-1:len(args)-1], "--target", "prebuilt", ".")
 }
 
 func (runner runner) e2e(ctx context.Context, opts options) (err error) {
@@ -135,7 +145,12 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 	fmt.Printf("E2E project: %s; URL: %s; results: %s\n", project, baseURL, results)
 	return runE2E(ctx, e2eSteps{
 		build: func(ctx context.Context) error {
-			return runner.run(ctx, selected.name, imageBuildArgs(selected.name, tag, tag, false)...)
+			if opts.fast {
+				if err := runner.buildVersion(ctx, true, tag); err != nil {
+					return err
+				}
+			}
+			return runner.run(ctx, selected.name, e2eImageBuildArgs(selected.name, tag, opts.fast)...)
 		},
 		up: func(ctx context.Context) error {
 			_, err := compose(ctx, false, "up", "-d")

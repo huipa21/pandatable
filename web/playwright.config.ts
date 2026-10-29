@@ -8,10 +8,11 @@ const target = new URL(baseURL)
 if (target.protocol !== 'http:' || target.hostname !== '127.0.0.1') {
   throw new Error('E2E requires an isolated HTTP loopback stack')
 }
+const outputDir = process.env.PT_E2E_RESULTS_DIR ?? './test-results/manual'
 
 export default defineConfig({
   testDir: './e2e',
-  outputDir: process.env.PT_E2E_RESULTS_DIR ?? './test-results/manual',
+  outputDir,
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -19,7 +20,8 @@ export default defineConfig({
   globalTimeout: 600_000,
   expect: { timeout: 5_000 },
   forbidOnly: true,
-  reporter: [['list']],
+  // Compact console output (failures in full); per-test durations go to report.json.
+  reporter: [['dot'], ['json', { outputFile: `${outputDir}/report.json` }]],
   use: {
     baseURL,
     locale: 'en-US',

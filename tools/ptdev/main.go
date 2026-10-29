@@ -62,8 +62,9 @@ func (runner runner) dispatch(ctx context.Context, opts options) error {
   check                Run lint, test, build and print a summary
   dev                  Start backend and Vite; stop both on exit or Ctrl+C
   web build            Build frontend and copy embedded assets
-  e2e [--perf | -- <args>]
-                       Isolated regression suite or real 200k browser benchmark
+  e2e [--perf | --fast] [-- <args>]
+                       Isolated regression suite or real 200k browser benchmark;
+                       --fast reuses a host-built binary (task gate, D-158)
   image build [--version VERSION]
                        Build linux/amd64 release image + latest
   image save [--version VERSION] [--with-postgres]

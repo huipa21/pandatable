@@ -21,7 +21,15 @@
 | — | [Progress](progress.md) | Status tracking |
 | — | [Acceptance Tests](acceptance-tests.md) | Testable acceptance criteria (AT-xxx) |
 | — | [Glossary](glossary.md) | Terms used across docs |
-| — | [Task prompts](task-prompts/) | Ready-to-use prompts for starting each task in a fresh agent session |
+| — | [Task prompts](task-prompts/) | Ready-to-use prompts for starting each task in a fresh agent session ([template](task-prompts/TEMPLATE.md)) |
+| — | [Archive](archive/) | Historical M0–M1 verification evidence; search by task/AT ID, never read at task start |
+
+## Reading budget (D-158)
+
+At task start read only `AGENTS.md`, this index, the task prompt and the doc
+sections it names. Search `decisions.md` and `acceptance-tests.md` by ID
+(`Select-String -Path docs\decisions.md -Pattern 'D-145'`) instead of reading
+them whole. Every extra file is re-sent on each model call for the rest of the session.
 
 ## How the docs relate
 

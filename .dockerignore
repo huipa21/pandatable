@@ -22,6 +22,7 @@
 !web/src/**
 !web/public/
 !web/public/**
+!bin/pandatable-linux-amd64
 **/*_test.go
 **/*.test.ts
 **/node_modules/**
