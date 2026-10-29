@@ -191,6 +191,7 @@ it('creates a select field with canonical options and a label default, then appl
       isUnique: false,
       default: 'Doing',
     })
+
     expect(body.options.choices).toEqual([
       {
         id: expect.stringMatching(/^[A-Za-z0-9_-]{1,64}$/),
@@ -206,6 +207,128 @@ it('creates a select field with canonical options and a label default, then appl
     expect(wrapper.emitted('update')).toEqual([[next]])
     expect((dialog.element as HTMLDialogElement).open).toBe(false)
     expect(wrapper.get('[role="status"]').text()).toBe('Field saved.')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('creates an ID-bound formula through the editor with field and function suggestions', async () => {
+  const next = schema()
+  const formulaField = field({
+    id: 'formula',
+    name: 'Double quantity',
+    uiType: 'formula',
+    options: { expr: '{Qty} * 2' },
+    position: 4096,
+  })
+  next.fields.push(formulaField)
+  const { calls } = stubFetch(
+    Response.json({ type: 'number' }),
+    Response.json(
+      { field: formulaField, schema: next, eventId: 'e' },
+      { status: 201 },
+    ),
+  )
+  const wrapper = await setup()
+  try {
+    await buttonByText(wrapper, 'Add formula').trigger('click')
+    const dialog = wrapper
+      .findAll('dialog.field-dialog')
+      .find((item) => item.attributes('aria-label') === 'Formula field')!
+    await dialog.find('input').setValue('Double quantity')
+    const expression = dialog.findAll('textarea')[1]!
+    await expression.setValue('CON')
+    expect(dialog.text()).toContain('CONCAT(')
+    await expression.setValue('{Qty')
+    const fieldSuggestion = dialog
+      .findAll('button')
+      .find((item) => item.text() === 'Qty')!
+    await fieldSuggestion.trigger('click')
+    expect((expression.element as HTMLTextAreaElement).value).toBe('{Qty}')
+    await expression.setValue('{Qty} * 2')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    const [check, create] = calls()
+    expect(check![0]).toBe('/api/v1/formula:check')
+    expect(JSON.parse(String(check![1].body))).toEqual({
+      tableId: 't',
+      expr: '{Qty} * 2',
+    })
+    expect(create![0]).toBe('/api/v1/tables/t/fields')
+    expect(JSON.parse(String(create![1].body))).toMatchObject({
+      name: 'Double quantity',
+      uiType: 'formula',
+      options: { expr: '{Qty} * 2' },
+    })
+    expect(wrapper.emitted('update')).toEqual([[next]])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('shows formula validation positions inline without rendering server messages', async () => {
+  const { calls } = stubFetch(
+    Response.json({ error: { position: 8, message: 'private server detail' } }),
+  )
+  const wrapper = await setup()
+  try {
+    await buttonByText(wrapper, 'Add formula').trigger('click')
+    const dialog = wrapper
+      .findAll('dialog.field-dialog')
+      .find((item) => item.attributes('aria-label') === 'Formula field')!
+    await dialog.findAll('textarea')[1]!.setValue('{Qty} +')
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    await flushPromises()
+    expect(dialog.get('[role="alert"]').text()).toBe(
+      'Invalid formula at position 8.',
+    )
+    expect(dialog.text()).not.toContain('private server detail')
+    expect(calls()).toHaveLength(1)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('rebinds the formula editor expression to renamed stable field references', async () => {
+  const value = schema()
+  value.fields[1] = { ...value.fields[1]!, name: 'Units' }
+  value.fields.push(
+    field({
+      id: 'formula',
+      name: 'Double quantity',
+      uiType: 'formula',
+      options: {
+        expr: '{Qty} * 2',
+        ast: {
+          kind: 'binary',
+          value: '*',
+          position: 7,
+          children: [
+            { kind: 'field', value: 'Qty', fieldId: 'qty', position: 1 },
+            { kind: 'number', value: '2', position: 9 },
+          ],
+        },
+        fieldIds: ['qty'],
+        resultType: 'number',
+      },
+      position: 4096,
+    }),
+  )
+  stubFetch()
+  const wrapper = await setup(value)
+  try {
+    const formula = row(wrapper, 'formula')
+    await formula.get('summary').trigger('click')
+    await formula
+      .findAll('button')
+      .find((button) => button.text() === 'Edit')!
+      .trigger('click')
+    const dialog = wrapper
+      .findAll('dialog.field-dialog')
+      .find((item) => item.attributes('aria-label') === 'Formula field')!
+    expect(
+      (dialog.findAll('textarea')[1]!.element as HTMLTextAreaElement).value,
+    ).toBe('{Units} * 2')
   } finally {
     wrapper.unmount()
   }

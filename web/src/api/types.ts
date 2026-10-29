@@ -305,6 +305,11 @@ export interface FieldMutation extends AuthMutation {
   schema: TableSchema
 }
 
+export interface FormulaCheck {
+  type?: string
+  error?: { position: number; message: string }
+}
+
 export type RowValue =
   null | boolean | number | string | RowValue[] | { [key: string]: RowValue }
 

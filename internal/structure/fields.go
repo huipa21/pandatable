@@ -284,6 +284,9 @@ func (s *Service) fieldResult(ctx context.Context, c *txn, tableID pgtype.UUID, 
 // CreateField adds a typed native column and its metadata atomically. Only an
 // effective owner of the live table may do so (D-123).
 func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, input FieldInput) (FieldResult, error) {
+	if input.UIType == "formula" {
+		return s.createFormulaField(ctx, actor, tableID, input)
+	}
 	if isComputedKind(input.UIType) {
 		return s.createComputedField(ctx, actor, tableID, input)
 	}
@@ -464,6 +467,51 @@ func (s *Service) createComputedField(ctx context.Context, actor Actor, tableID 
 	return result, err
 }
 
+func (s *Service) createFormulaField(ctx context.Context, actor Actor, tableID string, input FieldInput) (FieldResult, error) {
+	target, err := resourceOf(acl.Table, tableID)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	name, err := cleanName(input.Name)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	description, err := cleanDescription(input.Description)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	var result FieldResult
+	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+		table, err := lockTable(ctx, c, target.ID)
+		if err != nil {
+			return err
+		}
+		rowTable, err := loadRowTable(ctx, c.q, c.tx, table.ID,
+			table.physical.Schema, table.physical.Name, table.SchemaVersion)
+		if err != nil {
+			return err
+		}
+		options, _, err := cleanFormulaOptions(input.Options, rowTable, "", c.tx, ctx)
+		if err != nil {
+			return err
+		}
+		last, err := c.q.MaxUserFieldPosition(ctx, target.ID)
+		if err != nil {
+			return fmt.Errorf("read field position: %w", err)
+		}
+		id, err := c.q.InsertUserField(ctx, structuresql.InsertUserFieldParams{
+			TableID: target.ID, Name: name, Description: description, UiType: "formula",
+			Options: options, IsRequired: false, IsUnique: false, Position: last + positionStep,
+		})
+		if err != nil {
+			return fieldNameConflict(fmt.Errorf("insert formula field: %w", err))
+		}
+		result, err = s.fieldResult(ctx, c, target.ID, &id)
+		return err
+	})
+	return result, err
+}
+
 func bindCreationCurrency(ctx context.Context, queries *structuresql.Queries, raw json.RawMessage, field codec.Field) (codec.Field, error) {
 	var options map[string]json.RawMessage
 	if len(raw) != 0 && !isJSONNull(raw) {
@@ -618,6 +666,42 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 			if _, err := c.q.UpdateField(ctx, structuresql.UpdateFieldParams{ID: field.ID, Name: name, Description: description,
 				Options: field.Options, IsRequired: false, IsUnique: false, DefaultJson: nil}); err != nil {
 				return fieldNameConflict(fmt.Errorf("update relation field: %w", err))
+			}
+			if patch.Index != nil {
+				if err := moveField(ctx, c, table.ID, field.ID, *patch.Index); err != nil {
+					return err
+				}
+			}
+			result, err = s.fieldResult(ctx, c, table.ID, &field.ID)
+			return err
+		}
+		if field.UiType == "formula" {
+			if patch.IsRequired != nil || patch.IsUnique != nil || patch.Default != nil {
+				return reasonError(400, "ERR_VALIDATION", "Formula field constraints are not supported", "computed_field")
+			}
+			if patch.Name == nil {
+				name = field.Name
+			}
+			if patch.Description == nil {
+				description = field.Description
+			}
+			options := field.Options
+			if patch.Options != nil {
+				rowTable, err := loadRowTable(ctx, c.q, c.tx, table.ID,
+					table.physical.Schema, table.physical.Name, table.SchemaVersion)
+				if err != nil {
+					return err
+				}
+				options, _, err = cleanFormulaOptions(patch.Options, rowTable, field.ID.String(), c.tx, ctx)
+				if err != nil {
+					return err
+				}
+			}
+			if _, err := c.q.UpdateField(ctx, structuresql.UpdateFieldParams{
+				ID: field.ID, Name: name, Description: description, Options: options,
+				IsRequired: false, IsUnique: false, DefaultJson: nil,
+			}); err != nil {
+				return fieldNameConflict(fmt.Errorf("update formula field: %w", err))
 			}
 			if patch.Index != nil {
 				if err := moveField(ctx, c, table.ID, field.ID, *patch.Index); err != nil {
@@ -792,8 +876,12 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 		if err != nil {
 			return err
 		}
-		if used {
-			return apperr.New(409, "ERR_FIELD_IN_USE", "This field is used by a lookup or rollup")
+		formulaUsed, err := formulaFieldUses(ctx, c.tx, dependencyIDs)
+		if err != nil {
+			return err
+		}
+		if used || formulaUsed {
+			return apperr.New(409, "ERR_FIELD_IN_USE", "This field is used by a computed field")
 		}
 		if field.UiType == "link" {
 			result, err = s.deleteRelationField(ctx, c, table, field)
@@ -802,6 +890,13 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 		if isComputedKind(field.UiType) {
 			if err := c.q.TrashField(ctx, field.ID); err != nil {
 				return fmt.Errorf("trash computed field: %w", err)
+			}
+			result, err = s.fieldResult(ctx, c, table.ID, nil)
+			return err
+		}
+		if field.UiType == "formula" {
+			if err := c.q.TrashField(ctx, field.ID); err != nil {
+				return fmt.Errorf("trash formula field: %w", err)
 			}
 			result, err = s.fieldResult(ctx, c, table.ID, nil)
 			return err

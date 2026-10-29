@@ -1,4 +1,4 @@
-import { fail, ok, type FieldKind, type WireValue } from './types'
+import { fail, isWireValue, ok, type FieldKind, type WireValue } from './types'
 
 const constraints = { required: false, unique: false, default: false }
 
@@ -34,6 +34,30 @@ function computedField(
   }
 }
 
+const formulaField: FieldKind<Record<string, unknown>> = {
+  kind: 'formula',
+  readOnly: true,
+  presentation: 'text',
+  constraints,
+  normalizeOptions(raw) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
+      return fail('invalid_options')
+    return ok(raw as Record<string, unknown>)
+  },
+  normalize(value) {
+    return isWireValue(value) ? ok(value) : fail('invalid_type')
+  },
+  parsePaste: () => fail('read_only'),
+  formatCopy(value) {
+    return format(value)
+  },
+  formatDisplay(value) {
+    return format(value)
+  },
+  filterOps: () => [],
+  aggregates: () => [],
+}
+
 function format(value: WireValue): string {
   if (value === null) return ''
   if (Array.isArray(value)) return value.map(format).filter(Boolean).join(', ')
@@ -41,7 +65,11 @@ function format(value: WireValue): string {
   return String(value)
 }
 
-export const computedKinds: Record<'lookup' | 'rollup', FieldKind<unknown>> = {
+export const computedKinds: Record<
+  'lookup' | 'rollup' | 'formula',
+  FieldKind<unknown>
+> = {
   lookup: computedField('lookup') as FieldKind<unknown>,
   rollup: computedField('rollup') as FieldKind<unknown>,
+  formula: formulaField as FieldKind<unknown>,
 }

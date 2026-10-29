@@ -32,6 +32,7 @@ export type Kind =
   | 'url'
   | 'lookup'
   | 'rollup'
+  | 'formula'
   | 'id'
   | 'created_at'
   | 'created_by'

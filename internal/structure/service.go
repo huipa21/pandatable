@@ -33,8 +33,9 @@ const (
 // Actor is the authenticated caller. Locale selects the language of the default
 // display names written into new tables.
 type Actor struct {
-	ID     string
-	Locale string
+	ID       string
+	Locale   string
+	Timezone string
 }
 
 type Service struct {

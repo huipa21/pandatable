@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n'
 import { request, RequestError } from '../../api/client'
 import type {
   FieldMutation,
+  FormulaCheck,
   RelationMutation,
   TableField,
   TableSchema,
@@ -64,6 +65,7 @@ let controller: AbortController | undefined
 const editor = ref<HTMLDialogElement>()
 const relationEditor = ref<HTMLDialogElement>()
 const computedEditor = ref<HTMLDialogElement>()
+const formulaEditor = ref<HTMLDialogElement>()
 const remover = ref<HTMLDialogElement>()
 /** The field being edited (null while creating); version is captured at open. */
 const editing = ref<TableField | null>(null)
@@ -73,6 +75,13 @@ const conflict = ref(false)
 const deleting = ref<TableField | null>(null)
 const relationCreating = ref(false)
 const computedCreating = ref(false)
+const formulaCreating = ref(false)
+const formulaEditing = ref<TableField | null>(null)
+const formulaDraft = ref({ name: '', description: '', expression: '' })
+const formulaCheck = ref<FormulaCheck | null>(null)
+const formulaFailure = ref<unknown>(null)
+const formulaChecking = ref(false)
+const formulaCursor = ref(0)
 const computedDraft = ref({
   name: '',
   kind: 'lookup' as 'lookup' | 'rollup',
@@ -83,6 +92,8 @@ const computedDraft = ref({
 const computedTargetFields = ref<TableField[]>([])
 const computedTargetLoading = ref(false)
 let computedController: AbortController | undefined
+let formulaController: AbortController | undefined
+let formulaTimer: ReturnType<typeof setTimeout> | undefined
 const relationDraft = ref({
   name: '',
   reverseName: '',
@@ -152,6 +163,137 @@ const computedEditorDisabled = computed(
     !computedRelations.value.length ||
     !computedTargetFields.value.length,
 )
+const formulaFunctions = [
+  'IF',
+  'AND',
+  'OR',
+  'NOT',
+  'SWITCH',
+  'BLANK',
+  'ISBLANK',
+  'COALESCE',
+  'ROUND',
+  'ROUNDUP',
+  'ROUNDDOWN',
+  'ABS',
+  'CEILING',
+  'FLOOR',
+  'MOD',
+  'POWER',
+  'SQRT',
+  'MIN',
+  'MAX',
+  'SUM',
+  'AVERAGE',
+  'INT',
+  'CONCAT',
+  'LEN',
+  'LEFT',
+  'RIGHT',
+  'MID',
+  'UPPER',
+  'LOWER',
+  'TRIM',
+  'SUBSTITUTE',
+  'FIND',
+  'REPLACE',
+  'T',
+  'VALUE',
+  'REGEX_MATCH',
+  'NOW',
+  'TODAY',
+  'YEAR',
+  'MONTH',
+  'DAY',
+  'WEEKDAY',
+  'HOUR',
+  'MINUTE',
+  'DATEADD',
+  'DATETIME_DIFF',
+  'DATETIME_FORMAT',
+  'DATE',
+]
+const formulaSuggestions = computed(() => {
+  const before = formulaDraft.value.expression.slice(0, formulaCursor.value)
+  const open = before.lastIndexOf('{')
+  if (open > before.lastIndexOf('}')) {
+    const search = before.slice(open + 1).toLocaleLowerCase()
+    return fields.value
+      .filter(
+        (field) =>
+          field.uiType !== 'link' &&
+          field.name.toLocaleLowerCase().includes(search),
+      )
+      .slice(0, 8)
+      .map((field) => ({ kind: 'field' as const, value: field.name }))
+  }
+  const word = /[A-Za-z_][A-Za-z_0-9]*$/.exec(before)?.[0] ?? ''
+  if (!word) return []
+  return formulaFunctions
+    .filter((name) => name.startsWith(word.toUpperCase()))
+    .slice(0, 8)
+    .map((value) => ({ kind: 'function' as const, value }))
+})
+const formulaSuggestionLabel = computed(() =>
+  formulaSuggestions.value[0]?.kind === 'function'
+    ? t('field.panel.formulaFunctions')
+    : t('field.panel.formulaFields'),
+)
+function formulaSuggestionText(suggestion: {
+  kind: 'field' | 'function'
+  value: string
+}) {
+  return (
+    suggestion.value +
+    (suggestion.kind === 'function'
+      ? t('field.panel.formulaFunctionSuffix')
+      : '')
+  )
+}
+
+function formulaExpression(field: TableField | null) {
+  const expression = field?.options.expr
+  const ast = field?.options.ast
+  if (typeof expression !== 'string' || ast === null || typeof ast !== 'object')
+    return typeof expression === 'string' ? expression : ''
+
+  const references: { fieldId: string; position: number; name: string }[] = []
+  const visit = (node: unknown) => {
+    if (node === null || typeof node !== 'object') return
+    const item = node as Record<string, unknown>
+    if (
+      item.kind === 'field' &&
+      typeof item.fieldId === 'string' &&
+      typeof item.position === 'number'
+    ) {
+      const current = props.schema.fields.find(
+        (candidate) => candidate.id === item.fieldId,
+      )
+      if (current) {
+        references.push({
+          fieldId: item.fieldId,
+          position: item.position,
+          name: current.name,
+        })
+      }
+    }
+    if (Array.isArray(item.children)) item.children.forEach(visit)
+  }
+  visit(ast)
+
+  const characters = Array.from(expression)
+  for (const reference of references.sort(
+    (left, right) => right.position - left.position,
+  )) {
+    const start = reference.position - 1
+    if (characters[start] !== '{') continue
+    const end = characters.indexOf('}', start)
+    if (end < 0) continue
+    characters.splice(start, end - start + 1, `{${reference.name}}`)
+  }
+  return characters.join('')
+}
+
 function computedAggregateLabel(aggregate: string) {
   switch (aggregate) {
     case 'count':
@@ -390,6 +532,150 @@ async function createComputedField() {
   status.value = t('field.panel.saved')
 }
 
+async function openFormulaEditor(field: TableField | null = null) {
+  error.value = null
+  status.value = ''
+  formulaFailure.value = null
+  formulaCheck.value = null
+  formulaEditing.value = field
+  formulaCreating.value = true
+  formulaDraft.value = {
+    name: field?.name ?? '',
+    description: field?.description ?? '',
+    expression: formulaExpression(field),
+  }
+  await nextTick()
+  formulaEditor.value?.showModal()
+  formulaEditor.value?.querySelector('textarea')?.focus()
+}
+
+function closeFormulaEditor() {
+  if (busy.value) return
+  if (formulaTimer) clearTimeout(formulaTimer)
+  formulaTimer = undefined
+  formulaController?.abort()
+  formulaController = undefined
+  formulaEditor.value?.close()
+  formulaCreating.value = false
+  formulaEditing.value = null
+  formulaFailure.value = null
+  formulaCheck.value = null
+}
+
+async function runFormulaCheck(): Promise<boolean> {
+  if (formulaTimer) clearTimeout(formulaTimer)
+  formulaTimer = undefined
+  formulaController?.abort()
+  const controller = new AbortController()
+  formulaController = controller
+  formulaChecking.value = true
+  formulaFailure.value = null
+  try {
+    const result = await request<FormulaCheck>(
+      '/formula:check',
+      'POST',
+      {
+        tableId: props.schema.table.id,
+        expr: formulaDraft.value.expression,
+      },
+      AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+    )
+    if (formulaController !== controller) return false
+    formulaCheck.value = result
+    return result.error === undefined && result.type !== undefined
+  } catch (cause) {
+    if (!controller.signal.aborted) formulaFailure.value = cause
+    return false
+  } finally {
+    if (formulaController === controller) {
+      formulaController = undefined
+      formulaChecking.value = false
+    }
+  }
+}
+
+function scheduleFormulaCheck() {
+  formulaCheck.value = null
+  formulaFailure.value = null
+  formulaController?.abort()
+  if (formulaTimer) clearTimeout(formulaTimer)
+  formulaTimer = undefined
+  if (!formulaDraft.value.expression.trim()) return
+  formulaTimer = setTimeout(() => {
+    formulaTimer = undefined
+    void runFormulaCheck()
+  }, 300)
+}
+
+function trackFormulaCursor(event: Event) {
+  formulaCursor.value = (event.target as HTMLTextAreaElement).selectionStart
+  scheduleFormulaCheck()
+}
+
+async function insertFormulaSuggestion(suggestion: {
+  kind: 'field' | 'function'
+  value: string
+}) {
+  const expression = formulaDraft.value.expression
+  const before = expression.slice(0, formulaCursor.value)
+  let start = formulaCursor.value
+  let insertion: string
+  if (suggestion.kind === 'field') {
+    const open = before.lastIndexOf('{')
+    start = open > before.lastIndexOf('}') ? open : formulaCursor.value
+    insertion = `{${suggestion.value}}`
+  } else {
+    const word = /[A-Za-z_][A-Za-z_0-9]*$/.exec(before)?.[0]
+    if (word) start -= word.length
+    insertion = `${suggestion.value}(`
+  }
+  const end = formulaCursor.value
+  formulaDraft.value.expression =
+    expression.slice(0, start) + insertion + expression.slice(end)
+  const cursor = start + insertion.length
+  await nextTick()
+  const textarea = formulaEditor.value?.querySelector('textarea')
+  textarea?.focus()
+  textarea?.setSelectionRange(cursor, cursor)
+  formulaCursor.value = cursor
+  scheduleFormulaCheck()
+}
+
+async function saveFormula() {
+  if (busy.value || formulaChecking.value) return
+  const valid = await runFormulaCheck()
+  if (!valid) return
+  const field = formulaEditing.value
+  const result = field
+    ? await mutate<FieldMutation>(
+        `/fields/${field.id}`,
+        'PATCH',
+        {
+          name: formulaDraft.value.name,
+          description: formulaDraft.value.description,
+          options: { expr: formulaDraft.value.expression },
+        },
+        field.version,
+      )
+    : await mutate<FieldMutation>(
+        `/tables/${props.schema.table.id}/fields`,
+        'POST',
+        {
+          name: formulaDraft.value.name,
+          description: formulaDraft.value.description,
+          uiType: 'formula',
+          options: { expr: formulaDraft.value.expression },
+        },
+      )
+  if (!result) return
+  emit('update', result.schema)
+  formulaEditor.value?.close()
+  formulaCreating.value = false
+  formulaEditing.value = null
+  formulaCheck.value = null
+  status.value = t('field.panel.saved')
+}
+
 async function createRelation() {
   const result = await mutate<RelationMutation>(
     `/tables/${props.schema.table.id}/relations`,
@@ -546,11 +832,22 @@ const dialogOpen = computed(
     creating.value ||
     deleting.value !== null ||
     relationCreating.value ||
-    computedCreating.value,
+    computedCreating.value ||
+    formulaCreating.value,
 )
+const formulaStatus = computed(() => {
+  if (formulaCheck.value?.error)
+    return t('field.panel.formulaInvalid', {
+      position: formulaCheck.value.error.position,
+    })
+  if (formulaFailure.value) return mutationMessage(formulaFailure.value)
+  return ''
+})
 
 onBeforeUnmount(() => {
   computedController?.abort()
+  formulaController?.abort()
+  if (formulaTimer) clearTimeout(formulaTimer)
   const own = controller
   controller = undefined
   own?.abort()
@@ -581,6 +878,9 @@ onBeforeUnmount(() => {
           @click="openComputedEditor('rollup')"
         >
           {{ t('field.panel.addRollup') }}
+        </button>
+        <button type="button" :disabled="busy" @click="openFormulaEditor()">
+          {{ t('field.panel.addFormula') }}
         </button>
       </div>
     </div>
@@ -624,7 +924,20 @@ onBeforeUnmount(() => {
             </summary>
             <div class="field-menu">
               <button
-                v-if="!['link', 'lookup', 'rollup'].includes(field.uiType)"
+                v-if="field.uiType === 'formula'"
+                type="button"
+                :disabled="busy"
+                @click="
+                  (event) => {
+                    closeMenu(event)
+                    openFormulaEditor(field)
+                  }
+                "
+              >
+                {{ t('field.panel.edit') }}
+              </button>
+              <button
+                v-else-if="!['link', 'lookup', 'rollup'].includes(field.uiType)"
                 type="button"
                 :disabled="busy"
                 @click="
@@ -1073,6 +1386,107 @@ onBeforeUnmount(() => {
             }}
           </button>
           <button type="button" :disabled="busy" @click="closeEditor">
+            {{ t('field.panel.cancel') }}
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      ref="formulaEditor"
+      class="field-dialog"
+      :aria-label="t('field.panel.formulaTitle')"
+      @cancel.prevent="closeFormulaEditor"
+    >
+      <form v-if="formulaCreating" @submit.prevent="saveFormula">
+        <h2>{{ t('field.panel.formulaTitle') }}</h2>
+        <label>
+          <span>{{ t('field.panel.name') }}</span>
+          <input
+            v-model="formulaDraft.name"
+            autofocus
+            required
+            maxlength="400"
+            :disabled="busy"
+          />
+        </label>
+        <label>
+          <span>{{ t('field.panel.description') }}</span>
+          <textarea
+            v-model="formulaDraft.description"
+            rows="2"
+            :maxlength="MAX_DESCRIPTION * 2"
+            :disabled="busy"
+          />
+        </label>
+        <label>
+          <span>{{ t('field.panel.formulaExpression') }}</span>
+          <textarea
+            :value="formulaDraft.expression"
+            rows="6"
+            maxlength="16384"
+            spellcheck="false"
+            :disabled="busy"
+            @input="
+              (event) => {
+                formulaDraft.expression = (
+                  event.target as HTMLTextAreaElement
+                ).value
+                trackFormulaCursor(event)
+              }
+            "
+            @keyup="
+              (event) =>
+                (formulaCursor = (event.target as HTMLTextAreaElement)
+                  .selectionStart)
+            "
+            @click="
+              (event) =>
+                (formulaCursor = (event.target as HTMLTextAreaElement)
+                  .selectionStart)
+            "
+          />
+        </label>
+        <p>{{ t('field.panel.formulaHint') }}</p>
+        <section
+          class="formula-suggestions"
+          :aria-label="formulaSuggestionLabel"
+        >
+          <template v-if="formulaSuggestions.length">
+            <button
+              v-for="suggestion in formulaSuggestions"
+              :key="`${suggestion.kind}:${suggestion.value}`"
+              type="button"
+              @click="insertFormulaSuggestion(suggestion)"
+            >
+              {{ formulaSuggestionText(suggestion) }}
+            </button>
+          </template>
+          <span v-else>{{ t('field.panel.formulaNoSuggestions') }}</span>
+        </section>
+        <p v-if="formulaChecking" role="status">
+          {{ t('field.panel.formulaCheck') }}
+        </p>
+        <p v-else-if="formulaCheck?.type" role="status">
+          {{ t('field.panel.formulaType', { type: formulaCheck.type }) }}
+        </p>
+        <p v-if="formulaStatus" role="alert">{{ formulaStatus }}</p>
+        <div class="nav-actions">
+          <button
+            type="submit"
+            :disabled="
+              busy || formulaChecking || !formulaDraft.expression.trim()
+            "
+          >
+            {{
+              busy
+                ? t('field.panel.saving')
+                : formulaEditing
+                  ? t('field.panel.save')
+                  : t('field.panel.create')
+            }}
+          </button>
+          <button type="button" :disabled="busy" @click="closeFormulaEditor">
             {{ t('field.panel.cancel') }}
           </button>
         </div>

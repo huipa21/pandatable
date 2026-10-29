@@ -39,7 +39,7 @@ const registry: { [K in Kind]: FieldKind<never> } = {
 } as { [K in Kind]: FieldKind<never> }
 
 export const KINDS = Object.keys(registry).filter(
-  (kind) => kind !== 'lookup' && kind !== 'rollup',
+  (kind) => !['lookup', 'rollup', 'formula'].includes(kind),
 ) as Kind[]
 
 export const isKind = (value: unknown): value is Kind =>

@@ -13,7 +13,7 @@ import (
 )
 
 func actorOf(user auth.User) structure.Actor {
-	return structure.Actor{ID: user.ID, Locale: user.Locale}
+	return structure.Actor{ID: user.ID, Locale: user.Locale, Timezone: user.EffectiveTimezone}
 }
 
 func (api *authHTTP) mountStructure(router chi.Router) {
@@ -31,6 +31,7 @@ func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Get("/tables/{id}/directory/users", api.authenticated(api.tableUsers))
 	router.Post("/tables/{id}/directory/user-labels", api.authenticated(api.tableUserLabels))
 	router.Post("/tables/{id}/fields", api.authenticated(api.createField))
+	router.Post("/formula:check", api.authenticated(api.checkFormula))
 	router.Post("/tables/{id}/relations", api.authenticated(api.createRelation))
 	router.Patch("/fields/{id}", api.authenticated(api.updateField))
 	router.Delete("/fields/{id}", api.authenticated(api.deleteField))
@@ -42,6 +43,41 @@ func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Patch("/tables/{id}/rows", api.authenticated(api.patchRows))
 	router.Patch("/tables/{id}/rows/{rowId}", api.authenticated(api.patchRow))
 	router.Delete("/tables/{id}/rows", api.authenticated(api.deleteRows))
+}
+
+func (api *authHTTP) checkFormula(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		TableID string `json:"tableId"`
+		Expr    string `json:"expr"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	if input.TableID == "" {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Formula tableId is required"))
+		return
+	}
+	result, err := api.structure.CheckFormula(r.Context(), actorOf(user), input.TableID, input.Expr)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	if result.Position > 0 {
+		writeJSON(w, http.StatusOK, struct {
+			Error struct {
+				Position int    `json:"position"`
+				Message  string `json:"message"`
+			} `json:"error"`
+		}{Error: struct {
+			Position int    `json:"position"`
+			Message  string `json:"message"`
+		}{result.Position, result.Message}})
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Type string `json:"type"`
+	}{Type: string(result.Type)})
 }
 
 func (api *authHTTP) nav(w http.ResponseWriter, r *http.Request, user auth.User) {
