@@ -4,7 +4,12 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { request, RequestError } from '../../api/client'
-import type { FieldMutation, TableField, TableSchema } from '../../api/types'
+import type {
+  FieldMutation,
+  RelationMutation,
+  TableField,
+  TableSchema,
+} from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { CHOICE_COLORS } from '../../fields/choice'
@@ -57,6 +62,7 @@ const status = ref('')
 let controller: AbortController | undefined
 
 const editor = ref<HTMLDialogElement>()
+const relationEditor = ref<HTMLDialogElement>()
 const remover = ref<HTMLDialogElement>()
 /** The field being edited (null while creating); version is captured at open. */
 const editing = ref<TableField | null>(null)
@@ -64,6 +70,27 @@ const creating = ref(false)
 const draft = ref<FieldDraft>(draftFrom(null, env.value))
 const conflict = ref(false)
 const deleting = ref<TableField | null>(null)
+const relationCreating = ref(false)
+const relationDraft = ref({
+  name: '',
+  reverseName: '',
+  targetTableId: '',
+  kind: 'one_many',
+  sourceSide: 'child',
+  onDelete: 'set_null',
+})
+const targetTables = computed(() => {
+  for (const workspace of nav.tree.workspaces) {
+    const book = workspace.books.find(
+      (item) => item.id === props.schema.table.bookId,
+    )
+    if (book)
+      return book.tables
+        .filter((table) => table.level === 'owner')
+        .map((table) => ({ id: table.id, name: table.name }))
+  }
+  return []
+})
 
 const constraints = computed(() => kindConstraints(draft.value.kind))
 const storageFixed = computed(() => editing.value !== null)
@@ -149,6 +176,51 @@ function closeEditor() {
   editing.value = null
   creating.value = false
   error.value = null
+}
+
+async function openRelationEditor() {
+  error.value = null
+  status.value = ''
+  if (!nav.loaded && !(await nav.refresh())) {
+    error.value = nav.error ?? new Error(t('relation.noTables'))
+    return
+  }
+  relationDraft.value = {
+    name: '',
+    reverseName: '',
+    targetTableId:
+      targetTables.value.find((table) => table.id === props.schema.table.id)
+        ?.id ??
+      targetTables.value[0]?.id ??
+      '',
+    kind: 'one_many',
+    sourceSide: 'child',
+    onDelete: 'set_null',
+  }
+  relationCreating.value = true
+  await nextTick()
+  relationEditor.value?.showModal()
+}
+
+function closeRelationEditor() {
+  if (busy.value) return
+  relationEditor.value?.close()
+  relationCreating.value = false
+  error.value = null
+}
+
+async function createRelation() {
+  const result = await mutate<RelationMutation>(
+    `/tables/${props.schema.table.id}/relations`,
+    'POST',
+    relationDraft.value,
+  )
+  if (!result) return
+  emit('update', result.schema)
+  relationEditor.value?.close()
+  relationCreating.value = false
+  status.value = t('field.panel.saved')
+  void nav.refresh(true)
 }
 
 // After a version conflict, reseed the open editor from the latest metadata.
@@ -288,7 +360,11 @@ const message = computed(() =>
   typeof error.value === 'string' ? error.value : mutationMessage(error.value),
 )
 const dialogOpen = computed(
-  () => editing.value !== null || creating.value || deleting.value !== null,
+  () =>
+    editing.value !== null ||
+    creating.value ||
+    deleting.value !== null ||
+    relationCreating.value,
 )
 
 onBeforeUnmount(() => {
@@ -302,14 +378,14 @@ onBeforeUnmount(() => {
   <section class="field-panel" :aria-label="t('field.panel.title')">
     <div class="field-panel-head">
       <h2>{{ t('field.panel.title') }}</h2>
-      <button
-        v-if="owner"
-        type="button"
-        :disabled="busy"
-        @click="openEditor(null)"
-      >
-        {{ t('field.panel.add') }}
-      </button>
+      <div v-if="owner" class="field-panel-actions">
+        <button type="button" :disabled="busy" @click="openEditor(null)">
+          {{ t('field.panel.add') }}
+        </button>
+        <button type="button" :disabled="busy" @click="openRelationEditor">
+          {{ t('relation.add') }}
+        </button>
+      </div>
     </div>
     <p v-if="!owner">{{ t('field.panel.readOnly') }}</p>
     <p class="field-status" role="status">{{ status }}</p>
@@ -324,7 +400,11 @@ onBeforeUnmount(() => {
         <div class="field-line">
           <span class="field-name">{{ field.name }}</span>
           <span class="field-kind">{{
-            isKind(field.uiType) ? fieldKindLabel(field.uiType) : field.uiType
+            field.uiType === 'link'
+              ? t('field.kind.link')
+              : isKind(field.uiType)
+                ? fieldKindLabel(field.uiType)
+                : field.uiType
           }}</span>
           <span v-if="field.isSystem" class="field-badge">
             {{ t('field.panel.system') }}
@@ -347,6 +427,7 @@ onBeforeUnmount(() => {
             </summary>
             <div class="field-menu">
               <button
+                v-if="field.uiType !== 'link'"
                 type="button"
                 :disabled="busy"
                 @click="
@@ -802,6 +883,86 @@ onBeforeUnmount(() => {
     </dialog>
 
     <dialog
+      ref="relationEditor"
+      class="field-dialog"
+      :aria-label="t('relation.createTitle')"
+      @cancel.prevent="closeRelationEditor"
+    >
+      <form v-if="relationCreating" @submit.prevent="createRelation">
+        <h2>{{ t('relation.createTitle') }}</h2>
+        <label>
+          <span>{{ t('relation.target') }}</span>
+          <select
+            v-model="relationDraft.targetTableId"
+            required
+            :disabled="busy || !targetTables.length"
+          >
+            <option
+              v-for="table in targetTables"
+              :key="table.id"
+              :value="table.id"
+            >
+              {{ table.name }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>{{ t('relation.name') }}</span>
+          <input
+            v-model="relationDraft.name"
+            required
+            maxlength="100"
+            :disabled="busy"
+          />
+        </label>
+        <label>
+          <span>{{ t('relation.reverseName') }}</span>
+          <input
+            v-model="relationDraft.reverseName"
+            required
+            maxlength="100"
+            :disabled="busy"
+          />
+        </label>
+        <label>
+          <span>{{ t('relation.kind') }}</span>
+          <select v-model="relationDraft.kind" :disabled="busy">
+            <option value="one_one">{{ t('relation.oneOne') }}</option>
+            <option value="one_many">{{ t('relation.oneMany') }}</option>
+            <option value="many_many">{{ t('relation.manyMany') }}</option>
+          </select>
+        </label>
+        <label v-if="relationDraft.kind === 'one_many'">
+          <span>{{ t('relation.thisTableSide') }}</span>
+          <select v-model="relationDraft.sourceSide" :disabled="busy">
+            <option value="child">{{ t('relation.manySide') }}</option>
+            <option value="parent">{{ t('relation.oneSide') }}</option>
+          </select>
+        </label>
+        <label>
+          <span>{{ t('relation.onDelete') }}</span>
+          <select v-model="relationDraft.onDelete" :disabled="busy">
+            <option value="set_null">{{ t('relation.setNull') }}</option>
+            <option value="cascade">{{ t('relation.cascade') }}</option>
+            <option value="restrict">{{ t('relation.restrict') }}</option>
+          </select>
+        </label>
+        <p v-if="!targetTables.length" role="alert">
+          {{ t('relation.noTables') }}
+        </p>
+        <p v-if="error" role="alert">{{ message }}</p>
+        <div class="nav-actions">
+          <button type="submit" :disabled="busy || !targetTables.length">
+            {{ busy ? t('relation.saving') : t('relation.create') }}
+          </button>
+          <button type="button" :disabled="busy" @click="closeRelationEditor">
+            {{ t('field.panel.cancel') }}
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
       ref="remover"
       class="field-dialog"
       :aria-label="t('field.panel.confirm')"
@@ -809,7 +970,12 @@ onBeforeUnmount(() => {
     >
       <form v-if="deleting" @submit.prevent="confirmDelete">
         <h2>{{ t('field.panel.confirm') }}</h2>
-        <p>{{ t('field.panel.confirmDelete', { name: deleting.name }) }}</p>
+        <p v-if="deleting.uiType === 'link'">
+          {{ t('relation.confirmDelete', { name: deleting.name }) }}
+        </p>
+        <p v-else>
+          {{ t('field.panel.confirmDelete', { name: deleting.name }) }}
+        </p>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
           <button type="submit" :disabled="busy">

@@ -342,6 +342,12 @@ dialog::backdrop {
   gap: 8px;
 }
 
+.field-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .field-list {
   list-style: none;
   padding: 0;

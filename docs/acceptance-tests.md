@@ -664,3 +664,14 @@ Exact commands, failed attempts, cleanup and handoff are in the
 |---|---|---|
 | AT-320 | Pass (desktop) | The real Field panel creates each batch-2 kind; grid values save and persist after reload, the user picker exposes only active users, and autonumber is read-only/increasing. In the fast browser gate, 6 scenarios pass and the 2 mobile-only exclusions are intentional. |
 | AT-326 | Pass (desktop) | CNY formats and persists on the initial field; changing it to USD updates that field, while an admin default change to EUR affects new fields only. The test restores the instance setting. |
+
+## T2.3 relation evidence (2026-10-29)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-401 | Pass (desktop) | Owner creates both 1:N fields; the grid picker links a task to a project, and the reverse row value contains the task label. |
+| AT-402 | Pass (desktop) | 1:1 uniqueness returns the expected conflict, asks before replacement, and leaves the old row unlinked while linking the new row. |
+| AT-403 | Pass (desktop) | M:N links support multiple tags per task and multiple tasks per tag; reverse values agree. |
+| AT-404 | Pass (desktop) | Employee self-relation links a report to its manager; the reverse Reports field returns the subordinate. |
+| AT-405 | Pass | PG18 verifies set_null, cascade, and restrict. Browser coverage verifies set_null and cascade results and the translated restrict error through the grid. |
+| AT-406 | Pass (desktop) | Relation target selector includes same-book tables and the current table, and excludes tables from another book. |

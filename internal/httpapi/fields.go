@@ -23,6 +23,34 @@ type fieldResponse struct {
 	EventID string `json:"eventId"`
 }
 
+type relationResponse struct {
+	structure.RelationResult
+	EventID string `json:"eventId"`
+}
+
+func (api *authHTTP) createRelation(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		Name          string `json:"name"`
+		ReverseName   string `json:"reverseName"`
+		TargetTableID string `json:"targetTableId"`
+		Kind          string `json:"kind"`
+		SourceSide    string `json:"sourceSide"`
+		OnDelete      string `json:"onDelete"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	result, err := api.structure.CreateRelation(r.Context(), actorOf(user), chi.URLParam(r, "id"),
+		structure.RelationInput{Name: input.Name, ReverseName: input.ReverseName,
+			TargetTableID: input.TargetTableID, Kind: input.Kind, SourceSide: input.SourceSide, OnDelete: input.OnDelete})
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, relationResponse{result, rand.Text()})
+}
+
 // ifMatch reads the required resource version: a positive integer, optionally
 // quoted as an entity tag.
 func ifMatch(r *http.Request) (int32, error) {

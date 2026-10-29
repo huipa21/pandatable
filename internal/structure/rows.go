@@ -64,11 +64,13 @@ type RowPatch struct {
 }
 
 type rowField struct {
-	id     string
-	kind   codec.Kind
-	column string
-	system bool
-	codec  codec.Field
+	id           string
+	kind         codec.Kind
+	column       string
+	system       bool
+	codec        codec.Field
+	relation     *relationRecord
+	relationSide string
 }
 
 type rowTable struct {
@@ -118,7 +120,7 @@ func systemColumn(kind codec.Kind) (string, bool) {
 	}
 }
 
-func loadRowTable(ctx context.Context, q *structuresql.Queries, id pgtype.UUID, schema, name string, version int32) (rowTable, error) {
+func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pgtype.UUID, schema, name string, version int32) (rowTable, error) {
 	if _, err := physicalTable(schema, name); err != nil {
 		return rowTable{}, err
 	}
@@ -130,8 +132,37 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, id pgtype.UUID, 
 		id: id, schema: schema, name: name, schemaVersion: version,
 		fields: make([]rowField, 0, len(rows)), byID: make(map[string]rowField, len(rows)),
 	}
+	relations, err := relationRows(ctx, tx, id)
+	if err != nil {
+		return rowTable{}, err
+	}
+	relationFields := make(map[string]struct {
+		relation relationRecord
+		side     string
+	}, len(relations)*2)
+	for _, relation := range relations {
+		relationFields[relation.parentField.String()] = struct {
+			relation relationRecord
+			side     string
+		}{relation, "parent"}
+		relationFields[relation.childField.String()] = struct {
+			relation relationRecord
+			side     string
+		}{relation, "child"}
+	}
 	for _, row := range rows {
 		kind := codec.Kind(row.UiType)
+		if row.UiType == "link" {
+			info, ok := relationFields[row.ID.String()]
+			if !ok || row.PgColumn.Valid {
+				return rowTable{}, errors.New("invalid relation field metadata")
+			}
+			relation := info.relation
+			field := rowField{id: row.ID.String(), relation: &relation, relationSide: info.side}
+			table.fields = append(table.fields, field)
+			table.byID[field.id] = field
+			continue
+		}
 		bound, err := codec.Bind(kind, row.Options)
 		if err != nil {
 			return rowTable{}, fmt.Errorf("bind stored row field: %w", err)
@@ -178,6 +209,9 @@ func (table rowTable) selectColumnList(fields []rowField) []string {
 	columns := make([]string, 0, len(fields)+1)
 	columns = append(columns, pgx.Identifier{"id"}.Sanitize())
 	for _, field := range fields {
+		if field.relation != nil {
+			continue
+		}
 		column := field.sqlColumn()
 		if field.kind == codec.JSON {
 			column += "::text"
@@ -188,7 +222,8 @@ func (table rowTable) selectColumnList(fields []rowField) []string {
 }
 
 func (table rowTable) encode(values []any, fields []rowField) (RowRecord, error) {
-	if len(values) != len(fields)+1 {
+	physicalFields := physicalRowFields(fields)
+	if len(values) != len(physicalFields)+1 {
 		return RowRecord{}, errors.New("row scan returned an unexpected column count")
 	}
 	rowID, err := codec.Bind(codec.RowID, nil)
@@ -204,7 +239,7 @@ func (table rowTable) encode(values []any, fields []rowField) (RowRecord, error)
 		return RowRecord{}, fmt.Errorf("decode canonical row id: %w", err)
 	}
 	record := RowRecord{ID: id, Fields: make(map[string]json.RawMessage, len(fields))}
-	for index, field := range fields {
+	for index, field := range physicalFields {
 		wire, err := field.codec.Encode(values[index+1])
 		if err != nil {
 			return RowRecord{}, fmt.Errorf("encode row field: %w", err)
@@ -218,6 +253,7 @@ func (table rowTable) encode(values []any, fields []rowField) (RowRecord, error)
 }
 
 func scanRow(row pgx.Row, table rowTable, fields []rowField) (RowRecord, error) {
+	fields = physicalRowFields(fields)
 	values := make([]any, len(fields)+1)
 	destinations := make([]any, len(values))
 	for index := range values {
@@ -227,6 +263,16 @@ func scanRow(row pgx.Row, table rowTable, fields []rowField) (RowRecord, error) 
 		return RowRecord{}, err
 	}
 	return table.encode(values, fields)
+}
+
+func physicalRowFields(fields []rowField) []rowField {
+	result := make([]rowField, 0, len(fields))
+	for _, field := range fields {
+		if field.relation == nil {
+			result = append(result, field)
+		}
+	}
+	return result
 }
 
 func scanRows(rows pgx.Rows, table rowTable, fields []rowField) ([]RowRecord, error) {
@@ -284,7 +330,7 @@ func (s *Service) withReadableTable(ctx context.Context, actor Actor, tableID st
 	if err != nil {
 		return rowDatabaseError(notFoundIfNoRows(err, "lock row table"))
 	}
-	table, err := loadRowTable(ctx, structuresql.New(tx), target.ID, tableRow.PgSchema, tableRow.PgName, tableRow.SchemaVersion)
+	table, err := loadRowTable(ctx, structuresql.New(tx), tx, target.ID, tableRow.PgSchema, tableRow.PgName, tableRow.SchemaVersion)
 	if err != nil {
 		return err
 	}
@@ -327,7 +373,7 @@ func (s *Service) withWritableTable(ctx context.Context, actor Actor, tableID st
 		if err != nil {
 			return notFoundIfNoRows(err, "lock row table")
 		}
-		table, err := loadRowTable(ctx, structuresql.New(tx), target.ID, tableRow.PgSchema, tableRow.PgName, tableRow.SchemaVersion)
+		table, err := loadRowTable(ctx, structuresql.New(tx), tx, target.ID, tableRow.PgSchema, tableRow.PgName, tableRow.SchemaVersion)
 		if err != nil {
 			return err
 		}
@@ -351,6 +397,8 @@ func mapRowDatabaseError(err error) error {
 		return apperr.New(400, "ERR_REQUIRED_FIELD", "A required field is missing")
 	case "23505":
 		return apperr.New(409, "ERR_UNIQUE_CONFLICT", "A unique field already has this value")
+	case "23503":
+		return relationRestrictError()
 	case "40001":
 		return apperr.New(409, "ERR_SCHEMA_CHANGED", "The table schema changed; reload and retry")
 	default:
@@ -386,7 +434,7 @@ func sortedFieldValues(ctx context.Context, queries *structuresql.Queries, table
 	for _, id := range keys {
 		field, ok := table.byID[id]
 		parsed, valid := acl.ParseUUID(id)
-		if !ok || !valid || parsed.String() != id || field.system {
+		if !ok || !valid || parsed.String() != id || field.system || field.relation != nil {
 			return nil, nil, validation("A supplied field is not writable on this table")
 		}
 		value, err := field.codec.Decode(input[id])
@@ -488,6 +536,9 @@ func (s *Service) GetRow(ctx context.Context, actor Actor, tableID, rowID string
 		if err != nil {
 			return fmt.Errorf("read row: %w", err)
 		}
+		if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+			return err
+		}
 		result = record
 		return nil
 	})
@@ -542,7 +593,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if lockedView.Scope == "personal" && (!lockedView.OwnerID.Valid || lockedView.OwnerID.String() != actor.ID) {
 		return RowQueryResult{}, acl.ErrNotFound()
 	}
-	table, err := loadRowTable(ctx, q, lockedView.TableID, lockedView.PgSchema, lockedView.PgName, lockedView.SchemaVersion)
+	table, err := loadRowTable(ctx, q, tx, lockedView.TableID, lockedView.PgSchema, lockedView.PgName, lockedView.SchemaVersion)
 	if err != nil {
 		return RowQueryResult{}, err
 	}
@@ -589,6 +640,9 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	}
 	result.Rows, err = scanRows(rows, table, fields)
 	if err != nil {
+		return RowQueryResult{}, rowDatabaseError(err)
+	}
+	if err := enrichRowLinks(ctx, tx, table, fields, result.Rows); err != nil {
 		return RowQueryResult{}, rowDatabaseError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -648,7 +702,7 @@ func configuredRowSort(table rowTable, configured []struct {
 	if override != nil {
 		field, ok := table.byID[override.FieldID]
 		direction := strings.ToUpper(override.Direction)
-		if !ok || direction != "ASC" && direction != "DESC" {
+		if !ok || field.relation != nil || direction != "ASC" && direction != "DESC" {
 			return nil, "", validation("Sort must name a live field and use asc or desc")
 		}
 		return &field, direction, nil
@@ -658,7 +712,7 @@ func configuredRowSort(table rowTable, configured []struct {
 	}
 	field, ok := table.byID[configured[0].Field]
 	direction := strings.ToUpper(configured[0].Dir)
-	if !ok || direction != "ASC" && direction != "DESC" {
+	if !ok || field.relation != nil || direction != "ASC" && direction != "DESC" {
 		return nil, "", nil
 	}
 	return &field, direction, nil
@@ -720,6 +774,9 @@ func insertRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, ta
 	record, err := scanRow(tx.QueryRow(ctx, query, args...), table, table.fields)
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("insert row: %w", err)
+	}
+	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+		return RowRecord{}, err
 	}
 	return record, nil
 }
@@ -786,6 +843,9 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 	record, err := scanRow(tx.QueryRow(ctx, query, args...), table, table.fields)
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("patch row: %w", err)
+	}
+	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+		return RowRecord{}, err
 	}
 	return record, nil
 }
@@ -871,8 +931,14 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 		if err != nil {
 			return err
 		}
+		if err := enrichRowLinks(ctx, tx, table, table.fields, records); err != nil {
+			return err
+		}
 		if len(records) != len(ids) {
 			return acl.ErrNotFound()
+		}
+		if err := s.deleteRelatedRows(ctx, tx, actor, table, sorted, make(map[string]map[int64]bool)); err != nil {
+			return err
 		}
 		deleteQuery, deleteArgs, err := sq.Delete(table.qualifiedName()).
 			Where(sq.Expr(`"id" = ANY(?::bigint[])`, sorted)).

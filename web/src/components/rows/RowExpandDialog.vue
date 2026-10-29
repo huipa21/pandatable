@@ -21,6 +21,8 @@ import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import FieldEditor from '../fields/FieldEditor.vue'
 import FieldRenderer from '../fields/FieldRenderer.vue'
+import RelationLinks from '../relations/RelationLinks.vue'
+import RelationPicker from '../relations/RelationPicker.vue'
 
 const rowPatchBodyLimit = 64 * 1024
 
@@ -48,6 +50,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref<unknown>(null)
 const editing = ref<string | null>(null)
+const relationEditing = ref<string | null>(null)
 const saved = ref(false)
 const preserveUploads = ref(false)
 const draft = ref<Record<string, WireValue>>({})
@@ -80,6 +83,19 @@ const ARRAY_VALUE_KINDS = new Set([
 ])
 function isFieldWireValue(kind: string, value: unknown): value is WireValue {
   if (!isWireValue(value)) return false
+  if (kind === 'link')
+    return (
+      Array.isArray(value) &&
+      value.every(
+        (item) =>
+          typeof item === 'object' &&
+          item !== null &&
+          'id' in item &&
+          typeof item.id === 'string' &&
+          'label' in item &&
+          typeof item.label === 'string',
+      )
+    )
   if (value === null || kind === 'json' || kind === 'attachment') return true
   if (ARRAY_VALUE_KINDS.has(kind))
     return (
@@ -326,6 +342,12 @@ function close() {
   emit('close')
 }
 
+function relationUpdated(updated: DataRow) {
+  row.value = updated
+  saved.value = true
+  emit('saved')
+}
+
 watch(
   [
     () => props.schema.table.id,
@@ -376,6 +398,11 @@ onBeforeUnmount(() => {
   controller?.abort()
   dialog.value?.close()
 })
+const relationField = computed(
+  () =>
+    props.schema.fields.find((field) => field.id === relationEditing.value) ??
+    null,
+)
 </script>
 
 <template>
@@ -411,6 +438,15 @@ onBeforeUnmount(() => {
         <p v-if="creating && item.field.isSystem">
           {{ t('rowExpand.system') }}
         </p>
+        <template
+          v-else-if="item.field.uiType === 'link' && item.value.ok && !creating"
+        >
+          <RelationLinks
+            :links="item.value.value"
+            :editable="canWrite"
+            @edit="relationEditing = item.field.id"
+          />
+        </template>
         <template v-else-if="item.result.ok && item.value.ok">
           <template v-if="editing === item.field.id && canWrite">
             <fieldset :disabled="saving">
@@ -473,6 +509,16 @@ onBeforeUnmount(() => {
       </button>
     </template>
   </dialog>
+  <RelationPicker
+    :open="relationField !== null"
+    :schema="schema"
+    :field="relationField"
+    :row-id="row?.id ?? null"
+    :links="relationField && row ? row.fields[relationField.id] : null"
+    :identity="identity"
+    @updated="relationUpdated"
+    @close="relationEditing = null"
+  />
 </template>
 
 <style scoped>

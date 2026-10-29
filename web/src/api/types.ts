@@ -276,13 +276,28 @@ export interface TableSchema {
     position: number
     version: number
   }[]
-  relations: unknown[]
+  relations: Relation[]
   views: TableView[]
   schemaVersion: number
   myLevel: AccessLevel
 }
 
 export type TableField = TableSchema['fields'][number]
+
+export interface Relation {
+  id: string
+  kind: 'one_one' | 'one_many' | 'many_many'
+  parentTableId: string
+  childTableId: string
+  parentFieldId: string
+  childFieldId: string
+  onDelete: 'set_null' | 'cascade' | 'restrict'
+}
+
+export interface RelationLink {
+  id: string
+  label: string
+}
 
 /** Field mutation response (D-123); `field` is absent after deletion. */
 export interface FieldMutation extends AuthMutation {
@@ -336,6 +351,16 @@ export interface RowDeleteRequest {
 
 export interface RowMutation extends AuthMutation {
   rows: DataRow[]
+}
+
+export interface LinkMutation extends AuthMutation {
+  row: DataRow
+}
+
+export interface RelationMutation extends AuthMutation {
+  relation: Relation
+  field?: TableField
+  schema: TableSchema
 }
 
 export interface RowPatchMutation extends AuthMutation {

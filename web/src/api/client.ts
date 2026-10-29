@@ -6,6 +6,7 @@ export interface ErrorDetails {
   reason?: string
   option?: string
   count?: number
+  relatedRowId?: string
 }
 
 export class RequestError extends Error {
@@ -32,6 +33,11 @@ function readDetails(value: unknown): ErrorDetails {
     raw.count >= 0
   )
     details.count = raw.count
+  if (
+    typeof raw.relatedRowId === 'string' &&
+    /^[1-9]\d{0,18}$/.test(raw.relatedRowId)
+  )
+    details.relatedRowId = raw.relatedRowId
   return details
 }
 
@@ -153,6 +159,10 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_UNIQUE_HAS_DUPLICATES', { count })
     case 'ERR_DISPLAY_FIELD_REQUIRED':
       return t('errors.ERR_DISPLAY_FIELD_REQUIRED')
+    case 'ERR_RELATION_CONFLICT':
+      return t('errors.ERR_RELATION_CONFLICT')
+    case 'ERR_RESTRICT_VIOLATION':
+      return t('errors.ERR_RESTRICT_VIOLATION')
     case 'ERR_REQUIRED_FIELD':
       return t('errors.ERR_REQUIRED_FIELD')
     case 'ERR_UNIQUE_CONFLICT':

@@ -16,6 +16,7 @@ import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import FieldRenderer from '../fields/FieldRenderer.vue'
+import RelationLinks from '../relations/RelationLinks.vue'
 import { RemoteRowsWindow, remotePageSize } from '../grid/remoteWindow'
 
 const props = defineProps<{
@@ -339,8 +340,14 @@ onBeforeUnmount(() => {
             </span>
             <span v-for="field in preview" :key="field.id" class="card-field">
               <span class="card-label">{{ field.name }}</span>
+              <RelationLinks
+                v-if="
+                  field.uiType === 'link' && isWireValue(row.fields[field.id])
+                "
+                :links="row.fields[field.id]"
+              />
               <FieldRenderer
-                v-if="field.bound.ok && isWireValue(row.fields[field.id])"
+                v-else-if="field.bound.ok && isWireValue(row.fields[field.id])"
                 :field="field.bound.value"
                 :value="wireValue(row.fields[field.id])"
                 :env="env"

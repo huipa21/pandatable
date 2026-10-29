@@ -183,7 +183,7 @@ func pgTypeName(dataType ddl.DataType) string {
 
 // displayEligible: live, non-system and not checkbox (D-129).
 func displayEligible(kind string, system bool) bool {
-	return !system && !codec.IsSystem(codec.Kind(kind)) && codec.Kind(kind) != codec.Checkbox
+	return !system && kind != "link" && !codec.IsSystem(codec.Kind(kind)) && codec.Kind(kind) != codec.Checkbox
 }
 
 // fieldNameConflict maps the live case-insensitive name index (D-126).
@@ -265,7 +265,7 @@ func (s *Service) fieldResult(ctx context.Context, c *txn, tableID pgtype.UUID, 
 	if err := c.q.BumpSchemaVersion(ctx, tableID); err != nil {
 		return FieldResult{}, fmt.Errorf("bump schema version: %w", err)
 	}
-	schema, err := loadSchema(ctx, c.q, tableID, c.user, acl.Owner)
+	schema, err := loadSchema(ctx, c.q, c.tx, tableID, c.user, acl.Owner)
 	if err != nil {
 		return FieldResult{}, err
 	}
@@ -519,6 +519,28 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 		if err != nil {
 			return err
 		}
+		if field.UiType == "link" {
+			if patch.Options != nil || patch.IsRequired != nil || patch.IsUnique != nil || patch.Default != nil {
+				return reasonError(400, "ERR_VALIDATION", "Relation field storage is managed by its relation", "relation_field")
+			}
+			if patch.Name == nil {
+				name = field.Name
+			}
+			if patch.Description == nil {
+				description = field.Description
+			}
+			if _, err := c.q.UpdateField(ctx, structuresql.UpdateFieldParams{ID: field.ID, Name: name, Description: description,
+				Options: field.Options, IsRequired: false, IsUnique: false, DefaultJson: nil}); err != nil {
+				return fieldNameConflict(fmt.Errorf("update relation field: %w", err))
+			}
+			if patch.Index != nil {
+				if err := moveField(ctx, c, table.ID, field.ID, *patch.Index); err != nil {
+					return err
+				}
+			}
+			result, err = s.fieldResult(ctx, c, table.ID, &field.ID)
+			return err
+		}
 		if patch.Name == nil {
 			name = field.Name
 		}
@@ -635,6 +657,10 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 		}
 		if field.IsSystem {
 			return systemFieldError()
+		}
+		if field.UiType == "link" {
+			result, err = s.deleteRelationField(ctx, c, table, field)
+			return err
 		}
 		if table.DisplayFieldID == field.ID {
 			fields, err := c.q.ListTableFields(ctx, table.ID)

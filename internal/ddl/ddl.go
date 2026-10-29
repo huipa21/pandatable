@@ -50,6 +50,14 @@ const (
 	UserReference Reference = "user"
 )
 
+type DeleteAction string
+
+const (
+	SetNull  DeleteAction = "SET NULL"
+	Cascade  DeleteAction = "CASCADE"
+	Restrict DeleteAction = "RESTRICT"
+)
+
 func CreateSchema(ctx context.Context, tx pgx.Tx, name string) error {
 	if err := ValidateIdentifier(Book, name); err != nil {
 		return err
@@ -114,6 +122,89 @@ func AddColumn(ctx context.Context, tx pgx.Tx, table TableName, column ColumnSpe
 		return validation("Invalid column reference")
 	}
 	return execute(ctx, tx, "add column", query, true)
+}
+
+// AddRelationColumn creates a nullable bigint FK for a relation. FK columns are
+// indexed unless their one-to-one uniqueness constraint already provides one.
+func AddRelationColumn(ctx context.Context, tx pgx.Tx, table TableName, column string,
+	target TableName, unique bool, onDelete DeleteAction) error {
+	name, err := columnTarget(table, column)
+	if err != nil {
+		return err
+	}
+	targetName, err := target.sql()
+	if err != nil {
+		return err
+	}
+	action, err := deleteActionSQL(onDelete)
+	if err != nil {
+		return err
+	}
+	quotedColumn := pgx.Identifier{column}.Sanitize()
+	query := "ALTER TABLE " + name + " ADD COLUMN " + quotedColumn +
+		" pg_catalog.int8 CONSTRAINT " + foreignKeyName(table, column) +
+		" REFERENCES " + targetName + ` ("id") ON DELETE ` + action
+	if unique {
+		query += " CONSTRAINT " + uniqueName(table, column) + " UNIQUE"
+	}
+	if err := execute(ctx, tx, "add relation column", query, true); err != nil {
+		return err
+	}
+	if unique {
+		return nil
+	}
+	return execute(ctx, tx, "index relation column",
+		"CREATE INDEX "+pgx.Identifier{relationIndexName(table, column)}.Sanitize()+
+			" ON "+name+" ("+quotedColumn+")", true)
+}
+
+// CreateJunction creates an M:N table with cascading FK cleanup, pair
+// uniqueness, and the reverse lookup index required by D-020.
+func CreateJunction(ctx context.Context, tx pgx.Tx, schema, junction string,
+	parent, child TableName) error {
+	if err := ValidateIdentifier(Book, schema); err != nil {
+		return err
+	}
+	if err := ValidateIdentifier(Junction, junction); err != nil {
+		return err
+	}
+	parentName, err := parent.sql()
+	if err != nil {
+		return err
+	}
+	childName, err := child.sql()
+	if err != nil {
+		return err
+	}
+	name := pgx.Identifier{schema, junction}.Sanitize()
+	parentConstraint := pgx.Identifier{junction + "_parent_fkey"}.Sanitize()
+	childConstraint := pgx.Identifier{junction + "_child_fkey"}.Sanitize()
+	create := "CREATE TABLE " + name + ` (
+		"parent_id" pg_catalog.int8 NOT NULL CONSTRAINT ` + parentConstraint +
+		" REFERENCES " + parentName + ` ("id") ON DELETE CASCADE,
+		"child_id" pg_catalog.int8 NOT NULL CONSTRAINT ` + childConstraint +
+		" REFERENCES " + childName + ` ("id") ON DELETE CASCADE,
+		"created_at" pg_catalog.timestamptz NOT NULL DEFAULT pg_catalog.now(),
+		"created_by" pg_catalog.uuid,
+		PRIMARY KEY ("parent_id", "child_id")
+	)`
+	if err := execute(ctx, tx, "create relation junction", create, true); err != nil {
+		return err
+	}
+	return execute(ctx, tx, "index relation junction",
+		"CREATE INDEX "+pgx.Identifier{junction + "_child_idx"}.Sanitize()+
+			" ON "+name+` ("child_id")`, true)
+}
+
+func DropJunction(ctx context.Context, tx pgx.Tx, schema, junction string) error {
+	if err := ValidateIdentifier(Book, schema); err != nil {
+		return err
+	}
+	if err := ValidateIdentifier(Junction, junction); err != nil {
+		return err
+	}
+	return execute(ctx, tx, "drop relation junction",
+		"DROP TABLE "+pgx.Identifier{schema, junction}.Sanitize(), false)
 }
 
 // AddAutoNumberColumn creates a per-column sequence, numbers existing rows in
@@ -228,6 +319,23 @@ func rangeName(table TableName, column string) string {
 
 func foreignKeyName(table TableName, column string) string {
 	return pgx.Identifier{table.Name + "_" + column + "_fkey"}.Sanitize()
+}
+
+func relationIndexName(table TableName, column string) string {
+	return table.Name + "_" + column + "_idx"
+}
+
+func deleteActionSQL(action DeleteAction) (string, error) {
+	switch action {
+	case SetNull:
+		return "SET NULL", nil
+	case Cascade:
+		return "CASCADE", nil
+	case Restrict:
+		return "RESTRICT", nil
+	default:
+		return "", validation("Invalid relation delete action")
+	}
 }
 
 func execute(ctx context.Context, tx pgx.Tx, operation, query string, creating bool) error {

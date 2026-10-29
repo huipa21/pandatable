@@ -339,7 +339,7 @@ it('moves, sets the display field and deletes with the field version', async () 
       .findAll('button')
       .find((b) => b.text() === 'Delete')!
       .trigger('click')
-    const remover = wrapper.findAll('dialog.field-dialog')[1]!
+    const remover = wrapper.findAll('dialog.field-dialog').at(-1)!
     expect(remover.text()).toContain('“Qty”')
     await remover.get('form').trigger('submit')
     await flushPromises()
@@ -355,9 +355,73 @@ it('moves, sets the display field and deletes with the field version', async () 
     expect(new Headers(remove![1].headers).get('If-Match')).toBe('3')
     expect(wrapper.get('[role="status"]').text()).toBe('Field deleted.')
     expect(wrapper.emitted('update')).toHaveLength(2)
-    // System fields and checkbox-ineligible actions are not offered.
     expect(row(wrapper, 'sys').text()).not.toContain('Delete')
     expect(row(wrapper, 'name').text()).not.toContain('Use as display field')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('creates a same-book relation from the owner field panel', async () => {
+  const next = schema()
+  const relationField = field({
+    id: 'relation-field',
+    name: 'Reports',
+    uiType: 'link',
+    options: { relationId: 'relation-id', targetTableId: 't', side: 'parent' },
+    position: 4096,
+  })
+  next.fields.push(relationField)
+  next.relations = [
+    {
+      id: 'relation-id',
+      kind: 'one_many',
+      parentTableId: 't',
+      childTableId: 't',
+      parentFieldId: 'relation-field',
+      childFieldId: 'reverse-field',
+      onDelete: 'set_null',
+    },
+  ]
+  const { calls } = stubFetch(
+    Response.json(
+      {
+        relation: next.relations[0],
+        field: relationField,
+        schema: next,
+        eventId: 'relation-event',
+      },
+      { status: 201 },
+    ),
+  )
+  const wrapper = await setup()
+  try {
+    await buttonByText(wrapper, 'Add relation').trigger('click')
+    const dialog = wrapper.get('dialog[aria-label="Create relation"]')
+    await flushPromises()
+    expect(
+      dialog
+        .get('select')
+        .findAll('option')
+        .map((option) => option.attributes('value')),
+    ).toEqual(['t'])
+    await dialog.get('input').setValue('Manager')
+    await dialog.findAll('input')[1]!.setValue('Reports')
+    await dialog.get('select').setValue('t')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    const [url, init] = calls()[0]!
+    expect(url).toBe('/api/v1/tables/t/relations')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: 'Manager',
+      reverseName: 'Reports',
+      targetTableId: 't',
+      kind: 'one_many',
+      sourceSide: 'child',
+      onDelete: 'set_null',
+    })
+    expect(wrapper.emitted('update')?.[0]?.[0]).toEqual(next)
   } finally {
     wrapper.unmount()
   }

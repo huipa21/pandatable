@@ -62,15 +62,13 @@ type View struct {
 	Config   ViewColumns `json:"config"`
 }
 
-// TableSchema is the table-level schema read (doc 09). Relations stay empty
-// until link fields (M2).
 type TableSchema struct {
-	Table         Table   `json:"table"`
-	Fields        []Field `json:"fields"`
-	Relations     []any   `json:"relations"`
-	Views         []View  `json:"views"`
-	SchemaVersion int32   `json:"schemaVersion"`
-	MyLevel       string  `json:"myLevel"`
+	Table         Table      `json:"table"`
+	Fields        []Field    `json:"fields"`
+	Relations     []Relation `json:"relations"`
+	Views         []View     `json:"views"`
+	SchemaVersion int32      `json:"schemaVersion"`
+	MyLevel       string     `json:"myLevel"`
 }
 
 func timeOf(value pgtype.Timestamptz) time.Time { return value.Time.UTC() }

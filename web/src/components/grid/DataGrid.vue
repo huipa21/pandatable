@@ -51,6 +51,8 @@ import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
 import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
+import GridRelationCell from '../relations/GridRelationCell.vue'
+import RelationPicker from '../relations/RelationPicker.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { formatTsv, parseTsv, TsvError } from './tsv'
 import { useViewColumns, minColumnWidth, maxColumnWidth } from './viewColumns'
@@ -95,6 +97,8 @@ const clipboardMessage = ref('')
 const selectedRows = ref(new Set<string>())
 const deleteDialog = ref<HTMLDialogElement>()
 const addRowsDialog = ref<HTMLDialogElement>()
+const relationField = ref<TableField | null>(null)
+const relationRow = ref<DataRow | null>(null)
 const gridSource = shallowRef<GridModel[]>([])
 const columnWidthDrafts = ref<Record<string, string>>({})
 const frozenDraft = ref<string | null>(null)
@@ -208,7 +212,9 @@ const columnFields = computed(() =>
   }),
 )
 const unsupportedField = computed(() =>
-  props.schema.fields.some((field) => !fieldById.value.has(field.id)),
+  props.schema.fields.some(
+    (field) => field.uiType !== 'link' && !fieldById.value.has(field.id),
+  ),
 )
 
 function fetchPage(
@@ -272,6 +278,35 @@ function boundFor(id: string) {
   return fieldById.value.get(id)
 }
 
+function supportedColumn(id: string) {
+  return (
+    fieldById.value.has(id) ||
+    props.schema.fields.some(
+      (field) => field.id === id && field.uiType === 'link',
+    )
+  )
+}
+
+function openRelationPicker(field: TableField, rowId: string) {
+  if (!canWrite.value) return
+  const index = rows.indexOfRow(rowId)
+  const row = index < 0 ? null : rows.rowAt(index)
+  if (!row) return
+  relationField.value = field
+  relationRow.value = row
+}
+
+function updateRelationRow(row: DataRow) {
+  const index = rows.indexOfRow(row.id)
+  if (index >= 0) rows.updateRow(index, row)
+  relationRow.value = row
+}
+
+function closeRelationPicker() {
+  relationField.value = null
+  relationRow.value = null
+}
+
 const columns = computed<ColumnRegular[]>(() => {
   const definitions: ColumnRegular[] = [
     {
@@ -307,6 +342,37 @@ const columns = computed<ColumnRegular[]>(() => {
     },
   ]
   for (const [index, id] of visibleFieldIds.value.entries()) {
+    const relationField = props.schema.fields.find(
+      (field) => field.id === id && field.uiType === 'link',
+    )
+    if (relationField) {
+      definitions.push({
+        prop: relationField.id,
+        name: relationField.name,
+        size:
+          columnState.config.value.fields.find((column) => column.id === id)
+            ?.width ?? 180,
+        minSize: minColumnWidth,
+        maxSize: maxColumnWidth,
+        pin:
+          index < columnState.config.value.frozen ? 'colPinStart' : undefined,
+        readonly: true,
+        cellTemplate: template<CellTemplateProp>(GridRelationCell, {
+          props: (context) => ({
+            links: context.value,
+            editable: canWrite.value,
+            open: () =>
+              openRelationPicker(
+                relationField,
+                String(context.model.__rowId ?? ''),
+              ),
+          }),
+          key: (context) =>
+            `${String(context.model.__rowId)}:${relationField.id}`,
+        }),
+      })
+      continue
+    }
     const item = boundFor(id)
     if (!item) continue
     const { field, bound } = item
@@ -1222,7 +1288,7 @@ function commitFrozen(event: Event) {
 function resizeColumns(event: CustomEvent<Record<number, ColumnRegular>>) {
   for (const column of Object.values(event.detail)) {
     const id = String(column.prop)
-    if (!fieldById.value.has(id) || typeof column.size !== 'number') continue
+    if (!supportedColumn(id) || typeof column.size !== 'number') continue
     columnState.change({ kind: 'width', id, width: column.size })
   }
 }
@@ -1230,7 +1296,7 @@ function resizeColumns(event: CustomEvent<Record<number, ColumnRegular>>) {
 function dragColumns(event: CustomEvent<ColumnDragEventData>) {
   const ids = event.detail.columns
     .map((column) => String(column.prop))
-    .filter((id) => fieldById.value.has(id))
+    .filter((id) => supportedColumn(id))
   const affected = new Set(ids)
   let index = 0
   const order = columnState.config.value.fields.map((column) =>
@@ -1488,6 +1554,20 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </dialog>
+    <RelationPicker
+      :open="relationField !== null"
+      :schema="schema"
+      :field="relationField"
+      :row-id="relationRow?.id ?? null"
+      :links="
+        relationField && relationRow
+          ? relationRow.fields[relationField.id]
+          : null
+      "
+      :identity="identity"
+      @updated="updateRelationRow"
+      @close="closeRelationPicker"
+    />
   </section>
 </template>
 

@@ -14,4 +14,13 @@ describe('row API errors', () => {
       i18n.global.t('errors.ERR_SCHEMA_CHANGED'),
     )
   })
+
+  it('translates relation conflict and restrict errors', () => {
+    expect(errorMessage(new RequestError('ERR_RELATION_CONFLICT', 409))).toBe(
+      i18n.global.t('errors.ERR_RELATION_CONFLICT'),
+    )
+    expect(errorMessage(new RequestError('ERR_RESTRICT_VIOLATION', 409))).toBe(
+      i18n.global.t('errors.ERR_RESTRICT_VIOLATION'),
+    )
+  })
 })

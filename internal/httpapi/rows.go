@@ -98,6 +98,29 @@ func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.
 	}{row, rand.Text()})
 }
 
+func (api *authHTTP) changeLinks(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		Add     []string `json:"add"`
+		Remove  []string `json:"remove"`
+		Replace bool     `json:"replace"`
+	}
+	if err := decodeJSONLimit(w, r, &input, bulkDeleteBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	row, err := api.structure.ChangeLinks(r.Context(), actorOf(user), chi.URLParam(r, "id"),
+		chi.URLParam(r, "rowId"), chi.URLParam(r, "fieldId"),
+		structure.LinkChange{Add: input.Add, Remove: input.Remove, Replace: input.Replace})
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Row     structure.RowRecord `json:"row"`
+		EventID string              `json:"eventId"`
+	}{row, rand.Text()})
+}
+
 func (api *authHTTP) deleteRows(w http.ResponseWriter, r *http.Request, user auth.User) {
 	var input struct {
 		IDs []string `json:"ids"`

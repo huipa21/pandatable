@@ -94,7 +94,7 @@ func (s *Service) CreateTable(ctx context.Context, actor Actor, bookID, name str
 				Name: labels.grid, CreatedBy: c.user, Config: config}); err != nil {
 				return fmt.Errorf("insert default grid view: %w", err)
 			}
-			created, err = loadSchema(ctx, c.q, tableID, c.user, acl.Owner)
+			created, err = loadSchema(ctx, c.q, c.tx, tableID, c.user, acl.Owner)
 			return err
 		})
 	})
@@ -208,10 +208,10 @@ func (s *Service) Schema(ctx context.Context, actor Actor, id string) (TableSche
 		return TableSchema{}, fmt.Errorf("begin schema snapshot: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	return loadSchema(ctx, s.queries.WithTx(tx), target.ID, user, access.Level)
+	return loadSchema(ctx, s.queries.WithTx(tx), tx, target.ID, user, access.Level)
 }
 
-func loadSchema(ctx context.Context, q *structuresql.Queries, tableID, user pgtype.UUID, level acl.Level) (TableSchema, error) {
+func loadSchema(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, tableID, user pgtype.UUID, level acl.Level) (TableSchema, error) {
 	table, err := q.GetTable(ctx, tableID)
 	if err != nil {
 		return TableSchema{}, notFoundIfNoRows(err, "read table")
@@ -224,9 +224,13 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tableID, user pgty
 	if err != nil {
 		return TableSchema{}, fmt.Errorf("list table views: %w", err)
 	}
+	relations, err := relationRows(ctx, tx, tableID)
+	if err != nil {
+		return TableSchema{}, err
+	}
 	schema := TableSchema{
 		Table:  tableDTO(table.ID, table.BookID, table.DisplayFieldID, table.Name, table.Position, table.SchemaVersion, table.CreatedAt),
-		Fields: make([]Field, len(fields)), Relations: []any{}, Views: make([]View, len(views)),
+		Fields: make([]Field, len(fields)), Relations: make([]Relation, len(relations)), Views: make([]View, len(views)),
 		SchemaVersion: table.SchemaVersion, MyLevel: level.String(),
 	}
 	for index, row := range fields {
@@ -248,6 +252,9 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tableID, user pgty
 		}
 		schema.Views[index] = View{ID: row.ID.String(), Name: row.Name, Type: row.Type, Scope: row.Scope,
 			Locked: row.Locked, Position: row.Position, Version: row.Version, Config: config}
+	}
+	for index, relation := range relations {
+		schema.Relations[index] = relationDTO(relation)
 	}
 	return schema, nil
 }
