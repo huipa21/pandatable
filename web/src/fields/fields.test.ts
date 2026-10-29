@@ -156,14 +156,7 @@ describe('shared codec vectors', () => {
 
 describe('field registry', () => {
   it('rejects unknown kinds and malformed options', () => {
-    for (const kind of [
-      'formula',
-      'attachment',
-      '',
-      'TEXT',
-      '__proto__',
-      'toString',
-    ])
+    for (const kind of ['formula', '', 'TEXT', '__proto__', 'toString'])
       expect(isKind(kind)).toBe(false)
     expect(bindField('formula', null)).toEqual({
       ok: false,

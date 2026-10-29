@@ -2,7 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { errorMessage, request, RequestError } from '../../api/client'
+import {
+  discardAttachment,
+  errorMessage,
+  request,
+  RequestError,
+} from '../../api/client'
 import type {
   DataRow,
   RowMutation,
@@ -16,6 +21,8 @@ import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import FieldEditor from '../fields/FieldEditor.vue'
 import FieldRenderer from '../fields/FieldRenderer.vue'
+
+const rowPatchBodyLimit = 64 * 1024
 
 const props = defineProps<{
   schema: TableSchema
@@ -42,6 +49,7 @@ const saving = ref(false)
 const error = ref<unknown>(null)
 const editing = ref<string | null>(null)
 const saved = ref(false)
+const preserveUploads = ref(false)
 const draft = ref<Record<string, WireValue>>({})
 const blocked = ref(false)
 const creating = computed(() => props.rowId === null)
@@ -53,6 +61,7 @@ const title = computed(() =>
 let controller: AbortController | undefined
 let generation = 0
 let disposed = false
+let draftCleanupStarted = false
 const env = computed<FieldEnv>(() => ({
   timeZone: auth.user?.effectiveTimezone,
   locale: locale.value,
@@ -67,10 +76,11 @@ const ARRAY_VALUE_KINDS = new Set([
   'text_array',
   'int_array',
   'multi_user',
+  'attachment',
 ])
 function isFieldWireValue(kind: string, value: unknown): value is WireValue {
   if (!isWireValue(value)) return false
-  if (value === null || kind === 'json') return true
+  if (value === null || kind === 'json' || kind === 'attachment') return true
   if (ARRAY_VALUE_KINDS.has(kind))
     return (
       Array.isArray(value) && value.every((item) => typeof item === 'string')
@@ -119,6 +129,8 @@ function begin() {
 function failure(cause: unknown) {
   error.value = cause
   saved.value = false
+  preserveUploads.value = false
+  draftCleanupStarted = false
   if (!(cause instanceof RequestError)) return
   if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
     blocked.value = true
@@ -192,6 +204,8 @@ async function save(value: WireValue) {
     return
   if (creating.value) {
     draft.value = { ...draft.value, [item.field.id]: value }
+    preserveUploads.value = true
+    await nextTick()
     editing.value = null
     error.value = null
     return
@@ -199,7 +213,9 @@ async function save(value: WireValue) {
   if (props.rowId === null) return
   const body = { fields: { [item.field.id]: value } }
   saved.value = false
-  if (new TextEncoder().encode(JSON.stringify(body)).length > 4096) {
+  if (
+    new TextEncoder().encode(JSON.stringify(body)).length > rowPatchBodyLimit
+  ) {
     error.value = t('rowExpand.tooLarge')
     return
   }
@@ -215,6 +231,8 @@ async function save(value: WireValue) {
     )
     if (!current(token)) return
     row.value = result.row
+    preserveUploads.value = true
+    await nextTick()
     editing.value = null
     saved.value = true
     emit('saved')
@@ -265,12 +283,43 @@ async function create() {
 }
 
 function startEditing(id: string) {
+  preserveUploads.value = false
   editing.value = id
   saved.value = false
   error.value = null
 }
 
+async function discardDraftAttachments() {
+  if (!creating.value || draftCleanupStarted) return
+  draftCleanupStarted = true
+  const ids = new Map<string, Set<string>>()
+  for (const field of props.schema.fields) {
+    if (field.uiType !== 'attachment') continue
+    const value = draft.value[field.id]
+    if (!Array.isArray(value)) continue
+    for (const item of value) {
+      if (
+        typeof item === 'object' &&
+        item !== null &&
+        'id' in item &&
+        typeof item.id === 'string'
+      )
+        ids.set(field.id, new Set([...(ids.get(field.id) ?? []), item.id]))
+    }
+  }
+  await Promise.all(
+    [...ids].flatMap(([fieldId, attachmentIds]) =>
+      [...attachmentIds].map((attachmentId) =>
+        discardAttachment(props.schema.table.id, fieldId, attachmentId).catch(
+          () => {},
+        ),
+      ),
+    ),
+  )
+}
+
 function close() {
+  void discardDraftAttachments()
   generation++
   controller?.abort()
   dialog.value?.close()
@@ -321,6 +370,7 @@ watch(
   },
 )
 onBeforeUnmount(() => {
+  void discardDraftAttachments()
   disposed = true
   generation++
   controller?.abort()
@@ -370,6 +420,8 @@ onBeforeUnmount(() => {
                 :value="item.value.value"
                 :env="env"
                 :table-id="schema.table.id"
+                :field-id="item.field.id"
+                :preserve-uploads="preserveUploads"
                 :identity="identity"
                 :resolve-user="resolveUser"
                 :submit-label="

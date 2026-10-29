@@ -306,12 +306,13 @@ No settings/workspace endpoint grants access to resource data.
   "defaultCurrency": "CNY",
   "defaultLocale": "en",
   "uploadMaxMb": 20,
+  "imageMaxMegapixels": 16,
   "historyRetentionDays": 90,
   "trashRetentionDays": 30
 }
 ```
 
-`PATCH /admin/settings` accepts any nonempty subset of these seven fields;
+`PATCH /admin/settings` accepts any nonempty subset of these eight fields;
 unknown fields, nulls, wrong types and query parameters fail validation.
 `appName` is trimmed, nonblank, at most 100 Unicode code points, without
 controls. Timezone exactly matches PG's catalog excluding `posix/`/`right/`;
@@ -319,7 +320,8 @@ currency exactly matches the checked-in current ISO 4217 list
 ([SIX list one](https://www.six-group.com/dam/download/financial-information/data-center/iso-currrency/lists/list-one.xml),
 2026-09-17, including fund/special codes); locale is `en|zh-CN`. Numeric fields
 are integers: upload 1..100 **MiB** (1,048,576 bytes each), retention 1..3650
-days. Missing rows use the documented defaults; corrupt stored values fail,
+days; image decode cap 1..16 megapixels (default 16). Missing rows use the
+documented defaults; corrupt stored values fail,
 not silently default. `setup_completed` is never exposed or editable.
 
 The complete candidate is validated before writing supplied keys in a single
@@ -666,7 +668,7 @@ routes listed above are design-only, not available controls.
 | GET | `/tables/{id}/rows/{rowId}` | T1.15: `{ id, fields }`, all live fields including read-only system values; row ID is a canonical bigint decimal string. |
 | POST | `/tables/{id}/rows` | T1.15: `{ rows: [{ fields: { fieldId: value } }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. Physical defaults apply to omitted values. |
 | PATCH | `/tables/{id}/rows` | T1.15 atomic bulk `{ rows: [{ id, fields }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. |
-| PATCH | `/tables/{id}/rows/{rowId}` | T1.15: `{ fields: { fieldId: value } }`; 4,096-byte request. |
+| PATCH | `/tables/{id}/rows/{rowId}` | T1.15: `{ fields: { fieldId: value } }`; 64 KiB request (D-167). |
 | DELETE | `/tables/{id}/rows` | T1.15 atomic `{ ids: [...] }`, ≤1,000 IDs/64 KiB; returns deleted row snapshots. |
 | POST | `/tables/{id}/rows:restore` | `{ rows: [snapshot] }` (undo of delete; same ids) |
 | POST | `/tables/{id}/rows/{rowId}/links/{fieldId}` | `{ add: [ids], remove: [ids] }` |
@@ -692,8 +694,8 @@ not include the deferred filters/search, restore, links, groups or aggregates.
 T1.18's row-expand deep link uses the existing GET full-row response and
 single-row PATCH `{fields:{fieldId:value}}`/`{row,eventId}` response, without
 any new route or row-version requirement. The frontend edits one field at a
-time and rejects JSON bodies exceeding the existing 4096-byte UTF-8 limit;
-it never silently truncates long text or falls back to the larger bulk route.
+time and rejects JSON bodies exceeding the 64 KiB UTF-8 limit (D-167); it never
+silently truncates values or falls back to the larger bulk route.
 The view in the URL must remain present in the caller's authorized table
 schema before the dialog mounts; the row endpoint still independently enforces
 table ACL. Hidden grid columns are not a permission boundary: every live field
@@ -706,7 +708,7 @@ writes. Create sends exactly one row through POST `/tables/{id}/rows`, omitting
 all untouched fields so PostgreSQL physical defaults apply. Explicit nulls
 remain supplied values. The client checks the existing 5000-cell/512-KiB bounds
 without truncation or splitting; existing-row saves remain single PATCH with
-the 4096-byte bound. Failures never create optimistic rows. The new row URL
+the 64 KiB bound. Failures never create optimistic rows. The new row URL
 uses only the successful authoritative response ID. No mobile-specific API,
 row version, validator, migration or relaxed authorization/body limit exists.
 
@@ -717,8 +719,10 @@ row version, validator, migration or relaxed authorization/body limit exists.
 | GET | `/notifications` · POST `/notifications/read` | |
 
 ### Files
-| POST | `/tables/{id}/fields/{fieldId}/attachments` | multipart; size limit from settings |
-| GET | `/files/{attachmentId}` · `/files/{attachmentId}/thumb` | ACL-checked; `Content-Disposition` |
+| POST | `/tables/{id}/fields/{fieldId}/attachments` | Authenticated `multipart/form-data` with one `file` part; requires table write access; enforces the per-file admin MiB limit, sniffed MIME and field options. |
+| DELETE | `/tables/{id}/fields/{fieldId}/attachments/{attachmentId}` | Removes only an unreferenced file; requires table write access. |
+| POST | `/tables/{id}/fields/{fieldId}/attachments/{attachmentId}/discard` | Editor cleanup; deletes an unreferenced staged file, otherwise succeeds without deleting it. |
+| GET | `/attachments/{id}` · `/attachments/{id}/thumbnail` | Requires table read access; hidden/inaccessible table returns 404. PNG/JPEG/GIF/WebP originals and generated PNG thumbnails may be inline; all other originals download as attachments; `X-Content-Type-Options: nosniff`. |
 
 ### Import / export
 | GET | `/views/{id}/export?format=csv\|xlsx` | streamed |

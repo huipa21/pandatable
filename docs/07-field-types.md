@@ -32,7 +32,7 @@ Each field has a **UI type** (how it behaves in the app) backed by a **PostgreSQ
 | Integer list | `int_array` | `bigint[]` | | |
 | User | `user` | `uuid` | `notifyOnAssign` (M5) | FK → `meta.users(id)` ON DELETE SET NULL |
 | Multi user | `multi_user` | `uuid[]` | | no FK; deleted users filtered on read |
-| Attachment | `attachment` | `jsonb` | `accept: mime list`, `maxFiles` | array of `{id,name,mime,size,thumb}`; files in `meta.attachments` |
+| Attachment | `attachment` | `jsonb` | `accept`: up to 20 comma-separated MIME types/wildcards (default: any sniffed type); `maxFiles: 1..20` (default: 10) | array of `{id,name,mime,size,thumb}`; files in `meta.attachments`; upload limit applies per file (D-163); image decode capped by admin `imageMaxMegapixels` (D-164); tightened options do not hide stored values (D-168) |
 | Auto number | `autonumber` | `bigint` | `prefix?`, `padding?` | own sequence `s_<short>`, read-only |
 
 ## 2. Link & computed types (virtual or FK-backed)

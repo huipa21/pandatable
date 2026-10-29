@@ -5,6 +5,7 @@ import type { BoundField } from '../../fields/registry'
 import { choiceLabels, type ChoiceOptions } from '../../fields/choice'
 import { safeHref } from '../../fields/text'
 import type { FieldEnv, WireValue } from '../../fields/types'
+import type { AttachmentValue } from '../../api/types'
 import {
   queueUserLabels,
   userLabel,
@@ -34,6 +35,11 @@ const { t } = useI18n()
 
 const text = computed(() => props.field.formatDisplay(props.value, props.env))
 const href = computed(() => safeHref(props.field.kind, props.value))
+const attachments = computed<AttachmentValue[]>(() =>
+  props.field.kind === 'attachment' && Array.isArray(props.value)
+    ? (props.value as unknown as AttachmentValue[])
+    : [],
+)
 const chips = computed(() => {
   const choices = (props.field.options as ChoiceOptions).choices ?? []
   return choiceLabels(props.value).map((label) => {
@@ -111,6 +117,26 @@ const users = computed(() =>
         {{ user.label }}
       </span>
     </template>
+    <span
+      v-else-if="field.presentation === 'attachment'"
+      class="field-attachments"
+    >
+      <a
+        v-for="attachment in attachments"
+        :key="attachment.id"
+        class="field-attachment"
+        :href="`/api/v1/attachments/${encodeURIComponent(attachment.id)}`"
+        :download="attachment.name"
+      >
+        <img
+          v-if="attachment.thumb"
+          :src="attachment.thumb"
+          :alt="attachment.name"
+          loading="lazy"
+        />
+        <span>{{ attachment.name }}</span>
+      </a>
+    </span>
     <a
       v-else-if="href && links"
       class="field-link"
@@ -146,6 +172,29 @@ const users = computed(() =>
 }
 .field-link {
   color: var(--accent);
+}
+.field-attachments {
+  display: inline-flex;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.field-attachment {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  color: var(--accent);
+}
+.field-attachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.field-attachment img {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 36px;
+  object-fit: cover;
 }
 .field-check {
   display: inline-grid;

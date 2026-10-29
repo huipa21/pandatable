@@ -21,6 +21,7 @@ type Settings struct {
 	DefaultCurrency      string `json:"defaultCurrency"`
 	DefaultLocale        string `json:"defaultLocale"`
 	UploadMaxMb          int    `json:"uploadMaxMb"`
+	ImageMaxMegapixels   int    `json:"imageMaxMegapixels"`
 	HistoryRetentionDays int    `json:"historyRetentionDays"`
 	TrashRetentionDays   int    `json:"trashRetentionDays"`
 }
@@ -31,12 +32,12 @@ type AppSettings struct {
 }
 
 type SettingsPatch struct {
-	AppName, DefaultTimezone, DefaultCurrency, DefaultLocale *string
-	UploadMaxMb, HistoryRetentionDays, TrashRetentionDays    *int
+	AppName, DefaultTimezone, DefaultCurrency, DefaultLocale                  *string
+	UploadMaxMb, ImageMaxMegapixels, HistoryRetentionDays, TrashRetentionDays *int
 }
 
 var settingKeys = []string{"app_name", "default_timezone", "default_currency", "default_locale",
-	"upload_max_mb", "history_retention_days", "trash_retention_days"}
+	"upload_max_mb", "image_max_megapixels", "history_retention_days", "trash_retention_days"}
 
 // ISO 4217 maintenance agency SIX, list one, published 2026-09-17.
 const currencyCodes = "AED AFN ALL AMD AOA ARS AUD AWG AZN BAM BBD BDT BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAD XAF XAG XAU XBA XBB XBC XBD XCD XCG XDR XOF XPD XPF XPT XSU XTS XUA XXX YER ZAR ZMW ZWG"
@@ -44,7 +45,15 @@ const currencyCodes = "AED AFN ALL AMD AOA ARS AUD AWG AZN BAM BBD BDT BHD BIF B
 func Currencies() []string { return strings.Fields(currencyCodes) }
 
 func defaultSettings() Settings {
-	return Settings{"PandaTable", "Asia/Shanghai", "CNY", "en", 20, 90, 30}
+	return Settings{AppName: "PandaTable", DefaultTimezone: "Asia/Shanghai", DefaultCurrency: "CNY",
+		DefaultLocale: "en", UploadMaxMb: 20, ImageMaxMegapixels: 16,
+		HistoryRetentionDays: 90, TrashRetentionDays: 30}
+}
+
+// AttachmentLimits is the current per-file upload and image decoding policy.
+type AttachmentLimits struct {
+	MaxBytes           int64
+	MaxImageMegapixels int
 }
 
 func settingsValidation() error {
@@ -62,8 +71,9 @@ func readSettings(ctx context.Context, queries *adminsql.Queries, keys []string)
 	fields := map[string]any{
 		"app_name": &result.AppName, "default_timezone": &result.DefaultTimezone,
 		"default_currency": &result.DefaultCurrency, "default_locale": &result.DefaultLocale,
-		"upload_max_mb": &result.UploadMaxMb, "history_retention_days": &result.HistoryRetentionDays,
-		"trash_retention_days": &result.TrashRetentionDays,
+		"upload_max_mb": &result.UploadMaxMb, "image_max_megapixels": &result.ImageMaxMegapixels,
+		"history_retention_days": &result.HistoryRetentionDays,
+		"trash_retention_days":   &result.TrashRetentionDays,
 	}
 	for _, row := range rows {
 		if string(row.Value) == "null" || json.Unmarshal(row.Value, fields[row.Key]) != nil {
@@ -80,6 +90,7 @@ func validateSettings(ctx context.Context, queries *adminsql.Queries, value Sett
 	if !auth.ValidDisplayName(value.AppName) || value.AppName != strings.TrimSpace(value.AppName) ||
 		!validLocale(value.DefaultLocale) || !slices.Contains(Currencies(), value.DefaultCurrency) ||
 		value.UploadMaxMb < 1 || value.UploadMaxMb > 100 ||
+		value.ImageMaxMegapixels < 1 || value.ImageMaxMegapixels > 16 ||
 		value.HistoryRetentionDays < 1 || value.HistoryRetentionDays > 3650 ||
 		value.TrashRetentionDays < 1 || value.TrashRetentionDays > 3650 ||
 		len(value.DefaultTimezone) > 128 {
@@ -95,6 +106,17 @@ func validateSettings(ctx context.Context, queries *adminsql.Queries, value Sett
 		}
 	}
 	return nil
+}
+
+func (service *Service) AttachmentLimits(ctx context.Context) (AttachmentLimits, error) {
+	settings, err := readSettings(ctx, service.queries, []string{"upload_max_mb", "image_max_megapixels"})
+	if err != nil {
+		return AttachmentLimits{}, err
+	}
+	return AttachmentLimits{
+		MaxBytes:           int64(settings.UploadMaxMb) << 20,
+		MaxImageMegapixels: settings.ImageMaxMegapixels,
+	}, nil
 }
 
 func (service *Service) Settings(ctx context.Context, token string) (Settings, error) {
@@ -144,6 +166,7 @@ func (service *Service) UpdateSettings(ctx context.Context, token string, patch 
 			dest  *int
 		}{
 			{"upload_max_mb", patch.UploadMaxMb, &value.UploadMaxMb},
+			{"image_max_megapixels", patch.ImageMaxMegapixels, &value.ImageMaxMegapixels},
 			{"history_retention_days", patch.HistoryRetentionDays, &value.HistoryRetentionDays},
 			{"trash_retention_days", patch.TrashRetentionDays, &value.TrashRetentionDays},
 		} {

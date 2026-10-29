@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	bulkRowsBodyLimit   = 512 << 10
-	bulkDeleteBodyLimit = 64 << 10
+	bulkRowsBodyLimit      = 512 << 10
+	bulkDeleteBodyLimit    = 64 << 10
+	attachmentRowBodyLimit = 64 << 10
 )
 
 func (api *authHTTP) queryRows(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -81,7 +82,7 @@ func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.
 	var input struct {
 		Fields map[string]json.RawMessage `json:"fields"`
 	}
-	if err := decodeJSON(w, r, &input); err != nil {
+	if err := decodeJSONLimit(w, r, &input, attachmentRowBodyLimit); err != nil {
 		api.fail(w, r, err)
 		return
 	}

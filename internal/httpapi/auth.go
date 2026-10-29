@@ -21,6 +21,7 @@ import (
 	"pandatable/internal/acl"
 	"pandatable/internal/admin"
 	"pandatable/internal/apperr"
+	"pandatable/internal/attachments"
 	"pandatable/internal/auth"
 	"pandatable/internal/structure"
 )
@@ -33,20 +34,22 @@ type AuthOptions struct {
 	Structure      *structure.Service
 	Admin          *admin.Service
 	System         *admin.SystemMonitor
+	Attachments    *attachments.Service
 	BaseURL        string
 	TrustedProxies []netip.Prefix
 }
 
 type authHTTP struct {
-	service   *auth.Service
-	acl       *acl.Service
-	structure *structure.Service
-	admin     *admin.Service
-	system    *admin.SystemMonitor
-	logger    *slog.Logger
-	origin    string
-	secure    bool
-	proxies   []netip.Prefix
+	service     *auth.Service
+	acl         *acl.Service
+	structure   *structure.Service
+	admin       *admin.Service
+	attachments *attachments.Service
+	system      *admin.SystemMonitor
+	logger      *slog.Logger
+	origin      string
+	secure      bool
+	proxies     []netip.Prefix
 }
 
 func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
@@ -60,7 +63,8 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 	if !secure {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
-	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, system: options.System, logger: logger, origin: origin,
+	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, attachments: options.Attachments,
+		system: options.System, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -259,6 +263,9 @@ func (api *authHTTP) mount(router chi.Router) {
 	}
 	if api.structure != nil {
 		api.mountStructure(router)
+	}
+	if api.attachments != nil && api.admin != nil {
+		api.mountAttachments(router)
 	}
 	if api.admin != nil {
 		router.Get("/meta/app", api.appSettings)

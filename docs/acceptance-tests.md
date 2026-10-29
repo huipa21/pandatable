@@ -188,10 +188,11 @@ Exact commands, failures, costs and cleanup:
 
 | Test | Status | Evidence / remaining requirement |
 |---|---|---|
-| AT-111 | Partial | Real admin settings persistence and production-image desktop/mobile header/title reload for admin, ordinary user and unauthenticated browser. Public DTO exposes only appName/defaultLocale; explicit local language choices remain intact. Full test includes upload enforcement (AT-322), which awaits T2.2. |
+| AT-111 | Pass | Combined `admin-users.spec.ts` production-image scenario passes desktop and mobile: app name/settings persist, ordinary and unauthenticated browser headers reload, and the public DTO exposes only appName/defaultLocale. AT-322 enforcement is verified by `attachments.spec.ts`; T1.8 remains In Progress for AT-112/117. |
 | AT-112 | Partial | Required Suite-owned PG18 inventory/owner/orphan/size/paging and owner-only grants versus admin 404/ACL denial pass. Production browser verifies the real empty read-only inventory, navigation/guards and no resource links. No workspace creation/navigation/table APIs exist; SQL fixtures and unit-populated cards are not the full alice-create/sidebar/table-GET UI scenario. Await T1.10/T1.11. |
 | AT-117 | Partial | Real settings changes reach existing NULL-timezone auth/profile readers and new-user defaults; explicit timezone/locale choices survive. Datetime display, relative filters and profile UI remain deferred. |
-| AT-322 | Pending | Upload limit persists with strict integer/MiB bounds, but no attachment upload consumer exists. No mock/reject-all endpoint or upload pass is claimed. |
+| AT-321 | Pass | `attachments.spec.ts` production-runtime desktop scenario creates the field in Field UI, uploads a PNG by picker and PDF by drag/drop, persists/reloads both, verifies thumbnail/download, and confirms an unauthorized user gets 404. Mobile is an intentional spec skip. |
+| AT-322 | Pass | `attachments.spec.ts` lowers persisted uploadMaxMb and verifies an over-limit upload returns 413 with the localized error; `admin-users.spec.ts` also passes the full settings browser scenario on desktop/mobile. |
 | AT-113..115 | Pending, unchanged | Read-only orphan flag follows active direct user owners; rescue/transfer/hard deletion remain M3. |
 
 T1.8 remains **In progress**, not Done. Clarification and the requested AT-112

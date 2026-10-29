@@ -274,7 +274,7 @@ func TestVectorsFormat(t *testing.T) {
 }
 
 func TestUnknownKindAndAPIError(t *testing.T) {
-	for _, kind := range []Kind{"formula", "attachment", "lookup", "", "TEXT"} {
+	for _, kind := range []Kind{"formula", "lookup", "", "TEXT"} {
 		if _, err := Bind(kind, nil); reasonOf(err) != ReasonUnknownKind {
 			t.Errorf("%q: %v", kind, err)
 		}

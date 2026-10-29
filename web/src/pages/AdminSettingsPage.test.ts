@@ -21,6 +21,7 @@ const settings: AdminSettings = {
   defaultCurrency: 'CNY',
   defaultLocale: 'en',
   uploadMaxMb: 20,
+  imageMaxMegapixels: 16,
   historyRetentionDays: 90,
   trashRetentionDays: 30,
 }
@@ -34,7 +35,7 @@ it('loads catalogs, sends only changed fields and shows persisted values/notices
     if (options.method === 'PATCH')
       return Promise.resolve(
         Response.json({
-          settings: { ...settings, appName: 'Renamed' },
+          settings: { ...settings, appName: 'Renamed', imageMaxMegapixels: 12 },
           eventId: 'event',
         }),
       )
@@ -59,27 +60,35 @@ it('loads catalogs, sends only changed fields and shows persisted values/notices
     expect(wrapper.text()).toContain('Loading settings')
     release(Response.json(settings))
     await flushPromises()
-    expect(wrapper.text()).toContain('not implemented yet')
+    expect(wrapper.text()).toContain(
+      'History and Trash retention jobs are not active yet.',
+    )
     await wrapper
       .get('input[aria-label="Application name"]')
       .setValue('Renamed')
+    await wrapper
+      .get('input[aria-label="Image decode limit (MP)"]')
+      .setValue('12')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(fetch).toHaveBeenLastCalledWith(
       '/api/v1/admin/settings',
       expect.objectContaining({
         method: 'PATCH',
-        body: '{"appName":"Renamed"}',
+        body: '{"appName":"Renamed","imageMaxMegapixels":12}',
       }),
     )
     expect(wrapper.text()).toContain('Settings saved')
+    expect(
+      wrapper.get('input[aria-label="Image decode limit (MP)"]').element,
+    ).toHaveProperty('value', '12')
     expect(
       wrapper.get('input[aria-label="Application name"]').element,
     ).toHaveProperty('value', 'Renamed')
     i18n.global.locale.value = 'zh-CN'
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('设置')
-    expect(wrapper.text()).toContain('尚未实现上传限制')
+    expect(wrapper.text()).toContain('历史记录和回收站保留任务尚未启用')
   } finally {
     wrapper.unmount()
     i18n.global.locale.value = 'en'

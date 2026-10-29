@@ -95,7 +95,9 @@
       "aggregates": ["none", "count", "count_empty", "count_filled", "unique"] },
     "autonumber": { "options": { }, "readOnly": true, "column": "bigint", "constraints": [false, false, false],
       "filterOps": ["eq", "neq", "lt", "lte", "gt", "gte", "between"],
-      "aggregates": ["none", "count", "count_empty", "count_filled", "unique", "sum", "avg", "min", "max"] }
+      "aggregates": ["none", "count", "count_empty", "count_filled", "unique", "sum", "avg", "min", "max"] },
+    "attachment": { "options": { "maxFiles": 10 }, "readOnly": false, "column": "jsonb", "constraints": [false, false, false],
+      "filterOps": [], "aggregates": [] }
   },
   "options": [
     { "kind": "text", "input": null, "canonical": { } },
@@ -146,6 +148,8 @@
     { "kind": "created_by", "input": { "x": 1 }, "reason": "invalid_options", "option": "x" }
   ],
   "decode": [
+    { "kind": "attachment", "raw": "[]", "output": [] },
+    { "kind": "attachment", "raw": "[{\"id\":\"123e4567-e89b-12d3-a456-426614174000\",\"name\":\"one.pdf\",\"mime\":\"application/pdf\",\"size\":3,\"thumb\":null}]", "output": [{ "id": "123e4567-e89b-12d3-a456-426614174000", "name": "one.pdf", "mime": "application/pdf", "size": 3, "thumb": null }] },
     { "kind": "text", "raw": "null", "output": null },
     { "kind": "text", "raw": "\"\"", "output": null },
     { "kind": "text", "raw": "\"  Hello 世界 😀 \"", "output": "  Hello 世界 😀 " },

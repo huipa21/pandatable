@@ -43,3 +43,13 @@ sql:
         out: internal/admin/adminsql
         sql_package: pgx/v5
         omit_unused_structs: true
+  - engine: postgresql
+    schema:
+      - migrations
+    queries: internal/attachments/queries.sql
+    gen:
+      go:
+        package: attachmentssql
+        out: internal/attachments/attachmentssql
+        sql_package: pgx/v5
+        omit_unused_structs: true

@@ -481,6 +481,54 @@ func (q *Queries) InspectDevSeedTarget(ctx context.Context) (InspectDevSeedTarge
 	return i, err
 }
 
+const listAttachmentMetadata = `-- name: ListAttachmentMetadata :many
+SELECT id, file_name, mime_type, size_bytes, has_thumb
+FROM meta.attachments
+WHERE table_id = $1::uuid
+  AND field_id = $2::uuid
+  AND id = ANY($3::uuid[])
+`
+
+type ListAttachmentMetadataParams struct {
+	TableID pgtype.UUID
+	FieldID pgtype.UUID
+	Ids     []pgtype.UUID
+}
+
+type ListAttachmentMetadataRow struct {
+	ID        pgtype.UUID
+	FileName  string
+	MimeType  string
+	SizeBytes int64
+	HasThumb  bool
+}
+
+func (q *Queries) ListAttachmentMetadata(ctx context.Context, arg ListAttachmentMetadataParams) ([]ListAttachmentMetadataRow, error) {
+	rows, err := q.db.Query(ctx, listAttachmentMetadata, arg.TableID, arg.FieldID, arg.Ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAttachmentMetadataRow
+	for rows.Next() {
+		var i ListAttachmentMetadataRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.FileName,
+			&i.MimeType,
+			&i.SizeBytes,
+			&i.HasThumb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveBookOrder = `-- name: ListLiveBookOrder :many
 SELECT id, position FROM meta.books
 WHERE workspace_id = $1 AND deleted_at IS NULL

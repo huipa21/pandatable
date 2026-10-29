@@ -9,6 +9,7 @@ import (
 
 	"pandatable/internal/acl"
 	"pandatable/internal/admin"
+	"pandatable/internal/attachments"
 	"pandatable/internal/auth"
 	"pandatable/internal/config"
 	"pandatable/internal/db"
@@ -61,6 +62,10 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure admin service: %w", err)
 	}
+	attachmentService, err := attachments.New(pool, resolver, cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("configure attachment service: %w", err)
+	}
 	monitor, err := admin.NewSystemMonitor(ctx, adminService, cfg.DataDir, version, processStarted, logger)
 	if err != nil {
 		return fmt.Errorf("configure system monitor: %w", err)
@@ -74,7 +79,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("SETUP_TOKEN=" + setupToken)
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
-		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor,
+		Attachments: attachmentService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)

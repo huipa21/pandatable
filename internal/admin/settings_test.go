@@ -47,7 +47,8 @@ func TestSettingsValidationCatalogsAndDefaults(t *testing.T) {
 		{DefaultTimezone: ptr("right/UTC")}, {DefaultTimezone: ptr("Not/AZone")},
 		{DefaultTimezone: ptr(" Europe/London")}, {DefaultTimezone: ptr(strings.Repeat("x", 129))},
 		{DefaultCurrency: ptr("cny")}, {DefaultCurrency: ptr("ZZZ")}, {DefaultLocale: ptr("en-US")},
-		{UploadMaxMb: intPtr(0)}, {UploadMaxMb: intPtr(101)}, {HistoryRetentionDays: intPtr(0)},
+		{UploadMaxMb: intPtr(0)}, {UploadMaxMb: intPtr(101)},
+		{ImageMaxMegapixels: intPtr(0)}, {ImageMaxMegapixels: intPtr(17)}, {HistoryRetentionDays: intPtr(0)},
 		{HistoryRetentionDays: intPtr(3651)}, {TrashRetentionDays: intPtr(0)}, {TrashRetentionDays: intPtr(3651)},
 		{AppName: ptr("must not persist"), DefaultLocale: ptr("invalid")},
 	} {
@@ -64,6 +65,16 @@ func TestSettingsValidationCatalogsAndDefaults(t *testing.T) {
 		if err != nil || result.UploadMaxMb != bound || result.HistoryRetentionDays != 1 || result.TrashRetentionDays != 3650 {
 			t.Fatalf("boundary failed: %+v %v", result, err)
 		}
+	}
+	for _, bound := range []int{1, 16} {
+		result, err := f.service.UpdateSettings(f.ctx, f.token, SettingsPatch{ImageMaxMegapixels: intPtr(bound)})
+		if err != nil || result.ImageMaxMegapixels != bound {
+			t.Fatalf("image megapixel boundary failed: %+v %v", result, err)
+		}
+	}
+	limits, err := f.service.AttachmentLimits(f.ctx)
+	if err != nil || limits.MaxBytes != 100<<20 || limits.MaxImageMegapixels != 16 {
+		t.Fatalf("attachment limits=%+v err=%v", limits, err)
 	}
 	result, err := f.service.UpdateSettings(f.ctx, f.token, SettingsPatch{AppName: ptr("  " + strings.Repeat("中", 100) + "  "),
 		DefaultCurrency: ptr("USD"), DefaultTimezone: ptr("Europe/London"), DefaultLocale: ptr("zh-CN"),
@@ -232,10 +243,10 @@ func TestSettingsRecheckActorAfterLock(t *testing.T) {
 
 func TestSettingsPureBounds(t *testing.T) {
 	for _, value := range []Settings{
-		{"", "Asia/Shanghai", "CNY", "en", 20, 90, 30},
-		{"Team", "Asia/Shanghai", "XXX-invalid", "en", 20, 90, 30},
-		{"Team", "Asia/Shanghai", "CNY", "zh", 20, 90, 30},
-		{"Team", "Asia/Shanghai", "CNY", "en", 101, 90, 30},
+		{AppName: "", DefaultTimezone: "Asia/Shanghai", DefaultCurrency: "CNY", DefaultLocale: "en", UploadMaxMb: 20, ImageMaxMegapixels: 16, HistoryRetentionDays: 90, TrashRetentionDays: 30},
+		{AppName: "Team", DefaultTimezone: "Asia/Shanghai", DefaultCurrency: "XXX-invalid", DefaultLocale: "en", UploadMaxMb: 20, ImageMaxMegapixels: 16, HistoryRetentionDays: 90, TrashRetentionDays: 30},
+		{AppName: "Team", DefaultTimezone: "Asia/Shanghai", DefaultCurrency: "CNY", DefaultLocale: "zh", UploadMaxMb: 20, ImageMaxMegapixels: 16, HistoryRetentionDays: 90, TrashRetentionDays: 30},
+		{AppName: "Team", DefaultTimezone: "Asia/Shanghai", DefaultCurrency: "CNY", DefaultLocale: "en", UploadMaxMb: 101, ImageMaxMegapixels: 16, HistoryRetentionDays: 90, TrashRetentionDays: 30},
 	} {
 		code(t, validateSettings(context.Background(), nil, value, false), "ERR_VALIDATION")
 	}

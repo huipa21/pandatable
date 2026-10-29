@@ -633,6 +633,24 @@ onBeforeUnmount(() => {
               />
             </label>
           </template>
+          <template v-if="draft.kind === 'attachment'">
+            <label>
+              <span>{{ t('field.panel.attachmentAccept') }}</span>
+              <input
+                v-model="draft.attachmentAccept"
+                :placeholder="t('field.panel.attachmentAcceptHint')"
+                :disabled="busy"
+              />
+            </label>
+            <label>
+              <span>{{ t('field.panel.attachmentMaxFiles') }}</span>
+              <input
+                v-model="draft.attachmentMaxFiles"
+                inputmode="numeric"
+                :disabled="busy"
+              />
+            </label>
+          </template>
           <fieldset v-if="selectKind" class="field-choices">
             <legend>{{ t('field.panel.choices') }}</legend>
             <div

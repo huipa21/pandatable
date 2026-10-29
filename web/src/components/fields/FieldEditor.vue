@@ -3,7 +3,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { BoundField } from '../../fields/registry'
 import type { ChoiceOptions } from '../../fields/choice'
-import type { DirectoryPrincipal } from '../../api/types'
+import {
+  discardAttachment,
+  errorMessage,
+  uploadAttachment,
+} from '../../api/client'
+import type { AttachmentValue, DirectoryPrincipal } from '../../api/types'
+import type { AttachmentOptions } from '../../fields/attachment'
 import { queueUserLabels, searchTableUsers } from '../../fields/userDirectory'
 import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, Reason, Result, WireValue } from '../../fields/types'
@@ -15,6 +21,8 @@ const props = withDefaults(
     env?: FieldEnv
     submitLabel?: string
     tableId?: string
+    fieldId?: string
+    preserveUploads?: boolean
     identity?: string
     resolveUser?: (id: string) => string | null
   }>(),
@@ -22,6 +30,8 @@ const props = withDefaults(
     env: () => ({}),
     submitLabel: undefined,
     tableId: undefined,
+    fieldId: undefined,
+    preserveUploads: false,
     identity: undefined,
     resolveUser: undefined,
   },
@@ -30,6 +40,7 @@ const emit = defineEmits<{ commit: [value: WireValue]; cancel: [] }>()
 const { t } = useI18n()
 
 const input = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
+const attachmentInput = ref<HTMLInputElement>()
 const reason = ref<Reason | null>(null)
 const draft = ref(
   props.field.readOnly ? '' : props.field.formatCopy(props.value, props.env),
@@ -49,6 +60,16 @@ const selectedUsers = ref<string[]>(
       ? props.value.filter((item): item is string => typeof item === 'string')
       : [],
 )
+const attachmentFiles = ref<AttachmentValue[]>(
+  Array.isArray(props.value)
+    ? (props.value as unknown as AttachmentValue[]).map((file) => ({ ...file }))
+    : [],
+)
+const attachmentError = ref('')
+const uploadingAttachments = ref(false)
+const dragOver = ref(false)
+const stagedAttachmentIds = new Set<string>()
+const removedAttachmentIds = new Set<string>()
 const userQuery = ref('')
 const userResults = ref<DirectoryPrincipal[]>([])
 const userSearching = ref(false)
@@ -60,10 +81,22 @@ const choices = computed(
 )
 const multiple = computed(() => props.field.kind === 'multi_select')
 const multipleUsers = computed(() => props.field.kind === 'multi_user')
+const attachmentOptions = computed(
+  () => props.field.options as AttachmentOptions,
+)
+const availableAttachmentSlots = computed(() =>
+  Math.max(0, attachmentOptions.value.maxFiles - attachmentFiles.value.length),
+)
+const acceptAttribute = computed(() =>
+  attachmentOptions.value.accept
+    ? attachmentOptions.value.accept.replaceAll(', ', ',')
+    : undefined,
+)
 const showSubmitButton = computed(() =>
   Boolean(
     (props.submitLabel ||
-      (props.field.presentation === 'select' && multiple.value)) &&
+      (props.field.presentation === 'select' && multiple.value) ||
+      props.field.presentation === 'attachment') &&
     !(props.field.presentation === 'user' && multipleUsers.value),
   ),
 )
@@ -82,7 +115,19 @@ const error = computed(() =>
 )
 
 onMounted(() => input.value?.focus())
-onBeforeUnmount(() => userSearchController?.abort())
+async function discardTemporaryAttachments() {
+  if (!props.tableId || !props.fieldId) return
+  const ids = props.preserveUploads
+    ? removedAttachmentIds
+    : new Set([...stagedAttachmentIds, ...removedAttachmentIds])
+  for (const id of ids)
+    await discardAttachment(props.tableId, props.fieldId, id).catch(() => {})
+}
+
+onBeforeUnmount(() => {
+  userSearchController?.abort()
+  void discardTemporaryAttachments()
+})
 watch(
   [() => props.value, () => props.identity, () => props.tableId],
   ([value]) => {
@@ -119,6 +164,7 @@ function commitCheckbox(event: Event) {
 
 function commit() {
   if (props.field.presentation === 'user') commitUsers()
+  else if (props.field.presentation === 'attachment') commitAttachments()
   else if (props.field.presentation === 'select') commitSelect()
   else if (props.field.presentation === 'checkbox')
     finish(
@@ -127,6 +173,73 @@ function commit() {
       ),
     )
   else commitText()
+}
+
+function commitAttachments() {
+  if (attachmentFiles.value.length > attachmentOptions.value.maxFiles) {
+    attachmentError.value = t('field.editor.attachmentLimit', {
+      count: attachmentOptions.value.maxFiles,
+    })
+    return
+  }
+  attachmentError.value = ''
+  finish(props.field.normalize(attachmentFiles.value as unknown as WireValue))
+}
+
+async function addAttachmentFiles(files: FileList | File[]) {
+  if (!props.tableId || !props.fieldId || uploadingAttachments.value) return
+  const selectedFiles = Array.from(files)
+  if (selectedFiles.length > availableAttachmentSlots.value) {
+    attachmentError.value = t('field.editor.attachmentLimit', {
+      count: attachmentOptions.value.maxFiles,
+    })
+    return
+  }
+  attachmentError.value = ''
+  uploadingAttachments.value = true
+  try {
+    for (const file of selectedFiles) {
+      try {
+        const uploaded = await uploadAttachment(
+          props.tableId,
+          props.fieldId,
+          file,
+          AbortSignal.timeout(120_000),
+        )
+        stagedAttachmentIds.add(uploaded.id)
+        attachmentFiles.value = [...attachmentFiles.value, uploaded]
+      } catch (cause) {
+        attachmentError.value = errorMessage(cause)
+        break
+      }
+    }
+  } finally {
+    uploadingAttachments.value = false
+    if (attachmentInput.value) attachmentInput.value.value = ''
+  }
+}
+
+function removeAttachment(file: AttachmentValue) {
+  attachmentFiles.value = attachmentFiles.value.filter(
+    (item) => item.id !== file.id,
+  )
+  if (stagedAttachmentIds.has(file.id)) stagedAttachmentIds.delete(file.id)
+  removedAttachmentIds.add(file.id)
+}
+
+function dropAttachments(event: DragEvent) {
+  dragOver.value = false
+  if (event.dataTransfer?.files)
+    void addAttachmentFiles(event.dataTransfer.files)
+}
+
+function attachmentInputChanged(event: Event) {
+  const files = (event.target as HTMLInputElement).files
+  if (files) void addAttachmentFiles(files)
+}
+
+function openAttachmentPicker() {
+  attachmentInput.value?.click()
 }
 
 function userLabel(id: string) {
@@ -191,6 +304,7 @@ function keydown(event: KeyboardEvent) {
   if (event.key !== 'Enter') return
   if (props.field.presentation === 'checkbox') return
   if (props.field.presentation === 'user') return
+  if (props.field.presentation === 'attachment') return
   const multiline = props.field.presentation === 'multiline'
   if (multiline && !(event.ctrlKey || event.metaKey)) return
   if (!multiline && event.shiftKey) return
@@ -290,6 +404,54 @@ function keydown(event: KeyboardEvent) {
         {{ submitLabel ?? t('field.editor.apply') }}
       </button>
     </div>
+    <div
+      v-else-if="field.presentation === 'attachment'"
+      class="field-attachment-editor"
+      :class="{ 'drag-over': dragOver }"
+      @dragover.prevent="dragOver = true"
+      @dragleave.prevent="dragOver = false"
+      @drop.prevent="dropAttachments"
+    >
+      <input
+        ref="attachmentInput"
+        class="attachment-file-input"
+        type="file"
+        :accept="acceptAttribute"
+        multiple
+        :disabled="uploadingAttachments || availableAttachmentSlots === 0"
+        @change="attachmentInputChanged"
+      />
+      <button
+        type="button"
+        :disabled="uploadingAttachments || availableAttachmentSlots === 0"
+        @click="openAttachmentPicker"
+      >
+        {{ t('field.editor.addAttachments') }}
+      </button>
+      <span>{{ t('field.editor.dropAttachments') }}</span>
+      <p v-if="uploadingAttachments" role="status">
+        {{ t('field.editor.uploadingAttachments') }}
+      </p>
+      <ul class="field-attachment-list">
+        <li v-for="file in attachmentFiles" :key="file.id">
+          <img v-if="file.thumb" :src="file.thumb" :alt="file.name" />
+          <span>{{ file.name }}</span>
+          <button
+            type="button"
+            :aria-label="
+              t('field.editor.removeAttachment', { name: file.name })
+            "
+            :disabled="uploadingAttachments"
+            @click="removeAttachment(file)"
+          >
+            {{ t('field.panel.remove') }}
+          </button>
+        </li>
+      </ul>
+      <p v-if="attachmentError" class="field-editor-error" role="alert">
+        {{ attachmentError }}
+      </p>
+    </div>
     <input
       v-else
       ref="input"
@@ -314,7 +476,8 @@ function keydown(event: KeyboardEvent) {
 }
 .field-editor input[type='text'],
 .field-editor textarea,
-.field-editor select {
+.field-editor select,
+.field-attachment-editor {
   width: 100%;
   padding: 4px 6px;
   background: var(--surface);
@@ -325,7 +488,8 @@ function keydown(event: KeyboardEvent) {
   min-height: 90px;
 }
 .field-user-results,
-.field-user-selected {
+.field-user-selected,
+.field-attachment-list {
   display: grid;
   gap: 4px;
   max-height: 180px;
@@ -333,6 +497,42 @@ function keydown(event: KeyboardEvent) {
   padding: 0;
   overflow: auto;
   list-style: none;
+}
+.attachment-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.field-attachment-editor {
+  display: grid;
+  gap: 6px;
+  border: 1px dashed var(--border);
+  padding: 8px;
+}
+.field-attachment-editor.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.field-attachment-list li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.field-attachment-list li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.field-attachment-list img {
+  width: 48px;
+  height: 36px;
+  object-fit: cover;
 }
 .field-user-results button,
 .field-user-selected li {

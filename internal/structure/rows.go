@@ -374,7 +374,8 @@ func parsePathRowID(value string) (int64, error) {
 	return id, nil
 }
 
-func sortedFieldValues(table rowTable, input map[string]json.RawMessage) ([]rowField, []any, error) {
+func sortedFieldValues(ctx context.Context, queries *structuresql.Queries, table rowTable,
+	input map[string]json.RawMessage) ([]rowField, []any, error) {
 	keys := make([]string, 0, len(input))
 	for id := range input {
 		keys = append(keys, id)
@@ -392,10 +393,78 @@ func sortedFieldValues(table rowTable, input map[string]json.RawMessage) ([]rowF
 		if err != nil {
 			return nil, nil, codec.APIError(err)
 		}
+		if field.kind == codec.Attachment {
+			value, err = canonicalAttachmentValue(ctx, queries, table.id, field, value)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 		fields = append(fields, field)
 		values = append(values, value)
 	}
 	return fields, values, nil
+}
+
+func canonicalAttachmentValue(ctx context.Context, queries *structuresql.Queries, tableID pgtype.UUID,
+	field rowField, rawValue any) (any, error) {
+	raw, ok := rawValue.(json.RawMessage)
+	if !ok {
+		return nil, errors.New("attachment codec returned an unexpected value")
+	}
+	var submitted []codec.AttachmentValue
+	if err := json.Unmarshal(raw, &submitted); err != nil {
+		return nil, codec.APIError(err)
+	}
+	if len(submitted) == 0 {
+		return raw, nil
+	}
+	fieldID, ok := acl.ParseUUID(field.id)
+	if !ok {
+		return nil, errors.New("attachment field has an invalid id")
+	}
+	ids := make([]pgtype.UUID, len(submitted))
+	for index, value := range submitted {
+		id, valid := acl.ParseUUID(value.ID)
+		if !valid || id.String() != value.ID {
+			return nil, validation("Attachment reference is invalid")
+		}
+		ids[index] = id
+	}
+	metadata, err := queries.ListAttachmentMetadata(ctx, structuresql.ListAttachmentMetadataParams{
+		TableID: tableID, FieldID: fieldID, Ids: ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load attachment cell metadata: %w", err)
+	}
+	byID := make(map[string]structuresql.ListAttachmentMetadataRow, len(metadata))
+	for _, item := range metadata {
+		byID[item.ID.String()] = item
+	}
+	canonical := make([]codec.AttachmentValue, len(submitted))
+	for index, value := range submitted {
+		item, found := byID[value.ID]
+		if !found {
+			return nil, validation("Attachment does not belong to this field")
+		}
+		var thumb *string
+		if item.HasThumb {
+			url := codec.ThumbnailURL(item.ID.String())
+			thumb = &url
+		}
+		canonical[index] = codec.AttachmentValue{
+			ID: item.ID.String(), Name: item.FileName, MIME: item.MimeType,
+			Size: item.SizeBytes, Thumb: thumb,
+		}
+	}
+	encoded, err := json.Marshal(canonical)
+	if err != nil {
+		return nil, fmt.Errorf("encode attachment cell metadata: %w", err)
+	}
+	value, err := field.codec.Decode(encoded)
+	if err != nil {
+		return nil, codec.APIError(err)
+	}
+	return value, nil
 }
 
 func (s *Service) GetRow(ctx context.Context, actor Actor, tableID, rowID string) (RowRecord, error) {
@@ -608,8 +677,9 @@ func (s *Service) CreateRows(ctx context.Context, actor Actor, tableID string, i
 	}
 	result := make([]RowRecord, 0, len(input))
 	err := s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
+		queries := s.queries.WithTx(tx)
 		for _, item := range input {
-			record, err := insertRow(ctx, tx, table, actor, item.Fields)
+			record, err := insertRow(ctx, tx, queries, table, actor, item.Fields)
 			if err != nil {
 				return err
 			}
@@ -620,8 +690,9 @@ func (s *Service) CreateRows(ctx context.Context, actor Actor, tableID string, i
 	return result, err
 }
 
-func insertRow(ctx context.Context, tx pgx.Tx, table rowTable, actor Actor, input map[string]json.RawMessage) (RowRecord, error) {
-	fields, values, err := sortedFieldValues(table, input)
+func insertRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
+	input map[string]json.RawMessage) (RowRecord, error) {
+	fields, values, err := sortedFieldValues(ctx, queries, table, input)
 	if err != nil {
 		return RowRecord{}, err
 	}
@@ -663,7 +734,7 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 	}
 	var result RowRecord
 	err = s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
-		record, err := patchRow(ctx, tx, table, actor, id, input)
+		record, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input)
 		if err != nil {
 			return err
 		}
@@ -673,7 +744,8 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 	return result, err
 }
 
-func patchRow(ctx context.Context, tx pgx.Tx, table rowTable, actor Actor, id int64, input map[string]json.RawMessage) (RowRecord, error) {
+func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
+	id int64, input map[string]json.RawMessage) (RowRecord, error) {
 	if len(input) == 0 {
 		return RowRecord{}, validation("At least one field value is required")
 	}
@@ -690,7 +762,7 @@ func patchRow(ctx context.Context, tx pgx.Tx, table rowTable, actor Actor, id in
 	} else if err != nil {
 		return RowRecord{}, fmt.Errorf("lock row for patch: %w", err)
 	}
-	fields, values, err := sortedFieldValues(table, input)
+	fields, values, err := sortedFieldValues(ctx, queries, table, input)
 	if err != nil {
 		return RowRecord{}, err
 	}
@@ -750,7 +822,7 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 	err := s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
 		for _, index := range order {
 			item := input[index]
-			record, err := patchRow(ctx, tx, table, actor, ids[index], item.Fields)
+			record, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields)
 			if err != nil {
 				return err
 			}

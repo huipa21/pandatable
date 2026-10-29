@@ -74,6 +74,9 @@ async function changeSettings(
     .selectOption('zh-CN')
   await page.getByLabel(en.settings.uploadMaxMb, { exact: true }).fill('7')
   await page
+    .getByLabel(en.settings.imageMaxMegapixels, { exact: true })
+    .fill('12')
+  await page
     .getByLabel(en.settings.historyRetentionDays, { exact: true })
     .fill('60')
   await page
@@ -93,6 +96,9 @@ async function changeSettings(
     page.getByLabel(en.settings.uploadMaxMb, { exact: true }),
   ).toHaveValue('7')
   await expect(
+    page.getByLabel(en.settings.imageMaxMegapixels, { exact: true }),
+  ).toHaveValue('12')
+  await expect(
     page.getByLabel(en.settings.defaultTimezone, { exact: true }),
   ).toHaveValue('Europe/London')
   const persisted = await page.request.get('/api/v1/admin/settings')
@@ -102,6 +108,7 @@ async function changeSettings(
     defaultCurrency: 'USD',
     defaultLocale: 'zh-CN',
     uploadMaxMb: 7,
+    imageMaxMegapixels: 12,
     historyRetentionDays: 60,
     trashRetentionDays: 14,
   })

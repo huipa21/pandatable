@@ -27,6 +27,7 @@ export type Kind =
   | 'user'
   | 'multi_user'
   | 'autonumber'
+  | 'attachment'
   | 'email'
   | 'url'
   | 'id'
@@ -155,6 +156,7 @@ export type Presentation =
   | 'email'
   | 'url'
   | 'user'
+  | 'attachment'
 
 export interface Constraints {
   required: boolean

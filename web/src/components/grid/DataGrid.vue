@@ -27,7 +27,12 @@ import type {
   RangeArea,
   ViewPortScrollEvent,
 } from '@revolist/revogrid'
-import { errorMessage, request, RequestError } from '../../api/client'
+import {
+  discardAttachment,
+  errorMessage,
+  request,
+  RequestError,
+} from '../../api/client'
 import type {
   DataRow,
   RowMutation,
@@ -55,6 +60,18 @@ const props = defineProps<{
   viewId: string
   identity: string
 }>()
+
+function attachmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) =>
+    typeof item === 'object' &&
+    item !== null &&
+    'id' in item &&
+    typeof item.id === 'string'
+      ? [item.id]
+      : [],
+  )
+}
 const emit = defineEmits<{
   schemaChanged: []
   expand: [rowId: string]
@@ -147,6 +164,7 @@ const gridEditorComponent = defineComponent({
         boundField: item.bound,
         fieldEnv: fieldEnvironment.value,
         tableId: props.schema.table.id,
+        fieldId: item.field.id,
         identity: props.identity,
       })
     }
@@ -1122,6 +1140,17 @@ async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   } catch (cause) {
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
+    if (item.field.uiType === 'attachment') {
+      const currentIds = new Set(attachmentIds(row.fields[item.field.id]))
+      for (const id of attachmentIds(normalized.value)) {
+        if (!currentIds.has(id))
+          void discardAttachment(
+            props.schema.table.id,
+            item.field.id,
+            id,
+          ).catch(() => {})
+      }
+    }
     cellErrors.value.set(key, errorMessage(cause))
     error.value = cause
   } finally {

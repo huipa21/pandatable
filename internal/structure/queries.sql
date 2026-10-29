@@ -252,6 +252,13 @@ FROM meta.fields
 WHERE table_id = $1 AND deleted_at IS NULL
 ORDER BY is_system, position, id;
 
+-- name: ListAttachmentMetadata :many
+SELECT id, file_name, mime_type, size_bytes, has_thumb
+FROM meta.attachments
+WHERE table_id = sqlc.arg(table_id)::uuid
+  AND field_id = sqlc.arg(field_id)::uuid
+  AND id = ANY(sqlc.arg(ids)::uuid[]);
+
 -- Navigation: the user's effective grants and the live workspaces they touch.
 -- Level arithmetic and path-only pruning happen in Go (internal/structure/nav.go)
 -- and are tested against the resolver. Disabled users and trashed ancestors

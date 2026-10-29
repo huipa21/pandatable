@@ -16,6 +16,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/admin"
+	"pandatable/internal/attachments"
 	"pandatable/internal/auth"
 	"pandatable/internal/db"
 	"pandatable/internal/structure"
@@ -28,19 +30,20 @@ type aclUser struct {
 }
 
 type aclFixture struct {
-	t           *testing.T
-	pool        *db.Pool
-	ctx         context.Context
-	handler     http.Handler
-	probes      http.Handler
-	resolver    *acl.Resolver
-	authService *auth.Service
-	aclService  *acl.Service
-	phc         string
-	logins      int
-	users       []string
-	spaces      []string
-	groups      []string
+	t                 *testing.T
+	pool              *db.Pool
+	ctx               context.Context
+	handler           http.Handler
+	probes            http.Handler
+	resolver          *acl.Resolver
+	authService       *auth.Service
+	aclService        *acl.Service
+	attachmentService *attachments.Service
+	phc               string
+	logins            int
+	users             []string
+	spaces            []string
+	groups            []string
 }
 
 const aclPassword = "Fixture-password-123"
@@ -70,7 +73,17 @@ func newACLFixture(t *testing.T) *aclFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := AuthOptions{Service: authService, ACL: aclService, Structure: structureService, BaseURL: "https://table.example"}
+	adminService, err := admin.NewService(pool, authService, resolver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachmentService, err := attachments.New(pool, resolver, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.attachmentService = attachmentService
+	options := AuthOptions{Service: authService, ACL: aclService, Structure: structureService, Admin: adminService,
+		Attachments: attachmentService, BaseURL: "https://table.example"}
 	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
 	if f.handler, err = New(logger, testAssets(), options); err != nil {
 		t.Fatal(err)

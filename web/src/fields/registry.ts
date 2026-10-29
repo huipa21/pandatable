@@ -4,6 +4,7 @@ import { systemKinds } from './system'
 import { dateKind, datetimeKind } from './temporal'
 import { textKinds } from './text'
 import { batch2Kinds } from './batch2'
+import { attachmentKind } from './attachment'
 import {
   fail,
   ok,
@@ -31,6 +32,7 @@ const registry: { [K in Kind]: FieldKind<never> } = {
   single_select: singleSelectKind,
   multi_select: multiSelectKind,
   ...batch2Kinds,
+  attachment: attachmentKind as FieldKind<unknown>,
   ...systemKinds,
 } as { [K in Kind]: FieldKind<never> }
 

@@ -175,11 +175,12 @@
     "defaultTimezone": "Default timezone",
     "defaultCurrency": "Default currency",
     "defaultLocale": "Default language",
-    "uploadMaxMb": "Upload limit (1–100 MiB)",
+    "uploadMaxMb": "Per-file upload limit (1–100 MiB)",
+    "imageMaxMegapixels": "Image decode limit (MP)",
     "historyRetentionDays": "History retention (1–3650 days)",
     "trashRetentionDays": "Trash retention (1–3650 days)",
     "defaultsNotice": "Defaults do not overwrite existing user choices. Timezone changes apply to users without an override; language changes apply to new users and browsers without an explicit local language choice.",
-    "deferredNotice": "Upload limits, currency-field defaults and history/trash retention are saved for their upcoming features. Upload enforcement and purge jobs are not implemented yet.",
+    "deferredNotice": "History and Trash retention jobs are not active yet.",
     "loading": "Loading settings",
     "save": "Save settings",
     "reload": "Reload settings",
@@ -442,7 +443,7 @@
     "hint": "Edit one field at a time. Save or press Enter to persist; Cancel discards the current draft. Long text uses Ctrl/Command+Enter.",
     "readOnly": "You have read-only access to this row.",
     "system": "Read-only system field",
-    "tooLarge": "This value exceeds the single-row request limit of 4,096 bytes. It has not been saved."
+    "tooLarge": "This value exceeds the single-row request limit of 65,536 bytes. It has not been saved."
   },
   "errors": {
     "ERR_DDL_CONFLICT": "Existing data or constraints conflict with this schema change.",
@@ -474,7 +475,12 @@
     "ERR_DISPLAY_FIELD_REQUIRED": "The table needs another eligible field to use as its display field first.",
     "ERR_REQUIRED_FIELD": "A required field is missing.",
     "ERR_UNIQUE_CONFLICT": "A unique field already has this value.",
-    "ERR_SCHEMA_CHANGED": "The table structure changed. Reload the table and try again."
+    "ERR_SCHEMA_CHANGED": "The table structure changed. Reload the table and try again.",
+    "ERR_UPLOAD_TOO_LARGE": "This file exceeds the per-file upload limit.",
+    "ERR_ATTACHMENT_TYPE": "This file type is not allowed by the field.",
+    "ERR_IMAGE_TOO_LARGE": "Image dimensions exceed the configured limit.",
+    "ERR_INVALID_IMAGE": "This image cannot be decoded.",
+    "ERR_ATTACHMENT_IN_USE": "This file is still used in a row."
   },
   "field": {
     "kind": {
@@ -503,6 +509,7 @@
       "user": "User",
       "multi_user": "Multiple users",
       "autonumber": "Auto number",
+      "attachment": "Attachment",
       "email": "Email",
       "url": "URL",
       "id": "Row ID",
@@ -567,7 +574,13 @@
       "searchingUsers": "Searching users…",
       "userSearchFailed": "Could not search users. Try again.",
       "username": "({username})",
-      "removeUser": "Remove {name}"
+      "removeUser": "Remove {name}",
+      "addAttachments": "Add files",
+      "dropAttachments": "Drop files here or choose files",
+      "uploadingAttachments": "Uploading files…",
+      "removeAttachment": "Remove {name}",
+      "attachmentLimit": "This field allows up to {count} files.",
+      "attachmentUploadFailed": "Some files could not be uploaded."
     },
     "panel": {
       "title": "Fields",
@@ -608,6 +621,9 @@
       "autoGenerateUUID": "Generate UUID for new rows",
       "prefix": "Prefix",
       "padding": "Number padding",
+      "attachmentAccept": "Allowed MIME types",
+      "attachmentAcceptHint": "image/*, application/pdf",
+      "attachmentMaxFiles": "Maximum files (1–20)",
       "currency": "Currency code",
       "defaultCurrency": "Use the app default",
       "ratingMax": "Maximum rating (1–10)",

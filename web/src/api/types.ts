@@ -116,8 +116,17 @@ export interface AdminSettings extends AppSettings {
   defaultTimezone: string
   defaultCurrency: string
   uploadMaxMb: number
+  imageMaxMegapixels: number
   historyRetentionDays: number
   trashRetentionDays: number
+}
+
+export interface AttachmentValue {
+  id: string
+  name: string
+  mime: string
+  size: number
+  thumb: string | null
 }
 
 export interface SettingsMutation extends AuthMutation {

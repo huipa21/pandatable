@@ -39,7 +39,7 @@ func TestAdminSettingsWorkspacesHTTP(t *testing.T) {
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
-		if _, err := f.pool.Exec(cleanup, "DELETE FROM meta.settings WHERE key IN ('app_name','default_timezone','upload_max_mb')"); err != nil {
+		if _, err := f.pool.Exec(cleanup, "DELETE FROM meta.settings WHERE key IN ('app_name','default_timezone','upload_max_mb','image_max_megapixels')"); err != nil {
 			t.Error(err)
 		}
 	})
@@ -82,7 +82,7 @@ func TestAdminSettingsWorkspacesHTTP(t *testing.T) {
 	}
 	requireStatus(t, f.request("GET", "/admin/settings", "", cookie), 200)
 	for _, body := range []string{`{}`, `null`, `{"appName":null}`, `{"defaultLocale":null}`, `{"defaultTimezone":null}`,
-		`{"defaultCurrency":null}`, `{"uploadMaxMb":null}`, `{"historyRetentionDays":null}`, `{"trashRetentionDays":null}`,
+		`{"defaultCurrency":null}`, `{"uploadMaxMb":null}`, `{"imageMaxMegapixels":null}`, `{"historyRetentionDays":null}`, `{"trashRetentionDays":null}`,
 		`{"uploadMaxMb":"20"}`, `{"uploadMaxMb":1.1}`, `{"uploadMaxMb":1e100}`, `{"uploadMaxMb":101}`,
 		`{"setup_completed":true}`, `{"unknown":1}`, `{"appName":"ok"} {}`, `{"appName":"` + strings.Repeat("x", 4096) + `"}`,
 		`{"appName":"Rollback","defaultTimezone":"Invalid/Zone"}`} {

@@ -1,4 +1,5 @@
 import { i18n } from '../i18n'
+import type { AttachmentValue } from './types'
 
 /** Safe, bounded error details; server messages are never shown. */
 export interface ErrorDetails {
@@ -77,6 +78,66 @@ export async function request<T>(
   return result as T
 }
 
+export async function uploadAttachment(
+  tableId: string,
+  fieldId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<AttachmentValue> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(
+    `/api/v1/tables/${encodeURIComponent(tableId)}/fields/${encodeURIComponent(fieldId)}/attachments`,
+    {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { 'X-PT-CSRF': '1' },
+      body: form,
+      signal,
+    },
+  )
+  const result: unknown = await response.json()
+  if (!response.ok) {
+    const failure =
+      typeof result === 'object' &&
+      result !== null &&
+      'error' in result &&
+      typeof result.error === 'object' &&
+      result.error !== null
+        ? (result.error as Record<string, unknown>)
+        : {}
+    throw new RequestError(
+      typeof failure.code === 'string' ? failure.code : 'ERR_INTERNAL',
+      response.status,
+      readDetails(failure.details),
+    )
+  }
+  return result as AttachmentValue
+}
+
+export async function deleteAttachment(
+  tableId: string,
+  fieldId: string,
+  attachmentId: string,
+): Promise<void> {
+  await request(
+    `/tables/${encodeURIComponent(tableId)}/fields/${encodeURIComponent(fieldId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    'DELETE',
+  )
+}
+
+export async function discardAttachment(
+  tableId: string,
+  fieldId: string,
+  attachmentId: string,
+): Promise<void> {
+  await request(
+    `/tables/${encodeURIComponent(tableId)}/fields/${encodeURIComponent(fieldId)}/attachments/${encodeURIComponent(attachmentId)}/discard`,
+    'POST',
+  )
+}
+
 export function errorMessage(error: unknown): string {
   const code = error instanceof RequestError ? error.code : 'ERR_INTERNAL'
   const count = error instanceof RequestError ? (error.details.count ?? 0) : 0
@@ -98,6 +159,16 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_UNIQUE_CONFLICT')
     case 'ERR_SCHEMA_CHANGED':
       return t('errors.ERR_SCHEMA_CHANGED')
+    case 'ERR_UPLOAD_TOO_LARGE':
+      return t('errors.ERR_UPLOAD_TOO_LARGE')
+    case 'ERR_ATTACHMENT_TYPE':
+      return t('errors.ERR_ATTACHMENT_TYPE')
+    case 'ERR_IMAGE_TOO_LARGE':
+      return t('errors.ERR_IMAGE_TOO_LARGE')
+    case 'ERR_INVALID_IMAGE':
+      return t('errors.ERR_INVALID_IMAGE')
+    case 'ERR_ATTACHMENT_IN_USE':
+      return t('errors.ERR_ATTACHMENT_IN_USE')
     case 'ERR_VALIDATION':
       return t('errors.ERR_VALIDATION')
     case 'ERR_UNAUTHENTICATED':

@@ -384,14 +384,14 @@ it('rejects UTF-8 oversized single-row bodies without truncation or a request', 
   stored.fields.name = null
   const { wrapper, fetcher } = await setup(schemaWith('long_text'))
   await wrapper.get('.row-field button').trigger('click')
-  await wrapper.get('textarea').setValue('中'.repeat(1400))
+  await wrapper.get('textarea').setValue('中'.repeat(22000))
   await wrapper.get('.field-editor button').trigger('click')
   await flushPromises()
-  expect(wrapper.get('[role="alert"]').text()).toContain('4,096')
+  expect(wrapper.get('[role="alert"]').text()).toContain('65,536')
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
 
-it.each([4096, 4097])(
+it.each([65536, 65537])(
   'enforces the exact %i-byte single-row boundary',
   async (bytes) => {
     stored.fields.name = null
@@ -403,8 +403,8 @@ it.each([4096, 4097])(
     await wrapper.get('textarea').setValue('x'.repeat(bytes - overhead))
     await wrapper.get('.field-editor button').trigger('click')
     await flushPromises()
-    expect(fetcher).toHaveBeenCalledTimes(bytes === 4096 ? 2 : 1)
-    expect(wrapper.emitted('saved')?.length ?? 0).toBe(bytes === 4096 ? 1 : 0)
+    expect(fetcher).toHaveBeenCalledTimes(bytes === 65536 ? 2 : 1)
+    expect(wrapper.emitted('saved')?.length ?? 0).toBe(bytes === 65536 ? 1 : 0)
   },
 )
 

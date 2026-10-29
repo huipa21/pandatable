@@ -123,9 +123,10 @@ after reload without exposing privileged settings. Existing explicit user/local
 preferences stay unchanged; NULL user timezones follow the new default.
 Upload limit is **MiB** (default 20, range 1..100); history/trash retention
 defaults are 90/30 days (range 1..3650). Values persist now, but upload enforcement
-and retention jobs await their planned features. Setting them is not proof of
-AT-322/purge completion. Settings reads perform no filesystem walk and do not
-invalidate the dashboard's hourly directory caches.
+uses this per-file limit (T2.2); retention jobs await their planned features.
+The image decode cap is `imageMaxMegapixels` (default 16, range 1..16). Settings
+reads perform no filesystem walk and do not invalidate the dashboard's hourly
+directory caches.
 
 Admin workspace sizes are separately labeled **recorded logical attachment
 bytes**, including retained Trash descendants, not the dashboard's disk/PG
@@ -274,7 +275,7 @@ failed HTTP refreshes keep a visibly stale snapshot with retry.
   permitted to expose it. Setup is transaction-serialized and the endpoint
   returns 410 after completion.
 - Login rate limits (per IP from trusted `X-Forwarded-For`, per account); session idle timeout 7 days, absolute 30 days; sessions revoked on password reset/disable.
-- Upload MIME sniffing; attachments served with `Content-Disposition: attachment` except safe image types; `X-Content-Type-Options: nosniff`; CSP on SPA.
+- Upload MIME sniffing; only PNG, JPEG, GIF, and WebP are served inline and thumbnailed. All other types are served with `Content-Disposition: attachment`; responses set `X-Content-Type-Options: nosniff`; CSP on SPA.
 
 ### T1.2 auth operating policy
 

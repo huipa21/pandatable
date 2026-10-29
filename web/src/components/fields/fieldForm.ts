@@ -40,6 +40,7 @@ export const USER_KINDS = [
   'user',
   'multi_user',
   'autonumber',
+  'attachment',
   'email',
   'url',
 ] as const satisfies readonly Kind[]
@@ -76,6 +77,8 @@ export interface FieldDraft {
   autoGenerate: boolean
   autoNumberPrefix: string
   autoNumberPadding: string
+  attachmentAccept: string
+  attachmentMaxFiles: string
   choices: Choice[]
   isRequired: boolean
   isUnique: boolean
@@ -125,6 +128,8 @@ export function draftFrom(field: TableField | null, env: FieldEnv): FieldDraft {
     autoGenerate: options.autoGenerate === true,
     autoNumberPrefix: text(options.prefix, ''),
     autoNumberPadding: text(options.padding, '0'),
+    attachmentAccept: text(options.accept, ''),
+    attachmentMaxFiles: text(options.maxFiles, '10'),
     choices: Array.isArray(options.choices)
       ? (options.choices as Choice[]).map((choice) => ({ ...choice }))
       : [],
@@ -217,6 +222,13 @@ export function draftOptions(draft: FieldDraft): Record<string, unknown> {
       return {
         ...(draft.autoNumberPrefix ? { prefix: draft.autoNumberPrefix } : {}),
         padding: integer(draft.autoNumberPadding),
+      }
+    case 'attachment':
+      return {
+        ...(draft.attachmentAccept.trim()
+          ? { accept: draft.attachmentAccept.trim() }
+          : {}),
+        maxFiles: integer(draft.attachmentMaxFiles),
       }
     case 'single_select':
     case 'multi_select':

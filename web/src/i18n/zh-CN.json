@@ -175,11 +175,12 @@
     "defaultTimezone": "默认时区",
     "defaultCurrency": "默认货币",
     "defaultLocale": "默认语言",
-    "uploadMaxMb": "上传限制（1–100 MiB）",
+    "uploadMaxMb": "单文件上传限制（1–100 MiB）",
+    "imageMaxMegapixels": "图片解码上限（百万像素）",
     "historyRetentionDays": "历史保留时间（1–3650 天）",
     "trashRetentionDays": "回收站保留时间（1–3650 天）",
     "defaultsNotice": "默认值不会覆盖用户已有的选择。时区变更适用于未单独设置时区的用户；语言变更适用于新用户及未明确选择本地语言的浏览器。",
-    "deferredNotice": "上传限制、货币字段默认值以及历史和回收站保留时间已为后续功能保存。目前尚未实现上传限制执行及清理任务。",
+    "deferredNotice": "历史记录和回收站保留任务尚未启用。",
     "loading": "正在加载设置",
     "save": "保存设置",
     "reload": "重新加载设置",
@@ -442,7 +443,7 @@
     "hint": "每次编辑一个字段。点击保存或按 Enter 保存；取消将丢弃当前草稿。长文本使用 Ctrl/Command+Enter 保存。",
     "readOnly": "你对此行只有只读权限。",
     "system": "只读系统字段",
-    "tooLarge": "此值超过单行请求的 4,096 字节限制，尚未保存。"
+    "tooLarge": "此值超过单行请求的 65,536 字节限制，尚未保存。"
   },
   "errors": {
     "ERR_DDL_CONFLICT": "现有数据或约束与此结构更改冲突。",
@@ -474,7 +475,12 @@
     "ERR_DISPLAY_FIELD_REQUIRED": "请先为此表准备另一个可用作显示字段的字段。",
     "ERR_REQUIRED_FIELD": "缺少必填字段。",
     "ERR_UNIQUE_CONFLICT": "唯一字段中已存在此值。",
-    "ERR_SCHEMA_CHANGED": "表结构已更改，请重新加载后重试。"
+    "ERR_SCHEMA_CHANGED": "表结构已更改，请重新加载后重试。",
+    "ERR_UPLOAD_TOO_LARGE": "此文件超过单文件上传限制。",
+    "ERR_ATTACHMENT_TYPE": "此字段不允许上传该文件类型。",
+    "ERR_IMAGE_TOO_LARGE": "图片尺寸超过已配置的上限。",
+    "ERR_INVALID_IMAGE": "无法解码此图片。",
+    "ERR_ATTACHMENT_IN_USE": "此文件仍在某行中使用。"
   },
   "field": {
     "kind": {
@@ -503,6 +509,7 @@
       "user": "用户",
       "multi_user": "多位用户",
       "autonumber": "自动编号",
+      "attachment": "附件",
       "email": "电子邮件",
       "url": "网址",
       "id": "行 ID",
@@ -567,7 +574,13 @@
       "searchingUsers": "正在搜索用户…",
       "userSearchFailed": "无法搜索用户，请重试。",
       "username": "（{username}）",
-      "removeUser": "移除{name}"
+      "removeUser": "移除{name}",
+      "addAttachments": "添加文件",
+      "dropAttachments": "将文件拖放到此处或选择文件",
+      "uploadingAttachments": "正在上传文件…",
+      "removeAttachment": "移除{name}",
+      "attachmentLimit": "此字段最多允许 {count} 个文件。",
+      "attachmentUploadFailed": "部分文件无法上传。"
     },
     "panel": {
       "title": "字段",
@@ -608,6 +621,9 @@
       "autoGenerateUUID": "为新行自动生成 UUID",
       "prefix": "前缀",
       "padding": "编号位数",
+      "attachmentAccept": "允许的 MIME 类型",
+      "attachmentAcceptHint": "image/*, application/pdf",
+      "attachmentMaxFiles": "最大文件数（1–20）",
       "currency": "货币代码",
       "defaultCurrency": "使用应用默认值",
       "ratingMax": "最高评分（1–10）",

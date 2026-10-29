@@ -69,6 +69,7 @@ func (api *authHTTP) updateSettings(w http.ResponseWriter, r *http.Request, _ au
 		DefaultCurrency      json.RawMessage `json:"defaultCurrency"`
 		DefaultLocale        json.RawMessage `json:"defaultLocale"`
 		UploadMaxMb          json.RawMessage `json:"uploadMaxMb"`
+		ImageMaxMegapixels   json.RawMessage `json:"imageMaxMegapixels"`
 		HistoryRetentionDays json.RawMessage `json:"historyRetentionDays"`
 		TrashRetentionDays   json.RawMessage `json:"trashRetentionDays"`
 	}
@@ -92,7 +93,8 @@ func (api *authHTTP) updateSettings(w http.ResponseWriter, r *http.Request, _ au
 	for _, field := range []struct {
 		raw  json.RawMessage
 		dest **int
-	}{{input.UploadMaxMb, &patch.UploadMaxMb}, {input.HistoryRetentionDays, &patch.HistoryRetentionDays},
+	}{{input.UploadMaxMb, &patch.UploadMaxMb}, {input.ImageMaxMegapixels, &patch.ImageMaxMegapixels},
+		{input.HistoryRetentionDays, &patch.HistoryRetentionDays},
 		{input.TrashRetentionDays, &patch.TrashRetentionDays}} {
 		if len(field.raw) != 0 {
 			var value int

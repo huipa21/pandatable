@@ -46,6 +46,7 @@ const (
 	User         Kind = "user"
 	MultiUser    Kind = "multi_user"
 	AutoNumber   Kind = "autonumber"
+	Attachment   Kind = "attachment"
 	RowID        Kind = "id"
 	CreatedAt    Kind = "created_at"
 	CreatedBy    Kind = "created_by"
@@ -246,6 +247,7 @@ func init() {
 		phoneCodec{}, uuidCodec{}, jsonCodec{}, inetCodec{}, cidrCodec{},
 		arrayCodec{kind: TextArray}, arrayCodec{kind: IntArray},
 		userCodec{multi: false}, userCodec{multi: true}, autoNumberCodec{},
+		attachmentCodec{},
 		choiceCodec{multi: false}, choiceCodec{multi: true},
 		systemCodec{kind: RowID}, systemCodec{kind: CreatedAt}, systemCodec{kind: CreatedBy},
 		systemCodec{kind: UpdatedAt}, systemCodec{kind: UpdatedBy},

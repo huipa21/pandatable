@@ -19,6 +19,7 @@ const form = reactive<AdminSettings>({
   defaultCurrency: '',
   defaultLocale: 'en',
   uploadMaxMb: 20,
+  imageMaxMegapixels: 16,
   historyRetentionDays: 90,
   trashRetentionDays: 30,
 })
@@ -93,6 +94,8 @@ async function save() {
     patch.defaultLocale = form.defaultLocale
   if (form.uploadMaxMb !== previous.uploadMaxMb)
     patch.uploadMaxMb = form.uploadMaxMb
+  if (form.imageMaxMegapixels !== previous.imageMaxMegapixels)
+    patch.imageMaxMegapixels = form.imageMaxMegapixels
   if (form.historyRetentionDays !== previous.historyRetentionDays)
     patch.historyRetentionDays = form.historyRetentionDays
   if (form.trashRetentionDays !== previous.trashRetentionDays)
@@ -195,6 +198,18 @@ void load()
           step="1"
           required
           :aria-label="t('settings.uploadMaxMb')"
+          :disabled="busy"
+        />
+      </NFormItem>
+      <NFormItem :label="t('settings.imageMaxMegapixels')">
+        <input
+          v-model.number="form.imageMaxMegapixels"
+          type="number"
+          min="1"
+          max="16"
+          step="1"
+          required
+          :aria-label="t('settings.imageMaxMegapixels')"
           :disabled="busy"
         />
       </NFormItem>

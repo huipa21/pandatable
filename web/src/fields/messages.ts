@@ -123,6 +123,8 @@ export function fieldKindLabel(kind: Kind): string {
       return t('field.kind.multi_user')
     case 'autonumber':
       return t('field.kind.autonumber')
+    case 'attachment':
+      return t('field.kind.attachment')
     case 'email':
       return t('field.kind.email')
     case 'url':
