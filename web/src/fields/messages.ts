@@ -129,6 +129,10 @@ export function fieldKindLabel(kind: Kind): string {
       return t('field.kind.email')
     case 'url':
       return t('field.kind.url')
+    case 'lookup':
+      return t('field.kind.lookup')
+    case 'rollup':
+      return t('field.kind.rollup')
     case 'id':
       return t('field.kind.id')
     case 'created_at':

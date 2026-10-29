@@ -30,6 +30,8 @@ export type Kind =
   | 'attachment'
   | 'email'
   | 'url'
+  | 'lookup'
+  | 'rollup'
   | 'id'
   | 'created_at'
   | 'created_by'

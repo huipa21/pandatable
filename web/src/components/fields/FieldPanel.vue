@@ -63,6 +63,7 @@ let controller: AbortController | undefined
 
 const editor = ref<HTMLDialogElement>()
 const relationEditor = ref<HTMLDialogElement>()
+const computedEditor = ref<HTMLDialogElement>()
 const remover = ref<HTMLDialogElement>()
 /** The field being edited (null while creating); version is captured at open. */
 const editing = ref<TableField | null>(null)
@@ -71,6 +72,17 @@ const draft = ref<FieldDraft>(draftFrom(null, env.value))
 const conflict = ref(false)
 const deleting = ref<TableField | null>(null)
 const relationCreating = ref(false)
+const computedCreating = ref(false)
+const computedDraft = ref({
+  name: '',
+  kind: 'lookup' as 'lookup' | 'rollup',
+  relationFieldId: '',
+  targetFieldId: '',
+  aggregate: 'count',
+})
+const computedTargetFields = ref<TableField[]>([])
+const computedTargetLoading = ref(false)
+let computedController: AbortController | undefined
 const relationDraft = ref({
   name: '',
   reverseName: '',
@@ -79,6 +91,89 @@ const relationDraft = ref({
   sourceSide: 'child',
   onDelete: 'set_null',
 })
+const computedRelations = computed(() =>
+  props.schema.relations.flatMap((relation) => {
+    const sourceFieldId =
+      relation.parentTableId === props.schema.table.id
+        ? relation.parentFieldId
+        : relation.childTableId === props.schema.table.id
+          ? relation.childFieldId
+          : ''
+    const targetTableId =
+      relation.parentTableId === props.schema.table.id
+        ? relation.childTableId
+        : relation.childTableId === props.schema.table.id
+          ? relation.parentTableId
+          : ''
+    const field = props.schema.fields.find(
+      (item) => item.id === sourceFieldId && item.uiType === 'link',
+    )
+    return field ? [{ field, targetTableId }] : []
+  }),
+)
+const computedAggregates = computed(() => {
+  const type = computedTargetFields.value.find(
+    (field) => field.id === computedDraft.value.targetFieldId,
+  )?.uiType
+  const result = ['count', 'concat']
+  if (
+    ['integer', 'decimal', 'float', 'currency', 'percent', 'rating'].includes(
+      type ?? '',
+    )
+  )
+    result.push('sum', 'avg')
+  if (
+    [
+      'text',
+      'long_text',
+      'email',
+      'url',
+      'single_select',
+      'integer',
+      'decimal',
+      'float',
+      'currency',
+      'percent',
+      'rating',
+      'date',
+      'datetime',
+      'time',
+      'autonumber',
+    ].includes(type ?? '')
+  )
+    result.push('min', 'max')
+  if (type === 'date' || type === 'datetime') result.push('earliest', 'latest')
+  return result
+})
+const computedEditorDisabled = computed(
+  () =>
+    busy.value ||
+    computedTargetLoading.value ||
+    !computedRelations.value.length ||
+    !computedTargetFields.value.length,
+)
+function computedAggregateLabel(aggregate: string) {
+  switch (aggregate) {
+    case 'count':
+      return t('field.panel.aggregates.count')
+    case 'sum':
+      return t('field.panel.aggregates.sum')
+    case 'avg':
+      return t('field.panel.aggregates.avg')
+    case 'min':
+      return t('field.panel.aggregates.min')
+    case 'max':
+      return t('field.panel.aggregates.max')
+    case 'earliest':
+      return t('field.panel.aggregates.earliest')
+    case 'latest':
+      return t('field.panel.aggregates.latest')
+    case 'concat':
+      return t('field.panel.aggregates.concat')
+    default:
+      return aggregate
+  }
+}
 const targetTables = computed(() => {
   for (const workspace of nav.tree.workspaces) {
     const book = workspace.books.find(
@@ -207,6 +302,92 @@ function closeRelationEditor() {
   relationEditor.value?.close()
   relationCreating.value = false
   error.value = null
+}
+
+async function loadComputedTargetFields() {
+  const relation = computedRelations.value.find(
+    (item) => item.field.id === computedDraft.value.relationFieldId,
+  )
+  computedTargetFields.value = []
+  computedDraft.value.targetFieldId = ''
+  if (!relation) return
+  computedController?.abort()
+  const controller = new AbortController()
+  computedController = controller
+  computedTargetLoading.value = true
+  error.value = null
+  try {
+    const target = await request<TableSchema>(
+      `/tables/${relation.targetTableId}/schema`,
+      'GET',
+      undefined,
+      AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+    )
+    if (computedController !== controller) return
+    computedTargetFields.value = target.fields.filter(
+      (field) =>
+        field.uiType !== 'link' &&
+        field.uiType !== 'lookup' &&
+        field.uiType !== 'rollup',
+    )
+    computedDraft.value.targetFieldId = computedTargetFields.value[0]?.id ?? ''
+  } catch (cause) {
+    if (!controller.signal.aborted) error.value = cause
+  } finally {
+    if (computedController === controller) {
+      computedController = undefined
+      computedTargetLoading.value = false
+    }
+  }
+}
+
+async function openComputedEditor(kind: 'lookup' | 'rollup') {
+  error.value = null
+  status.value = ''
+  computedCreating.value = true
+  computedDraft.value = {
+    name: '',
+    kind,
+    relationFieldId: computedRelations.value[0]?.field.id ?? '',
+    targetFieldId: '',
+    aggregate: kind === 'lookup' ? '' : 'count',
+  }
+  await loadComputedTargetFields()
+  await nextTick()
+  computedEditor.value?.showModal()
+}
+
+function closeComputedEditor() {
+  if (busy.value) return
+  computedController?.abort()
+  computedEditor.value?.close()
+  computedCreating.value = false
+  computedTargetFields.value = []
+  error.value = null
+}
+
+async function createComputedField() {
+  const options = {
+    relationFieldId: computedDraft.value.relationFieldId,
+    targetFieldId: computedDraft.value.targetFieldId,
+    ...(computedDraft.value.kind === 'rollup'
+      ? { aggregate: computedDraft.value.aggregate }
+      : {}),
+  }
+  const result = await mutate<FieldMutation>(
+    `/tables/${props.schema.table.id}/fields`,
+    'POST',
+    {
+      name: computedDraft.value.name,
+      uiType: computedDraft.value.kind,
+      options,
+    },
+  )
+  if (!result) return
+  emit('update', result.schema)
+  computedEditor.value?.close()
+  computedCreating.value = false
+  status.value = t('field.panel.saved')
 }
 
 async function createRelation() {
@@ -364,10 +545,12 @@ const dialogOpen = computed(
     editing.value !== null ||
     creating.value ||
     deleting.value !== null ||
-    relationCreating.value,
+    relationCreating.value ||
+    computedCreating.value,
 )
 
 onBeforeUnmount(() => {
+  computedController?.abort()
   const own = controller
   controller = undefined
   own?.abort()
@@ -384,6 +567,20 @@ onBeforeUnmount(() => {
         </button>
         <button type="button" :disabled="busy" @click="openRelationEditor">
           {{ t('relation.add') }}
+        </button>
+        <button
+          type="button"
+          :disabled="busy || !computedRelations.length"
+          @click="openComputedEditor('lookup')"
+        >
+          {{ t('field.panel.addLookup') }}
+        </button>
+        <button
+          type="button"
+          :disabled="busy || !computedRelations.length"
+          @click="openComputedEditor('rollup')"
+        >
+          {{ t('field.panel.addRollup') }}
         </button>
       </div>
     </div>
@@ -427,7 +624,7 @@ onBeforeUnmount(() => {
             </summary>
             <div class="field-menu">
               <button
-                v-if="field.uiType !== 'link'"
+                v-if="!['link', 'lookup', 'rollup'].includes(field.uiType)"
                 type="button"
                 :disabled="busy"
                 @click="
@@ -876,6 +1073,104 @@ onBeforeUnmount(() => {
             }}
           </button>
           <button type="button" :disabled="busy" @click="closeEditor">
+            {{ t('field.panel.cancel') }}
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      ref="computedEditor"
+      class="field-dialog"
+      :aria-label="t('field.panel.computedTitle')"
+      @cancel.prevent="closeComputedEditor"
+    >
+      <form v-if="computedCreating" @submit.prevent="createComputedField">
+        <h2>{{ t('field.panel.computedTitle') }}</h2>
+        <label>
+          <span>{{ t('field.panel.name') }}</span>
+          <input
+            v-model="computedDraft.name"
+            autofocus
+            required
+            maxlength="400"
+            :disabled="busy"
+          />
+        </label>
+        <label>
+          <span>{{ t('field.panel.computedRelation') }}</span>
+          <select
+            v-model="computedDraft.relationFieldId"
+            required
+            :disabled="busy || !computedRelations.length"
+            @change="loadComputedTargetFields"
+          >
+            <option
+              v-for="item in computedRelations"
+              :key="item.field.id"
+              :value="item.field.id"
+            >
+              {{ item.field.name }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>{{ t('field.panel.computedTarget') }}</span>
+          <select
+            v-model="computedDraft.targetFieldId"
+            required
+            :disabled="
+              busy || computedTargetLoading || !computedTargetFields.length
+            "
+            @change="
+              computedDraft.aggregate = computedAggregates.includes(
+                computedDraft.aggregate,
+              )
+                ? computedDraft.aggregate
+                : (computedAggregates[0] ?? 'count')
+            "
+          >
+            <option
+              v-for="field in computedTargetFields"
+              :key="field.id"
+              :value="field.id"
+            >
+              {{ field.name }}
+            </option>
+          </select>
+        </label>
+        <label v-if="computedDraft.kind === 'rollup'">
+          <span>{{ t('field.panel.computedAggregate') }}</span>
+          <select v-model="computedDraft.aggregate" :disabled="busy">
+            <option
+              v-for="aggregate in computedAggregates"
+              :key="aggregate"
+              :value="aggregate"
+            >
+              {{ computedAggregateLabel(aggregate) }}
+            </option>
+          </select>
+        </label>
+        <p v-if="!computedRelations.length" role="alert">
+          {{ t('field.panel.computedNoRelations') }}
+        </p>
+        <p
+          v-else-if="
+            !computedTargetLoading && !computedTargetFields.length && !error
+          "
+          role="alert"
+        >
+          {{ t('field.panel.computedNoFields') }}
+        </p>
+        <p v-if="computedTargetLoading" role="status">
+          {{ t('field.panel.computedLoading') }}
+        </p>
+        <p v-if="error" role="alert">{{ message }}</p>
+        <div class="nav-actions">
+          <button type="submit" :disabled="computedEditorDisabled">
+            {{ busy ? t('relation.saving') : t('relation.create') }}
+          </button>
+          <button type="button" :disabled="busy" @click="closeComputedEditor">
             {{ t('field.panel.cancel') }}
           </button>
         </div>

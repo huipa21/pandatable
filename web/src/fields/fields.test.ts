@@ -347,3 +347,19 @@ describe('link safety', () => {
     expect(safeHref('text', 'https://example.com')).toBeNull()
   })
 })
+
+describe('computed field display', () => {
+  it('formats lookup arrays and remains read-only', () => {
+    const lookup = bind('lookup', {
+      relationFieldId: 'relation',
+      targetFieldId: 'value',
+    })
+    expect(lookup.readOnly).toBe(true)
+    expect(lookup.formatDisplay(['Alice', 'Bob'], {})).toBe('Alice, Bob')
+    expect(lookup.formatDisplay('🔒', {})).toBe('🔒')
+    expect(lookup.parsePaste('ignored', {})).toEqual({
+      ok: false,
+      reason: 'read_only',
+    })
+  })
+})

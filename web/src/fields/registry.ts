@@ -5,6 +5,7 @@ import { dateKind, datetimeKind } from './temporal'
 import { textKinds } from './text'
 import { batch2Kinds } from './batch2'
 import { attachmentKind } from './attachment'
+import { computedKinds } from './computed'
 import {
   fail,
   ok,
@@ -33,10 +34,13 @@ const registry: { [K in Kind]: FieldKind<never> } = {
   multi_select: multiSelectKind,
   ...batch2Kinds,
   attachment: attachmentKind as FieldKind<unknown>,
+  ...computedKinds,
   ...systemKinds,
 } as { [K in Kind]: FieldKind<never> }
 
-export const KINDS = Object.keys(registry) as Kind[]
+export const KINDS = Object.keys(registry).filter(
+  (kind) => kind !== 'lookup' && kind !== 'rollup',
+) as Kind[]
 
 export const isKind = (value: unknown): value is Kind =>
   typeof value === 'string' && Object.hasOwn(registry, value)

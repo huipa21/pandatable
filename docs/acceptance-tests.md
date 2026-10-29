@@ -527,11 +527,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-404 — Self link** · M2 · Employees "Manager" (N:1 self) works; reverse field "Reports" lists subordinates.
 - **AT-405 — On-delete behaviours** · M2 · set_null: deleting project clears tasks' link; cascade: deleting project deletes its tasks; restrict: deleting project with tasks fails with translated error.
 - **AT-406 — Same-book only** · M2 · Link target picker lists only tables in the same book (self included).
-- **AT-407 — Lookup** · M2 · Tasks.lookup(Project.Owner) shows owner of linked project; updates when project owner changes.
-- **AT-408 — Rollup** · M2 · Projects.rollup(sum Tasks.Hours) correct; count, avg, min, max, earliest, latest, concat also correct.
+- **AT-407 — Lookup** · M2 · Tasks.lookup(Project.Owner) shows owner of linked project; updates when project owner changes. **Evidence: PASS** — PG18 `TestLookupComputedValueUpdatesWithRelatedRow` and browser `lookups-rollups.spec.ts`.
+- **AT-408 — Rollup** · M2 · Projects.rollup(sum Tasks.Hours) correct; count, avg, min, max, earliest, latest, concat also correct. **Evidence: PASS** — PG18 `TestRollupComputedAggregates` and browser `lookups-rollups.spec.ts` cover all eight aggregates.
 - **AT-409 — Formula** · M2 · `{Price} * {Qty}`, `IF({Status}="Done","✓","")`, `DATETIME_DIFF(TODAY(), {Due}, "days")`, `CONCAT({First}," ",{Last})` compute correctly; invalid formula shows error with position; renaming a referenced field keeps the formula working.
 - **AT-410 — Computed fields filter/sort** · M2 · Filter and sort on a formula and a rollup work.
-- **AT-411 — Cross-permission masking** · M2 · bob has read on Tasks but none on Projects → link cell shows project names only (no open), lookup cells show 🔒, filter on lookup not offered.
+- **AT-411 — Cross-permission masking** · M2 · bob has read on Tasks but none on Projects → link cell shows project names only (no open), lookup cells show 🔒, filter on lookup not offered. **Evidence: PASS** — PG18 `TestComputedValuesMaskedWithoutTargetRead` and browser `lookups-rollups.spec.ts` verify masking and retained link labels; computed filtering is unavailable until T2.6.
 
 ## AT-5xx Views (M2)
 

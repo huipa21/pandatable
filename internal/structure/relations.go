@@ -334,6 +334,31 @@ func (s *Service) CreateRelation(ctx context.Context, actor Actor, tableID strin
 	return result, err
 }
 
+func lockRelationTables(ctx context.Context, c *txn, relation relationRecord, sourceID pgtype.UUID) (lockedTable, lockedTable, error) {
+	if sourceID != relation.parentTable && sourceID != relation.childTable {
+		return lockedTable{}, lockedTable{}, errors.New("source table is outside relation")
+	}
+	source, err := lockTable(ctx, c, sourceID)
+	if err != nil {
+		return lockedTable{}, lockedTable{}, err
+	}
+	otherID := relation.parentTable
+	if sourceID == relation.parentTable {
+		otherID = relation.childTable
+	}
+	other := source
+	if otherID != sourceID {
+		other, err = lockTable(ctx, c, otherID)
+		if err != nil {
+			return lockedTable{}, lockedTable{}, err
+		}
+	}
+	if sourceID == relation.parentTable {
+		return source, other, nil
+	}
+	return other, source, nil
+}
+
 func (s *Service) deleteRelationField(ctx context.Context, c *txn, source lockedTable, field structuresql.GetFieldRow) (FieldResult, error) {
 	relation, err := relationForField(ctx, c.tx, field.ID)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -647,6 +672,9 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 			return fmt.Errorf("read updated relation row: %w", err)
 		}
 		if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+			return err
+		}
+		if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
 			return err
 		}
 		result = record

@@ -151,6 +151,8 @@ export function errorMessage(error: unknown): string {
   switch (code) {
     case 'ERR_FIELD_NAME_CONFLICT':
       return t('errors.ERR_FIELD_NAME_CONFLICT')
+    case 'ERR_FIELD_IN_USE':
+      return t('errors.ERR_FIELD_IN_USE')
     case 'ERR_VERSION_CONFLICT':
       return t('errors.ERR_VERSION_CONFLICT')
     case 'ERR_REQUIRED_HAS_EMPTY':

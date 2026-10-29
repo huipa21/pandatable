@@ -427,6 +427,63 @@ it('creates a same-book relation from the owner field panel', async () => {
   }
 })
 
+it('configures a lookup from an existing same-book relation', async () => {
+  const next = schema()
+  const relationField = field({
+    id: 'relation-field',
+    name: 'Project',
+    uiType: 'link',
+    options: {},
+    position: 4096,
+  })
+  const lookup = field({
+    id: 'lookup-field',
+    name: 'Project name',
+    uiType: 'lookup',
+    options: { relationFieldId: 'relation-field', targetFieldId: 'name' },
+    position: 5120,
+  })
+  next.fields.push(relationField)
+  next.relations = [
+    {
+      id: 'relation-id',
+      kind: 'one_many',
+      parentTableId: 't',
+      childTableId: 't',
+      parentFieldId: 'relation-field',
+      childFieldId: 'reverse-field',
+      onDelete: 'set_null',
+    },
+  ]
+  const created = { ...next, fields: [...next.fields, lookup] }
+  const { calls } = stubFetch(
+    Response.json(next),
+    Response.json({ field: lookup, schema: created, eventId: 'lookup-event' }),
+  )
+  const wrapper = await setup(next)
+  try {
+    await buttonByText(wrapper, 'Add lookup').trigger('click')
+    const dialog = wrapper.get('dialog[aria-label="Create computed field"]')
+    await flushPromises()
+    await dialog.get('input').setValue('Project name')
+    await dialog.findAll('select')[1]!.setValue('name')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    expect(calls().map(([url]) => url)).toEqual([
+      '/api/v1/tables/t/schema',
+      '/api/v1/tables/t/fields',
+    ])
+    expect(JSON.parse(String(calls()[1]![1].body))).toEqual({
+      name: 'Project name',
+      uiType: 'lookup',
+      options: { relationFieldId: 'relation-field', targetFieldId: 'name' },
+    })
+    expect(wrapper.emitted('update')?.[0]?.[0]).toEqual(created)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('reconciles permission loss and uncertain outcomes with an authoritative reload', async () => {
   const { fetch } = stubFetch(failure(403, 'ERR_PERMISSION_DENIED'))
   const wrapper = await setup()

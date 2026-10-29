@@ -284,10 +284,14 @@ func (s *Service) fieldResult(ctx context.Context, c *txn, tableID pgtype.UUID, 
 // CreateField adds a typed native column and its metadata atomically. Only an
 // effective owner of the live table may do so (D-123).
 func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, input FieldInput) (FieldResult, error) {
+	if isComputedKind(input.UIType) {
+		return s.createComputedField(ctx, actor, tableID, input)
+	}
 	target, err := resourceOf(acl.Table, tableID)
 	if err != nil {
 		return FieldResult{}, err
 	}
+
 	name, err := cleanName(input.Name)
 	if err != nil {
 		return FieldResult{}, err
@@ -374,6 +378,88 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 			result, err = s.fieldResult(ctx, c, target.ID, &id)
 			return err
 		})
+	})
+	return result, err
+}
+
+func (s *Service) createComputedField(ctx context.Context, actor Actor, tableID string, input FieldInput) (FieldResult, error) {
+	target, err := resourceOf(acl.Table, tableID)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	name, err := cleanName(input.Name)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	description, err := cleanDescription(input.Description)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	options, err := cleanComputedOptions(input.UIType, input.Options)
+	if err != nil {
+		return FieldResult{}, err
+	}
+	var result FieldResult
+	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+		var config computedOptions
+		if err := json.Unmarshal(options, &config); err != nil {
+			return fmt.Errorf("decode normalized computed options: %w", err)
+		}
+		relationFieldID, ok := acl.ParseUUID(config.RelationFieldID)
+		if !ok {
+			return validation("Computed field relation is invalid")
+		}
+		relation, err := relationForField(ctx, c.tx, relationFieldID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return validation("Computed field relation is invalid")
+			}
+			return err
+		}
+		parentTable, childTable, err := lockRelationTables(ctx, c, relation, target.ID)
+		if err != nil {
+			return err
+		}
+		table := parentTable
+		if target.ID == relation.childTable {
+			table = childTable
+		}
+		rowTable, err := loadRowTable(ctx, c.q, c.tx, table.ID,
+			table.physical.Schema, table.physical.Name, table.SchemaVersion)
+		if err != nil {
+			return err
+		}
+		relation, err = relationForField(ctx, c.tx, relationFieldID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return validation("Computed field relation is invalid")
+			}
+			return err
+		}
+		side := "parent"
+		if relation.parentTable != table.ID || relation.parentField != relationFieldID {
+			if relation.childTable != table.ID || relation.childField != relationFieldID {
+				return validation("Computed field relation is invalid")
+			}
+			side = "child"
+		}
+		if _, err := computedTarget(ctx, c.tx, rowTable, input.UIType, options,
+			rowField{id: config.RelationFieldID, relation: &relation, relationSide: side}); err != nil {
+			return err
+		}
+		last, err := c.q.MaxUserFieldPosition(ctx, target.ID)
+		if err != nil {
+			return fmt.Errorf("read field position: %w", err)
+		}
+		id, err := c.q.InsertUserField(ctx, structuresql.InsertUserFieldParams{
+			TableID: target.ID, Name: name, Description: description, UiType: input.UIType,
+			Options: options, IsRequired: false, IsUnique: false, Position: last + positionStep,
+		})
+		if err != nil {
+			return fieldNameConflict(fmt.Errorf("insert computed field: %w", err))
+		}
+		result, err = s.fieldResult(ctx, c, target.ID, &id)
+		return err
 	})
 	return result, err
 }
@@ -541,6 +627,30 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 			result, err = s.fieldResult(ctx, c, table.ID, &field.ID)
 			return err
 		}
+		if isComputedKind(field.UiType) {
+			if patch.Options != nil || patch.IsRequired != nil || patch.IsUnique != nil || patch.Default != nil {
+				return reasonError(400, "ERR_VALIDATION", "Computed field configuration is managed by its definition", "computed_field")
+			}
+			if patch.Name == nil {
+				name = field.Name
+			}
+			if patch.Description == nil {
+				description = field.Description
+			}
+			if _, err := c.q.UpdateField(ctx, structuresql.UpdateFieldParams{
+				ID: field.ID, Name: name, Description: description, Options: field.Options,
+				IsRequired: false, IsUnique: false, DefaultJson: nil,
+			}); err != nil {
+				return fieldNameConflict(fmt.Errorf("update computed field: %w", err))
+			}
+			if patch.Index != nil {
+				if err := moveField(ctx, c, table.ID, field.ID, *patch.Index); err != nil {
+					return err
+				}
+			}
+			result, err = s.fieldResult(ctx, c, table.ID, &field.ID)
+			return err
+		}
 		if patch.Name == nil {
 			name = field.Name
 		}
@@ -647,9 +757,25 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 	}
 	var result FieldResult
 	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
-		table, err := lockTable(ctx, c, target.ID)
-		if err != nil {
-			return err
+		relation, relationErr := relationForField(ctx, c.tx, fieldID)
+		if relationErr != nil && !errors.Is(relationErr, pgx.ErrNoRows) {
+			return relationErr
+		}
+		var table lockedTable
+		if relationErr == nil {
+			parentTable, childTable, err := lockRelationTables(ctx, c, relation, target.ID)
+			if err != nil {
+				return err
+			}
+			table = parentTable
+			if target.ID == relation.childTable {
+				table = childTable
+			}
+		} else {
+			table, err = lockTable(ctx, c, target.ID)
+			if err != nil {
+				return err
+			}
 		}
 		field, err := c.lockedField(ctx, table, fieldID, version)
 		if err != nil {
@@ -658,8 +784,26 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 		if field.IsSystem {
 			return systemFieldError()
 		}
+		dependencyIDs := []pgtype.UUID{field.ID}
+		if relationErr == nil {
+			dependencyIDs = []pgtype.UUID{relation.parentField, relation.childField}
+		}
+		used, err := computedFieldUses(ctx, c.tx, dependencyIDs)
+		if err != nil {
+			return err
+		}
+		if used {
+			return apperr.New(409, "ERR_FIELD_IN_USE", "This field is used by a lookup or rollup")
+		}
 		if field.UiType == "link" {
 			result, err = s.deleteRelationField(ctx, c, table, field)
+			return err
+		}
+		if isComputedKind(field.UiType) {
+			if err := c.q.TrashField(ctx, field.ID); err != nil {
+				return fmt.Errorf("trash computed field: %w", err)
+			}
+			result, err = s.fieldResult(ctx, c, table.ID, nil)
 			return err
 		}
 		if table.DisplayFieldID == field.ID {

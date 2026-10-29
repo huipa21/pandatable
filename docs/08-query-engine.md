@@ -193,8 +193,9 @@ DATETIME_DIFF(NOW(), {Created at}, "days")
 ## 8. Lookups & rollups
 
 - Compiled as correlated subqueries (shown above); for M:N via junction join.
-- Lookup returns array of values (JSON array) of the target field; filter ops of the target type applied with `EXISTS`/array semantics ("has any").
-- Rollup returns a scalar; filter/sort as a normal scalar.
+- Lookup returns an ordered JSON array of the target field values; rollup returns a scalar using `count`, `sum`, `avg`, `min`, `max`, `earliest`, `latest` or `concat`.
+- Values are computed in row queries and masked when the caller lacks read access to the target table. Filtering and sorting computed fields remain for T2.6 and must preserve this permission boundary.
+- A live computed field may reference only a stored target field and a live relation. Deletion of a referenced field or relation is rejected until the dependent computed field is deleted (D-171).
 - Indexes on FK columns and junction `(child_id)` keep these fast at target scale.
 
 ## 9. Writes

@@ -71,6 +71,7 @@ type rowField struct {
 	codec        codec.Field
 	relation     *relationRecord
 	relationSide string
+	computed     *computedField
 }
 
 type rowTable struct {
@@ -163,6 +164,26 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 			table.byID[field.id] = field
 			continue
 		}
+		if isComputedKind(row.UiType) {
+			options, err := decodeComputedOptions(row.UiType, row.Options)
+			if err != nil {
+				return rowTable{}, fmt.Errorf("read computed field options: %w", err)
+			}
+			info, ok := relationFields[options.RelationFieldID]
+			if !ok || row.PgColumn.Valid || row.IsSystem {
+				return rowTable{}, errors.New("invalid computed field metadata")
+			}
+			relation := info.relation
+			relationField := rowField{id: options.RelationFieldID, relation: &relation, relationSide: info.side}
+			computed, err := computedTarget(ctx, tx, table, row.UiType, row.Options, relationField)
+			if err != nil {
+				return rowTable{}, fmt.Errorf("bind computed field: %w", err)
+			}
+			field := rowField{id: row.ID.String(), kind: kind, computed: computed}
+			table.fields = append(table.fields, field)
+			table.byID[field.id] = field
+			continue
+		}
 		bound, err := codec.Bind(kind, row.Options)
 		if err != nil {
 			return rowTable{}, fmt.Errorf("bind stored row field: %w", err)
@@ -209,7 +230,7 @@ func (table rowTable) selectColumnList(fields []rowField) []string {
 	columns := make([]string, 0, len(fields)+1)
 	columns = append(columns, pgx.Identifier{"id"}.Sanitize())
 	for _, field := range fields {
-		if field.relation != nil {
+		if field.relation != nil || field.computed != nil {
 			continue
 		}
 		column := field.sqlColumn()
@@ -268,7 +289,7 @@ func scanRow(row pgx.Row, table rowTable, fields []rowField) (RowRecord, error) 
 func physicalRowFields(fields []rowField) []rowField {
 	result := make([]rowField, 0, len(fields))
 	for _, field := range fields {
-		if field.relation == nil {
+		if field.relation == nil && field.computed == nil {
 			result = append(result, field)
 		}
 	}
@@ -434,7 +455,7 @@ func sortedFieldValues(ctx context.Context, queries *structuresql.Queries, table
 	for _, id := range keys {
 		field, ok := table.byID[id]
 		parsed, valid := acl.ParseUUID(id)
-		if !ok || !valid || parsed.String() != id || field.system || field.relation != nil {
+		if !ok || !valid || parsed.String() != id || field.system || field.relation != nil || field.computed != nil {
 			return nil, nil, validation("A supplied field is not writable on this table")
 		}
 		value, err := field.codec.Decode(input[id])
@@ -537,6 +558,9 @@ func (s *Service) GetRow(ctx context.Context, actor Actor, tableID, rowID string
 			return fmt.Errorf("read row: %w", err)
 		}
 		if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+			return err
+		}
+		if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
 			return err
 		}
 		result = record
@@ -645,6 +669,9 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err := enrichRowLinks(ctx, tx, table, fields, result.Rows); err != nil {
 		return RowQueryResult{}, rowDatabaseError(err)
 	}
+	if err := enrichRowComputed(ctx, tx, actor, table, fields, result.Rows); err != nil {
+		return RowQueryResult{}, rowDatabaseError(err)
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return RowQueryResult{}, rowDatabaseError(fmt.Errorf("commit view query: %w", err))
 	}
@@ -702,7 +729,7 @@ func configuredRowSort(table rowTable, configured []struct {
 	if override != nil {
 		field, ok := table.byID[override.FieldID]
 		direction := strings.ToUpper(override.Direction)
-		if !ok || field.relation != nil || direction != "ASC" && direction != "DESC" {
+		if !ok || field.relation != nil || field.computed != nil || direction != "ASC" && direction != "DESC" {
 			return nil, "", validation("Sort must name a live field and use asc or desc")
 		}
 		return &field, direction, nil
@@ -712,7 +739,7 @@ func configuredRowSort(table rowTable, configured []struct {
 	}
 	field, ok := table.byID[configured[0].Field]
 	direction := strings.ToUpper(configured[0].Dir)
-	if !ok || field.relation != nil || direction != "ASC" && direction != "DESC" {
+	if !ok || field.relation != nil || field.computed != nil || direction != "ASC" && direction != "DESC" {
 		return nil, "", nil
 	}
 	return &field, direction, nil
@@ -776,6 +803,9 @@ func insertRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, ta
 		return RowRecord{}, fmt.Errorf("insert row: %w", err)
 	}
 	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+		return RowRecord{}, err
+	}
+	if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
 		return RowRecord{}, err
 	}
 	return record, nil
@@ -845,6 +875,9 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 		return RowRecord{}, fmt.Errorf("patch row: %w", err)
 	}
 	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+		return RowRecord{}, err
+	}
+	if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
 		return RowRecord{}, err
 	}
 	return record, nil
@@ -932,6 +965,9 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 			return err
 		}
 		if err := enrichRowLinks(ctx, tx, table, table.fields, records); err != nil {
+			return err
+		}
+		if err := enrichRowComputed(ctx, tx, actor, table, table.fields, records); err != nil {
 			return err
 		}
 		if len(records) != len(ids) {
