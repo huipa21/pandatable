@@ -488,6 +488,21 @@
       "datetime": "Date & time",
       "single_select": "Single select",
       "multi_select": "Multiple select",
+      "time": "Time",
+      "duration": "Duration",
+      "currency": "Currency",
+      "percent": "Percent",
+      "rating": "Rating",
+      "phone": "Phone",
+      "uuid": "UUID",
+      "json": "JSON",
+      "inet": "IP address",
+      "cidr": "Network range",
+      "text_array": "Text array",
+      "int_array": "Integer array",
+      "user": "User",
+      "multi_user": "Multiple users",
+      "autonumber": "Auto number",
       "email": "Email",
       "url": "URL",
       "id": "Row ID",
@@ -518,6 +533,15 @@
       "invalid_email": "Enter a valid email address.",
       "invalid_url": "Enter a valid web address.",
       "url_scheme": "Only http and https links are allowed.",
+      "invalid_time": "Enter a valid time.",
+      "invalid_duration": "Enter a valid ISO 8601 duration.",
+      "invalid_rating": "Enter a whole-number rating.",
+      "invalid_phone": "Enter a valid phone number.",
+      "invalid_uuid": "Enter a lowercase UUID.",
+      "invalid_json": "Enter valid JSON.",
+      "invalid_ip": "Enter a valid IP address.",
+      "invalid_cidr": "Enter a valid, canonical network range.",
+      "invalid_array": "Enter a valid list of values.",
       "read_only": "This field is read-only."
     },
     "checkbox": {
@@ -528,7 +552,8 @@
       "unknown": "This option is no longer configured"
     },
     "user": {
-      "unknown": "Unknown user ({id})"
+      "unknown": "Unknown user ({id})",
+      "lookupFailed": "Could not load this user's name."
     },
     "editor": {
       "value": "Field value",
@@ -536,7 +561,13 @@
       "apply": "Apply",
       "multilineHint": "Press Ctrl+Enter to save",
       "datePlaceholder": "YYYY-MM-DD",
-      "datetimePlaceholder": "YYYY-MM-DD HH:mm"
+      "datetimePlaceholder": "YYYY-MM-DD HH:mm",
+      "userSearch": "Search active users",
+      "userSearchPlaceholder": "Type at least 2 characters",
+      "searchingUsers": "Searching users…",
+      "userSearchFailed": "Could not search users. Try again.",
+      "username": "({username})",
+      "removeUser": "Remove {name}"
     },
     "panel": {
       "title": "Fields",
@@ -565,6 +596,30 @@
       "precision": "Total digits",
       "scale": "Decimal places",
       "displayDecimals": "Decimal places shown (optional)",
+      "currency": "Currency code",
+      "defaultCurrency": "Use the app default",
+      "ratingMax": "Maximum rating (1–10)",
+      "durationFormat": "Duration display",
+      "durationFormats": {
+        "hoursMinutes": "Hours and minutes",
+        "hoursMinutesSeconds": "Hours, minutes and seconds",
+        "human": "Compact"
+      },
+      "autoGenerateUUID": "Generate UUID for new rows",
+      "prefix": "Prefix",
+      "padding": "Number padding",
+      "currency": "Currency code",
+      "defaultCurrency": "Use the app default",
+      "ratingMax": "Maximum rating (1–10)",
+      "durationFormat": "Duration display",
+      "durationFormats": {
+        "hoursMinutes": "Hours and minutes",
+        "hoursMinutesSeconds": "Hours, minutes and seconds",
+        "human": "Compact"
+      },
+      "autoGenerateUUID": "Generate UUID for new rows",
+      "prefix": "Prefix",
+      "padding": "Number padding",
       "thousandSep": "Use a thousands separator",
       "dateFormat": "Date format",
       "timeFormat": "Time format",

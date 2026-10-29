@@ -25,6 +25,21 @@ export const USER_KINDS = [
   'datetime',
   'single_select',
   'multi_select',
+  'time',
+  'duration',
+  'currency',
+  'percent',
+  'rating',
+  'phone',
+  'uuid',
+  'json',
+  'inet',
+  'cidr',
+  'text_array',
+  'int_array',
+  'user',
+  'multi_user',
+  'autonumber',
   'email',
   'url',
 ] as const satisfies readonly Kind[]
@@ -35,6 +50,8 @@ export const STORAGE_OPTIONS: Partial<Record<Kind, readonly string[]>> = {
   integer: ['size'],
   decimal: ['precision', 'scale'],
   float: ['size'],
+  currency: ['scale'],
+  rating: ['max'],
 }
 
 export const MAX_DESCRIPTION = 1000
@@ -47,12 +64,18 @@ export interface FieldDraft {
   size: string
   precision: string
   scale: string
+  currency: string
+  ratingMax: string
   displayDecimals: string
   thousandSep: boolean
   dateFormat: string
   timeFormat: string
+  durationFormat: string
   timezone: string
   fixedTz: string
+  autoGenerate: boolean
+  autoNumberPrefix: string
+  autoNumberPadding: string
   choices: Choice[]
   isRequired: boolean
   isUnique: boolean
@@ -90,12 +113,18 @@ export function draftFrom(field: TableField | null, env: FieldEnv): FieldDraft {
     size: text(options.size, kind === 'float' ? 'double' : 'int'),
     precision: text(options.precision, '18'),
     scale: text(options.scale, '2'),
+    currency: text(options.currency, ''),
+    ratingMax: text(options.max, '5'),
     displayDecimals: text(options.displayDecimals, ''),
     thousandSep: options.thousandSep !== false,
     dateFormat: text(options.dateFormat, 'iso'),
     timeFormat: text(options.timeFormat, '24h'),
+    durationFormat: text(options.format, 'h:mm'),
     timezone: text(options.timezone, 'user'),
     fixedTz: text(options.fixedTz, ''),
+    autoGenerate: options.autoGenerate === true,
+    autoNumberPrefix: text(options.prefix, ''),
+    autoNumberPadding: text(options.padding, '0'),
     choices: Array.isArray(options.choices)
       ? (options.choices as Choice[]).map((choice) => ({ ...choice }))
       : [],
@@ -144,6 +173,17 @@ export function draftOptions(draft: FieldDraft): Record<string, unknown> {
         scale: integer(draft.scale),
         thousandSep: draft.thousandSep,
       }
+    case 'currency':
+      return {
+        ...(draft.currency.trim() ? { currency: draft.currency.trim() } : {}),
+        scale: integer(draft.scale),
+      }
+    case 'percent':
+      return draft.displayDecimals.trim()
+        ? { displayDecimals: integer(draft.displayDecimals) }
+        : {}
+    case 'rating':
+      return { max: integer(draft.ratingMax), icon: 'star' }
     case 'float':
       return draft.displayDecimals.trim()
         ? {
@@ -167,6 +207,17 @@ export function draftOptions(draft: FieldDraft): Record<string, unknown> {
             timeFormat: draft.timeFormat,
             timezone: draft.timezone,
           }
+    case 'time':
+      return { format: draft.timeFormat }
+    case 'duration':
+      return { format: draft.durationFormat }
+    case 'uuid':
+      return draft.autoGenerate ? { autoGenerate: true } : {}
+    case 'autonumber':
+      return {
+        ...(draft.autoNumberPrefix ? { prefix: draft.autoNumberPrefix } : {}),
+        padding: integer(draft.autoNumberPadding),
+      }
     case 'single_select':
     case 'multi_select':
       return {
@@ -262,7 +313,10 @@ export function createBody(
     name: draft.name.trim(),
     uiType: draft.kind,
     description: draft.description.trim(),
-    options: bound.value.options,
+    options:
+      draft.kind === 'currency' && !draft.currency.trim()
+        ? draftOptions(draft)
+        : bound.value.options,
     isRequired: constraints.required && draft.isRequired,
     isUnique: constraints.unique && draft.isUnique,
   }
@@ -348,6 +402,15 @@ const CODEC_REASONS = new Set<string>([
   'invalid_email',
   'invalid_url',
   'url_scheme',
+  'invalid_time',
+  'invalid_duration',
+  'invalid_rating',
+  'invalid_phone',
+  'invalid_uuid',
+  'invalid_json',
+  'invalid_ip',
+  'invalid_cidr',
+  'invalid_array',
   'read_only',
 ])
 

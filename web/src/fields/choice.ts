@@ -94,7 +94,11 @@ const ordered = (choices: readonly Choice[], selected: Set<number>) =>
 
 /** Stored labels of a wire value (unknown labels included). */
 export const choiceLabels = (value: WireValue): string[] =>
-  typeof value === 'string' ? [value] : Array.isArray(value) ? value : []
+  typeof value === 'string'
+    ? [value]
+    : Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : []
 
 function choiceKind(multi: boolean): FieldKind<ChoiceOptions> {
   return {

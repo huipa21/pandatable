@@ -955,6 +955,7 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
   expect(updatedRow.fields[updatedByField.id]).toBe(bobUser.id)
 
   // Clean up.
+  await page.goto('/home')
   await page.request.delete(`/api/v1/tables/${tableId}`, { headers: headers() })
   await page.request.patch(`/api/v1/admin/users/${bobUser.id}`, {
     headers: headers(),

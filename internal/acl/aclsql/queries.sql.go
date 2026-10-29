@@ -436,6 +436,38 @@ func (q *Queries) LockWorkspace(ctx context.Context, id pgtype.UUID) (pgtype.UUI
 	return id_2, err
 }
 
+const resolveTableUserLabels = `-- name: ResolveTableUserLabels :many
+SELECT id, display_name AS name
+FROM meta.users
+WHERE id = ANY($1::uuid[])
+ORDER BY id
+`
+
+type ResolveTableUserLabelsRow struct {
+	ID   pgtype.UUID
+	Name string
+}
+
+func (q *Queries) ResolveTableUserLabels(ctx context.Context, ids []pgtype.UUID) ([]ResolveTableUserLabelsRow, error) {
+	rows, err := q.db.Query(ctx, resolveTableUserLabels, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ResolveTableUserLabelsRow
+	for rows.Next() {
+		var i ResolveTableUserLabelsRow
+		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchShareGroups = `-- name: SearchShareGroups :many
 SELECT id, name
 FROM meta.groups

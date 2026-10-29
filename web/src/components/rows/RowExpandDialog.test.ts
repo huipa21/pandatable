@@ -306,7 +306,7 @@ it.each(['checkbox', 'single_select', 'multi_select'])(
   },
 )
 
-it('shows all live fields in metadata order, including hidden/system and removed select labels, without a directory lookup', async () => {
+it('shows live fields in metadata order and resolves system user labels through the table directory', async () => {
   const schema = tableSchema()
   for (const [index, kind] of [
     'id',
@@ -351,7 +351,15 @@ it('shows all live fields in metadata order, including hidden/system and removed
   ])
   expect(wrapper.findAll('.row-field button')).toHaveLength(2)
   expect(wrapper.get('.chip-unknown').text()).toBe('Removed')
-  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(fetcher).toHaveBeenCalledWith(
+    '/api/v1/tables/t/directory/user-labels',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        ids: ['0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'],
+      }),
+    }),
+  )
   i18n.global.locale.value = 'zh-CN'
   await flushPromises()
   expect(wrapper.text()).toContain('只读系统字段')

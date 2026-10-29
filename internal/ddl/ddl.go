@@ -29,12 +29,26 @@ func (table TableName) sql() (string, error) {
 }
 
 type ColumnSpec struct {
-	Name    string
-	Type    DataType
-	NotNull bool
-	Unique  bool
-	Default DefaultValue
+	Name       string
+	Type       DataType
+	NotNull    bool
+	Unique     bool
+	Default    DefaultValue
+	RangeCheck *IntRangeCheck
+	Reference  Reference
 }
+
+type IntRangeCheck struct {
+	Min int64
+	Max int64
+}
+
+type Reference string
+
+const (
+	NoReference   Reference = ""
+	UserReference Reference = "user"
+)
 
 func CreateSchema(ctx context.Context, tx pgx.Tx, name string) error {
 	if err := ValidateIdentifier(Book, name); err != nil {
@@ -80,7 +94,72 @@ func AddColumn(ctx context.Context, tx pgx.Tx, table TableName, column ColumnSpe
 	if column.Unique {
 		query += " CONSTRAINT " + uniqueName(table, column.Name) + " UNIQUE"
 	}
+	if column.RangeCheck != nil {
+		if column.Type.Kind != SmallInt || column.RangeCheck.Min > column.RangeCheck.Max ||
+			column.RangeCheck.Min < -32768 || column.RangeCheck.Max > 32767 {
+			return validation("Invalid integer range check")
+		}
+		query += " CONSTRAINT " + rangeName(table, column.Name) + " CHECK (" +
+			pgx.Identifier{column.Name}.Sanitize() + " BETWEEN " +
+			fmt.Sprintf("%d AND %d", column.RangeCheck.Min, column.RangeCheck.Max) + ")"
+	}
+	switch column.Reference {
+	case NoReference:
+	case UserReference:
+		if column.Type.Kind != UUID || column.NotNull {
+			return validation("Invalid user reference")
+		}
+		query += " CONSTRAINT " + foreignKeyName(table, column.Name) + " REFERENCES meta.users(id) ON DELETE SET NULL"
+	default:
+		return validation("Invalid column reference")
+	}
 	return execute(ctx, tx, "add column", query, true)
+}
+
+// AddAutoNumberColumn creates a per-column sequence, numbers existing rows in
+// ascending id order, and installs it as the column default. The sequence is
+// owned by the column, so a purge DROP COLUMN removes it atomically.
+func AddAutoNumberColumn(ctx context.Context, tx pgx.Tx, table TableName, column string) error {
+	name, err := columnTarget(table, column)
+	if err != nil {
+		return err
+	}
+	sequence, err := sequenceForColumn(column)
+	if err != nil {
+		return err
+	}
+	seqName := pgx.Identifier{table.Schema, sequence}.Sanitize()
+	quotedColumn := pgx.Identifier{column}.Sanitize()
+	if err := execute(ctx, tx, "create autonumber sequence", "CREATE SEQUENCE "+seqName, true); err != nil {
+		return err
+	}
+	if err := execute(ctx, tx, "add autonumber column", "ALTER TABLE "+name+" ADD COLUMN "+quotedColumn+" pg_catalog.int8", true); err != nil {
+		return err
+	}
+	nextValue := "pg_catalog.nextval('" + table.Schema + "." + sequence + "'::pg_catalog.regclass)"
+	backfill := "WITH numbered AS MATERIALIZED (SELECT \"id\", " + nextValue +
+		" AS value FROM " + name + " ORDER BY \"id\") UPDATE " + name +
+		" AS target SET " + quotedColumn + " = numbered.value FROM numbered WHERE target.\"id\" = numbered.\"id\""
+	if err := execute(ctx, tx, "backfill autonumber column", backfill, false); err != nil {
+		return err
+	}
+	if err := execute(ctx, tx, "set autonumber default",
+		"ALTER TABLE "+name+" ALTER COLUMN "+quotedColumn+" SET DEFAULT "+nextValue, false); err != nil {
+		return err
+	}
+	if err := execute(ctx, tx, "own autonumber sequence",
+		"ALTER SEQUENCE "+seqName+" OWNED BY "+name+"."+quotedColumn, false); err != nil {
+		return err
+	}
+	return execute(ctx, tx, "require autonumber value",
+		"ALTER TABLE "+name+" ALTER COLUMN "+quotedColumn+" SET NOT NULL", false)
+}
+
+func sequenceForColumn(column string) (string, error) {
+	if err := ValidateIdentifier(Column, column); err != nil {
+		return "", err
+	}
+	return "s_" + column[2:], nil
 }
 
 func DropColumn(ctx context.Context, tx pgx.Tx, table TableName, column string) error {
@@ -141,6 +220,14 @@ func columnTarget(table TableName, column string) (string, error) {
 
 func uniqueName(table TableName, column string) string {
 	return pgx.Identifier{table.Name + "_" + column + "_key"}.Sanitize()
+}
+
+func rangeName(table TableName, column string) string {
+	return pgx.Identifier{table.Name + "_" + column + "_check"}.Sanitize()
+}
+
+func foreignKeyName(table TableName, column string) string {
+	return pgx.Identifier{table.Name + "_" + column + "_fkey"}.Sanitize()
 }
 
 func execute(ctx context.Context, tx pgx.Tx, operation, query string, creating bool) error {

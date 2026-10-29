@@ -502,12 +502,40 @@ onBeforeUnmount(() => {
               />
             </label>
           </template>
-          <label v-if="draft.kind === 'float'">
+          <label v-if="draft.kind === 'float' || draft.kind === 'percent'">
             <span>{{ t('field.panel.displayDecimals') }}</span>
             <input
               v-model="draft.displayDecimals"
               inputmode="numeric"
               :disabled="busy"
+            />
+          </label>
+          <template v-if="draft.kind === 'currency'">
+            <label>
+              <span>{{ t('field.panel.currency') }}</span>
+              <input
+                v-model="draft.currency"
+                maxlength="3"
+                autocapitalize="characters"
+                :placeholder="t('field.panel.defaultCurrency')"
+                :disabled="busy"
+              />
+            </label>
+            <label>
+              <span>{{ t('field.panel.scale') }}</span>
+              <input
+                v-model="draft.scale"
+                inputmode="numeric"
+                :disabled="busy || storageFixed"
+              />
+            </label>
+          </template>
+          <label v-if="draft.kind === 'rating'">
+            <span>{{ t('field.panel.ratingMax') }}</span>
+            <input
+              v-model="draft.ratingMax"
+              inputmode="numeric"
+              :disabled="busy || storageFixed"
             />
           </label>
           <label
@@ -533,8 +561,8 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
-          <template v-if="draft.kind === 'datetime'">
-            <label>
+          <template v-if="draft.kind === 'datetime' || draft.kind === 'time'">
+            <label v-if="draft.kind === 'datetime'">
               <span>{{ t('field.panel.timeFormat') }}</span>
               <select v-model="draft.timeFormat" :disabled="busy">
                 <option
@@ -546,7 +574,7 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
-            <label>
+            <label v-if="draft.kind === 'datetime'">
               <span>{{ t('field.panel.timezone') }}</span>
               <select v-model="draft.timezone" :disabled="busy">
                 <option
@@ -558,9 +586,51 @@ onBeforeUnmount(() => {
                 </option>
               </select>
             </label>
-            <label v-if="draft.timezone === 'fixed'">
+            <label
+              v-if="draft.kind === 'datetime' && draft.timezone === 'fixed'"
+            >
               <span>{{ t('field.panel.fixedTz') }}</span>
               <input v-model="draft.fixedTz" maxlength="64" :disabled="busy" />
+            </label>
+          </template>
+          <label v-if="draft.kind === 'duration'">
+            <span>{{ t('field.panel.durationFormat') }}</span>
+            <select v-model="draft.durationFormat" :disabled="busy">
+              <option value="h:mm">
+                {{ t('field.panel.durationFormats.hoursMinutes') }}
+              </option>
+              <option value="h:mm:ss">
+                {{ t('field.panel.durationFormats.hoursMinutesSeconds') }}
+              </option>
+              <option value="human">
+                {{ t('field.panel.durationFormats.human') }}
+              </option>
+            </select>
+          </label>
+          <label v-if="draft.kind === 'uuid'" class="field-check">
+            <input
+              v-model="draft.autoGenerate"
+              type="checkbox"
+              :disabled="busy"
+            />
+            <span>{{ t('field.panel.autoGenerateUUID') }}</span>
+          </label>
+          <template v-if="draft.kind === 'autonumber'">
+            <label>
+              <span>{{ t('field.panel.prefix') }}</span>
+              <input
+                v-model="draft.autoNumberPrefix"
+                maxlength="32"
+                :disabled="busy"
+              />
+            </label>
+            <label>
+              <span>{{ t('field.panel.padding') }}</span>
+              <input
+                v-model="draft.autoNumberPadding"
+                inputmode="numeric"
+                :disabled="busy"
+              />
             </label>
           </template>
           <fieldset v-if="selectKind" class="field-choices">

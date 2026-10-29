@@ -409,7 +409,6 @@ func (q *Queries) InsertUserField(ctx context.Context, arg InsertUserFieldParams
 }
 
 const insertWorkspace = `-- name: InsertWorkspace :one
-
 INSERT INTO meta.workspaces (name, icon, color, created_by)
 VALUES ($1, $2, $3, $4)
 RETURNING id, name, icon, color, created_at
@@ -430,9 +429,6 @@ type InsertWorkspaceRow struct {
 	CreatedAt pgtype.Timestamptz
 }
 
-// Structure metadata for workspaces, books, tables, system fields and views
-// (T1.10, D-097..D-103). Authorization/lock queries live in internal/acl.
-// Physical DDL is never expressed here; see internal/ddl.
 func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams) (InsertWorkspaceRow, error) {
 	row := q.db.QueryRow(ctx, insertWorkspace,
 		arg.Name,
@@ -1161,6 +1157,24 @@ func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWo
 		return nil, err
 	}
 	return items, nil
+}
+
+const readDefaultCurrency = `-- name: ReadDefaultCurrency :one
+
+SELECT COALESCE(
+    (SELECT value #>> '{}' FROM meta.settings WHERE key='default_currency'),
+    'CNY'
+)
+`
+
+// Structure metadata for workspaces, books, tables, system fields and views
+// (T1.10, D-097..D-103). Authorization/lock queries live in internal/acl.
+// Physical DDL is never expressed here; see internal/ddl.
+func (q *Queries) ReadDefaultCurrency(ctx context.Context) (interface{}, error) {
+	row := q.db.QueryRow(ctx, readDefaultCurrency)
+	var coalesce interface{}
+	err := row.Scan(&coalesce)
+	return coalesce, err
 }
 
 const releaseDevSeedLock = `-- name: ReleaseDevSeedLock :one

@@ -12,6 +12,21 @@ export type Kind =
   | 'datetime'
   | 'single_select'
   | 'multi_select'
+  | 'time'
+  | 'duration'
+  | 'currency'
+  | 'percent'
+  | 'rating'
+  | 'phone'
+  | 'uuid'
+  | 'json'
+  | 'inet'
+  | 'cidr'
+  | 'text_array'
+  | 'int_array'
+  | 'user'
+  | 'multi_user'
+  | 'autonumber'
   | 'email'
   | 'url'
   | 'id'
@@ -42,6 +57,15 @@ export type Reason =
   | 'invalid_email'
   | 'invalid_url'
   | 'url_scheme'
+  | 'invalid_time'
+  | 'invalid_duration'
+  | 'invalid_rating'
+  | 'invalid_phone'
+  | 'invalid_uuid'
+  | 'invalid_json'
+  | 'invalid_ip'
+  | 'invalid_cidr'
+  | 'invalid_array'
   | 'read_only'
 
 export type Op =
@@ -89,16 +113,24 @@ export type Agg =
   | 'percent_checked'
 
 /** Canonical JSON wire value (D-115); null is SQL NULL. */
-export type WireValue = null | string | number | boolean | string[]
+export type JsonValue =
+  null | string | number | boolean | JsonValue[] | { [key: string]: JsonValue }
 
-export function isWireValue(value: unknown): value is WireValue {
-  return (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    (Array.isArray(value) && value.every((item) => typeof item === 'string'))
+export type WireValue = JsonValue
+
+export function isWireValue(value: unknown, depth = 0): value is WireValue {
+  if (depth > 128) return false
+  if (value === null || typeof value === 'string' || typeof value === 'boolean')
+    return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (Array.isArray(value))
+    return value.every((item) => isWireValue(item, depth + 1))
+  if (
+    typeof value === 'object' &&
+    Object.getPrototypeOf(value) === Object.prototype
   )
+    return Object.values(value).every((item) => isWireValue(item, depth + 1))
+  return false
 }
 
 export type Result<T> =

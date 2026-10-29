@@ -69,8 +69,8 @@ Routes:
   first Grid (otherwise first visible view). Missing/mismatched parents/views,
   hidden or removed resources show neutral localized not-found copy. This is a
   schema-only shell: no grid import or row/query/field/view editing. T1.12 adds
-  sharing below without expanding that boundary. T1.14 adds the field panel
-  below; still no grid/rows.
+  sharing below without expanding that boundary. T1.14 added the field panel;
+  T1.16 later integrated the production grid and row APIs.
 - en/zh-CN use static translation keys and precompiled runtime-only messages.
   Explicit local preferences, memory-only auth, production CSP and the
   <600,000-byte/no-initial-grid bundle gate remain unchanged. Unit mocks are
@@ -286,14 +286,17 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 
 - Virtual rows & columns; windowed data fetch (page 100) with placeholders.
 - Frozen columns, resize, reorder (drag header) → saved to view config (if permitted) else local override.
-- Batch-1 pure `FieldKind` definitions live in `src/fields`, bound through
+- Batch-1 and batch-2 pure `FieldKind` definitions live in `src/fields`, bound through
   `bindField(kind, options)`; shared presentation-family components are
   `components/fields/FieldRenderer.vue` and `FieldEditor.vue` (D-121).
   The contract includes normalizeOptions/normalize/parsePaste/formatCopy/
   formatDisplay/readOnly/constraints/filterOps/aggregates. Filter inputs remain
-  later work. System editors render nothing. Native controls commit validated
-  values, preserve IME input and show localized errors; Escape cancels,
-  multiline uses Ctrl/Meta+Enter, select/checkbox use native changes.
+  later work. System and autonumber editors render nothing. Native controls
+  commit validated values, preserve IME input and show localized errors; Escape
+  cancels, multiline uses Ctrl/Meta+Enter, select/checkbox use native changes.
+  Currency/percent keep exact decimal strings through `Intl.NumberFormat`;
+  table-scoped user pickers search active users and render user labels through
+  the separate, permission-checked label resolver (D-161/D-162).
   The real table route lazy-loads these components through T1.16's production
   grid. The synthetic spike stays isolated in `SpikeDataGrid.vue`.
 - T1.16's production grid fetches 100-row query pages and keeps only the active
@@ -546,7 +549,12 @@ across reload, independently of language.
   use the earlier instant. Copy retains an explicit offset and microseconds.
   Display without a usable zone explicitly labels UTC. Callers must supply
   effectiveTimezone from auth when the real grid is integrated.
-- Currency values formatted with `Intl.NumberFormat(locale, { style: 'currency', currency: field.options.currency })`; field editor offers currency selection with app default (CNY) preselected.
+- Currency values remain fixed-scale decimal strings and are passed directly
+  to `Intl.NumberFormat` for exact display (no JavaScript `Number` conversion).
+  The field editor lets owners set a per-field ISO code or leave it blank to
+  snapshot the app default (CNY) at creation; later setting changes do not
+  change existing fields. Percent stores a fraction as `numeric(7,4)` and
+  formats it with `Intl.NumberFormat` percent style.
 
 ## 8. Quality
 

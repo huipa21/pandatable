@@ -151,7 +151,7 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, id pgtype.UUID, 
 			if err := ddl.ValidateIdentifier(ddl.Column, column); err != nil {
 				return rowTable{}, fmt.Errorf("validate physical field column: %w", err)
 			}
-			if bound.ReadOnly() {
+			if bound.ReadOnly() && kind != codec.AutoNumber {
 				return rowTable{}, errors.New("user field has a read-only codec")
 			}
 		}
@@ -178,7 +178,11 @@ func (table rowTable) selectColumnList(fields []rowField) []string {
 	columns := make([]string, 0, len(fields)+1)
 	columns = append(columns, pgx.Identifier{"id"}.Sanitize())
 	for _, field := range fields {
-		columns = append(columns, field.sqlColumn())
+		column := field.sqlColumn()
+		if field.kind == codec.JSON {
+			column += "::text"
+		}
+		columns = append(columns, column)
 	}
 	return columns
 }

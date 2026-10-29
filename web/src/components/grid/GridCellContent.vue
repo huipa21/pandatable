@@ -8,13 +8,28 @@ defineProps<{
   value: WireValue
   env: FieldEnv
   message: string
+  tableId: string
+  identity: string
 }>()
 </script>
 
 <template>
   <div v-if="message" class="grid-cell-invalid" aria-invalid="true">
-    <FieldRenderer :field="field" :value="value" :env="env" />
+    <FieldRenderer
+      :field="field"
+      :value="value"
+      :env="env"
+      :table-id="tableId"
+      :identity="identity"
+    />
     <span role="alert">{{ message }}</span>
   </div>
-  <FieldRenderer v-else :field="field" :value="value" :env="env" />
+  <FieldRenderer
+    v-else
+    :field="field"
+    :value="value"
+    :env="env"
+    :table-id="tableId"
+    :identity="identity"
+  />
 </template>

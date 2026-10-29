@@ -656,3 +656,10 @@ Prior evidence above remains. **T1.23, T1.13, T1.14 and T1.15 are Done.**
 
 Exact commands, failed attempts, cleanup and handoff are in the
 [T1.23 record](task-prompts/T1.23.md#implementation-and-verification-record-2026-10-28).
+
+## T2.1 field evidence (2026-10-29)
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-320 | Pass (desktop) | The real Field panel creates each batch-2 kind; grid values save and persist after reload, the user picker exposes only active users, and autonumber is read-only/increasing. In the fast browser gate, 6 scenarios pass and the 2 mobile-only exclusions are intentional. |
+| AT-326 | Pass (desktop) | CNY formats and persists on the initial field; changing it to USD updates that field, while an admin default change to EUR affects new fields only. The test restores the instance setting. |

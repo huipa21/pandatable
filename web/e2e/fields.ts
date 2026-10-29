@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import type { Components } from '@revolist/revogrid'
 import { expect, expectHTTPFailure } from './fixtures'
 import type { TableField, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
@@ -38,6 +39,59 @@ async function save(
   await expect(
     page.getByRole('status').filter({ hasText: en.field.panel.saved }),
   ).toBeVisible()
+}
+
+export async function openFieldCellEditor(
+  page: Page,
+  fieldId: string,
+  rowIndex = 0,
+) {
+  const gridElement = page.locator('revo-grid')
+  await gridElement.evaluate(
+    async (element, { fieldId: targetId, row }) => {
+      const grid = element as HTMLElement & Components.RevoGrid
+      await grid.scrollToRow(row)
+      const columns = await grid.getColumns()
+      const column = columns.find((item) => item.prop === targetId)
+      if (!column) throw new Error(`Column ${targetId} not found`)
+      const type = (column.pin ?? 'rgCol') as
+        'rgCol' | 'colPinStart' | 'colPinEnd'
+      if (type === 'rgCol' && typeof grid.scrollToColumnProp === 'function')
+        await grid.scrollToColumnProp(targetId)
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const store = await grid.getColumnStore(type)
+        const source = store.get('source')
+        const items = store.get('items')
+        const x = items.findIndex((index) => source[index]?.prop === targetId)
+        if (x >= 0) {
+          await grid.setCellsFocus({ x, y: row }, { x, y: row }, type)
+          grid.focus()
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          )
+          return
+        }
+        await new Promise<void>((resolve) =>
+          requestAnimationFrame(() => resolve()),
+        )
+      }
+      throw new Error(`Column ${targetId} did not become visible`)
+    },
+    { fieldId, row: rowIndex },
+  )
+  await page.keyboard.press('Enter')
+}
+
+export async function revealFieldColumn(page: Page, fieldId: string) {
+  await page.locator('revo-grid').evaluate(async (element, targetId) => {
+    const grid = element as HTMLElement & Components.RevoGrid
+    if (typeof grid.scrollToColumnProp !== 'function')
+      throw new Error('Grid column scrolling is unavailable')
+    await grid.scrollToColumnProp(targetId)
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    )
+  }, fieldId)
 }
 
 /** Real Field UI/API flows on a freshly created table owned by `owner` (T1.14). */

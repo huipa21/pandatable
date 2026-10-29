@@ -41,7 +41,7 @@ async function closeDrawer(page: Page, locale = en) {
       .click()
 }
 
-async function create(
+export async function create(
   page: Page,
   kind: 'workspace' | 'book' | 'table',
   name: string,

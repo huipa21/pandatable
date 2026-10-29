@@ -7,6 +7,12 @@ WHERE status = 'active'
 ORDER BY username, id
 LIMIT 21;
 
+-- name: ResolveTableUserLabels :many
+SELECT id, display_name AS name
+FROM meta.users
+WHERE id = ANY(sqlc.arg(ids)::uuid[])
+ORDER BY id;
+
 -- name: SearchShareGroups :many
 SELECT id, name
 FROM meta.groups

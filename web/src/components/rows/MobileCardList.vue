@@ -12,6 +12,7 @@ import type {
 } from '../../api/types'
 import { bindField } from '../../fields/registry'
 import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
+import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import FieldRenderer from '../fields/FieldRenderer.vue'
@@ -31,6 +32,8 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
+const resolveUser = (id: string) =>
+  userLabel(props.identity, props.schema.table.id, id)
 const options = ref<HTMLDialogElement>()
 const confirmation = ref<HTMLDialogElement>()
 const heading = ref<HTMLElement>()
@@ -327,6 +330,9 @@ onBeforeUnmount(() => {
                 :field="display.bound.value"
                 :value="wireValue(row.fields[display.id])"
                 :env="env"
+                :table-id="schema.table.id"
+                :identity="identity"
+                :resolve-user="resolveUser"
                 :links="false"
               />
               <span v-else>{{ t('mobileRows.untitled', { id: row.id }) }}</span>
@@ -338,6 +344,9 @@ onBeforeUnmount(() => {
                 :field="field.bound.value"
                 :value="wireValue(row.fields[field.id])"
                 :env="env"
+                :table-id="schema.table.id"
+                :identity="identity"
+                :resolve-user="resolveUser"
                 :links="false"
               />
               <span v-else>{{ t('grid.unsupportedField') }}</span>

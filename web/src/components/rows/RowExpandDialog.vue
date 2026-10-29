@@ -11,6 +11,7 @@ import type {
 } from '../../api/types'
 import { bindField } from '../../fields/registry'
 import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
+import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import FieldEditor from '../fields/FieldEditor.vue'
@@ -32,6 +33,8 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
+const resolveUser = (id: string) =>
+  userLabel(props.identity, props.schema.table.id, id)
 const dialog = ref<HTMLDialogElement>()
 const row = ref<DataRow | null>(null)
 const loading = ref(false)
@@ -59,6 +62,21 @@ const canWrite = computed(
     props.identity === auth.user?.id &&
     (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
 )
+const ARRAY_VALUE_KINDS = new Set([
+  'multi_select',
+  'text_array',
+  'int_array',
+  'multi_user',
+])
+function isFieldWireValue(kind: string, value: unknown): value is WireValue {
+  if (!isWireValue(value)) return false
+  if (value === null || kind === 'json') return true
+  if (ARRAY_VALUE_KINDS.has(kind))
+    return (
+      Array.isArray(value) && value.every((item) => typeof item === 'string')
+    )
+  return typeof value !== 'object'
+}
 const fields = computed(() =>
   [...props.schema.fields]
     .sort((a, b) => a.position - b.position)
@@ -71,7 +89,7 @@ const fields = computed(() =>
       return {
         field,
         result: bindField(field.uiType, field.options),
-        value: isWireValue(value)
+        value: isFieldWireValue(field.uiType, value)
           ? { ok: true as const, value }
           : { ok: false as const },
       }
@@ -351,6 +369,9 @@ onBeforeUnmount(() => {
                 :field="item.result.value"
                 :value="item.value.value"
                 :env="env"
+                :table-id="schema.table.id"
+                :identity="identity"
+                :resolve-user="resolveUser"
                 :submit-label="
                   creating ? t('field.editor.apply') : t('rowExpand.save')
                 "
@@ -367,6 +388,9 @@ onBeforeUnmount(() => {
               :field="item.result.value"
               :value="item.value.value"
               :env="env"
+              :table-id="schema.table.id"
+              :identity="identity"
+              :resolve-user="resolveUser"
             />
             <button
               v-if="

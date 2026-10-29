@@ -307,7 +307,6 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 	if err := checkConstraints(bound, input.IsRequired, input.IsUnique, value.stored != nil); err != nil {
 		return FieldResult{}, err
 	}
-	column := bound.Column()
 	var result FieldResult
 	err = retryCollisions(func() error {
 		return s.run(ctx, actor, scope{target: target}, func(c *txn) error {
@@ -315,7 +314,23 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 			if err != nil {
 				return err
 			}
-			if err := checkTimezone(ctx, c.q, bound); err != nil {
+			field := bound
+			fieldValue := value
+			if input.UIType == string(codec.Currency) {
+				field, err = bindCreationCurrency(ctx, c.q, input.Options, bound)
+				if err != nil {
+					return err
+				}
+				fieldValue, err = resolveDefault(field, input.Default)
+				if err != nil {
+					return err
+				}
+				if err := checkConstraints(field, input.IsRequired, input.IsUnique, fieldValue.stored != nil); err != nil {
+					return err
+				}
+			}
+			column := field.Column()
+			if err := checkTimezone(ctx, c.q, field); err != nil {
 				return err
 			}
 			physicalName, err := s.newName(ddl.Column)
@@ -328,19 +343,32 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 			}
 			id, err := c.q.InsertUserField(ctx, structuresql.InsertUserFieldParams{TableID: target.ID, Name: name,
 				Description: description, UiType: input.UIType, PgColumn: pgText(physicalName),
-				PgType: pgText(pgTypeName(column.Type)), Options: bound.Options(), IsRequired: input.IsRequired,
-				IsUnique: input.IsUnique, DefaultJson: value.stored, Position: last + positionStep})
+				PgType: pgText(pgTypeName(column.Type)), Options: field.Options(), IsRequired: input.IsRequired,
+				IsUnique: input.IsUnique, DefaultJson: fieldValue.stored, Position: last + positionStep})
 			if err != nil {
 				return fieldNameConflict(fmt.Errorf("insert field: %w", err))
 			}
 			physical := physicalColumn{table: table.physical, column: physicalName}
-			if err := ddl.AddColumn(ctx, c.tx, table.physical, ddl.ColumnSpec{Name: physicalName, Type: column.Type,
-				NotNull: column.NotNull, Default: column.Default}); err != nil {
-				return err
+			if column.AutoNumber {
+				if err := ddl.AddAutoNumberColumn(ctx, c.tx, table.physical, physicalName); err != nil {
+					return err
+				}
+			} else {
+				spec := ddl.ColumnSpec{Name: physicalName, Type: column.Type,
+					NotNull: column.NotNull, Default: column.Default}
+				if column.HasRangeCheck {
+					spec.RangeCheck = &ddl.IntRangeCheck{Min: column.CheckMin, Max: column.CheckMax}
+				}
+				if column.UserReference {
+					spec.Reference = ddl.UserReference
+				}
+				if err := ddl.AddColumn(ctx, c.tx, table.physical, spec); err != nil {
+					return err
+				}
 			}
 			if err := applyColumn(ctx, c, physical, column.Type, columnState{},
-				columnState{required: input.IsRequired, unique: input.IsUnique, stored: value.stored},
-				value, input.FillEmpty, false); err != nil {
+				columnState{required: input.IsRequired, unique: input.IsUnique, stored: fieldValue.stored},
+				fieldValue, input.FillEmpty, false); err != nil {
 				return err
 			}
 			result, err = s.fieldResult(ctx, c, target.ID, &id)
@@ -348,6 +376,34 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 		})
 	})
 	return result, err
+}
+
+func bindCreationCurrency(ctx context.Context, queries *structuresql.Queries, raw json.RawMessage, field codec.Field) (codec.Field, error) {
+	var options map[string]json.RawMessage
+	if len(raw) != 0 && !isJSONNull(raw) {
+		if err := json.Unmarshal(raw, &options); err != nil {
+			return nil, codec.APIError(err)
+		}
+	}
+	if _, explicit := options["currency"]; explicit {
+		return field, nil
+	}
+	if options == nil {
+		options = make(map[string]json.RawMessage)
+	}
+	code, err := queries.ReadDefaultCurrency(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read default currency: %w", err)
+	}
+	options["currency"], err = json.Marshal(code)
+	if err != nil {
+		return nil, fmt.Errorf("encode default currency option: %w", err)
+	}
+	encoded, err := json.Marshal(options)
+	if err != nil {
+		return nil, fmt.Errorf("encode currency options: %w", err)
+	}
+	return bindUserKind(string(codec.Currency), encoded)
 }
 
 // fieldScope resolves a live field to its live table without locks; missing
@@ -606,9 +662,16 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 		}
 		// A hidden column must not receive user defaults: with a unique
 		// constraint they would make every later row insert collide.
-		if field.DefaultJson != nil {
+		columnDefault := bound.Column().Default
+		dropDefault := field.DefaultJson != nil || bound.Column().AutoNumber ||
+			columnDefault.Kind != ddl.NoDefault && field.UiType != string(codec.Checkbox)
+		if dropDefault {
+			physicalDefault := ddl.DefaultValue{}
+			if field.UiType == string(codec.Checkbox) {
+				physicalDefault = columnDefault
+			}
 			if err := ddl.SetDefault(ctx, c.tx, table.physical, field.PgColumn.String, bound.Column().Type,
-				bound.Column().Default); err != nil {
+				physicalDefault); err != nil {
 				return err
 			}
 		}

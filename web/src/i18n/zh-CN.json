@@ -488,6 +488,21 @@
       "datetime": "日期时间",
       "single_select": "单选",
       "multi_select": "多选",
+      "time": "时间",
+      "duration": "时长",
+      "currency": "货币",
+      "percent": "百分比",
+      "rating": "评分",
+      "phone": "电话",
+      "uuid": "UUID",
+      "json": "JSON",
+      "inet": "IP 地址",
+      "cidr": "网络范围",
+      "text_array": "文本数组",
+      "int_array": "整数数组",
+      "user": "用户",
+      "multi_user": "多位用户",
+      "autonumber": "自动编号",
       "email": "电子邮件",
       "url": "网址",
       "id": "行 ID",
@@ -518,6 +533,15 @@
       "invalid_email": "请输入有效的电子邮件地址。",
       "invalid_url": "请输入有效的网址。",
       "url_scheme": "仅允许 http 和 https 链接。",
+      "invalid_time": "请输入有效时间。",
+      "invalid_duration": "请输入有效的 ISO 8601 时长。",
+      "invalid_rating": "请输入整数评分。",
+      "invalid_phone": "请输入有效电话号码。",
+      "invalid_uuid": "请输入小写 UUID。",
+      "invalid_json": "请输入有效 JSON。",
+      "invalid_ip": "请输入有效 IP 地址。",
+      "invalid_cidr": "请输入有效的规范网络范围。",
+      "invalid_array": "请输入有效的值列表。",
       "read_only": "此字段为只读。"
     },
     "checkbox": {
@@ -528,7 +552,8 @@
       "unknown": "此选项已不在字段配置中"
     },
     "user": {
-      "unknown": "未知用户（{id}）"
+      "unknown": "未知用户（{id}）",
+      "lookupFailed": "无法加载此用户的名称。"
     },
     "editor": {
       "value": "字段值",
@@ -536,7 +561,13 @@
       "apply": "应用",
       "multilineHint": "按 Ctrl+Enter 保存",
       "datePlaceholder": "YYYY-MM-DD",
-      "datetimePlaceholder": "YYYY-MM-DD HH:mm"
+      "datetimePlaceholder": "YYYY-MM-DD HH:mm",
+      "userSearch": "搜索活跃用户",
+      "userSearchPlaceholder": "请输入至少 2 个字符",
+      "searchingUsers": "正在搜索用户…",
+      "userSearchFailed": "无法搜索用户，请重试。",
+      "username": "（{username}）",
+      "removeUser": "移除{name}"
     },
     "panel": {
       "title": "字段",
@@ -565,6 +596,30 @@
       "precision": "总位数",
       "scale": "小数位数",
       "displayDecimals": "显示的小数位数（可选）",
+      "currency": "货币代码",
+      "defaultCurrency": "使用应用默认值",
+      "ratingMax": "最高评分（1–10）",
+      "durationFormat": "时长显示方式",
+      "durationFormats": {
+        "hoursMinutes": "小时和分钟",
+        "hoursMinutesSeconds": "小时、分钟和秒",
+        "human": "简洁"
+      },
+      "autoGenerateUUID": "为新行自动生成 UUID",
+      "prefix": "前缀",
+      "padding": "编号位数",
+      "currency": "货币代码",
+      "defaultCurrency": "使用应用默认值",
+      "ratingMax": "最高评分（1–10）",
+      "durationFormat": "时长显示方式",
+      "durationFormats": {
+        "hoursMinutes": "小时和分钟",
+        "hoursMinutesSeconds": "小时、分钟和秒",
+        "human": "简洁"
+      },
+      "autoGenerateUUID": "为新行自动生成 UUID",
+      "prefix": "前缀",
+      "padding": "编号位数",
       "thousandSep": "使用千位分隔符",
       "dateFormat": "日期格式",
       "timeFormat": "时间格式",

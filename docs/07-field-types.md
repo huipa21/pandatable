@@ -61,7 +61,7 @@ System fields are read-only, cannot be deleted, can be renamed (display only), f
 | Constraint | Implementation | Applies to |
 |---|---|---|
 | Required | `NOT NULL` (+ default required if table has rows, or dry-run reports null count) | stored types |
-| Unique | `UNIQUE` index (dry-run reports duplicates) | text, numeric, date/time, uuid, email, url, phone, inet |
+| Unique | `UNIQUE` index (dry-run reports duplicates) | text, integer, decimal, float, currency, percent, rating, date/time, uuid, email, url, phone, inet |
 | Default | `DEFAULT <literal>`; dynamic: `now()`, `current_date`, `uuidv7()`, current user (app-level) | stored types |
 
 The T1.9 physical boundary uses typed `ddl.DataType`/`ColumnSpec` and
@@ -71,9 +71,10 @@ Future codecs/services must construct an allowlisted descriptor and enforce
 UI-specific constraint eligibility/options. Removing required/unique/default
 does not rewrite values. UNIQUE allows multiple NULLs; SET NOT NULL does not
 repair existing NULLs; changing a default affects future writes only.
-Physical DROP is purge; field soft deletion retains the column. No field API,
-type conversion, FK/relation policy or auto-number sequence orchestration is
-implemented by T1.9.
+Physical DROP is purge; field soft deletion retains the column. T1.9 itself
+added no field API; T1.14 added field management, and T2.1 adds the typed
+user-reference and autonumber sequence descriptors. Type conversion remains
+T2.12; relation policy is outside these stored codecs.
 
 ## 5. Type change (FR-F5)
 
@@ -108,11 +109,12 @@ type Field interface {
 }
 ```
 
-T1.13 implements this contract in [internal/codec](../internal/codec/) for the
-12 batch-1 writable kinds and all five system kinds (D-113..D-121). `Column`
-contains a typed `ddl.DataType`, forced NOT NULL/default (checkbox), and a
-system-column marker. There is no `PGType` string, SQL interpolation, filter
-compiler, conversion, field/row API or production grid integration.
+T1.13 implemented this contract in [internal/codec](../internal/codec/) for the
+12 batch-1 writable kinds and all five system kinds (D-113..D-121). T2.1 adds
+the remaining stored kinds and their typed PostgreSQL descriptors. `Column`
+contains a typed `ddl.DataType`, forced NOT NULL/default (checkbox), system
+marker and typed range/reference/autonumber metadata. There is no `PGType`
+string or SQL interpolation.
 
 ### Batch-1 normalization and wire contract
 
@@ -158,9 +160,39 @@ compiler, conversion, field/row API or production grid integration.
   editor. Authorship UUIDs are lowercase; a caller resolves user labels without
   reusing the owner-only sharing directory. Unknown users are localized.
 
-These codec/unit/PG tests are lower-layer evidence only. Full AT-301/302/304
-requires real fields, rows, persistence, grid editors and Fields menu in
-T1.14..T1.16; T1.13 remains In progress.
+Codec unit/vector/PG tests are lower-layer evidence; browser acceptance for
+field creation, row editing, persistence and grid integration is recorded by
+the linked acceptance tests.
+
+### Batch-2 normalization and wire contract (D-159..D-162)
+
+- `time` uses `HH:MM:SS[.ffffff]`; options select 24-hour or 12-hour display.
+  `duration` uses signed ISO-8601 time-only `PT#H#M#S`, with seconds and
+  minutes below 60 and no calendar components. Copy preserves canonical wire
+  values.
+- `currency` is fixed-scale `numeric(18,scale)` (scale 0..18), with an ISO
+  4217 code stored in field options. Creation snapshots the current app default
+  when the code is omitted; later setting changes do not affect that field.
+  `percent` is a fraction in `numeric(7,4)` and formats with `Intl`.
+  `rating` is `smallint`, max 1..10 (default 5), and carries a typed range
+  check; `phone` is bounded to 64 code points and the D-160 loose character
+  set.
+- `uuid` and `user` values are lowercase UUID strings. UUID generation is a
+  typed PostgreSQL v7 default when configured. `json` uses JSONB, canonical
+  key ordering and 64 KiB pre/post-encoding and depth-128 bounds; duplicate
+  keys and invalid Unicode escapes fail. `inet` and `cidr` use canonical
+  address/network strings.
+- `text_array`, `int_array` and `multi_user` contain at most 1,000 items;
+  text items are at most 10,000 code points. Bigint array values and
+  autonumber use decimal strings. Empty arrays become SQL NULL. A single-user
+  single-user fields are nullable unless marked required and reference
+  `meta.users`; multi-user IDs are resolved
+  through the table-scoped directory routes documented in [09-api.md](09-api.md).
+- Autonumber uses a typed per-field sequence, ascending row-ID backfill,
+  `nextval` default and column ownership. It is read-only in row editors.
+  D-161 keeps the existing owner-only sharing directory unchanged while
+  allowing table writers to search active users and table readers to resolve
+  only submitted user IDs.
 
 ### T1.14 field service rules (D-126..D-129)
 

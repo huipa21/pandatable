@@ -24,13 +24,28 @@ const (
 	Integer      Kind = "integer"
 	Decimal      Kind = "decimal"
 	Float        Kind = "float"
+	Currency     Kind = "currency"
+	Percent      Kind = "percent"
+	Rating       Kind = "rating"
 	Checkbox     Kind = "checkbox"
 	Date         Kind = "date"
+	Time         Kind = "time"
 	DateTime     Kind = "datetime"
+	Duration     Kind = "duration"
 	SingleSelect Kind = "single_select"
 	MultiSelect  Kind = "multi_select"
 	Email        Kind = "email"
 	URL          Kind = "url"
+	Phone        Kind = "phone"
+	UUID         Kind = "uuid"
+	JSON         Kind = "json"
+	Inet         Kind = "inet"
+	CIDR         Kind = "cidr"
+	TextArray    Kind = "text_array"
+	IntArray     Kind = "int_array"
+	User         Kind = "user"
+	MultiUser    Kind = "multi_user"
+	AutoNumber   Kind = "autonumber"
 	RowID        Kind = "id"
 	CreatedAt    Kind = "created_at"
 	CreatedBy    Kind = "created_by"
@@ -107,7 +122,12 @@ type Column struct {
 	NotNull bool
 	Default ddl.DefaultValue
 	// System columns are installed by ddl.CreateTable and never added.
-	System bool
+	System        bool
+	HasRangeCheck bool
+	CheckMin      int64
+	CheckMax      int64
+	UserReference bool
+	AutoNumber    bool
 }
 
 // Constraints reports which user constraints the kind supports (doc 07 §4).
@@ -168,6 +188,15 @@ const (
 	ReasonInvalidEmail      = "invalid_email"
 	ReasonInvalidURL        = "invalid_url"
 	ReasonURLScheme         = "url_scheme"
+	ReasonInvalidTime       = "invalid_time"
+	ReasonInvalidDuration   = "invalid_duration"
+	ReasonInvalidPhone      = "invalid_phone"
+	ReasonInvalidUUID       = "invalid_uuid"
+	ReasonInvalidJSON       = "invalid_json"
+	ReasonInvalidIP         = "invalid_ip"
+	ReasonInvalidCIDR       = "invalid_cidr"
+	ReasonInvalidArray      = "invalid_array"
+	ReasonInvalidRating     = "invalid_rating"
 	ReasonReadOnly          = "read_only"
 	ReasonUnsupportedDBType = "unsupported_db_value"
 )
@@ -212,7 +241,12 @@ func init() {
 	for _, codec := range []Codec{
 		textCodec{kind: Text}, textCodec{kind: LongText}, textCodec{kind: Email}, textCodec{kind: URL},
 		integerCodec{}, decimalCodec{}, floatCodec{}, checkboxCodec{},
-		dateCodec{}, dateTimeCodec{}, choiceCodec{multi: false}, choiceCodec{multi: true},
+		currencyCodec{}, percentCodec{}, ratingCodec{},
+		dateCodec{}, timeCodec{}, dateTimeCodec{}, durationCodec{},
+		phoneCodec{}, uuidCodec{}, jsonCodec{}, inetCodec{}, cidrCodec{},
+		arrayCodec{kind: TextArray}, arrayCodec{kind: IntArray},
+		userCodec{multi: false}, userCodec{multi: true}, autoNumberCodec{},
+		choiceCodec{multi: false}, choiceCodec{multi: true},
 		systemCodec{kind: RowID}, systemCodec{kind: CreatedAt}, systemCodec{kind: CreatedBy},
 		systemCodec{kind: UpdatedAt}, systemCodec{kind: UpdatedBy},
 	} {

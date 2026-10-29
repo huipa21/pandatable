@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type DirectoryPrincipal struct {
@@ -19,6 +20,11 @@ type DirectoryPrincipal struct {
 type DirectoryListing struct {
 	Items   []DirectoryPrincipal `json:"items"`
 	HasMore bool                 `json:"hasMore"`
+}
+
+type UserLabel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // Directory exposes minimal, bounded identity discovery only to scope owners.
@@ -64,6 +70,102 @@ func (service *Service) Directory(ctx context.Context, userID string, resource R
 	result.HasMore = len(result.Items) > 20
 	if result.HasMore {
 		result.Items = result.Items[:20]
+	}
+	return result, nil
+}
+
+// TableUsers exposes the bounded active-user picker only to table writers.
+func (service *Service) TableUsers(ctx context.Context, userID, tableID, search string) (DirectoryListing, error) {
+	search = strings.TrimSpace(search)
+	length := utf8.RuneCountInString(search)
+	if !utf8.ValidString(search) || length < 2 || length > 100 ||
+		len(search) > 254 || strings.ContainsFunc(search, unicode.IsControl) {
+		return DirectoryListing{}, ErrValidation()
+	}
+	user, err := parseCaller(userID)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	resource, err := NewResource(string(Table), tableID)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	tx, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return DirectoryListing{}, fmt.Errorf("begin table user directory snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	queries := service.queries.WithTx(tx)
+	access, err := queryAccess(ctx, queries, user, resource)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	if err := access.Check(Write); err != nil {
+		return DirectoryListing{}, err
+	}
+	rows, err := queries.SearchShareUsers(ctx, search)
+	if err != nil {
+		return DirectoryListing{}, fmt.Errorf("search table users: %w", err)
+	}
+	result := DirectoryListing{Items: []DirectoryPrincipal{}}
+	for _, row := range rows {
+		result.Items = append(result.Items, DirectoryPrincipal{
+			ID: row.ID.String(), Name: row.Name, Username: &row.Username,
+		})
+	}
+	result.HasMore = len(result.Items) > 20
+	if result.HasMore {
+		result.Items = result.Items[:20]
+	}
+	return result, nil
+}
+
+// TableUserLabels resolves only caller-submitted IDs, avoiding user enumeration.
+func (service *Service) TableUserLabels(ctx context.Context, userID, tableID string, ids []string) ([]UserLabel, error) {
+	if len(ids) > 100 {
+		return nil, ErrValidation()
+	}
+	user, err := parseCaller(userID)
+	if err != nil {
+		return nil, err
+	}
+	resource, err := NewResource(string(Table), tableID)
+	if err != nil {
+		return nil, err
+	}
+	parsedIDs := make([]pgtype.UUID, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		value, ok := ParseUUID(id)
+		if !ok || id != strings.ToLower(id) {
+			return nil, ErrValidation()
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		parsedIDs = append(parsedIDs, value)
+	}
+	tx, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, fmt.Errorf("begin table user label snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	queries := service.queries.WithTx(tx)
+	access, err := queryAccess(ctx, queries, user, resource)
+	if err != nil {
+		return nil, err
+	}
+	if err := access.Check(Read); err != nil {
+		return nil, err
+	}
+	rows, err := queries.ResolveTableUserLabels(ctx, parsedIDs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve table user labels: %w", err)
+	}
+	result := make([]UserLabel, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, UserLabel{ID: row.ID.String(), Name: row.Name})
 	}
 	return result, nil
 }

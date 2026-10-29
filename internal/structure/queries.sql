@@ -2,6 +2,12 @@
 -- (T1.10, D-097..D-103). Authorization/lock queries live in internal/acl.
 -- Physical DDL is never expressed here; see internal/ddl.
 
+-- name: ReadDefaultCurrency :one
+SELECT COALESCE(
+    (SELECT value #>> '{}' FROM meta.settings WHERE key='default_currency'),
+    'CNY'
+);
+
 -- name: InsertWorkspace :one
 INSERT INTO meta.workspaces (name, icon, color, created_by)
 VALUES ($1, $2, $3, $4)

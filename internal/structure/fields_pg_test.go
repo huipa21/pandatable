@@ -179,7 +179,7 @@ func TestCreateFieldRejectsInvalidInputWithoutSideEffects(t *testing.T) {
 		{FieldInput{Name: "  ", UIType: "text"}, 400, "ERR_VALIDATION", "", ""},
 		{FieldInput{Name: "x", UIType: "text", Description: strings.Repeat("字", 1001)}, 400, "ERR_VALIDATION", "", ""},
 		{FieldInput{Name: "x", UIType: "text", Description: "bell\a"}, 400, "ERR_VALIDATION", "", ""},
-		{FieldInput{Name: "x", UIType: "rating"}, 400, "ERR_VALIDATION", "", ""},
+		{FieldInput{Name: "x", UIType: "rating", Options: json.RawMessage(`{"max":11}`)}, 400, "ERR_VALIDATION", "", ""},
 		{FieldInput{Name: "x", UIType: "created_at"}, 400, "ERR_VALIDATION", "system_field", ""},
 		{FieldInput{Name: "x", UIType: "text", Options: json.RawMessage(`{"color":"red"}`)}, 400, "ERR_VALIDATION", "invalid_options", "color"},
 		{FieldInput{Name: "x", UIType: "datetime", Options: json.RawMessage(`{"timezone":"fixed","fixedTz":"Mars/Olympus"}`)},

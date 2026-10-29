@@ -159,7 +159,6 @@ describe('field registry', () => {
     for (const kind of [
       'formula',
       'attachment',
-      'user',
       '',
       'TEXT',
       '__proto__',
@@ -262,6 +261,20 @@ describe('exact numbers', () => {
       ok: true,
       value: '123.5000000000',
     })
+  })
+
+  it('formats currency and percent decimal strings without Number rounding', () => {
+    expect(
+      bind('currency', { currency: 'USD', scale: 2 }).formatDisplay(
+        '9999999999999999.99',
+        { locale: 'en-US' },
+      ),
+    ).toBe('$9,999,999,999,999,999.99')
+    expect(
+      bind('percent', { displayDecimals: 2 }).formatDisplay('9.9999', {
+        locale: 'en-US',
+      }),
+    ).toBe('999.99%')
   })
 
   it('rounds real values to the shortest float32 text', () => {

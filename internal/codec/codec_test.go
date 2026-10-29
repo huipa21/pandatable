@@ -159,7 +159,7 @@ func TestVectorsKinds(t *testing.T) {
 	}
 	for kind, want := range vectors.Kinds {
 		field := mustBind(t, kind, nil)
-		if field.Kind() != kind || field.ReadOnly() != want.ReadOnly || field.ReadOnly() != IsSystem(kind) {
+		if field.Kind() != kind || field.ReadOnly() != want.ReadOnly {
 			t.Errorf("%s: kind/readOnly mismatch", kind)
 		}
 		if !sameJSON(t, field.Options(), want.Options) {
@@ -274,7 +274,7 @@ func TestVectorsFormat(t *testing.T) {
 }
 
 func TestUnknownKindAndAPIError(t *testing.T) {
-	for _, kind := range []Kind{"formula", "attachment", "user", "", "TEXT"} {
+	for _, kind := range []Kind{"formula", "attachment", "lookup", "", "TEXT"} {
 		if _, err := Bind(kind, nil); reasonOf(err) != ReasonUnknownKind {
 			t.Errorf("%q: %v", kind, err)
 		}

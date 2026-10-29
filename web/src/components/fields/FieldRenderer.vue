@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { BoundField } from '../../fields/registry'
 import { choiceLabels, type ChoiceOptions } from '../../fields/choice'
 import { safeHref } from '../../fields/text'
 import type { FieldEnv, WireValue } from '../../fields/types'
+import {
+  queueUserLabels,
+  userLabel,
+  userLabelFailed,
+} from '../../fields/userDirectory'
 
 const props = withDefaults(
   defineProps<{
@@ -12,10 +17,18 @@ const props = withDefaults(
     value: WireValue
     env?: FieldEnv
     links?: boolean
+    tableId?: string
+    identity?: string
     /** Caller-supplied display name lookup for user ids (D-120). */
     resolveUser?: (id: string) => string | null
   }>(),
-  { env: () => ({}), links: true, resolveUser: undefined },
+  {
+    env: () => ({}),
+    links: true,
+    tableId: undefined,
+    identity: undefined,
+    resolveUser: undefined,
+  },
 )
 const { t } = useI18n()
 
@@ -28,11 +41,34 @@ const chips = computed(() => {
     return { label, color: choice?.color ?? null }
   })
 })
-const user = computed(() => {
-  if (typeof props.value !== 'string') return null
-  const name = props.resolveUser?.(props.value) ?? null
-  return name ?? t('field.user.unknown', { id: props.value.slice(0, 8) })
-})
+const userIds = computed(() =>
+  typeof props.value === 'string'
+    ? [props.value]
+    : Array.isArray(props.value)
+      ? props.value.filter(
+          (value): value is string => typeof value === 'string',
+        )
+      : [],
+)
+watch(
+  [userIds, () => props.identity, () => props.tableId],
+  ([ids]) => {
+    if (props.field.presentation === 'user')
+      queueUserLabels(props.identity, props.tableId, ids)
+  },
+  { immediate: true },
+)
+const users = computed(() =>
+  userIds.value.map((id) => {
+    const name =
+      props.resolveUser?.(id) ?? userLabel(props.identity, props.tableId, id)
+    return {
+      id,
+      label: name ?? t('field.user.unknown', { id: id.slice(0, 8) }),
+      failed: userLabelFailed(props.identity, props.tableId, id),
+    }
+  }),
+)
 </script>
 
 <template>
@@ -66,7 +102,14 @@ const user = computed(() => {
       />
     </template>
     <template v-else-if="field.presentation === 'user'">
-      <span v-if="user !== null" class="field-user">{{ user }}</span>
+      <span
+        v-for="user in users"
+        :key="user.id"
+        class="field-user"
+        :title="user.failed ? t('field.user.lookupFailed') : undefined"
+      >
+        {{ user.label }}
+      </span>
     </template>
     <a
       v-else-if="href && links"

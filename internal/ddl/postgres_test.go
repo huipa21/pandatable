@@ -212,6 +212,72 @@ func TestDDLTypesDefaultsPostgreSQL(t *testing.T) {
 	}
 }
 
+func TestDDLBatch2ConstraintsAndAutoNumberPostgreSQL(t *testing.T) {
+	pool := database.Open(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	tx := transaction(t, ctx, pool)
+	table, sql := physicalTable(t, ctx, tx)
+	exec(t, ctx, tx, "INSERT INTO "+sql+` ("id") VALUES (30),(10),(20)`)
+
+	rating := identifier(t, Column)
+	must(t, AddColumn(ctx, tx, table, ColumnSpec{Name: rating, Type: DataType{Kind: SmallInt},
+		RangeCheck: &IntRangeCheck{Min: 0, Max: 5}}))
+	check(t, ctx, tx, `SELECT count(*)=1 FROM pg_constraint
+		WHERE conrelid=$1::regclass AND conname=$2 AND contype='c'`, sql, table.Name+"_"+rating+"_check")
+	exec(t, ctx, tx, "SAVEPOINT invalid_rating")
+	if _, err := tx.Exec(ctx, "INSERT INTO "+sql+` ("id",`+pgx.Identifier{rating}.Sanitize()+`) VALUES (40,6)`); err == nil {
+		t.Fatal("rating check accepted 6")
+	}
+	exec(t, ctx, tx, "ROLLBACK TO SAVEPOINT invalid_rating")
+	exec(t, ctx, tx, "RELEASE SAVEPOINT invalid_rating")
+
+	user := identifier(t, Column)
+	must(t, AddColumn(ctx, tx, table, ColumnSpec{Name: user, Type: DataType{Kind: UUID}, Reference: UserReference}))
+	check(t, ctx, tx, `SELECT count(*)=1 FROM pg_constraint
+		WHERE conrelid=$1::regclass AND conname=$2 AND contype='f'`, sql, table.Name+"_"+user+"_fkey")
+
+	auto := identifier(t, Column)
+	must(t, AddAutoNumberColumn(ctx, tx, table, auto))
+	quoted := pgx.Identifier{auto}.Sanitize()
+	rows, err := tx.Query(ctx, `SELECT "id", `+quoted+` FROM `+sql+` ORDER BY "id"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][2]int64{{10, 1}, {20, 2}, {30, 3}}
+	for index := range want {
+		if !rows.Next() {
+			rows.Close()
+			t.Fatalf("missing autonumber row %d", index)
+		}
+		var id, value int64
+		if err := rows.Scan(&id, &value); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if id != want[index][0] || value != want[index][1] {
+			rows.Close()
+			t.Fatalf("autonumber row = (%d,%d), want %v", id, value, want[index])
+		}
+	}
+	if rows.Next() {
+		rows.Close()
+		t.Fatal("unexpected extra row")
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		t.Fatal(err)
+	}
+	rows.Close()
+
+	exec(t, ctx, tx, "INSERT INTO "+sql+` ("id") VALUES (40)`)
+	check(t, ctx, tx, "SELECT "+quoted+"=4 FROM "+sql+` WHERE "id"=40`)
+	sequence := "s_" + auto[2:]
+	check(t, ctx, tx, "SELECT to_regclass($1) IS NOT NULL", table.Schema+"."+sequence)
+	must(t, DropColumn(ctx, tx, table, auto))
+	check(t, ctx, tx, "SELECT to_regclass($1) IS NULL", table.Schema+"."+sequence)
+}
+
 func TestDDLConstraintRemovalPostgreSQL(t *testing.T) {
 	pool := database.Open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

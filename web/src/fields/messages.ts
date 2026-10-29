@@ -47,6 +47,24 @@ export function fieldErrorMessage(reason: Reason): string {
       return t('field.error.invalid_url')
     case 'url_scheme':
       return t('field.error.url_scheme')
+    case 'invalid_time':
+      return t('field.error.invalid_time')
+    case 'invalid_duration':
+      return t('field.error.invalid_duration')
+    case 'invalid_rating':
+      return t('field.error.invalid_rating')
+    case 'invalid_phone':
+      return t('field.error.invalid_phone')
+    case 'invalid_uuid':
+      return t('field.error.invalid_uuid')
+    case 'invalid_json':
+      return t('field.error.invalid_json')
+    case 'invalid_ip':
+      return t('field.error.invalid_ip')
+    case 'invalid_cidr':
+      return t('field.error.invalid_cidr')
+    case 'invalid_array':
+      return t('field.error.invalid_array')
     case 'read_only':
       return t('field.error.read_only')
   }
@@ -75,6 +93,36 @@ export function fieldKindLabel(kind: Kind): string {
       return t('field.kind.single_select')
     case 'multi_select':
       return t('field.kind.multi_select')
+    case 'time':
+      return t('field.kind.time')
+    case 'duration':
+      return t('field.kind.duration')
+    case 'currency':
+      return t('field.kind.currency')
+    case 'percent':
+      return t('field.kind.percent')
+    case 'rating':
+      return t('field.kind.rating')
+    case 'phone':
+      return t('field.kind.phone')
+    case 'uuid':
+      return t('field.kind.uuid')
+    case 'json':
+      return t('field.kind.json')
+    case 'inet':
+      return t('field.kind.inet')
+    case 'cidr':
+      return t('field.kind.cidr')
+    case 'text_array':
+      return t('field.kind.text_array')
+    case 'int_array':
+      return t('field.kind.int_array')
+    case 'user':
+      return t('field.kind.user')
+    case 'multi_user':
+      return t('field.kind.multi_user')
+    case 'autonumber':
+      return t('field.kind.autonumber')
     case 'email':
       return t('field.kind.email')
     case 'url':

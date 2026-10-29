@@ -36,8 +36,9 @@ first-run setup; T1.4 adds the ACL resolver and grants API; T1.5 adds admin
 users and login/forced-password-change UI; T1.6 adds groups; T1.7 adds system
 observations/dashboard; T1.8 adds settings, public branding/default language,
 currency catalog and read-only workspace inventory; T1.10 adds the
-workspace/book/table structure API below. Other business endpoints
-and profile UI remain later-task work.
+workspace/book/table structure API below. T1.14/T1.15 add the field and
+row/query APIs; T2.1 adds table-scoped user-field directory routes. The
+authenticated profile UI is documented in [12-frontend.md](12-frontend.md).
 
 T1.9 adds **no HTTP route**. Future structure/field services can propagate its
 sanitized typed errors through the existing HTTP error boundary:
@@ -60,7 +61,8 @@ Unsupported scanned types remain server faults for correlated redaction.
 Translate reasons through static frontend keys, never server messages.
 Bigint/decimal are strings; date/datetime/select/null contracts are specified
 in [field types](07-field-types.md#batch-1-normalization-and-wire-contract).
-No row/field DTO or endpoint is invented to stand in for acceptance.
+The row/field endpoints below are the real persistence APIs, not test-only
+surrogates.
 
 ## 2. Endpoints
 
@@ -443,6 +445,23 @@ Only `id`, `name` and nullable `username` are exposed: no email, role, status,
 membership or admin enumeration. This intentionally scoped minimal identity
 discovery replaces the earlier unimplemented general-directory sketch.
 Responses are no-store with the normal ten-second deadline/redacted errors.
+
+### Table user fields (T2.1, D-161..D-162)
+
+| Method | Path | Response |
+|---|---|---|
+| GET | `/tables/{id}/directory/users?q=alice` | `{items:[{id,name,username}],hasMore}`; active users only |
+| POST | `/tables/{id}/directory/user-labels` | Request `{ids:[uuid,...]}` → `{items:[{id,name}]}` |
+
+The picker requires effective table **write** access; label resolution requires
+effective **read** access. Both use a read-only repeatable-read snapshot and
+uncached table ACL check; a hidden/missing/trashed table is 404 and a visible
+caller without the required level is 403. The picker uses the D-109 search
+bounds and 20-result cap. The label request accepts at most 100 lowercase
+canonical UUIDs (duplicates are removed); results are sorted by ID and omit
+unknown/deleted IDs. It resolves only submitted IDs, so it is not a user
+enumeration endpoint. Both responses are no-store; only the documented
+identity fields are exposed.
 
 ### Structure
 | Method | Path | Notes |

@@ -29,6 +29,8 @@ func formatType(column Column) string {
 		return fmt.Sprintf("numeric(%d,%d)", column.Type.Precision, column.Type.Scale)
 	case ddl.TimestampTZ:
 		return "timestamp with time zone"
+	case ddl.Time:
+		return "time without time zone"
 	}
 	return string(column.Type.Kind)
 }
@@ -87,13 +89,23 @@ func (fixture *pgFixture) addColumn(field Field, defaultValue ddl.DefaultValue) 
 	if column.System {
 		fixture.t.Fatalf("%s is a system column", field.Kind())
 	}
+	name := fixture.identifier(ddl.Column)
+	if column.AutoNumber {
+		fixture.must(ddl.AddAutoNumberColumn(fixture.ctx, fixture.tx, fixture.table, name))
+		fixture.checkType(name, column)
+		return name
+	}
 	if defaultValue.Kind == ddl.NoDefault {
 		defaultValue = column.Default
 	}
-	name := fixture.identifier(ddl.Column)
-	fixture.must(ddl.AddColumn(fixture.ctx, fixture.tx, fixture.table, ddl.ColumnSpec{
-		Name: name, Type: column.Type, NotNull: column.NotNull, Default: defaultValue,
-	}))
+	spec := ddl.ColumnSpec{Name: name, Type: column.Type, NotNull: column.NotNull, Default: defaultValue}
+	if column.HasRangeCheck {
+		spec.RangeCheck = &ddl.IntRangeCheck{Min: column.CheckMin, Max: column.CheckMax}
+	}
+	if column.UserReference {
+		spec.Reference = ddl.UserReference
+	}
+	fixture.must(ddl.AddColumn(fixture.ctx, fixture.tx, fixture.table, spec))
 	fixture.checkType(name, column)
 	return name
 }
@@ -179,7 +191,7 @@ func TestCodecVectorsRoundTripPostgreSQL(t *testing.T) {
 		}
 		want, err := field.Encode(value)
 		fixture.must(err)
-		if value == nil && vector.Kind != Checkbox {
+		if value == nil && vector.Kind != Checkbox && vector.Kind != User {
 			// NULL is the same for every nullable kind; still store it once.
 			if checked[vector.Kind] > 0 {
 				return
@@ -208,7 +220,7 @@ func TestCodecVectorsRoundTripPostgreSQL(t *testing.T) {
 		run(fmt.Sprintf("paste[%d] %s %q", index, vector.Kind, vector.Text), vector, value, err)
 	}
 	for _, kind := range Kinds() {
-		if !IsSystem(kind) && checked[kind] < 2 {
+		if !IsSystem(kind) && kind != AutoNumber && checked[kind] < 2 {
 			t.Errorf("%s: only %d PostgreSQL round trips", kind, checked[kind])
 		}
 	}
@@ -242,13 +254,27 @@ func TestCodecDefaultsPostgreSQL(t *testing.T) {
 		{MultiSelect, `{"choices":[{"id":"a","label":"say \"hi\""},{"id":"b","label":"back\\slash"},{"id":"c","label":"{NULL}"},{"id":"d","label":"NULL"}]}`, `["NULL","{NULL}","back\\slash","say \"hi\""]`},
 		{Email, "", `"o'brien@example.com"`},
 		{URL, "", `"https://example.com/?q='x'&r=%5C"`},
+		{Currency, `{"currency":"USD","scale":2}`, `"99.95"`},
+		{Percent, "", `"0.25"`},
+		{Rating, `{"max":10}`, `10`},
+		{Time, "", `"12:34:56.1234"`},
+		{Duration, "", `"PT1H2M3.5S"`},
+		{Phone, "", `"+1 (212) 555-0100 x5"`},
+		{UUID, "", `"00000000-0000-0000-0000-000000000001"`},
+		{JSON, "", `{"z":1,"a":true}`},
+		{Inet, "", `"192.0.2.1"`},
+		{CIDR, "", `"192.0.2.0/24"`},
+		{TextArray, "", `["one","quote \" and \\ slash"]`},
+		{IntArray, "", `["9223372036854775807","-2"]`},
 	}
 	for _, test := range cases {
 		field := mustBind(t, test.kind, json.RawMessage(test.options))
 		value, err := field.Decode(json.RawMessage(test.raw))
 		fixture.must(err)
 		defaultValue, err := field.DefaultValue(json.RawMessage(test.raw))
-		fixture.must(err)
+		if err != nil {
+			t.Fatalf("%s default: %v", test.kind, err)
+		}
 		column := fixture.addColumn(field, defaultValue)
 		scanned := fixture.read(column, fixture.insertDefault())
 		got, err := field.Encode(scanned)
@@ -257,6 +283,14 @@ func TestCodecDefaultsPostgreSQL(t *testing.T) {
 		if string(got) != string(want) {
 			t.Errorf("%s default %s: got %s, want %s", test.kind, test.raw, got, want)
 		}
+	}
+	autoUUID := mustBind(t, UUID, json.RawMessage(`{"autoGenerate":true}`))
+	autoColumn := fixture.addColumn(autoUUID, ddl.DefaultValue{})
+	generated := fixture.read(autoColumn, fixture.insertDefault())
+	encoded, err := autoUUID.Encode(generated)
+	fixture.must(err)
+	if _, err := autoUUID.Decode(encoded); err != nil {
+		t.Fatalf("generated UUID wire value %s: %v", encoded, err)
 	}
 }
 
@@ -270,6 +304,10 @@ func TestCodecConstraintsPostgreSQL(t *testing.T) {
 		t.Fatalf("checkbox default %s", encoded)
 	}
 	fixture.expectSQLState("23502", "INSERT INTO "+fixture.name+" ("+pgx.Identifier{checkboxColumn}.Sanitize()+") VALUES (NULL)")
+
+	rating := mustBind(t, Rating, json.RawMessage(`{"max":5}`))
+	ratingColumn := fixture.addColumn(rating, ddl.DefaultValue{})
+	fixture.expectSQLState("23514", "INSERT INTO "+fixture.name+" ("+pgx.Identifier{ratingColumn}.Sanitize()+") VALUES (6)")
 
 	// The codec maxLength equals the varchar limit in code points.
 	text := mustBind(t, Text, json.RawMessage(`{"maxLength":3}`))

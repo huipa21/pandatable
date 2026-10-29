@@ -23,6 +23,7 @@ func TestShareDirectoryOwnerPrivacyAndBounds(t *testing.T) {
 		Items   []map[string]any `json:"items"`
 		HasMore bool             `json:"hasMore"`
 	}
+
 	if err := json.Unmarshal(response.Body.Bytes(), &listing); err != nil {
 		t.Fatal(err)
 	}
@@ -115,4 +116,55 @@ func TestShareDirectoryOwnerPrivacyAndBounds(t *testing.T) {
 	f.exec("UPDATE meta.workspaces SET deleted_at=now() WHERE id=$1", x.w)
 	f.expectStatus(f.api(owner, "GET", base+"ab", ""), 404, "ERR_NOT_FOUND")
 	f.expectStatus(f.api(owner, "GET", groupPath+"ab", ""), 404, "ERR_NOT_FOUND")
+}
+
+func TestTableUserDirectoryAndLabelsRespectTableAccess(t *testing.T) {
+	f := newACLFixture(t)
+	owner, writer, reader, outsider := f.user("user", false), f.user("user", false), f.user("user", false), f.user("user", false)
+	x := f.site()
+	f.seedOwner(x.w, owner)
+	f.grantOK(owner, acl.Table, x.t1, "user", writer.id, acl.Write)
+	f.grantOK(owner, acl.Table, x.t1, "user", reader.id, acl.Read)
+	disabled := f.user("user", false)
+	f.exec("UPDATE meta.users SET status='disabled' WHERE id=$1", disabled.id)
+
+	path := "/tables/" + x.t1 + "/directory/users?q=" + url.QueryEscape(writer.login)
+	response := f.api(writer, "GET", path, "")
+	f.expectStatus(response, 200, "")
+	var listing struct {
+		Items   []map[string]any `json:"items"`
+		HasMore bool             `json:"hasMore"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &listing); err != nil {
+		t.Fatal(err)
+	}
+	if len(listing.Items) != 1 || len(listing.Items[0]) != 3 ||
+		listing.Items[0]["id"] != writer.id || listing.Items[0]["username"] != writer.login {
+		t.Fatalf("minimal table picker response: %s", response.Body)
+	}
+	f.expectStatus(f.api(reader, "GET", path, ""), 403, "ERR_PERMISSION_DENIED")
+	f.expectStatus(f.api(outsider, "GET", path, ""), 404, "ERR_NOT_FOUND")
+	f.expectStatus(f.api(writer, "GET", "/tables/"+x.t1+"/directory/users?q=x", ""), 400, "ERR_VALIDATION")
+	f.expectStatus(f.api(writer, "GET", "/directory/users?resource=table:"+x.t1+"&q="+url.QueryEscape(writer.login), ""),
+		403, "ERR_PERMISSION_DENIED")
+
+	unknown := "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"
+	body, err := json.Marshal(map[string][]string{"ids": {writer.id, disabled.id, unknown, writer.id}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	labelsResponse := f.api(reader, "POST", "/tables/"+x.t1+"/directory/user-labels", string(body))
+	f.expectStatus(labelsResponse, 200, "")
+	var labels struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(labelsResponse.Body.Bytes(), &labels); err != nil {
+		t.Fatal(err)
+	}
+	if len(labels.Items) != 2 || len(labels.Items[0]) != 2 || len(labels.Items[1]) != 2 {
+		t.Fatalf("submitted-id label response: %s", labelsResponse.Body)
+	}
+	f.expectStatus(f.api(outsider, "POST", "/tables/"+x.t1+"/directory/user-labels", string(body)), 404, "ERR_NOT_FOUND")
+	f.expectStatus(f.api(reader, "POST", "/tables/"+x.t1+"/directory/user-labels",
+		`{"ids":["0190A1B2-C3D4-7E5F-8A9B-0C1D2E3F4A5B"]}`), 400, "ERR_VALIDATION")
 }

@@ -143,8 +143,11 @@ const gridEditorComponent = defineComponent({
       }
       return h(GridCellEditor, {
         ...editorProps,
+        key: `${editorProps.rowIndex}:${String(editorProps.column.prop)}`,
         boundField: item.bound,
         fieldEnv: fieldEnvironment.value,
+        tableId: props.schema.table.id,
+        identity: props.identity,
       })
     }
   },
@@ -305,6 +308,8 @@ const columns = computed<ColumnRegular[]>(() => {
           field: bound,
           value: wireValue(context.value),
           env: fieldEnvironment.value,
+          tableId: props.schema.table.id,
+          identity: props.identity,
           message:
             cellErrors.value.get(
               `${String(context.model.__rowId)}:${field.id}`,
