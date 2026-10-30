@@ -11,7 +11,7 @@ import { useI18n } from 'vue-i18n'
 import { createResourceLabel, accessLevelLabel } from '../i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../api/client'
-import type { ResourceKind, TableSchema } from '../api/types'
+import type { FilterNode, ResourceKind, TableSchema } from '../api/types'
 import { useAuthStore } from '../stores/auth'
 import { tablePath, useNavStore, type NavigationItem } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
@@ -27,6 +27,9 @@ const schema = ref<TableSchema | null>(null)
 const FieldPanel = defineAsyncComponent(
   () => import('../components/fields/FieldPanel.vue'),
 )
+const FilterBuilder = defineAsyncComponent(
+  () => import('../components/filters/FilterBuilder.vue'),
+)
 const DataGrid = defineAsyncComponent(
   () => import('../components/grid/DataGrid.vue'),
 )
@@ -40,6 +43,8 @@ const grid = ref<{ refresh: () => Promise<void> }>()
 const media = window.matchMedia('(min-width: 768px)')
 const desktop = ref(media.matches)
 const newRow = ref(false)
+const filterValue = ref<FilterNode | null>(null)
+const filterDraft = ref<FilterNode | null>(null)
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
   newRow.value = false
@@ -186,6 +191,8 @@ watch(
   ],
   () => {
     newRow.value = false
+    filterValue.value = null
+    filterDraft.value = null
   },
 )
 onBeforeUnmount(() => {
@@ -281,6 +288,17 @@ onBeforeUnmount(() => {
           </RouterLink>
         </nav>
         <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
+        <details v-if="view" class="view-filter">
+          <summary>{{ t('grid.filter') }}</summary>
+          <FilterBuilder
+            :key="`${schema.table.id}:${view.id}`"
+            v-model="filterDraft"
+            :schema="schema"
+          />
+          <button type="button" @click="filterValue = filterDraft">
+            {{ t('filter.apply') }}
+          </button>
+        </details>
         <FieldPanel
           v-if="desktop"
           :key="schema.table.id"
@@ -295,6 +313,7 @@ onBeforeUnmount(() => {
           :schema="schema"
           :view-id="view.id"
           :identity="auth.user?.id ?? ''"
+          :filter="filterValue"
           @schema-changed="loadSchema(true)"
           @view-updated="
             (updated) => {
@@ -315,6 +334,7 @@ onBeforeUnmount(() => {
           :schema="schema"
           :view-id="view.id"
           :identity="auth.user?.id ?? ''"
+          :filter="filterValue"
           @schema-changed="loadSchema(true)"
           @expand="
             (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)

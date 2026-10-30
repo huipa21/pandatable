@@ -29,6 +29,7 @@ type computedField struct {
 	targetName   string
 	targetColumn string
 	targetKind   codec.Kind
+	targetCodec  codec.Field
 	aggregate    string
 }
 
@@ -105,7 +106,7 @@ func computedTarget(ctx context.Context, tx pgx.Tx, table rowTable, kind string,
 		return nil, validation("Computed field target must be a stored value field")
 	}
 	targetKind := codec.Kind(uiType)
-	_, err = codec.Bind(targetKind, fieldOptions)
+	targetCodec, err := codec.Bind(targetKind, fieldOptions)
 	if err != nil {
 		return nil, fmt.Errorf("bind computed target field: %w", err)
 	}
@@ -141,7 +142,7 @@ func computedTarget(ctx context.Context, tx pgx.Tx, table rowTable, kind string,
 	return &computedField{
 		options: options, relation: relation, relationSide: sourceField.relationSide,
 		targetTable: targetTable, targetSchema: schema, targetName: name,
-		targetColumn: targetColumn, targetKind: targetKind, aggregate: aggregate,
+		targetColumn: targetColumn, targetKind: targetKind, targetCodec: targetCodec, aggregate: aggregate,
 	}, nil
 }
 

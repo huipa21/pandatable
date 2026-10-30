@@ -35,6 +35,7 @@ import {
 } from '../../api/client'
 import type {
   DataRow,
+  FilterNode,
   RowMutation,
   RowQueryRequest,
   RowQueryResult,
@@ -61,6 +62,7 @@ const props = defineProps<{
   schema: TableSchema
   viewId: string
   identity: string
+  filter?: FilterNode | null
 }>()
 
 function attachmentIds(value: unknown): string[] {
@@ -229,6 +231,7 @@ function fetchPage(
     offset,
     limit,
     includeCount,
+    ...(props.filter ? { filter: props.filter } : {}),
     ...(columnState.localQuery.value
       ? { fieldIds: visibleFieldIds.value }
       : {}),
@@ -1312,6 +1315,12 @@ watch(
       focused = undefined
       void initialize(rows.snapshot().activePage * remotePageSize)
     }
+  },
+)
+watch(
+  () => JSON.stringify(props.filter),
+  () => {
+    if (ready.value) void initialize(0)
   },
 )
 

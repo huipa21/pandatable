@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../../api/client'
 import type {
   DataRow,
+  FilterNode,
   RowMutation,
   RowQueryRequest,
   RowQueryResult,
@@ -23,6 +24,7 @@ const props = defineProps<{
   schema: TableSchema
   viewId: string
   identity: string
+  filter?: FilterNode | null
 }>()
 const emit = defineEmits<{
   expand: [rowId: string]
@@ -155,6 +157,7 @@ async function refresh(anchor = page.value * remotePageSize) {
   const viewId = props.viewId
   const displayId = display.value?.id
   const fieldIds = override.value === null ? undefined : [...override.value]
+  const filter = props.filter
   const query = (body: RowQueryRequest, signal: AbortSignal) =>
     request<RowQueryResult>(
       `/views/${viewId}/query`,
@@ -170,6 +173,7 @@ async function refresh(anchor = page.value * remotePageSize) {
           limit,
           includeCount,
           ...(fieldIds ? { fieldIds } : {}),
+          ...(filter ? { filter } : {}),
         }
         let result = await query(body, signal)
         if (!current(token) || signal.aborted) return result
@@ -265,6 +269,7 @@ watch(
     () => props.schema.myLevel,
     () => props.identity,
     () => auth.user?.id,
+    () => JSON.stringify(props.filter),
   ],
   () => {
     confirmation.value?.close()

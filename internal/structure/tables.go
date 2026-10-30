@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/codec"
 	"pandatable/internal/ddl"
 	"pandatable/internal/structure/structuresql"
 )
@@ -235,7 +236,8 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, tableID
 	}
 	for index, row := range fields {
 		schema.Fields[index] = Field{ID: row.ID.String(), Name: row.Name, Description: row.Description, UIType: row.UiType,
-			Options: json.RawMessage(row.Options), IsSystem: row.IsSystem, IsRequired: row.IsRequired, IsUnique: row.IsUnique,
+			Options: json.RawMessage(row.Options), Filterable: true, FilterOps: []codec.Op{},
+			IsSystem: row.IsSystem, IsRequired: row.IsRequired, IsUnique: row.IsUnique,
 			Default: json.RawMessage("null"), Position: row.Position, Version: row.Version}
 		if row.DefaultJson != nil {
 			var compact bytes.Buffer
@@ -243,6 +245,31 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, tableID
 				return TableSchema{}, fmt.Errorf("read field default: %w", err)
 			}
 			schema.Fields[index].Default = json.RawMessage(compact.Bytes())
+		}
+	}
+	rowMetadata, err := q.GetRowTable(ctx, tableID)
+	if err != nil {
+		return TableSchema{}, fmt.Errorf("read filterability table metadata: %w", err)
+	}
+	filterTable, err := loadRowTable(ctx, q, tx, tableID, rowMetadata.PgSchema, rowMetadata.PgName, rowMetadata.SchemaVersion)
+	if err != nil {
+		return TableSchema{}, err
+	}
+	filterCompiler := filterCompiler{ctx: ctx, tx: tx, actor: Actor{ID: user.String()}, table: filterTable}
+	for index := range schema.Fields {
+		metadata := filterTable.byID[schema.Fields[index].ID]
+		readable, err := filterFieldReadable(ctx, tx, user, filterTable, metadata, map[string]bool{})
+		if err != nil {
+			return TableSchema{}, err
+		}
+		schema.Fields[index].Filterable = readable
+		if readable {
+			ops, err := filterCompiler.fieldOps(metadata)
+			if err != nil {
+				return TableSchema{}, err
+			}
+			schema.Fields[index].FilterOps = ops
+			schema.Fields[index].Filterable = len(ops) > 0
 		}
 	}
 	for index, row := range views {

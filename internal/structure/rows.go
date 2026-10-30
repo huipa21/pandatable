@@ -35,11 +35,12 @@ type RowSort struct {
 }
 
 type RowQueryRequest struct {
-	Offset       *int      `json:"offset"`
-	Limit        *int      `json:"limit"`
-	Sort         *RowSort  `json:"sort"`
-	IncludeCount *bool     `json:"includeCount"`
-	FieldIDs     *[]string `json:"fieldIds"`
+	Offset       *int        `json:"offset"`
+	Limit        *int        `json:"limit"`
+	Sort         *RowSort    `json:"sort"`
+	IncludeCount *bool       `json:"includeCount"`
+	FieldIDs     *[]string   `json:"fieldIds"`
+	Filter       *FilterNode `json:"filter"`
 }
 
 type RowRecord struct {
@@ -657,7 +658,19 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err != nil {
 		return RowQueryResult{}, err
 	}
-	builder := sq.Select(table.selectColumnList(fields)...).From(table.qualifiedName())
+	filterSQL := ""
+	var filterArgs []any
+	if request.Filter != nil {
+		filterSQL, filterArgs, err = compileRowFilter(ctx, tx, actor, table, request.Filter)
+		if err != nil {
+			return RowQueryResult{}, err
+		}
+	}
+	from := table.qualifiedName()
+	if filterSQL != "" {
+		from += ` AS "source"`
+	}
+	builder := sq.Select(table.selectColumnList(fields)...).From(from)
 	if sortField != nil {
 		builder = builder.OrderBy(sortField.sqlColumn()+" "+direction+" NULLS LAST", `"id" ASC`)
 	} else {
@@ -668,6 +681,16 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err != nil {
 		return RowQueryResult{}, fmt.Errorf("build view query: %w", err)
 	}
+	if filterSQL != "" {
+		orderAt := strings.Index(sql, " ORDER BY ")
+		if orderAt < 0 {
+			return RowQueryResult{}, errors.New("view query is missing its order clause")
+		}
+		sql = shiftSQLArguments(sql, len(filterArgs))
+		orderAt = strings.Index(sql, " ORDER BY ")
+		sql = sql[:orderAt] + " WHERE " + filterSQL + sql[orderAt:]
+		args = append(append([]any(nil), filterArgs...), args...)
+	}
 	result := RowQueryResult{Rows: make([]RowRecord, 0, limit), SchemaVersion: table.schemaVersion}
 	result.FieldIDs = make([]string, len(fields))
 	for index, field := range fields {
@@ -675,11 +698,16 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	}
 	if includeCount {
 		var total int64
-		countQuery, countArgs, err := sq.Select("count(*)").From(table.qualifiedName()).
+		countBuilder := sq.Select("count(*)").From(from)
+		if filterSQL != "" {
+			countBuilder = countBuilder.Where(sq.Expr(filterSQL))
+		}
+		countQuery, countArgs, err := countBuilder.
 			PlaceholderFormat(sq.Dollar).ToSql()
 		if err != nil {
 			return RowQueryResult{}, fmt.Errorf("build row count query: %w", err)
 		}
+		countArgs = append(append([]any(nil), filterArgs...), countArgs...)
 		if err := tx.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 			return RowQueryResult{}, rowDatabaseError(fmt.Errorf("count view rows: %w", err))
 		}

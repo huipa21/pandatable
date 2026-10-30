@@ -326,6 +326,103 @@ func TestQueryUsesViewColumnsCountSortAndBounds(t *testing.T) {
 	expectRowError(t, err, 400, "ERR_VALIDATION")
 }
 
+func TestQueryFiltersNestedGroupsAndEscapesLikeWildcards(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	ft := f.fieldTable(owner)
+	label := ft.create(FieldInput{Name: "Label", UIType: "text"})
+	status := ft.create(FieldInput{
+		Name: "Status", UIType: "single_select",
+		Options: rawJSON(`{"choices":[{"id":"open","label":"Open","color":"green"},{"id":"blocked","label":"Blocked","color":"red"},{"id":"done","label":"Done","color":"blue"}]}`),
+	})
+	for _, row := range []map[string]json.RawMessage{
+		{label.ID: rawJSON(`"Acme%_North"`), status.ID: rawJSON(`"Open"`)},
+		{label.ID: rawJSON(`"AcmeX_North"`), status.ID: rawJSON(`"Blocked"`)},
+		{label.ID: rawJSON(`"Other"`), status.ID: rawJSON(`"Done"`)},
+	} {
+		if _, err := f.service.CreateRows(f.ctx, owner, ft.id(), []RowInsert{{Fields: row}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	filter := &FilterNode{Op: "and", Items: []FilterNode{
+		{Field: status.ID, Cmp: codec.OpIsAnyOf, Value: rawJSON(`["Open","Blocked"]`)},
+		{Op: "or", Items: []FilterNode{
+			{Field: status.ID, Cmp: codec.OpIs, Value: rawJSON(`"Blocked"`)},
+			{Field: label.ID, Cmp: codec.OpContains, Value: rawJSON(`"%_"`)},
+		}},
+	}}
+	result, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID,
+		RowQueryRequest{Filter: filter, Limit: intPtr(1)})
+	if err != nil || len(result.Rows) != 1 || result.Total == nil || *result.Total != 2 {
+		t.Fatalf("nested filter result = %+v, %v", result, err)
+	}
+	matches, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID, RowQueryRequest{
+		Filter: &FilterNode{Field: label.ID, Cmp: codec.OpContains, Value: rawJSON(`"%_"`)},
+	})
+	if err != nil || matches.Total == nil || *matches.Total != 1 {
+		t.Fatalf("escaped wildcard result = %+v, %v", matches, err)
+	}
+
+	invalid := &FilterNode{Field: label.ID, Cmp: codec.OpEq, Value: rawJSON(`"Acme"`)}
+	_, err = f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID, RowQueryRequest{Filter: invalid})
+	expectRowError(t, err, 400, "ERR_VALIDATION")
+}
+
+func TestQueryJSONAndAddressFilters(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	ft := f.fieldTable(owner)
+	payload := ft.create(FieldInput{Name: "Payload", UIType: "json"})
+	address := ft.create(FieldInput{Name: "Address", UIType: "inet"})
+	for _, row := range []map[string]json.RawMessage{
+		{
+			payload.ID: rawJSON(`{"owner":"Ada","profile":{"team":"Core"}}`),
+			address.ID: rawJSON(`"192.0.2.1"`),
+		},
+		{
+			payload.ID: rawJSON(`{"owner":"Lin","profile":{"team":"Ops"}}`),
+			address.ID: rawJSON(`"198.51.100.2"`),
+		},
+	} {
+		if _, err := f.service.CreateRows(f.ctx, owner, ft.id(), []RowInsert{{Fields: row}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, test := range []struct {
+		name   string
+		filter *FilterNode
+		total  int64
+	}{
+		{
+			name:   "json key",
+			filter: &FilterNode{Field: payload.ID, Cmp: codec.OpHasKey, Value: rawJSON(`"owner"`)},
+			total:  2,
+		},
+		{
+			name: "json path",
+			filter: &FilterNode{Field: payload.ID, Cmp: codec.OpPathEquals,
+				Value: rawJSON(`{"path":["profile","team"],"value":"Core"}`)},
+			total: 1,
+		},
+		{
+			name: "network containment",
+			filter: &FilterNode{Field: address.ID, Cmp: codec.OpContainedIn,
+				Value: rawJSON(`"192.0.2.0/24"`)},
+			total: 1,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID,
+				RowQueryRequest{Filter: test.filter})
+			if err != nil || result.Total == nil || *result.Total != test.total {
+				t.Fatalf("filter result = %+v, %v", result, err)
+			}
+		})
+	}
+}
+
 func boolPtr(value bool) *bool { return &value }
 func intPtr(value int) *int    { return &value }
 

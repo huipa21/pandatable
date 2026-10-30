@@ -1,7 +1,6 @@
 import type { Agg, Op } from './types'
 
-// Filter operator and aggregate ids declared per kind (D-120); no filter or
-// aggregate engine exists yet.
+// Field types declare operations; SQL compilation belongs to the query engine.
 export const TEXT_OPS: readonly Op[] = [
   'is',
   'is_not',
@@ -32,6 +31,17 @@ export const TEMPORAL_OPS: readonly Op[] = [
   'on_or_after',
   'between',
   'is_within',
+  'is_empty',
+  'is_not_empty',
+]
+export const TIME_OPS: readonly Op[] = [
+  'is',
+  'is_not',
+  'before',
+  'after',
+  'on_or_before',
+  'on_or_after',
+  'between',
   'is_empty',
   'is_not_empty',
 ]

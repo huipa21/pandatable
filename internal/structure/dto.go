@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"pandatable/internal/codec"
 )
 
 // DTOs deliberately omit physical PostgreSQL names (b_/t_/c_); clients address
@@ -42,6 +44,8 @@ type Field struct {
 	Description string          `json:"description"`
 	UIType      string          `json:"uiType"`
 	Options     json.RawMessage `json:"options"`
+	Filterable  bool            `json:"filterable"`
+	FilterOps   []codec.Op      `json:"filterOps"`
 	IsSystem    bool            `json:"isSystem"`
 	IsRequired  bool            `json:"isRequired"`
 	IsUnique    bool            `json:"isUnique"`

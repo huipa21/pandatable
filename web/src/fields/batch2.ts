@@ -10,7 +10,7 @@ import {
   NUMERIC_AGGS,
   NUMERIC_OPS,
   TEMPORAL_AGGS,
-  TEMPORAL_OPS,
+  TIME_OPS,
   TEXT_OPS,
   USER_OPS,
 } from './capabilities'
@@ -352,7 +352,7 @@ export const timeKind: FieldKind<FormatOptions> = simpleKind(
   'time',
   'text',
   { required: true, unique: true, default: true },
-  TEMPORAL_OPS,
+  TIME_OPS,
   TEMPORAL_AGGS,
   (raw) => {
     const set = OptionSet.parse(raw)
@@ -625,7 +625,7 @@ export const jsonKind: FieldKind<Record<string, never>> = simpleKind(
   'json',
   'multiline',
   { required: true, unique: false, default: true },
-  ['is', 'is_not', 'is_empty', 'is_not_empty'],
+  ['is', 'is_not', 'is_empty', 'is_not_empty', 'has_key', 'path_equals'],
   BASIC_AGGS,
   noOptions,
   (value) => {
@@ -665,7 +665,7 @@ function ipKind(cidr: boolean): FieldKind<Record<string, never>> {
     kind,
     'text',
     { required: true, unique: !cidr, default: true },
-    ['is', 'is_not', 'is_empty', 'is_not_empty'],
+    ['is', 'is_not', 'is_empty', 'is_not_empty', 'contained_in'],
     BASIC_AGGS,
     noOptions,
     normalize,

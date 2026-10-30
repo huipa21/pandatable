@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"pandatable/internal/apperr"
+	"pandatable/internal/codec"
 	"pandatable/internal/formula"
 )
 
@@ -201,6 +202,12 @@ func TestFormulaQueryValuesStableReferencesAndDependencyValidation(t *testing.T)
 	}
 	if gotTotal != 50 || gotStatus != "✓" || gotDays != 0 || gotName != "Ada Lovelace" {
 		t.Fatalf("formula values = %v, %q, %v, %q", gotTotal, gotStatus, gotDays, gotName)
+	}
+	filtered, err := f.service.QueryRows(f.ctx, owner, table.Views[0].ID, RowQueryRequest{
+		Filter: &FilterNode{Field: total.ID, Cmp: codec.OpEq, Value: json.RawMessage(`50`)},
+	})
+	if err != nil || filtered.Total == nil || *filtered.Total != 1 {
+		t.Fatalf("formula filter = %+v, %v", filtered, err)
 	}
 
 	renamed, err := f.service.UpdateField(f.ctx, owner, price.ID, FieldPatch{

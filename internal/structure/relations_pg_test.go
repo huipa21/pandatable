@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/codec"
 )
 
 func relationTable(t *testing.T, f *fixture, owner Actor, book string, name string) (TableSchema, Field) {
@@ -105,6 +106,70 @@ func TestRelationOneToManyLinksAndDeletePolicies(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRelationLinkCountFilters(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	workspace := f.workspace(owner)
+	book := f.book(owner, workspace.ID)
+	parents, parentLabel := relationTable(t, f, owner, book.ID, "Projects")
+	children, childLabel := relationTable(t, f, owner, book.ID, "Tasks")
+	created, err := f.service.CreateRelation(f.ctx, owner, children.Table.ID, RelationInput{
+		Name: "Project", ReverseName: "Tasks", TargetTableID: parents.Table.ID,
+		Kind: "one_many", SourceSide: "child", OnDelete: "set_null",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := relationRow(t, f, owner, parents.Table.ID, parentLabel.ID, "Project A")
+	second := relationRow(t, f, owner, parents.Table.ID, parentLabel.ID, "Project B")
+	for _, name := range []string{"Task A", "Task B", "Task C"} {
+		child := relationRow(t, f, owner, children.Table.ID, childLabel.ID, name)
+		parent := first
+		if name == "Task C" {
+			parent = second
+		}
+		if _, err := f.service.ChangeLinks(f.ctx, owner, children.Table.ID, child,
+			created.Relation.ChildFieldID, LinkChange{Add: []string{parent}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for _, test := range []struct {
+		name   string
+		filter *FilterNode
+		total  int64
+		rowID  string
+	}{
+		{
+			name:   "equals",
+			filter: &FilterNode{Field: created.Relation.ParentFieldID, Cmp: codec.OpEq, Value: rawJSON(`2`)},
+			total:  1, rowID: first,
+		},
+		{
+			name:   "between",
+			filter: &FilterNode{Field: created.Relation.ParentFieldID, Cmp: codec.OpBetween, Value: rawJSON(`[1,2]`)},
+			total:  2,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := f.service.QueryRows(f.ctx, owner, parents.Views[0].ID,
+				RowQueryRequest{Filter: test.filter})
+			if err != nil || result.Total == nil || *result.Total != test.total {
+				t.Fatalf("link count filter = %+v, %v", result, err)
+			}
+			if test.rowID != "" && (len(result.Rows) != 1 || result.Rows[0].ID != test.rowID) {
+				t.Fatalf("link count rows = %+v, want %s", result.Rows, test.rowID)
+			}
+		})
+	}
+
+	invalid := &FilterNode{
+		Field: created.Relation.ParentFieldID, Cmp: codec.OpEq, Value: rawJSON(`-1`),
+	}
+	_, err = f.service.QueryRows(f.ctx, owner, parents.Views[0].ID, RowQueryRequest{Filter: invalid})
+	expectRowError(t, err, 400, "ERR_VALIDATION")
 }
 
 func TestRelationOneToOneReplacementAndManyToMany(t *testing.T) {

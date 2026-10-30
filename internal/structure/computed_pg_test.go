@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/codec"
 )
 
 func computedFieldFor(t *testing.T, f *fixture, owner Actor, tableID, name, kind string, options computedOptions) Field {
@@ -84,6 +85,12 @@ func TestLookupComputedValueUpdatesWithRelatedRow(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, []string{"Alice"}) {
 		t.Fatalf("lookup = %v, want [Alice]", got)
+	}
+	filtered, err := f.service.QueryRows(f.ctx, owner, relation.Schema.Views[0].ID, RowQueryRequest{
+		Filter: &FilterNode{Field: lookup.ID, Cmp: codec.OpContains, Value: json.RawMessage(`"Ali"`)},
+	})
+	if err != nil || filtered.Total == nil || *filtered.Total != 1 {
+		t.Fatalf("lookup filter = %+v, %v", filtered, err)
 	}
 	if _, err := f.service.PatchRow(f.ctx, owner, projects.Table.ID, project[0].ID,
 		map[string]json.RawMessage{projectOwner.Field.ID: json.RawMessage(`"Bob"`)}); err != nil {
@@ -177,6 +184,12 @@ func TestRollupComputedAggregates(t *testing.T) {
 		if got != spec.want {
 			t.Errorf("%s = %v, want %v", spec.name, got, spec.want)
 		}
+	}
+	filtered, err := f.service.QueryRows(f.ctx, owner, projects.Views[0].ID, RowQueryRequest{
+		Filter: &FilterNode{Field: createdFields[1].ID, Cmp: codec.OpGt, Value: json.RawMessage(`10`)},
+	})
+	if err != nil || filtered.Total == nil || *filtered.Total != 1 {
+		t.Fatalf("rollup filter = %+v, %v", filtered, err)
 	}
 }
 

@@ -1,3 +1,5 @@
+import type { Op } from '../fields/types'
+
 export interface AuthUser {
   id: string
   username: string
@@ -268,6 +270,8 @@ export interface TableSchema {
     description: string
     uiType: string
     options: Record<string, unknown>
+    filterable?: boolean
+    filterOps?: Op[]
     isSystem: boolean
     isRequired: boolean
     isUnique: boolean
@@ -325,6 +329,10 @@ export interface RowSort {
   direction: 'asc' | 'desc'
 }
 
+export type FilterNode =
+  | { op: 'and' | 'or'; items: FilterNode[] }
+  | { field: string; cmp: Op; value?: RowValue }
+
 export interface RowQueryRequest {
   offset?: number
   limit?: number
@@ -332,6 +340,8 @@ export interface RowQueryRequest {
   includeCount?: boolean
   /** Local grid visibility override; explicit IDs may include system fields. */
   fieldIds?: string[]
+  /** Transient filter override; never saved to the view config. */
+  filter?: FilterNode | null
 }
 
 export interface RowQueryResult {

@@ -87,6 +87,9 @@ const (
 	OpHasAllOf     Op = "has_all_of"
 	OpHasNoneOf    Op = "has_none_of"
 	OpIsExactly    Op = "is_exactly"
+	OpHasKey       Op = "has_key"
+	OpPathEquals   Op = "path_equals"
+	OpContainedIn  Op = "contained_in"
 )
 
 // Agg is a footer/rollup aggregate identifier (doc 08 §6).
@@ -294,6 +297,7 @@ var (
 	textOps     = []Op{OpIs, OpIsNot, OpContains, OpNotContains, OpStartsWith, OpEndsWith, OpIsEmpty, OpIsNotEmpty}
 	numericOps  = []Op{OpEq, OpNeq, OpLt, OpLte, OpGt, OpGte, OpBetween, OpIsEmpty, OpIsNotEmpty}
 	temporalOps = []Op{OpIs, OpIsNot, OpBefore, OpAfter, OpOnOrBefore, OpOnOrAfter, OpBetween, OpIsWithin, OpIsEmpty, OpIsNotEmpty}
+	timeOps     = []Op{OpIs, OpIsNot, OpBefore, OpAfter, OpOnOrBefore, OpOnOrAfter, OpBetween, OpIsEmpty, OpIsNotEmpty}
 	userOps     = []Op{OpIs, OpIsNot, OpHasAnyOf, OpIsEmpty, OpIsNotEmpty}
 
 	basicAggs    = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique}

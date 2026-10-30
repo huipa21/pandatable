@@ -101,6 +101,9 @@ export type Op =
   | 'has_all_of'
   | 'has_none_of'
   | 'is_exactly'
+  | 'has_key'
+  | 'path_equals'
+  | 'contained_in'
 
 export type Agg =
   | 'none'

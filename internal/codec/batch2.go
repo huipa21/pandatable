@@ -35,7 +35,7 @@ var (
 	durationPattern = regexp.MustCompile(`^(-?)PT(?:(0|[1-9][0-9]*)H)?(?:(0|[1-9][0-9]*)M)?(?:(0|[1-9][0-9]*)(\.[0-9]{1,6})?S)?$`)
 	uuidOps         = []Op{OpIs, OpIsNot, OpIsEmpty, OpIsNotEmpty}
 	arrayOps        = []Op{OpHasAnyOf, OpHasAllOf, OpHasNoneOf, OpIsEmpty, OpIsNotEmpty}
-	addressOps      = []Op{OpIs, OpIsNot, OpIsEmpty, OpIsNotEmpty}
+	addressOps      = []Op{OpIs, OpIsNot, OpIsEmpty, OpIsNotEmpty, OpContainedIn}
 )
 
 type batch2Field struct {
@@ -307,7 +307,7 @@ func (timeCodec) Bind(raw json.RawMessage) (Field, error) {
 	encoded, _ := json.Marshal(options)
 	return &batch2Field{kind: Time, options: encoded, column: Column{Type: ddl.DataType{Kind: ddl.Time}},
 		constraints: Constraints{Required: true, Unique: true, Default: true},
-		ops:         clone(temporalOps), aggs: clone(temporalAggs),
+		ops:         clone(timeOps), aggs: clone(temporalAggs),
 		decode: decodeTime, paste: parseTimePaste, encode: encodeTime, format: formatTime, defaultText: formatTime}, nil
 }
 
@@ -576,7 +576,7 @@ type jsonCodec struct{}
 func (jsonCodec) Kind() Kind { return JSON }
 func (jsonCodec) Bind(raw json.RawMessage) (Field, error) {
 	return bindNoOptions(JSON, raw, ddl.DataType{Kind: ddl.JSONB}, Constraints{Required: true, Default: true},
-		[]Op{OpIs, OpIsNot, OpIsEmpty, OpIsNotEmpty}, basicAggs)
+		[]Op{OpIs, OpIsNot, OpIsEmpty, OpIsNotEmpty, OpHasKey, OpPathEquals}, basicAggs)
 }
 
 type inetCodec struct{}
