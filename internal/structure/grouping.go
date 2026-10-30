@@ -17,8 +17,10 @@ import (
 const maxGroupBuckets = 1000
 
 type RowGroupRequest struct {
-	Path   []json.RawMessage `json:"path"`
-	Filter *FilterNode       `json:"filter"`
+	Path     []json.RawMessage `json:"path"`
+	Filter   *FilterNode       `json:"filter"`
+	Search   *string           `json:"search"`
+	FieldIDs *[]string         `json:"fieldIds"`
 }
 
 type RowGroupAggregate struct {
@@ -202,17 +204,25 @@ func (s *Service) QueryGroups(
 			return RowGroupResult{}, err
 		}
 	}
+	if err := validateQuickSearch(request.Search); err != nil {
+		return RowGroupResult{}, err
+	}
+	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table,
+		visibleRowFields(table, config.Fields, request.FieldIDs), request.Search)
+	if err != nil {
+		return RowGroupResult{}, err
+	}
+	conditionSQL, conditionArgs := combineQueryConditions(filterSQL, filter.args, searchSQL, searchArgs)
 	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, config.GroupBy, request.Path)
 	if err != nil {
 		return RowGroupResult{}, err
 	}
-	filterArgs := filter.args
-	where := filterSQL
+	where := conditionSQL
 	if groupSQL != "" {
 		if where != "" {
 			where += " AND "
 		}
-		where += "(" + shiftSQLArguments(groupSQL, len(filterArgs)) + ")"
+		where += "(" + shiftSQLArguments(groupSQL, len(conditionArgs)) + ")"
 	}
 
 	field, ok := table.byID[config.GroupBy[len(request.Path)]]
@@ -235,21 +245,22 @@ func (s *Service) QueryGroups(
 			return RowGroupResult{}, err
 		}
 	}
-	offset := len(filterArgs) + len(groupArgs)
+	offset := len(conditionArgs) + len(groupArgs)
 	selectItems := []string{
 		"(" + shiftSQLArguments(groupExpression, offset) + `)::text AS "key"`,
 		`count(*)::bigint AS "count"`,
 	}
 	for index, expression := range aggregateExpressions {
 		selectItems = append(selectItems,
-			"("+shiftSQLArguments(expression, offset)+")::text AS "+pgx.Identifier{fmt.Sprintf("agg_%d", index)}.Sanitize())
+			"to_jsonb("+shiftSQLArguments(expression, offset)+") AS "+
+				pgx.Identifier{fmt.Sprintf("agg_%d", index)}.Sanitize())
 	}
 	query := "SELECT " + strings.Join(selectItems, ", ") + " FROM " + table.qualifiedName() + ` AS "source"`
 	if where != "" {
 		query += " WHERE " + where
 	}
 	query += ` GROUP BY "key" ORDER BY "key" ASC LIMIT ` + fmt.Sprint(maxGroupBuckets+1)
-	args := append(append(append([]any(nil), filterArgs...), groupArgs...), expressionCompiler.args...)
+	args := append(append(append([]any(nil), conditionArgs...), groupArgs...), expressionCompiler.args...)
 	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return RowGroupResult{}, rowDatabaseError(fmt.Errorf("query grouped buckets: %w", err))

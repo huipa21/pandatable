@@ -111,6 +111,12 @@ it('keeps incomplete highlight filters out of persisted view config', () => {
 
 it('preserves the view query configuration with column edits', () => {
   const schema = fixture()
+  schema.views[0]!.config.filter = {
+    field: 'name',
+    cmp: 'contains',
+    value: 'keep me',
+  }
+  schema.views[0]!.config.rowHeight = 'tall'
   schema.views[0]!.config.sort = [
     { field: 'other', dir: 'desc' },
     { field: 'missing', dir: 'asc' },
@@ -128,6 +134,8 @@ it('preserves the view query configuration with column edits', () => {
   ]
   const normalized = normalizeColumns(schema.views[0]!.config, schema)
   expect(normalized.sort).toEqual([{ field: 'other', dir: 'desc' }])
+  expect(normalized.filter).toEqual(schema.views[0]!.config.filter)
+  expect(normalized.rowHeight).toBe('tall')
   expect(normalized.groupBy).toEqual(['other', 'name'])
   expect(normalized.aggregates).toEqual([
     { fieldId: 'other', aggregate: 'sum' },
@@ -177,6 +185,46 @@ it('saves highlight rules through the versioned view config', async () => {
     },
   ])
   expect(columns.config.value.highlight?.[0]?.color).toBe('red-2')
+})
+
+it('saves aggregate changes without replacing unrelated view config', async () => {
+  const schema = fixture()
+  schema.views[0]!.config.sort = [{ field: 'other', dir: 'desc' }]
+  schema.views[0]!.config.groupBy = ['other']
+  schema.views[0]!.config.highlight = [
+    {
+      id: 'hl-overdue',
+      when: { field: 'name', cmp: 'is', value: 'Overdue' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ]
+  const fetch = vi.fn(async (_url: unknown, init?: RequestInit) =>
+    Response.json({
+      view: {
+        ...schema.views[0],
+        version: 2,
+        config: JSON.parse(String(init?.body)).config,
+      },
+      eventId: 'event',
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted(schema)
+  columns.changeAggregates([{ fieldId: 'other', aggregate: 'sum' }])
+  await debounce()
+
+  const request = fetch.mock.calls[0]?.[1]
+  expect(request?.headers).toMatchObject({ 'If-Match': '1' })
+  expect(JSON.parse(String(request?.body)).config).toMatchObject({
+    sort: [{ field: 'other', dir: 'desc' }],
+    groupBy: ['other'],
+    aggregates: [{ fieldId: 'other', aggregate: 'sum' }],
+    highlight: schema.views[0]!.config.highlight,
+  })
+  expect(columns.config.value.aggregates).toEqual([
+    { fieldId: 'other', aggregate: 'sum' },
+  ])
 })
 
 it('rebases only user intents against live fields and keeps unrelated server widths', () => {

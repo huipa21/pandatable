@@ -338,12 +338,23 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
     const path = String(input)
     const body =
       typeof init?.body === 'string'
-        ? (JSON.parse(init.body) as { fieldIds?: string[] })
+        ? (JSON.parse(init.body) as {
+            fieldIds?: string[]
+            aggregates?: { fieldId: string; aggregate: string }[]
+          })
         : undefined
     if (path.endsWith('/query'))
       return Response.json(
         queryResponse(schema, body?.fieldIds ?? gridState.visibleFieldIds),
       )
+    if (path.endsWith('/aggregates'))
+      return Response.json({
+        aggregates: (body?.aggregates ?? []).map((aggregate) => ({
+          ...aggregate,
+          value: 42,
+        })),
+        schemaVersion: schema.schemaVersion,
+      })
     if (path === '/api/v1/views/v' && init?.method === 'PATCH') {
       const { config } = JSON.parse(String(init.body)) as {
         config: TableSchema['views'][number]['config']
@@ -452,6 +463,40 @@ it('queries the real view and persists a cell edit without coercing bigint row I
     method: 'PATCH',
     body: JSON.stringify({ fields: { name: 'changed' } }),
   })
+})
+
+it('sends transient quick search and renders configured footer aggregates', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'amount', 'integer')
+  schema.fields.find((field) => field.id === 'amount')!.options = {
+    size: 'int',
+  }
+  const fetch = await mountGrid(schema)
+
+  await wrapper!.get('input[type="search"]').setValue('acme')
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  await flushPromises()
+  const query = fetch.mock.calls
+    .filter(([path]) => String(path).endsWith('/query'))
+    .map(([, init]) => JSON.parse(String(init?.body)) as RowQueryRequest)
+    .at(-1)
+  expect(query?.search).toBe('acme')
+
+  await wrapper!
+    .get(
+      `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'amount' })}"]`,
+    )
+    .setValue('sum')
+  await flushPromises()
+  const request = fetch.mock.calls
+    .filter(([path]) => String(path).endsWith('/aggregates'))
+    .at(-1)
+  expect(request?.[1]?.method).toBe('POST')
+  expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({
+    search: 'acme',
+    aggregates: [{ fieldId: 'amount', aggregate: 'sum' }],
+  })
+  expect(wrapper!.get('.grid-aggregate-footer').text()).toContain('42')
 })
 
 it('adds, prioritizes, changes, and removes transient sort criteria', async () => {

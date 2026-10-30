@@ -40,6 +40,7 @@ type RowQueryRequest struct {
 	Sort         *RowSort          `json:"sort"`
 	Sorts        *[]RowSort        `json:"sorts"`
 	IncludeCount *bool             `json:"includeCount"`
+	Search       *string           `json:"search"`
 	FieldIDs     *[]string         `json:"fieldIds"`
 	Filter       *FilterNode       `json:"filter"`
 	GroupPath    []json.RawMessage `json:"groupPath,omitempty"`
@@ -670,6 +671,9 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		return RowQueryResult{}, err
 	}
 	fields := visibleRowFields(table, config.Fields, request.FieldIDs)
+	if err := validateQuickSearch(request.Search); err != nil {
+		return RowQueryResult{}, err
+	}
 	sortKeys, explicitSort, err := configuredRowSorts(table, config.Sort, request.Sort, request.Sorts)
 	if err != nil {
 		return RowQueryResult{}, err
@@ -698,16 +702,21 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 			return RowQueryResult{}, err
 		}
 	}
+	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table, fields, request.Search)
+	if err != nil {
+		return RowQueryResult{}, err
+	}
+	conditionSQL, conditionArgs := combineQueryConditions(filterSQL, filterArgs, searchSQL, searchArgs)
 	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, config.GroupBy, request.GroupPath)
 	if err != nil {
 		return RowQueryResult{}, err
 	}
-	whereSQL := filterSQL
+	whereSQL := conditionSQL
 	if groupSQL != "" {
 		if whereSQL != "" {
 			whereSQL += " AND "
 		}
-		whereSQL += "(" + shiftSQLArguments(groupSQL, len(filterArgs)) + ")"
+		whereSQL += "(" + shiftSQLArguments(groupSQL, len(conditionArgs)) + ")"
 	}
 	from := table.qualifiedName() + ` AS "source"`
 	builder := sq.Select(table.selectColumnList(fields)...).From(from)
@@ -716,7 +725,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err != nil {
 		return RowQueryResult{}, fmt.Errorf("build view query: %w", err)
 	}
-	argumentPrefix := len(filterArgs) + len(groupArgs) + len(sortArgs)
+	argumentPrefix := len(conditionArgs) + len(groupArgs) + len(sortArgs)
 	sql = shiftSQLArguments(sql, argumentPrefix+len(highlightArgs))
 	fromAt := strings.Index(sql, " FROM ")
 	if fromAt < 0 {
@@ -727,7 +736,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	sql = sql[:fromAt] + ", " + highlightSelect + sql[fromAt:]
 	orderKeys := make([]string, 0, len(sortExpressions)+1)
 	for _, expression := range sortExpressions {
-		orderKeys = append(orderKeys, shiftSQLArguments(expression, len(filterArgs)+len(groupArgs)))
+		orderKeys = append(orderKeys, shiftSQLArguments(expression, len(conditionArgs)+len(groupArgs)))
 	}
 	orderKeys = append(orderKeys, `"source"."id" ASC`)
 	sql = strings.Replace(sql, `ORDER BY "source"."id" ASC`,
@@ -739,7 +748,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		}
 		sql = sql[:orderAt] + " WHERE " + whereSQL + sql[orderAt:]
 	}
-	args = append(append(append(append(append([]any(nil), filterArgs...), groupArgs...), sortArgs...),
+	args = append(append(append(append(append([]any(nil), conditionArgs...), groupArgs...), sortArgs...),
 		highlightArgs...), args...)
 	result := RowQueryResult{Rows: make([]RowRecord, 0, limit), SchemaVersion: table.schemaVersion}
 	result.FieldIDs = make([]string, len(fields))
@@ -757,7 +766,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		if err != nil {
 			return RowQueryResult{}, fmt.Errorf("build row count query: %w", err)
 		}
-		countArgs = append(append(append([]any(nil), filterArgs...), groupArgs...), countArgs...)
+		countArgs = append(append(append([]any(nil), conditionArgs...), groupArgs...), countArgs...)
 		if err := tx.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 			return RowQueryResult{}, rowDatabaseError(fmt.Errorf("count view rows: %w", err))
 		}

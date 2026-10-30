@@ -45,6 +45,20 @@ func (api *authHTTP) queryGroups(w http.ResponseWriter, r *http.Request, user au
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (api *authHTTP) queryAggregates(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input structure.RowAggregateRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	result, err := api.structure.QueryAggregates(r.Context(), actorOf(user), chi.URLParam(r, "id"), input)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (api *authHTTP) getRow(w http.ResponseWriter, r *http.Request, user auth.User) {
 	row, err := api.structure.GetRow(r.Context(), actorOf(user), chi.URLParam(r, "id"), chi.URLParam(r, "rowId"))
 	if err != nil {

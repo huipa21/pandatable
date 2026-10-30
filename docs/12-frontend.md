@@ -356,6 +356,14 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   rule independently to each target.
 - Highlight row/cell backgrounds resolve six palette tokens through light/
   dark theme CSS pairs; row and cell styling does not embed literal colors.
+- T2.11 adds an accessible quick-search input and footer aggregate controls to
+  the production grid. Search stays transient and matches only effectively
+  visible searchable fields; paging, filters, groups, and footer results share
+  the same term. Per-visible-field aggregate choices use the field codec's
+  supported operations, persist through the versioned merged view config when
+  allowed, and remain local overrides for read-only/locked views. The footer
+  refreshes on search, filter, visibility, and aggregate changes, formats
+  values with the field codec, and surfaces request failures.
 - Link cells: chips of display values; editor opens picker modal (search target rows, multi-select for many sides).
 - Attachment cells: thumbnails; drag-drop upload onto cell; preview modal.
 - Row expand modal: all live fields in a form layout. T1.18 implements the

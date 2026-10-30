@@ -662,9 +662,9 @@ routes listed above are design-only, not available controls.
 ### Rows & queries
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/views/{id}/query` | T1.15: `{ offset?, limit?, sort?: { fieldId, direction }, includeCount? }` → `{ rows: [{id, fields}], fieldIds, total, schemaVersion }`; limit ≤100, offset ≤1,000,000; total is null when count is disabled. T1.16 optionally accepts `fieldIds` as a transient visibility override (D-138), without changing stored view config. |
-| POST | `/views/{id}/groups` | `{ path, search?, overrides? }` → buckets |
-| POST | `/views/{id}/aggregates` | footer values |
+| POST | `/views/{id}/query` | `{ offset?, limit?, sorts?, includeCount?, fieldIds?, filter?, search?, groupPath? }` → `{ rows: [{id, fields}], fieldIds, total, schemaVersion }`; limit ≤100, offset ≤1,000,000; total is null when count is disabled. `fieldIds`, `filter`, `search`, and `groupPath` are transient. Quick search is limited to 256 Unicode code points and searches only effective visible searchable fields. |
+| POST | `/views/{id}/groups` | `{ path, filter?, search?, fieldIds? }` → `{ groups, schemaVersion }`; the filter and quick search apply before grouping, and transient `fieldIds` controls search visibility. |
+| POST | `/views/{id}/aggregates` | `{ filter?, search?, fieldIds?, aggregates? }` → `{ aggregates:[{fieldId,aggregate,value}], schemaVersion }`; conditions match the displayed rows, and omitted `aggregates` uses view config. Request overrides do not mutate view state. Exact numeric sum/avg/min/max and percent-checked values are JSON strings; count-style results are JSON numbers. |
 | GET | `/tables/{id}/rows/{rowId}` | T1.15: `{ id, fields }`, all live fields including read-only system values; row ID is a canonical bigint decimal string. |
 | POST | `/tables/{id}/rows` | T1.15: `{ rows: [{ fields: { fieldId: value } }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. Physical defaults apply to omitted values. |
 | PATCH | `/tables/{id}/rows` | T1.15 atomic bulk `{ rows: [{ id, fields }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. |
@@ -688,8 +688,9 @@ above and report oversize input rather than silently truncating it; no API
 endpoint or authorization rule is added for clipboard operations (D-139).
 NOT NULL and unique violations return sanitized `ERR_REQUIRED_FIELD` and
 `ERR_UNIQUE_CONFLICT`; schema lock/serialization outcomes are
-`ERR_DDL_LOCK_TIMEOUT` or `ERR_SCHEMA_CHANGED`. These implemented routes do
-not include the deferred filters/search, restore, links, groups or aggregates.
+`ERR_DDL_LOCK_TIMEOUT` or `ERR_SCHEMA_CHANGED`. T2.6 implements transient query
+filters; T2.8 and T2.11 implement groups, search, and footer aggregates. Restore
+remains deferred.
 
 T1.18's row-expand deep link uses the existing GET full-row response and
 single-row PATCH `{fields:{fieldId:value}}`/`{row,eventId}` response, without

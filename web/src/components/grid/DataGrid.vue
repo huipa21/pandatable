@@ -41,12 +41,15 @@ import type {
   RowMutation,
   RowQueryRequest,
   RowQueryResult,
+  RowAggregate,
+  RowAggregateResult,
   RowGroupResult,
   RowSort,
   RowValue,
   TableField,
   TableSchema,
   TableView,
+  ViewAggregate,
   ViewColumns,
 } from '../../api/types'
 import { bindField, type BoundField } from '../../fields/registry'
@@ -106,6 +109,10 @@ const disposed = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const error = ref<unknown>(null)
+const searchTerm = ref('')
+const footerAggregates = shallowRef<RowAggregate[]>([])
+const footerAggregateError = ref('')
+const footerAggregateLoading = ref(false)
 const cellErrors = ref(new Map<string, string>())
 const clipboardErrors = ref<string[]>([])
 const clipboardMessage = ref('')
@@ -136,6 +143,9 @@ const syncedPages = new Set<number>()
 const syncedRows: (DataRow | null)[] = []
 const mutationControllers = new Set<AbortController>()
 let focused: FocusAfterRenderEvent | undefined
+let footerController: AbortController | undefined
+let footerGeneration = 0
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 let copyRange: RangeArea | null = null
 let copyColumnType: FocusAfterRenderEvent['colType'] = 'rgCol'
 let cutPending = false
@@ -144,6 +154,12 @@ interface PastePlan {
   addedRows: number
   patchRows: { id: string; index: number; fields: Record<string, RowValue> }[]
   insertRows: { fields: Record<string, RowValue> }[]
+}
+interface DisplayedFooterAggregate {
+  key: string
+  field: string
+  aggregate: string
+  value: string
 }
 const pendingPaste = ref<PastePlan | null>(null)
 const desktop = ref(window.matchMedia('(min-width: 768px)').matches)
@@ -305,6 +321,31 @@ function cloneHighlightDrafts(rules = highlightDrafts.value): HighlightDraft[] {
   }))
 }
 
+function selectedFooterAggregate(fieldId: string) {
+  return (
+    columnState.config.value.aggregates?.find(
+      (item) => item.fieldId === fieldId,
+    )?.aggregate ?? 'none'
+  )
+}
+
+function changeFooterAggregate(fieldId: string, value: string) {
+  const field = footerAggregateFields.value.find(
+    (item) => item.field.id === fieldId,
+  )
+  if (
+    !field ||
+    (value !== 'none' &&
+      !field.aggregates.some((aggregate) => aggregate === value))
+  )
+    return
+  const aggregates: ViewAggregate[] = (
+    columnState.config.value.aggregates ?? []
+  ).filter((item) => item.fieldId !== fieldId)
+  if (value !== 'none') aggregates.push({ fieldId, aggregate: value })
+  columnState.changeAggregates(aggregates)
+}
+
 function persistHighlightDrafts() {
   if (highlightIncomplete.value) return
   const rules: HighlightRule[] = []
@@ -435,6 +476,34 @@ const visibleFieldIds = computed(() =>
     .filter((field) => field.visible)
     .map((field) => field.id),
 )
+const footerAggregateFields = computed(() =>
+  visibleFieldIds.value.flatMap((id) => {
+    const item = fieldById.value.get(id)
+    if (!item) return []
+    const aggregates = item.bound
+      .aggregates()
+      .filter((aggregate) => aggregate !== 'none')
+    return aggregates.length ? [{ ...item, aggregates }] : []
+  }),
+)
+function displayedFooterAggregates(): DisplayedFooterAggregate[] {
+  const result: DisplayedFooterAggregate[] = []
+  for (const aggregate of footerAggregates.value) {
+    const item = fieldById.value.get(aggregate.fieldId)
+    if (!item || !visibleFieldIds.value.includes(aggregate.fieldId)) continue
+    result.push({
+      key: `${aggregate.fieldId}:${aggregate.aggregate}`,
+      field: item.field.name,
+      aggregate: groupAggregateLabel(aggregate.aggregate),
+      value: formatFooterAggregateValue(
+        aggregate.value,
+        aggregate.aggregate,
+        item.bound,
+      ),
+    })
+  }
+  return result
+}
 const columnFields = computed(() =>
   columnState.config.value.fields.flatMap((column) => {
     const field = props.schema.fields.find((field) => field.id === column.id)
@@ -479,6 +548,7 @@ function fetchPage(
     includeCount,
     sorts: sortCriteria.value,
     ...(props.filter ? { filter: props.filter } : {}),
+    ...(searchTerm.value ? { search: searchTerm.value } : {}),
     ...(groupPath?.length ? { groupPath } : {}),
     ...(columnState.localQuery.value
       ? { fieldIds: visibleFieldIds.value }
@@ -524,6 +594,10 @@ const groupedRows = new GroupedRowsWindow(
         {
           path,
           ...(props.filter ? { filter: props.filter } : {}),
+          ...(searchTerm.value ? { search: searchTerm.value } : {}),
+          ...(columnState.localQuery.value
+            ? { fieldIds: visibleFieldIds.value }
+            : {}),
         },
         AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
       )
@@ -550,6 +624,58 @@ const groupedRows = new GroupedRowsWindow(
     loading.value = false
   },
 )
+
+async function loadFooterAggregates() {
+  footerController?.abort()
+  footerController = undefined
+  const generation = ++footerGeneration
+  const aggregates = columnState.config.value.aggregates ?? []
+  if (!aggregates.length) {
+    footerAggregates.value = []
+    footerAggregateError.value = ''
+    footerAggregateLoading.value = false
+    return
+  }
+  const controller = new AbortController()
+  footerController = controller
+  footerAggregateLoading.value = true
+  footerAggregateError.value = ''
+  footerAggregates.value = []
+  try {
+    const result = await request<RowAggregateResult>(
+      `/views/${props.viewId}/aggregates`,
+      'POST',
+      {
+        aggregates,
+        fieldIds: visibleFieldIds.value,
+        ...(props.filter ? { filter: props.filter } : {}),
+        ...(searchTerm.value ? { search: searchTerm.value } : {}),
+      },
+      AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+    )
+    if (disposed.value || generation !== footerGeneration) return
+    if (result.schemaVersion !== props.schema.schemaVersion) {
+      emit('schemaChanged')
+      throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+    }
+    footerAggregates.value = result.aggregates
+  } catch (cause) {
+    if (
+      disposed.value ||
+      generation !== footerGeneration ||
+      controller.signal.aborted
+    )
+      return
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+    footerAggregateError.value = errorMessage(cause)
+  } finally {
+    if (generation === footerGeneration) {
+      footerAggregateLoading.value = false
+      footerController = undefined
+    }
+  }
+}
 
 const rows = {
   get total() {
@@ -848,6 +974,23 @@ function groupAggregateLabel(aggregate: string) {
     default:
       return aggregate
   }
+}
+
+function formatFooterAggregateValue(
+  value: unknown,
+  aggregate: string,
+  field: BoundField,
+): string {
+  if (value === null || value === undefined) return t('grid.aggregateNoValue')
+  if (['count', 'count_empty', 'count_filled', 'unique'].includes(aggregate))
+    return String(value)
+  if (aggregate === 'percent_checked')
+    return new Intl.NumberFormat(locale.value, {
+      style: 'percent',
+      maximumFractionDigits: 2,
+    }).format(Number(value))
+  if (!isWireValue(value)) return String(value)
+  return field.formatDisplay(value, fieldEnvironment.value)
 }
 
 const editors = computed(() =>
@@ -1592,6 +1735,7 @@ async function initialize(anchor = 0, preserveCellErrors = false) {
   loading.value = true
   error.value = null
   if (!preserveCellErrors) cellErrors.value.clear()
+  void loadFooterAggregates()
   try {
     await rows.initialize(anchor)
     if (!disposed.value && !error.value) loading.value = false
@@ -1864,6 +2008,19 @@ watch(
     if (ready.value) void initialize(0)
   },
 )
+watch(searchTerm, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchTimer = undefined
+    if (ready.value) void initialize(0)
+  }, 250)
+})
+watch(
+  () => JSON.stringify(columnState.config.value.aggregates ?? []),
+  () => {
+    if (ready.value) void loadFooterAggregates()
+  },
+)
 watch(
   () => props.viewId,
   () => {
@@ -1920,6 +2077,9 @@ defineExpose({
 onBeforeUnmount(() => {
   disposed.value = true
   keyboardGeneration++
+  clearTimeout(searchTimer)
+  footerController?.abort()
+  footerGeneration++
   media.removeEventListener('change', resized)
   document.removeEventListener('keydown', documentKeydown, true)
   for (const controller of mutationControllers) controller.abort()
@@ -1949,6 +2109,16 @@ onBeforeUnmount(() => {
       >
         {{ t('grid.deleteRows', { count: selectedRows.size }) }}
       </button>
+      <label class="grid-quick-search">
+        <span>{{ t('grid.quickSearch') }}</span>
+        <input
+          v-model="searchTerm"
+          type="search"
+          maxlength="512"
+          :aria-label="t('grid.quickSearch')"
+          :placeholder="t('grid.quickSearchPlaceholder')"
+        />
+      </label>
       <details v-if="desktop" class="grid-fields">
         <summary>{{ t('grid.fields') }}</summary>
         <fieldset>
@@ -2136,6 +2306,43 @@ onBeforeUnmount(() => {
           >
             {{ t('grid.addSort') }}
           </button>
+        </fieldset>
+      </details>
+      <details v-if="desktop" class="grid-aggregate-settings">
+        <summary>{{ t('grid.footerAggregates') }}</summary>
+        <fieldset>
+          <legend>{{ t('grid.footerAggregates') }}</legend>
+          <label
+            v-for="item in footerAggregateFields"
+            :key="item.field.id"
+            class="grid-aggregate-control"
+          >
+            <span>{{ item.field.name }}</span>
+            <select
+              :aria-label="
+                t('grid.aggregateForField', { field: item.field.name })
+              "
+              :value="selectedFooterAggregate(item.field.id)"
+              @change="
+                changeFooterAggregate(
+                  item.field.id,
+                  ($event.target as HTMLSelectElement).value,
+                )
+              "
+            >
+              <option value="none">{{ t('grid.aggregateLabels.none') }}</option>
+              <option
+                v-for="aggregate in item.aggregates"
+                :key="aggregate"
+                :value="aggregate"
+              >
+                {{ groupAggregateLabel(aggregate) }}
+              </option>
+            </select>
+          </label>
+          <p v-if="footerAggregateFields.length === 0" role="status">
+            {{ t('grid.noFooterAggregateFields') }}
+          </p>
         </fieldset>
       </details>
       <details
@@ -2358,6 +2565,29 @@ onBeforeUnmount(() => {
       @aftercolumnresize="resizeColumns"
       @columndragend="dragColumns"
     />
+    <p v-if="footerAggregateError" role="alert">
+      {{ t('grid.footerAggregateFailed', { message: footerAggregateError }) }}
+    </p>
+    <footer
+      v-if="displayedFooterAggregates().length || footerAggregateLoading"
+      class="grid-aggregate-footer"
+      :aria-label="t('grid.footerAggregates')"
+      aria-live="polite"
+    >
+      <p v-if="footerAggregateLoading" role="status">
+        {{ t('grid.footerAggregatesLoading') }}
+      </p>
+      <ul v-else>
+        <li
+          v-for="aggregate in displayedFooterAggregates()"
+          :key="aggregate.key"
+        >
+          <span>{{ aggregate.field }}</span>
+          <span>{{ aggregate.aggregate }}</span>
+          <output>{{ aggregate.value }}</output>
+        </li>
+      </ul>
+    </footer>
     <p v-if="unsupportedField" role="alert">
       {{ t('grid.unsupportedField') }}
     </p>
@@ -2428,14 +2658,26 @@ onBeforeUnmount(() => {
   position: relative;
   z-index: 1;
 }
+.grid-quick-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.grid-quick-search input {
+  max-width: min(260px, 40vw);
+}
 .grid-fields {
   position: relative;
 }
 .grid-sorts {
   position: relative;
 }
+.grid-aggregate-settings {
+  position: relative;
+}
 .grid-fields fieldset,
 .grid-sorts fieldset,
+.grid-aggregate-settings fieldset,
 .grid-highlights fieldset {
   position: absolute;
   z-index: 2;
@@ -2459,10 +2701,34 @@ onBeforeUnmount(() => {
   width: 75px;
 }
 .grid-fields label,
-.grid-sorts label {
+.grid-sorts label,
+.grid-aggregate-control {
   display: flex;
   gap: 8px;
   padding: 4px;
+}
+.grid-aggregate-control {
+  justify-content: space-between;
+}
+.grid-aggregate-control select {
+  min-width: 150px;
+}
+.grid-aggregate-footer {
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+}
+.grid-aggregate-footer ul {
+  display: flex;
+  gap: 20px;
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+}
+.grid-aggregate-footer li {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
 }
 .grid-sorts ol {
   display: grid;

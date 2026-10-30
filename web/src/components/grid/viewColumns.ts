@@ -82,6 +82,8 @@ export function normalizeColumns(
       0,
       Math.min(config.frozen, fields.filter((field) => field.visible).length),
     ),
+    ...(config.filter !== undefined ? { filter: config.filter } : {}),
+    ...(config.rowHeight !== undefined ? { rowHeight: config.rowHeight } : {}),
     ...(config.sort ? { sort } : {}),
     ...(config.groupBy ? { groupBy: [...config.groupBy] } : {}),
     ...(config.aggregates
@@ -167,6 +169,7 @@ export function useViewColumns(options: {
   const canPersist = computed(() => options.canWrite() && !!view())
   let intents: ColumnIntent[] = []
   let pendingHighlights: HighlightRule[] | undefined
+  let pendingAggregates: ViewColumns['aggregates'] | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let controller: AbortController | undefined
   let generation = 0
@@ -229,10 +232,27 @@ export function useViewColumns(options: {
     if (!retryable.value && !reconciling) schedule()
   }
 
+  function changeAggregates(
+    aggregates: NonNullable<ViewColumns['aggregates']>,
+  ) {
+    if (disposed || !options.identity()) return
+    const copy = aggregates.map((item) => ({ ...item }))
+    localQuery.value = true
+    if (!canPersist.value) {
+      config.value = { ...config.value, aggregates: copy }
+      return
+    }
+    pendingAggregates = copy
+    config.value = { ...config.value, aggregates: copy }
+    if (!retryable.value && !reconciling) schedule()
+  }
+
   async function save() {
     if (
       !canPersist.value ||
-      (!intents.length && pendingHighlights === undefined) ||
+      (!intents.length &&
+        pendingHighlights === undefined &&
+        pendingAggregates === undefined) ||
       saving.value ||
       !authoritative
     )
@@ -241,6 +261,7 @@ export function useViewColumns(options: {
     const own = generation
     const batch = [...intents]
     const batchHighlights = pendingHighlights
+    const batchAggregates = pendingAggregates
     const target = applyColumnIntents(authoritative.config, batch, liveSchema)
     if (batchHighlights !== undefined)
       target.highlight = batchHighlights.map((rule) => ({
@@ -250,6 +271,8 @@ export function useViewColumns(options: {
             ? { type: 'cells', fields: [...rule.target.fields] }
             : { type: 'row' },
       }))
+    if (batchAggregates !== undefined)
+      target.aggregates = batchAggregates.map((item) => ({ ...item }))
     saving.value = true
     retryable.value = false
     controller = new AbortController()
@@ -272,9 +295,14 @@ export function useViewColumns(options: {
       authoritative = result.view
       intents.splice(0, batch.length)
       if (pendingHighlights === batchHighlights) pendingHighlights = undefined
+      if (pendingAggregates === batchAggregates) pendingAggregates = undefined
       config.value = applyColumnIntents(result.view.config, intents, liveSchema)
       if (pendingHighlights !== undefined)
         config.value = { ...config.value, highlight: pendingHighlights }
+      if (pendingAggregates !== undefined)
+        config.value = { ...config.value, aggregates: pendingAggregates }
+      if (pendingAggregates !== undefined)
+        config.value = { ...config.value, aggregates: pendingAggregates }
       conflictRetried = false
       reconciling = false
       options.updated(result.view)
@@ -285,6 +313,8 @@ export function useViewColumns(options: {
       config.value = normalizeColumns(authoritative.config, options.schema())
       if (pendingHighlights !== undefined)
         config.value = { ...config.value, highlight: pendingHighlights }
+      if (pendingAggregates !== undefined)
+        config.value = { ...config.value, aggregates: pendingAggregates }
       try {
         controller = new AbortController()
         const latest = await request<TableSchema>(
@@ -301,6 +331,8 @@ export function useViewColumns(options: {
         config.value = normalizeColumns(next.config, latest)
         if (pendingHighlights !== undefined)
           config.value = { ...config.value, highlight: pendingHighlights }
+        if (pendingAggregates !== undefined)
+          config.value = { ...config.value, aggregates: pendingAggregates }
         if (!(
           next.scope === 'personal' ||
           latest.myLevel === 'owner' ||
@@ -327,7 +359,9 @@ export function useViewColumns(options: {
       if (valid(own)) {
         saving.value = false
         if (
-          (intents.length || pendingHighlights !== undefined) &&
+          (intents.length ||
+            pendingHighlights !== undefined ||
+            pendingAggregates !== undefined) &&
           !retryable.value
         )
           schedule()
@@ -343,6 +377,7 @@ export function useViewColumns(options: {
       liveSchema = options.schema()
       intents = []
       pendingHighlights = undefined
+      pendingAggregates = undefined
       retryable.value = false
       failure.value = ''
       reconciling = false
@@ -383,6 +418,7 @@ export function useViewColumns(options: {
     localQuery,
     change,
     changeHighlights,
+    changeAggregates,
     retry: () => {
       retryable.value = false
       void save()

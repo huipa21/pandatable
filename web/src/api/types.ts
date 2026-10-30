@@ -245,8 +245,13 @@ export interface ViewColumns {
   rowHeight?: 'short' | 'medium' | 'tall' | 'extra'
   sort?: { field: string; dir: 'asc' | 'desc' }[]
   groupBy?: string[]
-  aggregates?: { fieldId: string; aggregate: string }[]
+  aggregates?: ViewAggregate[]
   highlight?: HighlightRule[]
+}
+
+export interface ViewAggregate {
+  fieldId: string
+  aggregate: string
 }
 
 export type HighlightColor =
@@ -364,6 +369,8 @@ export interface RowQueryRequest {
   fieldIds?: string[]
   /** Transient filter override; never saved to the view config. */
   filter?: FilterNode | null
+  /** Transient quick search; never saved to the view config. */
+  search?: string
   /** Group values to apply before paging expanded group rows. */
   groupPath?: RowValue[]
 }
@@ -379,6 +386,8 @@ export interface RowQueryResult {
 export interface RowGroupRequest {
   path: RowValue[]
   filter?: FilterNode | null
+  search?: string
+  fieldIds?: string[]
 }
 
 export interface RowGroupAggregate {
@@ -395,6 +404,26 @@ export interface RowGroupBucket {
 
 export interface RowGroupResult {
   groups: RowGroupBucket[]
+  schemaVersion: number
+}
+
+export interface RowAggregateRequest {
+  filter?: FilterNode | null
+  search?: string
+  /** Transient local grid visibility override. */
+  fieldIds?: string[]
+  /** Transient aggregate config override; never persisted by this endpoint. */
+  aggregates?: ViewAggregate[]
+}
+
+export interface RowAggregate {
+  fieldId: string
+  aggregate: string
+  value: RowValue
+}
+
+export interface RowAggregateResult {
+  aggregates: RowAggregate[]
   schemaVersion: number
 }
 

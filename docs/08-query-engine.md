@@ -23,12 +23,12 @@ All row reads go through `internal/query`, which compiles a **view config** (+ a
     ]
   },
   "sort":  [ { "field": "fld_due", "dir": "asc" } ],
-  "group": [ { "field": "fld_status", "dir": "asc" } ],   // max 3
+  "groupBy": [ "fld_status" ],             // ordered field IDs, max 3
+  "aggregates": [ { "fieldId": "fld_amount", "aggregate": "sum" } ],
   "highlight": [                                          // ordered, first match wins per target
     { "id": "hl1", "when": { /* filter tree */ }, "target": { "type": "row" }, "color": "red-2" },
     { "id": "hl2", "when": { /* … */ }, "target": { "type": "cells", "fields": ["fld_due"] }, "color": "amber-3" }
   ],
-  "aggregates": { "fld_amount": "sum", "fld_id": "count" },
   // form view
   "form": { "title": "", "description": "", "fields": [ { "id": "…", "label": "…", "help": "…", "required": true } ], "afterSubmit": "message|new" },
   // kanban (M4)
@@ -186,11 +186,24 @@ that acceptance still requires T1.16's production grid and browser scenario.
 
 ## 5. Quick search
 
-`ILIKE '%term%'` OR'ed across visible text-like fields, `::text` cast for numbers/dates. Uses `pg_trgm` GIN index if the table is large and search is used (auto-index policy, D-020).
+The query accepts a transient `search` string (≤256 Unicode code points); it
+is never written to view config. A non-empty term is matched using a
+parameterized, wildcard-escaped `ILIKE '%term%'` OR'ed across the effective
+visible text-like fields, with `::text` casts for numbers and dates. Hidden
+fields are not searched. Row, group, and footer-aggregate requests apply the
+same search condition alongside the active filter. Uses a `pg_trgm` GIN index
+if the table is large and search is used (auto-index policy, D-020).
 
 ## 6. Footer aggregates
 
-Per visible field: none, count, count_empty, count_filled, unique, sum, avg, min, max, earliest, latest, percent_checked. One `SELECT agg(...), agg(...)` with the view's WHERE.
+Per visible field: none, count, count_empty, count_filled, unique, sum, avg,
+min, max, earliest, latest, percent_checked. The view stores supported
+`{fieldId,aggregate}` entries in an ordered `aggregates` array. The
+`POST /views/{id}/aggregates` endpoint applies the same effective filter and
+transient search as the displayed rows; optional request overrides are
+validated and never mutate view config. Numeric sum/avg/min/max and
+percent_checked results are JSON strings to preserve exact PostgreSQL values;
+count-style results are JSON numbers.
 
 ## 7. Formula language (D-018)
 
