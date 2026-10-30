@@ -5,6 +5,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  shallowRef,
   watch,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -22,7 +23,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
 const sharing = useSharingStore()
-const schema = ref<TableSchema | null>(null)
+const schema = shallowRef<TableSchema | null>(null)
 // Lazy so the field registry/editor stay out of the initial bundle (D-130).
 const FieldPanel = defineAsyncComponent(
   () => import('../components/fields/FieldPanel.vue'),

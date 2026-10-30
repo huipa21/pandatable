@@ -40,23 +40,32 @@ All row reads go through `internal/query`, which compiles a **view config** (+ a
 
 The config is validated server-side against current fields; references to deleted fields are dropped silently on read and cleaned on next save. View config updates use optimistic concurrency (`version`); conflicts → client reloads and re-applies.
 
-T1.21 implements only the Grid column subset (D-148): ordered
-`fields:[{id,visible,width?}]` and `frozen`. Schema/view responses include that
-sanitized subset, not arbitrary future config. Live configured fields retain
-their order; omitted user fields append visible in metadata order, omitted
-system fields append hidden. Read drops unknown/deleted/duplicate references
-and clamps the frozen count after removals. PATCH rejects non-live or duplicate
-IDs, validates integer widths 60..1000 and a frozen count from zero to the
-effective visible-column count. Missing widths render at 180 px; the existing
-default display field retains its stored 240 px.
+T1.21 implements the Grid column subset (D-148): ordered
+`fields:[{id,visible,width?}]` and `frozen`. T2.7–T2.9 add configured sort,
+grouping/aggregates, and highlights. Schema/view responses include the
+sanitized supported subset, not arbitrary future config. Live configured
+fields retain their order; omitted user fields append visible in metadata
+order, omitted system fields append hidden. Read drops unknown/deleted/
+duplicate column references and clamps the frozen count after removals. PATCH
+rejects non-live or duplicate IDs, validates integer widths 60..1000 and a
+frozen count from zero to the effective visible-column count. Missing widths
+render at 180 px; the existing default display field retains its stored 240 px.
 
 `PATCH /views/{id}` requires `{config:{fields,frozen}}` and a view version in
-`If-Match`. It updates those two members only, preserving `rowHeight` and all
-other stored members, cleans the column list, and increments the view version
-once (not the table schema version). Effective write/owner and an unlocked
-Grid are required, including for personal views; another user's personal view
-is 404. Readers and locked views use memory-only desktop overrides. The
-D-138 transient query override remains available and does not persist anything.
+`If-Match`. It updates the supported column and query members while preserving
+`rowHeight` and other stored members, cleans the config, and increments the
+view version once (not the table schema version). Effective write/owner and an
+unlocked Grid are required, including for personal views; another user's
+personal view is 404. Readers and locked views use memory-only desktop
+overrides. The D-138 transient query override remains available and does not
+persist anything.
+
+T2.9 (D-177) stores up to 20 ordered highlight rules in `highlight`. The
+`when` tree uses the same server filter validation/compiler and bound values.
+Row and per-cell-field CASE expressions resolve independently, with the first
+matching rule winning for each target. Targets must name unique live fields;
+colors must be one of the six palette tokens. Incomplete editor drafts remain
+local until the rule is valid.
 
 **Personal overrides (not saved):** a user may temporarily change filter/sort in a locked or shared view without saving ("unsaved changes — save as personal view?").
 
@@ -102,8 +111,10 @@ SELECT t.id, t.c_a, t.c_b, …,
        /* formula */
        (CASE WHEN t.c_qty > 0 THEN t.c_price * t.c_qty ELSE 0 END) AS f_formula,
        /* highlight */
-       (CASE WHEN <hl1> THEN 0 END) AS _hl_row,
-       jsonb_build_object('fld_due', CASE WHEN <hl2> THEN 1 END) AS _hl_cells
+       (CASE WHEN <hl1> THEN 'red-2'::text END) AS _hl_row,
+       jsonb_strip_nulls(jsonb_build_object(
+         'fld_due', CASE WHEN <hl2> THEN 'amber-3'::text END
+       ))::text AS _hl_cells
 FROM b_x.t_main t
 WHERE <filter> AND <quick search>
 ORDER BY <group keys>, <sort keys>, t.id
@@ -114,6 +125,8 @@ LIMIT $n OFFSET $m;
 - Paging: offset/limit, page size 100 (grid fetches visible window ± 1 page). Fine for ≤ 200k rows (D-019).
 - Total count: separate `count(*)` with the same WHERE, cached per (view, filter hash, data version) for 5 s.
 - Link cells return at most 50 display items + total count.
+- `_hl_row` is a palette token or null; `_hl_cells` is returned as an object
+  from field UUIDs to palette tokens, omitting unmatched fields.
 
 ### T1.15 basic query implementation (D-132..D-135)
 

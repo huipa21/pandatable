@@ -27,8 +27,15 @@ type ViewColumn struct {
 type ViewColumns struct {
 	Fields     []ViewColumn    `json:"fields"`
 	Frozen     int             `json:"frozen"`
+	Sort       []ViewSort      `json:"sort,omitempty"`
 	GroupBy    []string        `json:"groupBy,omitempty"`
 	Aggregates []ViewAggregate `json:"aggregates,omitempty"`
+	Highlight  []HighlightRule `json:"highlight,omitempty"`
+}
+
+type ViewSort struct {
+	Field string `json:"field"`
+	Dir   string `json:"dir"`
 }
 
 type ViewAggregate struct {
@@ -36,11 +43,24 @@ type ViewAggregate struct {
 	Aggregate codec.Agg `json:"aggregate"`
 }
 
+type HighlightTarget struct {
+	Type   string   `json:"type"`
+	Fields []string `json:"fields,omitempty"`
+}
+
+type HighlightRule struct {
+	ID     string          `json:"id"`
+	When   *FilterNode     `json:"when"`
+	Target HighlightTarget `json:"target"`
+	Color  string          `json:"color"`
+}
+
 func readViewColumns(raw []byte, fields []Field) (ViewColumns, error) {
 	var config ViewColumns
 	if err := json.Unmarshal(raw, &config); err != nil {
 		return ViewColumns{}, fmt.Errorf("decode view columns: %w", err)
 	}
+	config.Highlight = normalizeHighlightRules(config.Highlight, fieldIDs(fields))
 	return normalizeViewColumns(config, fields)
 }
 
@@ -53,6 +73,22 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 		Fields:     make([]ViewColumn, 0, len(fields)),
 		GroupBy:    append([]string(nil), config.GroupBy...),
 		Aggregates: append([]ViewAggregate(nil), config.Aggregates...),
+		Highlight:  append([]HighlightRule(nil), config.Highlight...),
+	}
+	sortable := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		if field.UIType != "link" {
+			sortable[field.ID] = true
+		}
+	}
+	seenSort := make(map[string]bool, len(config.Sort))
+	for _, item := range config.Sort {
+		if !sortable[item.Field] || seenSort[item.Field] ||
+			item.Dir != "asc" && item.Dir != "desc" {
+			continue
+		}
+		seenSort[item.Field] = true
+		result.Sort = append(result.Sort, item)
 	}
 	seen := make(map[string]bool, len(fields))
 	visible := 0
@@ -123,7 +159,20 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		if input.Aggregates == nil {
 			input.Aggregates = existing.Aggregates
 		}
+		if input.Sort == nil {
+			input.Sort = existing.Sort
+		}
+		providedHighlight := input.Highlight != nil
+		if !providedHighlight {
+			input.Highlight = existing.Highlight
+		}
+		if !providedHighlight {
+			input.Highlight = normalizeHighlightRules(input.Highlight, rowFieldIDs(table))
+		}
 		if err := validateGroupConfig(input, table); err != nil {
+			return err
+		}
+		if _, _, _, err := compileHighlightRules(ctx, tx, actor, table, input.Highlight); err != nil {
 			return err
 		}
 		seen := make(map[string]bool, len(input.Fields))
@@ -156,9 +205,26 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		if err != nil {
 			return err
 		}
-		raw, err := json.Marshal(clean)
+		var storedConfig map[string]json.RawMessage
+		if err := json.Unmarshal(stored.Config, &storedConfig); err != nil {
+			return fmt.Errorf("decode stored view config: %w", err)
+		}
+		if storedConfig == nil {
+			storedConfig = make(map[string]json.RawMessage)
+		}
+		for key, value := range map[string]any{
+			"fields": clean.Fields, "frozen": clean.Frozen, "sort": clean.Sort,
+			"groupBy": clean.GroupBy, "aggregates": clean.Aggregates, "highlight": clean.Highlight,
+		} {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("encode view config member %s: %w", key, err)
+			}
+			storedConfig[key] = encoded
+		}
+		raw, err := json.Marshal(storedConfig)
 		if err != nil {
-			return fmt.Errorf("encode cleaned config: %w", err)
+			return fmt.Errorf("encode merged view config: %w", err)
 		}
 		if err := q.SaveViewColumns(ctx, structuresql.SaveViewColumnsParams{ID: uuid, Columns: raw}); err != nil {
 			return fmt.Errorf("save view columns: %w", err)
@@ -168,6 +234,52 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		return nil
 	})
 	return result, err
+}
+
+func fieldIDs(fields []Field) map[string]bool {
+	result := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		result[field.ID] = true
+	}
+	return result
+}
+
+func normalizeHighlightRules(rules []HighlightRule, live map[string]bool) []HighlightRule {
+	result := make([]HighlightRule, 0, len(rules))
+	for _, rule := range rules {
+		if !filterReferencesLive(rule.When, live) {
+			continue
+		}
+		if rule.Target.Type == "cells" {
+			fields := make([]string, 0, len(rule.Target.Fields))
+			for _, id := range rule.Target.Fields {
+				if live[id] {
+					fields = append(fields, id)
+				}
+			}
+			if len(fields) == 0 {
+				continue
+			}
+			rule.Target.Fields = fields
+		}
+		result = append(result, rule)
+	}
+	return result
+}
+
+func filterReferencesLive(node *FilterNode, live map[string]bool) bool {
+	if node == nil {
+		return true
+	}
+	if node.Op != "" {
+		for index := range node.Items {
+			if !filterReferencesLive(&node.Items[index], live) {
+				return false
+			}
+		}
+		return true
+	}
+	return node.Field == "" || live[node.Field]
 }
 
 func validateGroupConfig(config ViewColumns, table rowTable) error {

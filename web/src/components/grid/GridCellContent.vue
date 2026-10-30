@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { HighlightColor } from '../../api/types'
 import type { BoundField } from '../../fields/registry'
 import type { FieldEnv, WireValue } from '../../fields/types'
 import FieldRenderer from '../fields/FieldRenderer.vue'
@@ -10,6 +11,8 @@ defineProps<{
   message: string
   tableId: string
   identity: string
+  rowHighlight?: HighlightColor
+  cellHighlight?: HighlightColor
   group?: {
     header: boolean
     path: string
@@ -23,45 +26,55 @@ defineProps<{
 </script>
 
 <template>
-  <button
-    v-if="group?.header"
-    type="button"
-    class="grid-group-toggle"
-    :data-group-path="group.path"
-    :aria-label="group.ariaLabel"
-    :aria-expanded="group.expanded"
-    @click.stop="group.toggle"
+  <div
+    class="grid-highlight-cell"
+    :data-row-highlight="rowHighlight"
+    :data-cell-highlight="cellHighlight"
   >
-    <span class="grid-group-indicator" aria-hidden="true"></span>
-    {{ group.label }}
-    <span v-if="group.aggregate" class="grid-group-cell">{{
-      group.aggregate
+    <button
+      v-if="group?.header"
+      type="button"
+      class="grid-group-toggle"
+      :data-group-path="group.path"
+      :aria-label="group.ariaLabel"
+      :aria-expanded="group.expanded"
+      @click.stop="group.toggle"
+    >
+      <span class="grid-group-indicator" aria-hidden="true"></span>
+      {{ group.label }}
+      <span v-if="group.aggregate" class="grid-group-cell">{{
+        group.aggregate
+      }}</span>
+    </button>
+    <span v-else-if="group" class="grid-group-cell">{{
+      group.aggregate ?? ''
     }}</span>
-  </button>
-  <span v-else-if="group" class="grid-group-cell">{{
-    group.aggregate ?? ''
-  }}</span>
-  <div v-else-if="message" class="grid-cell-invalid" aria-invalid="true">
+    <div v-else-if="message" class="grid-cell-invalid" aria-invalid="true">
+      <FieldRenderer
+        :field="field"
+        :value="value"
+        :env="env"
+        :table-id="tableId"
+        :identity="identity"
+      />
+      <span role="alert">{{ message }}</span>
+    </div>
     <FieldRenderer
+      v-else-if="!group"
       :field="field"
       :value="value"
       :env="env"
       :table-id="tableId"
       :identity="identity"
     />
-    <span role="alert">{{ message }}</span>
   </div>
-  <FieldRenderer
-    v-else-if="!group"
-    :field="field"
-    :value="value"
-    :env="env"
-    :table-id="tableId"
-    :identity="identity"
-  />
 </template>
 
 <style scoped>
+.grid-highlight-cell {
+  min-height: 100%;
+  padding-inline: 4px;
+}
 .grid-group-indicator {
   display: inline-block;
   width: 0;

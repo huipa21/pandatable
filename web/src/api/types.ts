@@ -244,6 +244,20 @@ export interface ViewColumns {
   sort?: { field: string; dir: 'asc' | 'desc' }[]
   groupBy?: string[]
   aggregates?: { fieldId: string; aggregate: string }[]
+  highlight?: HighlightRule[]
+}
+
+export type HighlightColor =
+  'red-2' | 'orange-2' | 'amber-3' | 'green-2' | 'blue-2' | 'purple-2'
+
+export type HighlightTarget =
+  { type: 'row' } | { type: 'cells'; fields: string[] }
+
+export interface HighlightRule {
+  id: string
+  when: FilterNode
+  target: HighlightTarget
+  color: HighlightColor
 }
 
 export interface TableView extends NavView {
@@ -325,6 +339,8 @@ export interface DataRow {
   id: string
   /** Values keyed by field UUID; physical PostgreSQL names are never exposed. */
   fields: Record<string, RowValue>
+  _hl_row?: HighlightColor | null
+  _hl_cells?: Record<string, HighlightColor>
 }
 
 export interface RowSort {

@@ -36,6 +36,8 @@ import {
 import type {
   DataRow,
   FilterNode,
+  HighlightColor,
+  HighlightRule,
   RowMutation,
   RowQueryRequest,
   RowQueryResult,
@@ -54,12 +56,18 @@ import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
 import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
+import FilterBuilder from '../filters/FilterBuilder.vue'
 import GridRelationCell from '../relations/GridRelationCell.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
 import { formatTsv, parseTsv, TsvError } from './tsv'
-import { useViewColumns, minColumnWidth, maxColumnWidth } from './viewColumns'
+import {
+  isCompleteFilter,
+  useViewColumns,
+  minColumnWidth,
+  maxColumnWidth,
+} from './viewColumns'
 
 const props = defineProps<{
   schema: TableSchema
@@ -107,6 +115,21 @@ const relationRow = ref<DataRow | null>(null)
 const gridSource = shallowRef<GridModel[]>([])
 const columnWidthDrafts = ref<Record<string, string>>({})
 const frozenDraft = ref<string | null>(null)
+type HighlightDraft = Omit<HighlightRule, 'when'> & { when: FilterNode | null }
+const highlightColors: HighlightColor[] = [
+  'red-2',
+  'orange-2',
+  'amber-3',
+  'green-2',
+  'blue-2',
+  'purple-2',
+]
+const initialViewConfig = props.schema.views.find(
+  (view) => view.id === props.viewId,
+)?.config
+let savedHighlightFingerprint = JSON.stringify(
+  initialViewConfig?.highlight ?? [],
+)
 const syncedPages = new Set<number>()
 const syncedRows: (DataRow | null)[] = []
 const mutationControllers = new Set<AbortController>()
@@ -201,10 +224,194 @@ const columnState = useViewColumns({
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
   },
-  updated: (view) => emit('viewUpdated', view),
+  updated: (view) => {
+    const fingerprint = JSON.stringify(view.config.highlight ?? [])
+    const highlightsChanged = fingerprint !== savedHighlightFingerprint
+    savedHighlightFingerprint = fingerprint
+    emit('viewUpdated', view)
+    if (highlightsChanged) refreshHighlightedRows()
+  },
   message: (cause) =>
     t('grid.columnSaveFailed', { message: errorMessage(cause) }),
 })
+const highlightDrafts = shallowRef<HighlightDraft[]>(
+  (columnState.config.value.highlight ?? []).map((rule) => ({
+    ...rule,
+    target:
+      rule.target.type === 'cells'
+        ? { type: 'cells', fields: [...rule.target.fields] }
+        : { type: 'row' },
+  })),
+)
+watch(
+  () => columnState.config.value.highlight,
+  (rules) => {
+    highlightDrafts.value = (rules ?? []).map((rule) => ({
+      ...rule,
+      target:
+        rule.target.type === 'cells'
+          ? { type: 'cells', fields: [...rule.target.fields] }
+          : { type: 'row' },
+    }))
+  },
+)
+const highlightableFields = computed(() =>
+  [...props.schema.fields]
+    .filter(
+      (field) =>
+        field.filterable !== false && (field.filterOps?.length ?? 0) > 0,
+    )
+    .sort((left, right) => left.position - right.position),
+)
+const highlightTargetFields = computed(() =>
+  [...props.schema.fields].sort(
+    (left, right) => left.position - right.position,
+  ),
+)
+const highlightIncomplete = computed(() =>
+  highlightDrafts.value.some(
+    (rule) =>
+      !isCompleteFilter(rule.when) ||
+      (rule.target.type === 'cells' && rule.target.fields.length === 0),
+  ),
+)
+let draggedHighlightIndex: number | null = null
+
+function cloneHighlightDrafts(rules = highlightDrafts.value): HighlightDraft[] {
+  return rules.map((rule) => ({
+    ...rule,
+    target:
+      rule.target.type === 'cells'
+        ? { type: 'cells', fields: [...rule.target.fields] }
+        : { type: 'row' },
+  }))
+}
+
+function persistHighlightDrafts() {
+  if (highlightIncomplete.value) return
+  const rules: HighlightRule[] = []
+  for (const rule of cloneHighlightDrafts()) {
+    if (rule.when === null) return
+    if (rule.target.type === 'cells' && rule.target.fields.length === 0) return
+    rules.push({
+      ...rule,
+      when: rule.when,
+      target:
+        rule.target.type === 'cells'
+          ? { type: 'cells', fields: [...rule.target.fields] }
+          : { type: 'row' },
+    })
+  }
+  columnState.changeHighlights(rules)
+}
+
+function updateHighlightWhen(id: string, when: FilterNode | null) {
+  highlightDrafts.value = highlightDrafts.value.map((rule) =>
+    rule.id === id ? { ...rule, when } : rule,
+  )
+  persistHighlightDrafts()
+}
+
+function updateHighlightTarget(id: string, type: string) {
+  highlightDrafts.value = highlightDrafts.value.map((rule) => {
+    if (rule.id !== id) return rule
+    if (type === 'cells') {
+      const current = rule.target.type === 'cells' ? rule.target.fields : []
+      const fields = current.length
+        ? [...current]
+        : highlightTargetFields.value[0]
+          ? [highlightTargetFields.value[0].id]
+          : []
+      return {
+        ...rule,
+        target: { type: 'cells', fields },
+      }
+    }
+    return { ...rule, target: { type: 'row' } }
+  })
+  persistHighlightDrafts()
+}
+
+function updateHighlightFields(id: string, event: Event) {
+  const fields = Array.from(
+    (event.target as HTMLSelectElement).selectedOptions,
+    (option) => option.value,
+  )
+  highlightDrafts.value = highlightDrafts.value.map((rule) =>
+    rule.id === id && rule.target.type === 'cells'
+      ? { ...rule, target: { type: 'cells', fields } }
+      : rule,
+  )
+  persistHighlightDrafts()
+}
+
+function updateHighlightColor(id: string, color: HighlightColor) {
+  highlightDrafts.value = highlightDrafts.value.map((rule) =>
+    rule.id === id ? { ...rule, color } : rule,
+  )
+  persistHighlightDrafts()
+}
+
+function addHighlightRule() {
+  if (highlightDrafts.value.length >= 20 || !highlightableFields.value.length)
+    return
+  highlightDrafts.value = [
+    ...highlightDrafts.value,
+    {
+      id: `hl-${crypto.randomUUID()}`,
+      when: null,
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ]
+}
+
+function startHighlightDrag(index: number, event: DragEvent) {
+  draggedHighlightIndex = index
+  event.dataTransfer?.setData('text/plain', String(index))
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+}
+
+function highlightColorLabel(color: HighlightColor) {
+  switch (color) {
+    case 'red-2':
+      return t('grid.highlightColors.red')
+    case 'orange-2':
+      return t('grid.highlightColors.orange')
+    case 'amber-3':
+      return t('grid.highlightColors.amber')
+    case 'green-2':
+      return t('grid.highlightColors.green')
+    case 'blue-2':
+      return t('grid.highlightColors.blue')
+    case 'purple-2':
+      return t('grid.highlightColors.purple')
+  }
+}
+
+function removeHighlightRule(index: number) {
+  highlightDrafts.value = highlightDrafts.value.filter(
+    (_, current) => current !== index,
+  )
+  persistHighlightDrafts()
+}
+
+function moveHighlightRule(from: number, to: number) {
+  if (from < 0 || from >= highlightDrafts.value.length) return
+  if (to < 0 || to >= highlightDrafts.value.length || from === to) return
+  const next = [...highlightDrafts.value]
+  const [rule] = next.splice(from, 1)
+  if (!rule) return
+  next.splice(to, 0, rule)
+  highlightDrafts.value = next
+  persistHighlightDrafts()
+}
+
+function dropHighlightRule(target: number) {
+  if (draggedHighlightIndex === null) return
+  moveHighlightRule(draggedHighlightIndex, target)
+  draggedHighlightIndex = null
+}
 const visibleFieldIds = computed(() =>
   columnState.config.value.fields
     .filter((field) => field.visible)
@@ -357,9 +564,11 @@ const rows = {
 }
 
 interface GridModel {
-  __rowId: string
-  __groupId: string
-  [key: string]: RowValue | string
+  __rowId?: string
+  __groupId?: string
+  _hl_row?: HighlightColor
+  _hl_cells?: Record<string, HighlightColor>
+  [key: string]: RowValue | string | undefined
 }
 
 const emptyModel: GridModel = { __rowId: '', __groupId: '' }
@@ -449,6 +658,7 @@ function updateRelationRow(row: DataRow) {
   const index = rows.indexOfRow(row.id)
   if (index >= 0) rows.updateRow(index, row)
   relationRow.value = row
+  if (columnState.config.value.highlight?.length) void refreshHighlightedRows()
 }
 
 function closeRelationPicker() {
@@ -466,27 +676,34 @@ const columns = computed<ColumnRegular[]>(() => {
       readonly: true,
       cellTemplate: (render, { model }) =>
         model.__rowId
-          ? render('span', {}, [
-              render(
-                'button',
-                {
-                  type: 'button',
-                  'aria-label': t('rowExpand.open', { id: model.__rowId }),
-                  onClick: () => emit('expand', String(model.__rowId)),
-                },
-                '\u2197',
-              ),
-              render('input', {
-                type: 'checkbox',
-                checked: selectedRows.value.has(String(model.__rowId)),
-                'aria-label': t('grid.selectRow', { id: model.__rowId }),
-                onChange: (event: Event) =>
-                  selectRow(
-                    String(model.__rowId),
-                    (event.target as HTMLInputElement).checked,
-                  ),
-              }),
-            ])
+          ? render(
+              'span',
+              {
+                class: 'grid-highlight-cell',
+                'data-row-highlight': rowHighlight(model),
+              },
+              [
+                render(
+                  'button',
+                  {
+                    type: 'button',
+                    'aria-label': t('rowExpand.open', { id: model.__rowId }),
+                    onClick: () => emit('expand', String(model.__rowId)),
+                  },
+                  '\u2197',
+                ),
+                render('input', {
+                  type: 'checkbox',
+                  checked: selectedRows.value.has(String(model.__rowId)),
+                  'aria-label': t('grid.selectRow', { id: model.__rowId }),
+                  onChange: (event: Event) =>
+                    selectRow(
+                      String(model.__rowId),
+                      (event.target as HTMLInputElement).checked,
+                    ),
+                }),
+              ],
+            )
           : null,
     },
   ]
@@ -510,6 +727,8 @@ const columns = computed<ColumnRegular[]>(() => {
           props: (context) => ({
             links: context.value,
             editable: canWrite.value,
+            rowHighlight: rowHighlight(context.model),
+            cellHighlight: cellHighlight(context.model, relationField.id),
             open: () =>
               openRelationPicker(
                 relationField,
@@ -539,6 +758,8 @@ const columns = computed<ColumnRegular[]>(() => {
           env: fieldEnvironment.value,
           tableId: props.schema.table.id,
           identity: props.identity,
+          rowHighlight: rowHighlight(context.model),
+          cellHighlight: cellHighlight(context.model, field.id),
           message:
             cellErrors.value.get(
               `${String(context.model.__rowId)}:${field.id}`,
@@ -622,7 +843,25 @@ const editors = computed(() =>
 )
 
 function modelFor(row: DataRow | null): GridModel {
-  return row ? { __rowId: row.id, __groupId: '', ...row.fields } : emptyModel
+  if (!row) return emptyModel
+  return {
+    __rowId: row.id,
+    __groupId: '',
+    ...(row._hl_row ? { _hl_row: row._hl_row } : {}),
+    ...(row._hl_cells ? { _hl_cells: row._hl_cells } : {}),
+    ...row.fields,
+  }
+}
+
+function rowHighlight(model: GridModel): HighlightColor | undefined {
+  return model._hl_row
+}
+
+function cellHighlight(
+  model: GridModel,
+  fieldId: string,
+): HighlightColor | undefined {
+  return model._hl_cells?.[fieldId]
 }
 
 function mutate<T>(
@@ -786,6 +1025,8 @@ async function patchRows(
       for (const fieldId of Object.keys(patch.fields))
         cellErrors.value.delete(`${row.id}:${fieldId}`)
     })
+    if (columnState.config.value.highlight?.length)
+      await refreshHighlightedRows()
     return true
   } catch (cause) {
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
@@ -1344,6 +1585,12 @@ async function initialize(anchor = 0, preserveCellErrors = false) {
   }
 }
 
+function refreshHighlightedRows() {
+  if (disposed.value) return Promise.resolve()
+  const page = Math.max(0, rows.snapshot().activePage)
+  return initialize(page * remotePageSize, true)
+}
+
 function created() {
   ready.value = true
   void initialize()
@@ -1478,6 +1725,8 @@ async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
     )
     if (disposed.value || props.identity !== auth.user?.id) return
     rows.updateRow(rowIndex, result.row)
+    if (columnState.config.value.highlight?.length)
+      await refreshHighlightedRows()
     cellErrors.value.delete(key)
     selectedRows.value.delete(row.id)
   } catch (cause) {
@@ -1871,6 +2120,156 @@ onBeforeUnmount(() => {
           </button>
         </fieldset>
       </details>
+      <details
+        v-if="desktop && columnState.canPersist.value"
+        class="grid-highlights"
+      >
+        <summary>{{ t('grid.highlightRules') }}</summary>
+        <fieldset>
+          <legend>{{ t('grid.highlightRules') }}</legend>
+          <ol class="grid-highlight-rules">
+            <li
+              v-for="(rule, index) in highlightDrafts"
+              :key="rule.id"
+              class="grid-highlight-rule"
+              @dragover.prevent
+              @drop.prevent="dropHighlightRule(index)"
+            >
+              <h3
+                draggable="true"
+                @dragstart="startHighlightDrag(index, $event)"
+                @dragend="draggedHighlightIndex = null"
+              >
+                {{ t('grid.highlightRule', { position: index + 1 }) }}
+              </h3>
+              <div class="grid-highlight-controls">
+                <label>
+                  <span>{{
+                    t('grid.highlightTarget', { position: index + 1 })
+                  }}</span>
+                  <select
+                    :value="rule.target.type"
+                    @change="
+                      updateHighlightTarget(
+                        rule.id,
+                        ($event.target as HTMLSelectElement).value,
+                      )
+                    "
+                  >
+                    <option value="row">
+                      {{ t('grid.highlightRowTarget') }}
+                    </option>
+                    <option value="cells">
+                      {{ t('grid.highlightCellsTarget') }}
+                    </option>
+                  </select>
+                </label>
+                <label v-if="rule.target.type === 'cells'">
+                  <span>{{
+                    t('grid.highlightFields', { position: index + 1 })
+                  }}</span>
+                  <select
+                    multiple
+                    :aria-label="
+                      t('grid.highlightFields', { position: index + 1 })
+                    "
+                    :value="rule.target.fields"
+                    @change="updateHighlightFields(rule.id, $event)"
+                  >
+                    <option
+                      v-for="field in highlightTargetFields"
+                      :key="field.id"
+                      :value="field.id"
+                    >
+                      {{ field.name }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  <span>{{
+                    t('grid.highlightColor', { position: index + 1 })
+                  }}</span>
+                  <select
+                    :value="rule.color"
+                    @change="
+                      updateHighlightColor(
+                        rule.id,
+                        ($event.target as HTMLSelectElement)
+                          .value as HighlightColor,
+                      )
+                    "
+                  >
+                    <option
+                      v-for="color in highlightColors"
+                      :key="color"
+                      :value="color"
+                    >
+                      {{ highlightColorLabel(color) }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <fieldset>
+                <legend>
+                  {{ t('grid.highlightCondition') }}
+                  {{ index + 1 }}
+                </legend>
+                <FilterBuilder
+                  :schema="schema"
+                  :model-value="rule.when"
+                  @update:model-value="updateHighlightWhen(rule.id, $event)"
+                />
+              </fieldset>
+              <div class="grid-highlight-actions">
+                <button
+                  type="button"
+                  :disabled="index === 0"
+                  :aria-label="
+                    t('grid.moveHighlightUp', { position: index + 1 })
+                  "
+                  @click="moveHighlightRule(index, index - 1)"
+                >
+                  {{ t('grid.moveUp') }}
+                </button>
+                <button
+                  type="button"
+                  :disabled="index === highlightDrafts.length - 1"
+                  :aria-label="
+                    t('grid.moveHighlightDown', { position: index + 1 })
+                  "
+                  @click="moveHighlightRule(index, index + 1)"
+                >
+                  {{ t('grid.moveDown') }}
+                </button>
+                <button
+                  type="button"
+                  :aria-label="
+                    t('grid.removeHighlightRule', { position: index + 1 })
+                  "
+                  @click="removeHighlightRule(index)"
+                >
+                  {{ t('grid.remove') }}
+                </button>
+              </div>
+            </li>
+          </ol>
+          <p v-if="highlightIncomplete" role="status">
+            {{ t('grid.highlightIncomplete') }}
+          </p>
+          <p v-if="highlightDrafts.length >= 20" role="status">
+            {{ t('grid.highlightLimit') }}
+          </p>
+          <button
+            type="button"
+            :disabled="
+              highlightDrafts.length >= 20 || !highlightableFields.length
+            "
+            @click="addHighlightRule"
+          >
+            {{ t('grid.addHighlightRule') }}
+          </button>
+        </fieldset>
+      </details>
       <span v-if="!columnState.canPersist.value" role="status">{{
         t('grid.columnsLocal')
       }}</span>
@@ -2018,7 +2417,8 @@ onBeforeUnmount(() => {
   position: relative;
 }
 .grid-fields fieldset,
-.grid-sorts fieldset {
+.grid-sorts fieldset,
+.grid-highlights fieldset {
   position: absolute;
   z-index: 2;
   top: 100%;
@@ -2050,6 +2450,75 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 4px;
   padding-left: 28px;
+}
+.grid-highlight-rules {
+  display: grid;
+  gap: 8px;
+  padding-left: 28px;
+}
+.grid-highlight-rule {
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+.grid-highlight-rule h3 {
+  cursor: grab;
+}
+.grid-highlight-rule h3:active {
+  cursor: grabbing;
+}
+.grid-highlight-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.grid-highlight-controls label {
+  display: grid;
+}
+.grid-highlight-cell {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  align-items: center;
+  box-sizing: border-box;
+}
+.grid-highlight-cell[data-row-highlight='red-2'],
+.grid-highlight-cell[data-cell-highlight='red-2'] {
+  background-color: var(--highlight-red-2-bg);
+  color: var(--highlight-red-2-text);
+}
+.grid-highlight-cell[data-row-highlight='orange-2'],
+.grid-highlight-cell[data-cell-highlight='orange-2'] {
+  background-color: var(--highlight-orange-2-bg);
+  color: var(--highlight-orange-2-text);
+}
+.grid-highlight-cell[data-row-highlight='amber-3'],
+.grid-highlight-cell[data-cell-highlight='amber-3'] {
+  background-color: var(--highlight-amber-3-bg);
+  color: var(--highlight-amber-3-text);
+}
+.grid-highlight-cell[data-row-highlight='green-2'],
+.grid-highlight-cell[data-cell-highlight='green-2'] {
+  background-color: var(--highlight-green-2-bg);
+  color: var(--highlight-green-2-text);
+}
+.grid-highlight-cell[data-row-highlight='blue-2'],
+.grid-highlight-cell[data-cell-highlight='blue-2'] {
+  background-color: var(--highlight-blue-2-bg);
+  color: var(--highlight-blue-2-text);
+}
+.grid-highlight-cell[data-row-highlight='purple-2'],
+.grid-highlight-cell[data-cell-highlight='purple-2'] {
+  background-color: var(--highlight-purple-2-bg);
+  color: var(--highlight-purple-2-text);
+}
+.grid-highlight-cell[data-cell-highlight='red-2'],
+.grid-highlight-cell[data-cell-highlight='orange-2'],
+.grid-highlight-cell[data-cell-highlight='amber-3'],
+.grid-highlight-cell[data-cell-highlight='green-2'],
+.grid-highlight-cell[data-cell-highlight='blue-2'],
+.grid-highlight-cell[data-cell-highlight='purple-2'] {
+  position: relative;
+  z-index: 1;
 }
 .grid-sort-criterion {
   display: flex;

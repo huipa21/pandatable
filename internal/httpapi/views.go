@@ -27,8 +27,10 @@ func (api *authHTTP) updateViewColumns(w http.ResponseWriter, r *http.Request, u
 				Width   json.RawMessage `json:"width"`
 			} `json:"fields"`
 			Frozen     *int            `json:"frozen"`
+			Sort       json.RawMessage `json:"sort"`
 			GroupBy    json.RawMessage `json:"groupBy"`
 			Aggregates json.RawMessage `json:"aggregates"`
+			Highlight  json.RawMessage `json:"highlight"`
 		} `json:"config"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
@@ -61,11 +63,39 @@ func (api *authHTTP) updateViewColumns(w http.ResponseWriter, r *http.Request, u
 			return
 		}
 	}
+	var sort []structure.ViewSort
+	if len(input.Config.Sort) > 0 {
+		if bytes.Equal(bytes.TrimSpace(input.Config.Sort), []byte("null")) {
+			api.fail(w, r, invalid)
+			return
+		}
+		decoder := json.NewDecoder(bytes.NewReader(input.Config.Sort))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&sort); err != nil || sort == nil {
+			api.fail(w, r, invalid)
+			return
+		}
+	}
+	var highlight []structure.HighlightRule
+	if len(input.Config.Highlight) > 0 {
+		if bytes.Equal(bytes.TrimSpace(input.Config.Highlight), []byte("null")) {
+			api.fail(w, r, invalid)
+			return
+		}
+		decoder := json.NewDecoder(bytes.NewReader(input.Config.Highlight))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&highlight); err != nil || highlight == nil {
+			api.fail(w, r, invalid)
+			return
+		}
+	}
 	config := structure.ViewColumns{
 		Fields:     make([]structure.ViewColumn, 0, len(*input.Config.Fields)),
 		Frozen:     *input.Config.Frozen,
+		Sort:       sort,
 		GroupBy:    groupBy,
 		Aggregates: aggregates,
+		Highlight:  highlight,
 	}
 	for _, column := range *input.Config.Fields {
 		if column.ID == nil || column.Visible == nil {

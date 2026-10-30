@@ -326,6 +326,91 @@ func TestQueryUsesViewColumnsCountSortAndBounds(t *testing.T) {
 	expectRowError(t, err, 400, "ERR_VALIDATION")
 }
 
+func TestQueryRowsReturnsOrderedRowAndCellHighlights(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	ft := f.fieldTable(owner)
+	status := ft.create(FieldInput{Name: "Status", UIType: "text"})
+	due := ft.create(FieldInput{Name: "Due", UIType: "text"})
+	overdue, err := f.service.CreateRows(f.ctx, owner, ft.id(), []RowInsert{{
+		Fields: map[string]json.RawMessage{
+			status.ID: rawJSON(`"Overdue"`),
+			due.ID:    rawJSON(`"Friday"`),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	open, err := f.service.CreateRows(f.ctx, owner, ft.id(), []RowInsert{{
+		Fields: map[string]json.RawMessage{
+			status.ID: rawJSON(`"Open"`),
+			due.ID:    rawJSON(`"Monday"`),
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := func() *FilterNode {
+		return &FilterNode{
+			Field: status.ID, Cmp: codec.OpIs, Value: rawJSON(`"Overdue"`),
+		}
+	}
+	config, err := json.Marshal(map[string]any{
+		"highlight": []HighlightRule{
+			{ID: "row-red", When: filter(), Target: HighlightTarget{Type: "row"}, Color: "red-2"},
+			{ID: "cell-amber", When: filter(), Target: HighlightTarget{
+				Type: "cells", Fields: []string{due.ID},
+			}, Color: "amber-3"},
+			{ID: "row-blue", When: filter(), Target: HighlightTarget{Type: "row"}, Color: "blue-2"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewID := ft.schema.Views[0].ID
+	f.exec("UPDATE meta.views SET config = config || $1::jsonb WHERE id = $2", config, viewID)
+	result, err := f.service.QueryRows(f.ctx, owner, viewID, RowQueryRequest{})
+	if err != nil || len(result.Rows) != 2 {
+		t.Fatalf("query highlighted rows = %+v, %v", result, err)
+	}
+	byID := make(map[string]RowRecord, len(result.Rows))
+	for _, row := range result.Rows {
+		byID[row.ID] = row
+	}
+	if color := byID[overdue[0].ID].HighlightRow; color == nil || *color != "red-2" {
+		t.Fatalf("first row highlight = %v, want red-2", color)
+	}
+	if color := byID[overdue[0].ID].HighlightCells[due.ID]; color != "amber-3" {
+		t.Fatalf("due cell highlight = %q, want amber-3", color)
+	}
+	if row := byID[open[0].ID]; row.HighlightRow != nil || len(row.HighlightCells) != 0 {
+		t.Fatalf("unmatched row received highlights: %+v", row)
+	}
+
+	config, err = json.Marshal(map[string]any{
+		"highlight": []HighlightRule{
+			{ID: "row-blue", When: filter(), Target: HighlightTarget{Type: "row"}, Color: "blue-2"},
+			{ID: "row-red", When: filter(), Target: HighlightTarget{Type: "row"}, Color: "red-2"},
+			{ID: "cell-amber", When: filter(), Target: HighlightTarget{
+				Type: "cells", Fields: []string{due.ID},
+			}, Color: "amber-3"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec("UPDATE meta.views SET config = config || $1::jsonb WHERE id = $2", config, viewID)
+	result, err = f.service.QueryRows(f.ctx, owner, viewID, RowQueryRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range result.Rows {
+		if row.ID == overdue[0].ID && (row.HighlightRow == nil || *row.HighlightRow != "blue-2") {
+			t.Fatalf("reordered row highlight = %v, want blue-2", row.HighlightRow)
+		}
+	}
+}
+
 func TestQueryRowsMultiSortKeepsNullsLastAndPagesDeterministically(t *testing.T) {
 	f := newFixture(t)
 	owner := f.user("user", "active", "en")

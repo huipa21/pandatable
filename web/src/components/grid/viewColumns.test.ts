@@ -6,6 +6,7 @@ import { tableSchema } from '../../test/navigation'
 import {
   applyColumnIntents,
   columnSaveDelay,
+  isCompleteFilter,
   normalizeColumns,
   useViewColumns,
 } from './viewColumns'
@@ -93,6 +94,21 @@ it('drops unknown/deleted/duplicate fields, appends live fields and clamps froze
   })
 })
 
+it('keeps incomplete highlight filters out of persisted view config', () => {
+  expect(isCompleteFilter({ field: 'name', cmp: 'is', value: '' })).toBe(false)
+  expect(isCompleteFilter({ field: 'name', cmp: 'is', value: 'Overdue' })).toBe(
+    true,
+  )
+  expect(isCompleteFilter({ field: 'name', cmp: 'is_empty' })).toBe(true)
+  expect(isCompleteFilter({ op: 'and', items: [] })).toBe(false)
+  expect(
+    isCompleteFilter({
+      op: 'and',
+      items: [{ field: 'name', cmp: 'is', value: 'Overdue' }],
+    }),
+  ).toBe(true)
+})
+
 it('preserves the view query configuration with column edits', () => {
   const schema = fixture()
   schema.views[0]!.config.sort = [
@@ -102,12 +118,21 @@ it('preserves the view query configuration with column edits', () => {
   ]
   schema.views[0]!.config.groupBy = ['other', 'name']
   schema.views[0]!.config.aggregates = [{ fieldId: 'other', aggregate: 'sum' }]
+  schema.views[0]!.config.highlight = [
+    {
+      id: 'hl-overdue',
+      when: { field: 'name', cmp: 'is', value: 'Overdue' },
+      target: { type: 'cells', fields: ['other'] },
+      color: 'amber-3',
+    },
+  ]
   const normalized = normalizeColumns(schema.views[0]!.config, schema)
   expect(normalized.sort).toEqual([{ field: 'other', dir: 'desc' }])
   expect(normalized.groupBy).toEqual(['other', 'name'])
   expect(normalized.aggregates).toEqual([
     { fieldId: 'other', aggregate: 'sum' },
   ])
+  expect(normalized.highlight).toEqual(schema.views[0]!.config.highlight)
   const changed = applyColumnIntents(
     schema.views[0]!.config,
     [{ kind: 'visible', id: 'name', visible: false }],
@@ -116,6 +141,42 @@ it('preserves the view query configuration with column edits', () => {
   expect(changed.sort).toEqual([{ field: 'other', dir: 'desc' }])
   expect(changed.groupBy).toEqual(['other', 'name'])
   expect(changed.aggregates).toEqual([{ fieldId: 'other', aggregate: 'sum' }])
+  expect(changed.highlight).toEqual(schema.views[0]!.config.highlight)
+})
+
+it('saves highlight rules through the versioned view config', async () => {
+  const fetch = vi.fn(async (_url: unknown, init?: RequestInit) =>
+    Response.json({
+      view: {
+        ...fixture().views[0],
+        version: 2,
+        config: JSON.parse(String(init?.body)).config,
+      },
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted()
+  columns.changeHighlights([
+    {
+      id: 'hl-overdue',
+      when: { field: 'name', cmp: 'is', value: 'Overdue' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ])
+  await debounce()
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(
+    JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).config.highlight,
+  ).toEqual([
+    {
+      id: 'hl-overdue',
+      when: { field: 'name', cmp: 'is', value: 'Overdue' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ])
+  expect(columns.config.value.highlight?.[0]?.color).toBe('red-2')
 })
 
 it('rebases only user intents against live fields and keeps unrelated server widths', () => {

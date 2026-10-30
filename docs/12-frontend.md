@@ -348,7 +348,14 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - **Paste:** parse TSV (handles quoted multi-line cells from Excel/Sheets) → map to cells starting at focus → per-cell `parsePaste` → preview errors count → one bulk PATCH; if exceeding last row → confirm "add N rows" → bulk insert. Read-only/computed columns skipped.
 - **Fill-down:** Ctrl+D copies top cell of selection down; drag fill handle extends the selection down (vertical only in v1).
 - Grouped mode: flattened list of group headers + rows, collapsible, group header shows count & aggregates.
-- Highlight: row background from `_hl_row`, cell background from `_hl_cells`; palette tokens map to light/dark-aware colors.
+- T2.9 highlight rules use the production grid's view-config editor: ordered,
+  filter-backed rules target rows or selected live cells. Rule headings are
+  drag handles; labeled Move up/Move down buttons provide keyboard and touch
+  reordering. Incomplete rules remain local until valid; saves retain other
+  view-config members. Query `_hl_row` and `_hl_cells` apply the first matching
+  rule independently to each target.
+- Highlight row/cell backgrounds resolve six palette tokens through light/
+  dark theme CSS pairs; row and cell styling does not embed literal colors.
 - Link cells: chips of display values; editor opens picker modal (search target rows, multi-select for many sides).
 - Attachment cells: thumbnails; drag-drop upload onto cell; preview modal.
 - Row expand modal: all live fields in a form layout. T1.18 implements the
@@ -532,7 +539,7 @@ from T1.2, but this unauthenticated shell does not read or write them yet.
 ## 7. Theme
 
 - Naive UI `darkTheme` + custom theme overrides; `light | dark | system`.
-- Highlight and select-choice colors defined as token pairs (light/dark) so data colors remain readable in both themes.
+- Highlight and select-choice colors defined as token pairs (light/dark) so data colors remain readable in both themes; AT-505 checks the active rule colors in both modes.
 - Toggle in header next to the language toggle; persisted like locale.
 
 System mode listens to `prefers-color-scheme` changes; explicit light/dark

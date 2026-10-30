@@ -409,6 +409,8 @@ function displayValue(value: RowValue | undefined) {
             >
               <template v-if="selectedOperator(item) === 'is_within'">
                 <option value="past:7">{{ t('filter.past7Days') }}</option>
+                <option value="past:3">{{ t('filter.past3Days') }}</option>
+                <option value="next:3">{{ t('filter.next3Days') }}</option>
                 <option value="next:7">{{ t('filter.next7Days') }}</option>
                 <option value="this_week">{{ t('filter.thisWeek') }}</option>
                 <option value="this_month">{{ t('filter.thisMonth') }}</option>

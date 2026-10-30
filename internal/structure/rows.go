@@ -46,8 +46,10 @@ type RowQueryRequest struct {
 }
 
 type RowRecord struct {
-	ID     string                     `json:"id"`
-	Fields map[string]json.RawMessage `json:"fields"`
+	ID             string                     `json:"id"`
+	Fields         map[string]json.RawMessage `json:"fields"`
+	HighlightRow   *string                    `json:"_hl_row,omitempty"`
+	HighlightCells map[string]string          `json:"_hl_cells,omitempty"`
 }
 
 type RowQueryResult struct {
@@ -93,12 +95,10 @@ type rowViewConfig struct {
 		ID      string `json:"id"`
 		Visible bool   `json:"visible"`
 	} `json:"fields"`
-	Sort []struct {
-		Field string `json:"field"`
-		Dir   string `json:"dir"`
-	} `json:"sort"`
+	Sort       []ViewSort      `json:"sort"`
 	GroupBy    []string        `json:"groupBy"`
 	Aggregates []ViewAggregate `json:"aggregates"`
+	Highlight  []HighlightRule `json:"highlight"`
 }
 
 func physicalTable(schema, name string) (string, error) {
@@ -662,6 +662,13 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	}, table); err != nil {
 		return RowQueryResult{}, err
 	}
+	config.Highlight = normalizeHighlightRules(config.Highlight, rowFieldIDs(table))
+	highlightRowSQL, highlightCellsSQL, highlightArgs, err := compileHighlightRules(
+		ctx, tx, actor, table, config.Highlight,
+	)
+	if err != nil {
+		return RowQueryResult{}, err
+	}
 	fields := visibleRowFields(table, config.Fields, request.FieldIDs)
 	sortKeys, explicitSort, err := configuredRowSorts(table, config.Sort, request.Sort, request.Sorts)
 	if err != nil {
@@ -709,7 +716,15 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err != nil {
 		return RowQueryResult{}, fmt.Errorf("build view query: %w", err)
 	}
-	sql = shiftSQLArguments(sql, len(filterArgs)+len(groupArgs)+len(sortArgs))
+	argumentPrefix := len(filterArgs) + len(groupArgs) + len(sortArgs)
+	sql = shiftSQLArguments(sql, argumentPrefix+len(highlightArgs))
+	fromAt := strings.Index(sql, " FROM ")
+	if fromAt < 0 {
+		return RowQueryResult{}, errors.New("view query is missing its FROM clause")
+	}
+	highlightSelect := shiftSQLArguments(highlightRowSQL, argumentPrefix) + ", " +
+		shiftSQLArguments(highlightCellsSQL, argumentPrefix)
+	sql = sql[:fromAt] + ", " + highlightSelect + sql[fromAt:]
 	orderKeys := make([]string, 0, len(sortExpressions)+1)
 	for _, expression := range sortExpressions {
 		orderKeys = append(orderKeys, shiftSQLArguments(expression, len(filterArgs)+len(groupArgs)))
@@ -724,7 +739,8 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		}
 		sql = sql[:orderAt] + " WHERE " + whereSQL + sql[orderAt:]
 	}
-	args = append(append(append(append([]any(nil), filterArgs...), groupArgs...), sortArgs...), args...)
+	args = append(append(append(append(append([]any(nil), filterArgs...), groupArgs...), sortArgs...),
+		highlightArgs...), args...)
 	result := RowQueryResult{Rows: make([]RowRecord, 0, limit), SchemaVersion: table.schemaVersion}
 	result.FieldIDs = make([]string, len(fields))
 	for index, field := range fields {
@@ -751,7 +767,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err != nil {
 		return RowQueryResult{}, rowDatabaseError(fmt.Errorf("query view rows: %w", err))
 	}
-	result.Rows, err = scanRows(rows, table, fields)
+	result.Rows, err = scanHighlightedRows(rows, table, fields)
 	if err != nil {
 		return RowQueryResult{}, rowDatabaseError(err)
 	}
@@ -819,10 +835,7 @@ type rowSortKey struct {
 	direction string
 }
 
-func configuredRowSorts(table rowTable, configured []struct {
-	Field string `json:"field"`
-	Dir   string `json:"dir"`
-}, override *RowSort, overrides *[]RowSort) ([]rowSortKey, bool, error) {
+func configuredRowSorts(table rowTable, configured []ViewSort, override *RowSort, overrides *[]RowSort) ([]rowSortKey, bool, error) {
 	if override != nil && overrides != nil {
 		return nil, true, validation("Only one sort request format may be provided")
 	}

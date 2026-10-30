@@ -1,6 +1,8 @@
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { errorMessage, request, RequestError } from '../../api/client'
 import type {
+  FilterNode,
+  HighlightRule,
   TableSchema,
   TableView,
   ViewColumns,
@@ -10,6 +12,29 @@ import type {
 export const minColumnWidth = 60
 export const maxColumnWidth = 1000
 export const columnSaveDelay = 350
+const filterOperatorsWithoutValue = new Set([
+  'is_empty',
+  'is_not_empty',
+  'is_checked',
+  'is_not_checked',
+])
+
+function hasEmptyFilterValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  if (typeof value === 'string') return value.length === 0
+  if (Array.isArray(value)) return value.some(hasEmptyFilterValue)
+  if (typeof value === 'object')
+    return Object.values(value).some(hasEmptyFilterValue)
+  return false
+}
+
+export function isCompleteFilter(node: FilterNode | null): boolean {
+  if (!node) return false
+  if ('items' in node)
+    return node.items.length > 0 && node.items.every(isCompleteFilter)
+  if (filterOperatorsWithoutValue.has(node.cmp)) return true
+  return !hasEmptyFilterValue(node.value)
+}
 
 export type ColumnIntent =
   | { kind: 'width'; id: string; width: number }
@@ -61,6 +86,17 @@ export function normalizeColumns(
     ...(config.groupBy ? { groupBy: [...config.groupBy] } : {}),
     ...(config.aggregates
       ? { aggregates: config.aggregates.map((item) => ({ ...item })) }
+      : {}),
+    ...(config.highlight
+      ? {
+          highlight: config.highlight.map((rule) => ({
+            ...rule,
+            target:
+              rule.target.type === 'cells'
+                ? { type: 'cells' as const, fields: [...rule.target.fields] }
+                : { type: 'row' as const },
+          })),
+        }
       : {}),
   }
 }
@@ -118,7 +154,7 @@ export function useViewColumns(options: {
     options.schema().views.find((view) => view.id === options.viewId())
   let liveSchema = options.schema()
   let authoritative = view()
-  const config = ref(
+  const config = shallowRef(
     normalizeColumns(
       authoritative?.config ?? { fields: [], frozen: 0 },
       options.schema(),
@@ -132,6 +168,7 @@ export function useViewColumns(options: {
     () => options.canWrite() && !!view() && !view()!.locked,
   )
   let intents: ColumnIntent[] = []
+  let pendingHighlights: HighlightRule[] | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let controller: AbortController | undefined
   let generation = 0
@@ -175,13 +212,46 @@ export function useViewColumns(options: {
     schedule()
   }
 
+  function changeHighlights(rules: HighlightRule[]) {
+    if (disposed || !options.identity()) return
+    const copy = rules.map((rule) => ({
+      ...rule,
+      target:
+        rule.target.type === 'cells'
+          ? { type: 'cells' as const, fields: [...rule.target.fields] }
+          : { type: 'row' as const },
+    }))
+    localQuery.value = true
+    if (!canPersist.value) {
+      config.value = { ...config.value, highlight: copy }
+      return
+    }
+    pendingHighlights = copy
+    config.value = { ...config.value, highlight: copy }
+    if (!retryable.value && !reconciling) schedule()
+  }
+
   async function save() {
-    if (!canPersist.value || !intents.length || saving.value || !authoritative)
+    if (
+      !canPersist.value ||
+      (!intents.length && pendingHighlights === undefined) ||
+      saving.value ||
+      !authoritative
+    )
       return
     clearTimeout(timer)
     const own = generation
     const batch = [...intents]
+    const batchHighlights = pendingHighlights
     const target = applyColumnIntents(authoritative.config, batch, liveSchema)
+    if (batchHighlights !== undefined)
+      target.highlight = batchHighlights.map((rule) => ({
+        ...rule,
+        target:
+          rule.target.type === 'cells'
+            ? { type: 'cells', fields: [...rule.target.fields] }
+            : { type: 'row' },
+      }))
     saving.value = true
     retryable.value = false
     controller = new AbortController()
@@ -203,7 +273,10 @@ export function useViewColumns(options: {
       if (!valid(own)) return
       authoritative = result.view
       intents.splice(0, batch.length)
+      if (pendingHighlights === batchHighlights) pendingHighlights = undefined
       config.value = applyColumnIntents(result.view.config, intents, liveSchema)
+      if (pendingHighlights !== undefined)
+        config.value = { ...config.value, highlight: pendingHighlights }
       conflictRetried = false
       reconciling = false
       options.updated(result.view)
@@ -212,6 +285,8 @@ export function useViewColumns(options: {
       failure.value = options.message(error)
       reconciling = true
       config.value = normalizeColumns(authoritative.config, options.schema())
+      if (pendingHighlights !== undefined)
+        config.value = { ...config.value, highlight: pendingHighlights }
       try {
         controller = new AbortController()
         const latest = await request<TableSchema>(
@@ -226,6 +301,8 @@ export function useViewColumns(options: {
         liveSchema = latest
         authoritative = next
         config.value = normalizeColumns(next.config, latest)
+        if (pendingHighlights !== undefined)
+          config.value = { ...config.value, highlight: pendingHighlights }
         if (next.locked || !['write', 'owner'].includes(latest.myLevel)) {
           intents = []
           options.failure(new RequestError('ERR_PERMISSION_DENIED', 403))
@@ -247,7 +324,11 @@ export function useViewColumns(options: {
     } finally {
       if (valid(own)) {
         saving.value = false
-        if (intents.length && !retryable.value) schedule()
+        if (
+          (intents.length || pendingHighlights !== undefined) &&
+          !retryable.value
+        )
+          schedule()
       }
     }
   }
@@ -259,6 +340,7 @@ export function useViewColumns(options: {
       authoritative = view()
       liveSchema = options.schema()
       intents = []
+      pendingHighlights = undefined
       retryable.value = false
       failure.value = ''
       reconciling = false
@@ -282,6 +364,8 @@ export function useViewColumns(options: {
       authoritative = next
       liveSchema = options.schema()
       config.value = applyColumnIntents(next.config, intents, liveSchema)
+      if (pendingHighlights !== undefined)
+        config.value = { ...config.value, highlight: pendingHighlights }
     },
   )
   onBeforeUnmount(() => {
@@ -296,6 +380,7 @@ export function useViewColumns(options: {
     canPersist,
     localQuery,
     change,
+    changeHighlights,
     retry: () => {
       retryable.value = false
       void save()
