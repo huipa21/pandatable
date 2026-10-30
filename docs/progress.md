@@ -60,7 +60,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.9 | Highlight | ✅ | 2026-10-30 | D-177: ordered, filter-backed row/cell rules use first-match semantics and light/dark palette tokens. AT-505 and both task gates pass. [Record](task-prompts/T2.9.md#record-2026-10-30). |
 | T2.10 | View management | ✅ | 2026-10-30 | D-178; AT-506–508 and task gates pass. Shared/personal lifecycle, locks, ordering, local overrides, and version conflicts are implemented; no migration. |
 | T2.11 | Search & aggregates | ✅ | 2026-10-30 | D-179; AT-509/510 and task gates pass. Visible-field quick search and filtered footer aggregates are complete. [Record](task-prompts/T2.11.md#record-2026-10-30). |
-| T2.12 | Type change | ⬜ | | |
+| T2.12 | Type change | ✅ | 2026-10-31 | D-180; AT-323/324 and both task gates pass. Owner-only atomic conversions, dependency error propagation, choice/default/filter rewrites, and localized wizard are complete. [Record](task-prompts/T2.12.md#record-2026-10-31). |
 | T2.13 | Form view | ⬜ | | |
 | T2.14 | Auto-index job | ⬜ | | |
 | T2.15 | Perf pass | ⬜ | | |
@@ -150,3 +150,4 @@ Summary updated at each milestone end.
 | 2026-10-24 | T0.6 implementation and scoped verification: source-allowlisted image, executable healthcheck, Compose/Caddy examples, image export and opt-in remote tooling. AT-004 and Windows/Podman stack/browser/persistence checks pass; full AT-001/005/006 remain pending. D-058..D-062 and T0.7 handoff added. |
 
 Per-task verification evidence for M0–M1 lives in [archive/progress-m0-m1.md](archive/progress-m0-m1.md) and the task-prompt records. Keep new entries here to one table row plus one change-log line (D-158).
+| 2026-10-31 | T2.12 Done: D-180, AT-323/324, `ptdev check`, and focused field-acceptance E2E pass (5/5). Atomic owner-only conversion, dependency rechecks, and choice rename propagation are verified; details in the [T2.12 record](task-prompts/T2.12.md#record-2026-10-31). |

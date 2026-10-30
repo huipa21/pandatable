@@ -170,6 +170,43 @@ SET name = sqlc.arg(name), description = sqlc.arg(description), options = sqlc.a
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL
 RETURNING version;
 
+-- name: ConvertField :one
+UPDATE meta.fields
+SET ui_type = sqlc.arg(ui_type), pg_type = sqlc.arg(pg_type),
+    options = sqlc.arg(options)::jsonb, is_required = sqlc.arg(is_required),
+    is_unique = sqlc.arg(is_unique), default_json = sqlc.narg(default_json)::jsonb,
+    version = version + 1
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL
+RETURNING version;
+
+-- name: ListComputedDependents :many
+SELECT f.id, f.table_id, f.ui_type, f.options
+FROM meta.fields f
+JOIN meta.tables t ON t.id = f.table_id AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE f.deleted_at IS NULL AND f.ui_type IN ('lookup', 'rollup')
+  AND f.options->>'targetFieldId' = sqlc.arg(field_id)::text
+ORDER BY f.table_id, f.id;
+
+-- name: LockDependencyTable :one
+SELECT id FROM meta.tables
+WHERE id = $1 AND deleted_at IS NULL
+FOR NO KEY UPDATE;
+
+-- name: BumpDependencySchemaVersion :exec
+UPDATE meta.tables SET schema_version = schema_version + 1
+WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: SaveDependencyFieldOptions :exec
+UPDATE meta.fields
+SET options = sqlc.arg(options)::jsonb, version = version + 1
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: InsertTypeChangeHistory :exec
+INSERT INTO meta.row_history (table_id, user_id, action, changes)
+VALUES (sqlc.arg(table_id)::uuid, sqlc.arg(user_id)::uuid, 'type_change',
+        sqlc.arg(changes)::jsonb);
+
 -- name: SetFieldPosition :exec
 UPDATE meta.fields SET position = $2, version = version + 1
 WHERE id = $1 AND deleted_at IS NULL;
@@ -203,6 +240,17 @@ FROM meta.views
 WHERE table_id = sqlc.arg(table_id)::uuid AND deleted_at IS NULL
   AND (scope = 'shared' OR owner_id = sqlc.arg(user_id)::uuid)
 ORDER BY position, id;
+
+-- name: ListViewConfigsForTable :many
+SELECT id, config
+FROM meta.views
+WHERE table_id = sqlc.arg(table_id)::uuid AND deleted_at IS NULL
+ORDER BY id;
+
+-- name: SaveViewConfigForTypeChange :exec
+UPDATE meta.views
+SET config = sqlc.arg(config)::jsonb, version = version + 1, updated_at = now()
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
 
 -- name: LockTableViewsForManagement :many
 SELECT id, name, type, scope, owner_id, locked, position, version, config

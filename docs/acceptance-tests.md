@@ -514,8 +514,8 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-320 — Remaining field types** · M2 · time, duration, currency, percent, rating, phone, uuid, json, inet, cidr, text list, integer list, user, multi-user, auto-number, varchar(n) round-trip correctly; user field picker lists active users; auto-number read-only and increasing.
 - **AT-321 — Attachments** · M2 · Upload image & PDF to attachment cell (drag-drop and picker) → thumbnail for image, download works; user without access to table gets 404 for file URL.
 - **AT-322 — Upload limit** · M2 · File larger than admin limit is rejected with translated error.
-- **AT-323 — Type change dry-run** · M2 · Text field with values ["1","2","x"] → convert to integer: dry-run shows 1 failing with sample "x"; "Abort" changes nothing; "Convert, set to NULL" results in [1,2,NULL].
-- **AT-324 — Select choice rename** · M2 · Renaming choice "Open"→"Active" updates all cells and filters using it.
+- **AT-323 — Type change dry-run** · M2 · Text field with values ["1","2","x"] → convert to integer: dry-run shows 1 failing with sample "x"; "Abort" changes nothing; "Convert, set to NULL" results in [1,2,NULL]. Evidence: PG18/API/FieldPanel tests and production-browser E2E; `ptdev check` passes and field acceptance is 5/5.
+- **AT-324 — Select choice rename** · M2 · Renaming choice "Open"→"Active" updates all cells and filters using it. Evidence: PG18 verifies cells, defaults, and shared/personal filters/highlights; production-browser E2E verifies the active saved filter; field acceptance is 5/5.
 - **AT-325 — Field soft delete** · M2/M3 · Deleting a field hides it everywhere; restoring from Trash brings values back.
 - **AT-326 — Currency default** · M2 · New currency field defaults to CNY (¥ formatting); owner switches it to USD and values display as $; admin changes default currency to EUR → new currency fields default to EUR, existing fields unchanged.
 

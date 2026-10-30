@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -36,6 +37,21 @@ type ColumnSpec struct {
 	Default    DefaultValue
 	RangeCheck *IntRangeCheck
 	Reference  Reference
+}
+
+type CastMode uint8
+
+const (
+	CastText CastMode = iota
+	CastFirstArrayElement
+)
+
+type TypeConversion struct {
+	Type             DataType
+	Mode             CastMode
+	RangeCheck       *IntRangeCheck
+	Reference        Reference
+	SetFailuresToNil bool
 }
 
 type IntRangeCheck struct {
@@ -292,6 +308,136 @@ func SetDefault(ctx context.Context, tx pgx.Tx, table TableName, column string, 
 		action = " SET DEFAULT " + expression
 	}
 	return alterColumn(ctx, tx, table, column, "set default", "ALTER COLUMN", action)
+}
+
+func ConversionInput(column string, mode CastMode) (string, error) {
+	if err := ValidateIdentifier(Column, column); err != nil {
+		return "", err
+	}
+	quoted := pgx.Identifier{column}.Sanitize()
+	switch mode {
+	case CastText:
+		return quoted + "::text", nil
+	case CastFirstArrayElement:
+		return "(" + quoted + ")[1]::text", nil
+	default:
+		return "", validation("Invalid type conversion mode")
+	}
+}
+
+func ConversionValue(column string, dataType DataType, mode CastMode) (string, error) {
+	input, err := ConversionInput(column, mode)
+	if err != nil {
+		return "", err
+	}
+	typeSQL, err := dataType.SQL()
+	if err != nil {
+		return "", err
+	}
+	return "(" + input + ")::" + typeSQL, nil
+}
+
+func ConversionValidity(column string, conversion TypeConversion) (string, error) {
+	input, err := ConversionInput(column, conversion.Mode)
+	if err != nil {
+		return "", err
+	}
+	value, err := ConversionValue(column, conversion.Type, conversion.Mode)
+	if err != nil {
+		return "", err
+	}
+	typeSQL, err := conversion.Type.SQL()
+	if err != nil {
+		return "", err
+	}
+	return conversionValidity(input, value, typeSQL, conversion)
+}
+
+func AlterColumnType(ctx context.Context, tx pgx.Tx, table TableName, column string, conversion TypeConversion) error {
+	name, err := columnTarget(table, column)
+	if err != nil {
+		return err
+	}
+	input, err := ConversionInput(column, conversion.Mode)
+	if err != nil {
+		return err
+	}
+	value, err := ConversionValue(column, conversion.Type, conversion.Mode)
+	if err != nil {
+		return err
+	}
+	typeSQL, err := conversion.Type.SQL()
+	if err != nil {
+		return err
+	}
+	valid, err := conversionValidity(input, value, typeSQL, conversion)
+	if err != nil {
+		return err
+	}
+	using := value
+	if conversion.SetFailuresToNil {
+		using = "CASE WHEN " + valid + " THEN " + value + " ELSE NULL END"
+	}
+	query := "ALTER TABLE " + name + " ALTER COLUMN " + pgx.Identifier{column}.Sanitize() +
+		" TYPE " + typeSQL + " USING " + using
+	return execute(ctx, tx, "change column type", query, false)
+}
+
+func conversionValidity(input, value, typeSQL string, conversion TypeConversion) (string, error) {
+	typeLiteral := "'" + strings.ReplaceAll(typeSQL, "'", "''") + "'"
+	valid := "COALESCE(pg_catalog.pg_input_is_valid(" + input + ", " + typeLiteral + "), true)"
+	if check := conversion.RangeCheck; check != nil {
+		if conversion.Type.Kind != SmallInt || check.Min > check.Max ||
+			check.Min < -32768 || check.Max > 32767 {
+			return "", validation("Invalid integer range check")
+		}
+		valid += " AND CASE WHEN pg_catalog.pg_input_is_valid(" + input + ", " + typeLiteral + ") THEN " +
+			value + fmt.Sprintf(" BETWEEN %d AND %d", check.Min, check.Max) + " ELSE false END"
+	}
+	switch conversion.Reference {
+	case NoReference:
+	case UserReference:
+		if conversion.Type.Kind != UUID {
+			return "", validation("Invalid user reference")
+		}
+		valid += " AND CASE WHEN " + input + " IS NULL THEN true WHEN pg_catalog.pg_input_is_valid(" +
+			input + ", " + typeLiteral + ") THEN EXISTS (SELECT 1 FROM meta.users WHERE id = " + value +
+			"::uuid) ELSE false END"
+	default:
+		return "", validation("Invalid column reference")
+	}
+	return valid, nil
+}
+
+func SetRangeCheck(ctx context.Context, tx pgx.Tx, table TableName, column string, check *IntRangeCheck) error {
+	name, err := columnTarget(table, column)
+	if err != nil {
+		return err
+	}
+	query := "ALTER TABLE " + name + " DROP CONSTRAINT IF EXISTS " + rangeName(table, column)
+	if check != nil {
+		if check.Min > check.Max || check.Min < -32768 || check.Max > 32767 {
+			return validation("Invalid integer range check")
+		}
+		query = "ALTER TABLE " + name + " DROP CONSTRAINT IF EXISTS " + rangeName(table, column) + ", " +
+			" ADD CONSTRAINT " + rangeName(table, column) + " CHECK (" +
+			pgx.Identifier{column}.Sanitize() + fmt.Sprintf(" BETWEEN %d AND %d)", check.Min, check.Max)
+	}
+	return execute(ctx, tx, "set range check", query, false)
+}
+
+func SetUserReference(ctx context.Context, tx pgx.Tx, table TableName, column string, enabled bool) error {
+	name, err := columnTarget(table, column)
+	if err != nil {
+		return err
+	}
+	query := "ALTER TABLE " + name + " DROP CONSTRAINT IF EXISTS " + foreignKeyName(table, column)
+	if enabled {
+		query = "ALTER TABLE " + name + " DROP CONSTRAINT IF EXISTS " + foreignKeyName(table, column) +
+			" ADD CONSTRAINT " + foreignKeyName(table, column) + " FOREIGN KEY (" +
+			pgx.Identifier{column}.Sanitize() + ") REFERENCES meta.users(id) ON DELETE SET NULL"
+	}
+	return execute(ctx, tx, "set user reference", query, false)
 }
 
 func alterColumn(ctx context.Context, tx pgx.Tx, table TableName, column, operation, action, suffix string) error {

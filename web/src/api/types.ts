@@ -333,6 +333,13 @@ export interface FieldMutation extends AuthMutation {
   schema: TableSchema
 }
 
+export interface TypeChangeDryRun {
+  total: number
+  convertible: number
+  failing: number
+  samples: { id: string; value: string }[]
+}
+
 export interface FormulaCheck {
   type?: string
   error?: { position: number; message: string }

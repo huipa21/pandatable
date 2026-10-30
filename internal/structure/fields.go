@@ -795,6 +795,9 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 			if err := physical.renameLabels(ctx, c.tx, after.Kind() == codec.MultiSelect, from, to); err != nil {
 				return err
 			}
+			if err := rewriteChoiceFilters(ctx, c, table.ID, field.ID, from, to); err != nil {
+				return err
+			}
 		}
 		if err := applyColumn(ctx, c, physical, after.Column().Type,
 			columnState{required: field.IsRequired, unique: field.IsUnique, stored: field.DefaultJson},

@@ -105,6 +105,61 @@ func TestFieldAPIRenameAT202KeepsPhysicalNamesAndData(t *testing.T) {
 	}
 }
 
+func TestFieldTypeChangeAPIRequiresOwnerAndConvertsAtomically(t *testing.T) {
+	f := newACLFixture(t)
+	alice, writer, reader, stranger, admin := f.user("user", false), f.user("user", false), f.user("user", false),
+		f.user("user", false), f.user("admin", false)
+	table := f.newTable(alice, f.newBook(alice, f.newWorkspace(alice, "Type change").ID, "Book").ID, "Rows")
+	f.grantOK(alice, acl.Table, table.Table.ID, "user", writer.id, acl.Write)
+	f.grantOK(alice, acl.Table, table.Table.ID, "user", reader.id, acl.Read)
+	field := f.newField(alice, table.Table.ID, `{"name":"Count","uiType":"text"}`)
+	column := f.scan("SELECT pg_column FROM meta.fields WHERE id=$1", field.ID)
+	physical := f.scan("SELECT b.pg_schema || '.' || t.pg_name FROM meta.tables t JOIN meta.books b ON b.id=t.book_id WHERE t.id=$1",
+		table.Table.ID)
+	f.exec("INSERT INTO " + physical + " (" + column + ") VALUES ('1'),('2'),('x')")
+
+	dryRunPath := "/fields/" + field.ID + "/convert:dry-run"
+	convertPath := "/fields/" + field.ID + "/convert"
+	for user, status := range map[*aclUser]int{writer: 403, reader: 403, stranger: 404, admin: 404} {
+		code := map[int]string{403: "ERR_PERMISSION_DENIED", 404: "ERR_NOT_FOUND"}[status]
+		f.expectStatus(f.fieldCall(user, "POST", dryRunPath, `{"uiType":"integer"}`, "1"), status, code)
+		f.expectStatus(f.fieldCall(user, "POST", convertPath, `{"uiType":"integer"}`, "1"), status, code)
+	}
+	f.expectStatus(f.fieldCall(alice, "POST", dryRunPath, `{"uiType":"integer"}`), 400, "ERR_VALIDATION")
+	var preview struct {
+		Total       int64 `json:"total"`
+		Convertible int64 `json:"convertible"`
+		Failing     int64 `json:"failing"`
+		Samples     []struct {
+			ID    string `json:"id"`
+			Value string `json:"value"`
+		} `json:"samples"`
+	}
+	response := f.fieldCall(alice, "POST", dryRunPath, `{"uiType":"integer"}`, `"1"`)
+	if response.Code != 200 {
+		f.t.Fatalf("dry-run response = %d: %s", response.Code, response.Body)
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &preview); err != nil {
+		f.t.Fatal(err)
+	}
+	if preview.Total != 3 || preview.Convertible != 2 || preview.Failing != 1 ||
+		len(preview.Samples) != 1 || preview.Samples[0].Value != "x" {
+		f.t.Fatalf("dry-run = %+v", preview)
+	}
+
+	converted := decode[fieldBody](f, f.fieldCall(alice, "POST", convertPath,
+		`{"uiType":"integer","setFailingToNull":true}`, `"1"`), 200)
+	if converted.Field == nil || converted.Field.UIType != "integer" || converted.EventID == "" {
+		f.t.Fatalf("converted field = %+v", converted)
+	}
+	if f.scan("SELECT count(*) FROM "+physical+" WHERE "+column+" IS NULL") != "1" {
+		f.t.Fatal("failed value was not set to NULL")
+	}
+	if f.scan("SELECT count(*) FROM meta.row_history WHERE table_id=$1 AND action='type_change'", table.Table.ID) != "1" {
+		f.t.Fatal("type change did not record exactly one history event")
+	}
+}
+
 func TestFieldAPIIfMatchBodiesAndGuards(t *testing.T) {
 	f := newACLFixture(t)
 	alice, forced, disabled := f.user("user", false), f.user("user", true), f.user("user", false)

@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"pandatable/internal/acl"
 	"pandatable/internal/apperr"
 	"pandatable/internal/ddl"
@@ -311,16 +313,52 @@ func TestFieldOptionEditsRewriteSelectLabelsAndRejectStorageChanges(t *testing.T
 	statusCol, tagsCol := ft.column(status), ft.column(tags)
 	f.exec("INSERT INTO "+ft.quoted()+" ("+statusCol+","+tagsCol+") VALUES ($1,$2),($3,$4),($5,$6),($7,$8)",
 		"Todo", []string{"Red", "Old"}, "Done", []string{"Blue", "Red"}, "Gone", []string{"Old", "Blue"}, nil, nil)
+	filter := map[string]any{"field": status.ID, "cmp": "is", "value": "Todo"}
+	config, err := json.Marshal(map[string]any{
+		"fields": []any{}, "frozen": 0, "filter": filter,
+		"highlight": []any{map[string]any{"id": "h", "when": filter,
+			"target": map[string]any{"type": "row"}, "color": "blue-2"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec("UPDATE meta.views SET config=$1::jsonb WHERE id=$2", config, ft.schema.Views[0].ID)
+	personalView := scanOne[string](f, `INSERT INTO meta.views (table_id,name,type,scope,owner_id,position,config)
+		VALUES ($1,'Personal filter','grid','personal',$2,2048,$3::jsonb) RETURNING id::text`,
+		ft.id(), ft.owner.ID, config)
 
 	// Swap Todo/Done labels by id, drop Gone; rename Red→Crimson and merge Old
 	// into Blue's new label via a rename that removes the Old choice.
-	status, err := ft.update(status, FieldPatch{Options: json.RawMessage(
+	status, err = ft.update(status, FieldPatch{Options: json.RawMessage(
 		`{"choices":[{"id":"a","label":"Done"},{"id":"b","label":"Todo"}]}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(status.Default) != `"Done"` {
 		t.Fatalf("renamed single default = %s", status.Default)
+	}
+	for _, viewID := range []string{ft.schema.Views[0].ID, personalView} {
+		var saved []byte
+		version := scanOne[int](f, "SELECT version FROM meta.views WHERE id=$1", viewID)
+		if version != 2 {
+			t.Fatalf("renamed view version = %d, want 2", version)
+		}
+		if err := f.pool.QueryRow(f.ctx, "SELECT config FROM meta.views WHERE id=$1", viewID).Scan(&saved); err != nil {
+			t.Fatal(err)
+		}
+		var viewConfig struct {
+			Filter    FilterNode `json:"filter"`
+			Highlight []struct {
+				When FilterNode `json:"when"`
+			} `json:"highlight"`
+		}
+		if err := json.Unmarshal(saved, &viewConfig); err != nil {
+			t.Fatal(err)
+		}
+		if string(viewConfig.Filter.Value) != `"Done"` || len(viewConfig.Highlight) != 1 ||
+			string(viewConfig.Highlight[0].When.Value) != `"Done"` {
+			t.Fatalf("choice filters were not renamed in view %s: %s", viewID, saved)
+		}
 	}
 	tags, err = ft.update(tags, FieldPatch{Options: json.RawMessage(
 		`{"choices":[{"id":"x","label":"Crimson"},{"id":"y","label":"Old"}]}`)})
@@ -646,5 +684,148 @@ func TestFailedFieldDDLRollsBackMetadata(t *testing.T) {
 	got := scanOne[string](f, "SELECT name FROM meta.fields WHERE id=$1", field.ID)
 	if got != "Code" || ft.schemaVersion() != version || ft.hasUnique(field) {
 		t.Fatalf("rollback left name=%s version=%d", got, ft.schemaVersion())
+	}
+}
+
+func TestTypeChangeDryRunAndConvertFailingValuesToNull(t *testing.T) {
+	f := newFixture(t)
+	ft := f.fieldTable(f.user("user", "active", "en"))
+	field := ft.create(FieldInput{Name: "Quantity", UIType: "text"})
+	column := ft.column(field)
+	f.exec("INSERT INTO "+ft.quoted()+" ("+column+") VALUES ($1),($2),($3)", "1", "2", "x")
+	viewID := ft.schema.Views[0].ID
+	before, err := f.service.QueryRows(f.ctx, ft.owner, viewID, RowQueryRequest{})
+	if err != nil || len(before.Rows) != 3 {
+		t.Fatalf("query before type change = %d rows, %v", len(before.Rows), err)
+	}
+
+	target := TypeChangeTarget{UIType: "integer"}
+	preview, err := f.service.DryRunTypeChange(f.ctx, ft.owner, field.ID, field.Version, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Total != 3 || preview.Convertible != 2 || preview.Failing != 1 ||
+		len(preview.Samples) != 1 || preview.Samples[0].Value != "x" {
+		t.Fatalf("dry-run = %+v", preview)
+	}
+	_, err = f.service.ConvertFieldType(f.ctx, ft.owner, field.ID, field.Version, target)
+	expectError(t, err, 409, "ERR_CONVERSION_FAILED")
+	if got := scanOne[string](f, "SELECT ui_type FROM meta.fields WHERE id=$1", field.ID); got != "text" {
+		t.Fatalf("failed conversion changed the type to %s", got)
+	}
+	if got := scanOne[int](f, "SELECT count(*) FROM "+ft.quoted()+" WHERE "+column+"='x'"); got != 1 {
+		t.Fatalf("failed conversion changed source values: %d", got)
+	}
+	if got := scanOne[int](f, "SELECT count(*) FROM meta.row_history WHERE table_id=$1 AND action='type_change'", ft.id()); got != 0 {
+		t.Fatalf("failed conversion recorded %d events", got)
+	}
+
+	converted, err := f.service.ConvertFieldType(f.ctx, ft.owner, field.ID, field.Version,
+		TypeChangeTarget{UIType: "integer", SetFailingToNull: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if converted.Field == nil || converted.Field.UIType != "integer" || converted.Field.Version != field.Version+1 {
+		t.Fatalf("converted field = %+v", converted.Field)
+	}
+	after, err := f.service.QueryRows(f.ctx, ft.owner, viewID, RowQueryRequest{})
+	if err != nil || len(after.Rows) != 3 {
+		t.Fatalf("query after type change = %d rows, %v", len(after.Rows), err)
+	}
+	if got := after.Rows[0].Fields[field.ID]; string(got) != "1" {
+		t.Fatalf("converted field JSON = %s", got)
+	}
+	rows, err := f.pool.Query(f.ctx, "SELECT "+column+"::text FROM "+ft.quoted()+" ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var values []string
+	for rows.Next() {
+		var value pgtype.Text
+		if err := rows.Scan(&value); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		if value.Valid {
+			values = append(values, value.String)
+		} else {
+			values = append(values, "<null>")
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		t.Fatal(err)
+	}
+	rows.Close()
+	if strings.Join(values, ",") != "1,2,<null>" {
+		t.Fatalf("converted values = %v", values)
+	}
+	if got := scanOne[int](f, "SELECT count(*) FROM meta.row_history WHERE table_id=$1 AND action='type_change'", ft.id()); got != 1 {
+		t.Fatalf("type change recorded %d events", got)
+	}
+}
+
+func TestTypeChangeSpecializedMultiSelectToSingleSelect(t *testing.T) {
+	f := newFixture(t)
+	ft := f.fieldTable(f.user("user", "active", "en"))
+	field := ft.create(FieldInput{Name: "Tags", UIType: "multi_select",
+		Options: json.RawMessage(`{"choices":[{"id":"a","label":"A"},{"id":"b","label":"B"}]}`),
+		Default: json.RawMessage(`["A","B"]`)})
+	column := ft.column(field)
+	f.exec("INSERT INTO "+ft.quoted()+" ("+column+") VALUES ($1)", []string{"B", "A"})
+
+	converted, err := f.service.ConvertFieldType(f.ctx, ft.owner, field.ID, field.Version,
+		TypeChangeTarget{UIType: "single_select"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if converted.Field == nil || converted.Field.UIType != "single_select" ||
+		string(converted.Field.Default) != `"A"` {
+		t.Fatalf("converted field = %+v", converted.Field)
+	}
+	if got := scanOne[string](f, "SELECT "+column+" FROM "+ft.quoted()); got != "B" {
+		t.Fatalf("first selected label = %q, want B", got)
+	}
+}
+
+func TestTypeChangeMarksBrokenFormulaAndReturnsErrorValue(t *testing.T) {
+	f := newFixture(t)
+	ft := f.fieldTable(f.user("user", "active", "en"))
+	value := ft.create(FieldInput{Name: "Amount", UIType: "integer"})
+	formulaResult, err := f.service.CreateField(f.ctx, ft.owner, ft.id(), FieldInput{
+		Name: "Next amount", UIType: "formula", Options: json.RawMessage(`{"expr":"{Amount}+1"}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec("INSERT INTO " + ft.quoted() + " (" + ft.column(value) + ") VALUES (4)")
+
+	if _, err := f.service.ConvertFieldType(f.ctx, ft.owner, value.ID, value.Version,
+		TypeChangeTarget{UIType: "text"}); err != nil {
+		t.Fatal(err)
+	}
+	schema, err := f.service.Schema(f.ctx, ft.owner, ft.id())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var broken Field
+	for _, field := range schema.Fields {
+		if field.ID == formulaResult.Field.ID {
+			broken = field
+		}
+	}
+	var options map[string]any
+	if err := json.Unmarshal(broken.Options, &options); err != nil {
+		t.Fatal(err)
+	}
+	if options["error"] != "dependency_type" {
+		t.Fatalf("formula options = %s", broken.Options)
+	}
+	rows, err := f.service.QueryRows(f.ctx, ft.owner, ft.schema.Views[0].ID, RowQueryRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows.Rows) != 1 || string(rows.Rows[0].Fields[formulaResult.Field.ID]) != `"#ERROR"` {
+		t.Fatalf("formula result = %+v", rows.Rows)
 	}
 }

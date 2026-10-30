@@ -80,6 +80,7 @@ type rowField struct {
 	relationSide string
 	computed     *computedField
 	formula      *formulaField
+	error        string
 }
 
 type rowTable struct {
@@ -100,6 +101,15 @@ type rowViewConfig struct {
 	GroupBy    []string        `json:"groupBy"`
 	Aggregates []ViewAggregate `json:"aggregates"`
 	Highlight  []HighlightRule `json:"highlight"`
+}
+
+// Physical row projections change result OIDs after ALTER TYPE, so keep them out of pgx's statement cache.
+func queryUncachedRows(ctx context.Context, tx pgx.Tx, query string, args ...any) (pgx.Rows, error) {
+	return tx.Query(ctx, query, append([]any{pgx.QueryExecModeDescribeExec}, args...)...)
+}
+
+func queryUncachedRow(ctx context.Context, tx pgx.Tx, query string, args ...any) pgx.Row {
+	return tx.QueryRow(ctx, query, append([]any{pgx.QueryExecModeDescribeExec}, args...)...)
 }
 
 func physicalTable(schema, name string) (string, error) {
@@ -189,7 +199,7 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 			if err := json.Unmarshal(row.Options, &options); err != nil || options.AST == nil {
 				return rowTable{}, errors.New("invalid formula field metadata")
 			}
-			field := rowField{id: row.ID.String(), name: fieldName, kind: kind, formula: &formulaField{options: options}}
+			field := rowField{id: row.ID.String(), name: fieldName, kind: kind, formula: &formulaField{options: options}, error: options.Error}
 			table.fields = append(table.fields, field)
 			table.byID[field.id] = field
 			continue
@@ -198,6 +208,12 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 			options, err := decodeComputedOptions(row.UiType, row.Options)
 			if err != nil {
 				return rowTable{}, fmt.Errorf("read computed field options: %w", err)
+			}
+			if options.Error != "" {
+				field := rowField{id: row.ID.String(), name: fieldName, kind: kind, error: options.Error}
+				table.fields = append(table.fields, field)
+				table.byID[field.id] = field
+				continue
 			}
 			info, ok := relationFields[options.RelationFieldID]
 			if !ok || row.PgColumn.Valid || row.IsSystem {
@@ -580,7 +596,7 @@ func (s *Service) GetRow(ctx context.Context, actor Actor, tableID, rowID string
 		if err != nil {
 			return fmt.Errorf("build row read query: %w", err)
 		}
-		record, err := scanRow(tx.QueryRow(ctx, query, args...), table, table.fields)
+		record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return acl.ErrNotFound()
 		}
@@ -772,7 +788,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		}
 		result.Total = &total
 	}
-	rows, err := tx.Query(ctx, sql, args...)
+	rows, err := queryUncachedRows(ctx, tx, sql, args...)
 	if err != nil {
 		return RowQueryResult{}, rowDatabaseError(fmt.Errorf("query view rows: %w", err))
 	}
@@ -932,7 +948,7 @@ func insertRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, ta
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("build row insert: %w", err)
 	}
-	record, err := scanRow(tx.QueryRow(ctx, query, args...), table, table.fields)
+	record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("insert row: %w", err)
 	}
@@ -1007,7 +1023,7 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("build row patch: %w", err)
 	}
-	record, err := scanRow(tx.QueryRow(ctx, query, args...), table, table.fields)
+	record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("patch row: %w", err)
 	}
@@ -1096,7 +1112,7 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 		if err != nil {
 			return fmt.Errorf("build rows delete snapshot query: %w", err)
 		}
-		rows, err := tx.Query(ctx, query, args...)
+		rows, err := queryUncachedRows(ctx, tx, query, args...)
 		if err != nil {
 			return fmt.Errorf("lock rows for deletion: %w", err)
 		}

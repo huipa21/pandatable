@@ -134,6 +134,55 @@ func (api *authHTTP) updateField(w http.ResponseWriter, r *http.Request, user au
 	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
 }
 
+func (api *authHTTP) dryRunFieldType(w http.ResponseWriter, r *http.Request, user auth.User) {
+	version, err := ifMatch(r)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	var input struct {
+		UIType  string          `json:"uiType"`
+		Options json.RawMessage `json:"options"`
+	}
+	if err := decodeJSONLimit(w, r, &input, fieldBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	result, err := api.structure.DryRunTypeChange(r.Context(), actorOf(user), chi.URLParam(r, "id"), version,
+		structure.TypeChangeTarget{UIType: input.UIType, Options: input.Options})
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (api *authHTTP) convertFieldType(w http.ResponseWriter, r *http.Request, user auth.User) {
+	version, err := ifMatch(r)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	var input struct {
+		UIType           string          `json:"uiType"`
+		Options          json.RawMessage `json:"options"`
+		Default          json.RawMessage `json:"default"`
+		SetFailingToNull bool            `json:"setFailingToNull"`
+	}
+	if err := decodeJSONLimit(w, r, &input, fieldBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	result, err := api.structure.ConvertFieldType(r.Context(), actorOf(user), chi.URLParam(r, "id"), version,
+		structure.TypeChangeTarget{UIType: input.UIType, Options: input.Options, Default: input.Default,
+			SetFailingToNull: input.SetFailingToNull})
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
+}
+
 func (api *authHTTP) deleteField(w http.ResponseWriter, r *http.Request, user auth.User) {
 	version, err := ifMatch(r)
 	if err != nil {

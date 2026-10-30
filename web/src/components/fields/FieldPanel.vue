@@ -10,13 +10,14 @@ import type {
   RelationMutation,
   TableField,
   TableSchema,
+  TypeChangeDryRun,
 } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { CHOICE_COLORS } from '../../fields/choice'
 import { fieldKindLabel } from '../../fields/messages'
 import { isKind, kindConstraints } from '../../fields/registry'
-import type { FieldEnv } from '../../fields/types'
+import type { FieldEnv, Kind } from '../../fields/types'
 import {
   colorLabel,
   createBody,
@@ -63,12 +64,16 @@ const status = ref('')
 let controller: AbortController | undefined
 
 const editor = ref<HTMLDialogElement>()
+const typeChangeEditor = ref<HTMLDialogElement>()
 const relationEditor = ref<HTMLDialogElement>()
 const computedEditor = ref<HTMLDialogElement>()
 const formulaEditor = ref<HTMLDialogElement>()
 const remover = ref<HTMLDialogElement>()
 /** The field being edited (null while creating); version is captured at open. */
 const editing = ref<TableField | null>(null)
+const typeChanging = ref<TableField | null>(null)
+const typeChangeKind = ref<Kind>('text')
+const typeChangePreview = ref<TypeChangeDryRun | null>(null)
 const creating = ref(false)
 const draft = ref<FieldDraft>(draftFrom(null, env.value))
 const conflict = ref(false)
@@ -330,6 +335,19 @@ const targetTables = computed(() => {
 })
 
 const constraints = computed(() => kindConstraints(draft.value.kind))
+const typeChangeKinds = computed(() =>
+  USER_KINDS.filter(
+    (kind) =>
+      kind !== typeChanging.value?.uiType &&
+      kind !== 'attachment' &&
+      kind !== 'autonumber',
+  ),
+)
+const canChangeType = (field: TableField) =>
+  !field.isSystem &&
+  !['link', 'lookup', 'rollup', 'formula', 'attachment', 'autonumber'].includes(
+    field.uiType,
+  )
 const storageFixed = computed(() => editing.value !== null)
 const systemEdit = computed(() => editing.value?.isSystem ?? false)
 const sizes = computed(() =>
@@ -405,6 +423,68 @@ async function openEditor(field: TableField | null) {
   draft.value = draftFrom(field, env.value)
   await nextTick()
   editor.value?.showModal()
+}
+
+async function openTypeChange(field: TableField) {
+  error.value = null
+  status.value = ''
+  typeChanging.value = field
+  typeChangePreview.value = null
+  typeChangeKind.value = typeChangeKinds.value[0] ?? (USER_KINDS[0] as Kind)
+  await nextTick()
+  typeChangeEditor.value?.showModal()
+}
+
+function closeTypeChange() {
+  if (busy.value) return
+  typeChangeEditor.value?.close()
+  typeChanging.value = null
+  typeChangePreview.value = null
+  error.value = null
+}
+
+function typeChangeBody(field: TableField) {
+  const options =
+    (typeChangeKind.value === 'single_select' ||
+      typeChangeKind.value === 'multi_select') &&
+    (field.uiType === 'single_select' || field.uiType === 'multi_select')
+      ? field.options
+      : undefined
+  return {
+    uiType: typeChangeKind.value,
+    ...(options === undefined ? {} : { options }),
+  }
+}
+
+async function previewTypeChange() {
+  const field = typeChanging.value
+  if (!field) return
+  typeChangePreview.value = null
+  const result = await mutate<TypeChangeDryRun>(
+    `/fields/${field.id}/convert:dry-run`,
+    'POST',
+    typeChangeBody(field),
+    field.version,
+  )
+  if (result) typeChangePreview.value = result
+}
+
+async function saveTypeChange() {
+  const field = typeChanging.value
+  const preview = typeChangePreview.value
+  if (!field || !preview) return
+  const result = await mutate<FieldMutation>(
+    `/fields/${field.id}/convert`,
+    'POST',
+    { ...typeChangeBody(field), setFailingToNull: preview.failing > 0 },
+    field.version,
+  )
+  if (!result) return
+  emit('update', result.schema)
+  typeChangeEditor.value?.close()
+  typeChanging.value = null
+  typeChangePreview.value = null
+  status.value = t('field.panel.saved')
 }
 
 function closeEditor() {
@@ -829,6 +909,7 @@ const message = computed(() =>
 const dialogOpen = computed(
   () =>
     editing.value !== null ||
+    typeChanging.value !== null ||
     creating.value ||
     deleting.value !== null ||
     relationCreating.value ||
@@ -948,6 +1029,19 @@ onBeforeUnmount(() => {
                 "
               >
                 {{ t('field.panel.edit') }}
+              </button>
+              <button
+                v-if="canChangeType(field)"
+                type="button"
+                :disabled="busy"
+                @click="
+                  (event) => {
+                    closeMenu(event)
+                    openTypeChange(field)
+                  }
+                "
+              >
+                {{ t('field.panel.changeType') }}
               </button>
               <template v-if="!field.isSystem">
                 <button
@@ -1387,6 +1481,91 @@ onBeforeUnmount(() => {
           </button>
           <button type="button" :disabled="busy" @click="closeEditor">
             {{ t('field.panel.cancel') }}
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog
+      ref="typeChangeEditor"
+      class="field-dialog"
+      :aria-label="t('field.panel.typeChangeTitle')"
+      @cancel.prevent="closeTypeChange"
+    >
+      <form v-if="typeChanging" @submit.prevent="previewTypeChange">
+        <h2>{{ t('field.panel.typeChangeTitle') }}</h2>
+        <p>{{ t('field.panel.typeChangeHint') }}</p>
+        <dl class="field-kind-fixed">
+          <dt>{{ t('field.panel.name') }}</dt>
+          <dd>{{ typeChanging.name }}</dd>
+        </dl>
+        <label>
+          <span>{{ t('field.panel.targetType') }}</span>
+          <select
+            v-model="typeChangeKind"
+            :disabled="busy"
+            @change="
+              () => {
+                typeChangePreview = null
+                error = null
+              }
+            "
+          >
+            <option v-for="kind in typeChangeKinds" :key="kind" :value="kind">
+              {{ fieldKindLabel(kind) }}
+            </option>
+          </select>
+        </label>
+        <p v-if="typeChangePreview" role="status" class="type-change-summary">
+          {{
+            t('field.panel.conversionSummary', {
+              total: typeChangePreview.total,
+              convertible: typeChangePreview.convertible,
+              failing: typeChangePreview.failing,
+            })
+          }}
+        </p>
+        <ul
+          v-if="typeChangePreview?.samples.length"
+          class="type-change-samples"
+        >
+          <li v-for="sample in typeChangePreview.samples" :key="sample.id">
+            {{
+              t('field.panel.conversionSample', {
+                id: sample.id,
+                value: sample.value,
+              })
+            }}
+          </li>
+        </ul>
+        <p v-if="typeChanging.isRequired && typeChangePreview?.failing">
+          {{ t('field.panel.requiredCleared') }}
+        </p>
+        <p v-if="error" role="alert">{{ message }}</p>
+        <div class="nav-actions">
+          <button type="submit" :disabled="busy">
+            {{
+              busy ? t('field.panel.saving') : t('field.panel.checkConversion')
+            }}
+          </button>
+          <button
+            v-if="typeChangePreview?.failing === 0"
+            type="button"
+            :disabled="busy"
+            @click="saveTypeChange"
+          >
+            {{ t('field.panel.convert') }}
+          </button>
+          <button
+            v-else-if="typeChangePreview"
+            type="button"
+            :disabled="busy"
+            @click="saveTypeChange"
+          >
+            {{ t('field.panel.convertNull') }}
+          </button>
+          <button type="button" :disabled="busy" @click="closeTypeChange">
+            {{ t('field.panel.abortConversion') }}
           </button>
         </div>
       </form>

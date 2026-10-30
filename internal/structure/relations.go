@@ -664,7 +664,7 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 		if err != nil {
 			return fmt.Errorf("build updated relation row query: %w", err)
 		}
-		record, err := scanRow(tx.QueryRow(ctx, query, args...), table, table.fields)
+		record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return acl.ErrNotFound()
 		}

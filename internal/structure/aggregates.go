@@ -177,7 +177,7 @@ func (s *Service) QueryAggregates(
 			query += " WHERE " + where
 		}
 		args := append(append([]any(nil), conditionArgs...), compiler.args...)
-		rows, err := tx.Query(ctx, query, args...)
+		rows, err := queryUncachedRows(ctx, tx, query, args...)
 		if err != nil {
 			return RowAggregateResult{}, rowDatabaseError(fmt.Errorf("query footer aggregates: %w", err))
 		}

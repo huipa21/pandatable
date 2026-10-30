@@ -159,6 +159,8 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_REQUIRED_HAS_EMPTY', { count })
     case 'ERR_UNIQUE_HAS_DUPLICATES':
       return t('errors.ERR_UNIQUE_HAS_DUPLICATES', { count })
+    case 'ERR_CONVERSION_FAILED':
+      return t('errors.ERR_CONVERSION_FAILED', { count })
     case 'ERR_DISPLAY_FIELD_REQUIRED':
       return t('errors.ERR_DISPLAY_FIELD_REQUIRED')
     case 'ERR_RELATION_CONFLICT':

@@ -11,6 +11,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bumpDependencySchemaVersion = `-- name: BumpDependencySchemaVersion :exec
+UPDATE meta.tables SET schema_version = schema_version + 1
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) BumpDependencySchemaVersion(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, bumpDependencySchemaVersion, id)
+	return err
+}
+
 const bumpSchemaVersion = `-- name: BumpSchemaVersion :exec
 UPDATE meta.tables SET schema_version = schema_version + 1
 WHERE id = $1 AND deleted_at IS NULL
@@ -19,6 +29,41 @@ WHERE id = $1 AND deleted_at IS NULL
 func (q *Queries) BumpSchemaVersion(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, bumpSchemaVersion, id)
 	return err
+}
+
+const convertField = `-- name: ConvertField :one
+UPDATE meta.fields
+SET ui_type = $1, pg_type = $2,
+    options = $3::jsonb, is_required = $4,
+    is_unique = $5, default_json = $6::jsonb,
+    version = version + 1
+WHERE id = $7 AND deleted_at IS NULL
+RETURNING version
+`
+
+type ConvertFieldParams struct {
+	UiType      string
+	PgType      pgtype.Text
+	Options     []byte
+	IsRequired  bool
+	IsUnique    bool
+	DefaultJson []byte
+	ID          pgtype.UUID
+}
+
+func (q *Queries) ConvertField(ctx context.Context, arg ConvertFieldParams) (int32, error) {
+	row := q.db.QueryRow(ctx, convertField,
+		arg.UiType,
+		arg.PgType,
+		arg.Options,
+		arg.IsRequired,
+		arg.IsUnique,
+		arg.DefaultJson,
+		arg.ID,
+	)
+	var version int32
+	err := row.Scan(&version)
+	return version, err
 }
 
 const deleteManagedView = `-- name: DeleteManagedView :exec
@@ -432,6 +477,23 @@ func (q *Queries) InsertTable(ctx context.Context, arg InsertTableParams) (pgtyp
 	return id, err
 }
 
+const insertTypeChangeHistory = `-- name: InsertTypeChangeHistory :exec
+INSERT INTO meta.row_history (table_id, user_id, action, changes)
+VALUES ($1::uuid, $2::uuid, 'type_change',
+        $3::jsonb)
+`
+
+type InsertTypeChangeHistoryParams struct {
+	TableID pgtype.UUID
+	UserID  pgtype.UUID
+	Changes []byte
+}
+
+func (q *Queries) InsertTypeChangeHistory(ctx context.Context, arg InsertTypeChangeHistoryParams) error {
+	_, err := q.db.Exec(ctx, insertTypeChangeHistory, arg.TableID, arg.UserID, arg.Changes)
+	return err
+}
+
 const insertUserField = `-- name: InsertUserField :one
 INSERT INTO meta.fields (table_id, name, description, ui_type, pg_column, pg_type, options,
                          is_required, is_unique, default_json, position)
@@ -584,6 +646,48 @@ func (q *Queries) ListAttachmentMetadata(ctx context.Context, arg ListAttachment
 			&i.MimeType,
 			&i.SizeBytes,
 			&i.HasThumb,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listComputedDependents = `-- name: ListComputedDependents :many
+SELECT f.id, f.table_id, f.ui_type, f.options
+FROM meta.fields f
+JOIN meta.tables t ON t.id = f.table_id AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+WHERE f.deleted_at IS NULL AND f.ui_type IN ('lookup', 'rollup')
+  AND f.options->>'targetFieldId' = $1::text
+ORDER BY f.table_id, f.id
+`
+
+type ListComputedDependentsRow struct {
+	ID      pgtype.UUID
+	TableID pgtype.UUID
+	UiType  string
+	Options []byte
+}
+
+func (q *Queries) ListComputedDependents(ctx context.Context, fieldID string) ([]ListComputedDependentsRow, error) {
+	rows, err := q.db.Query(ctx, listComputedDependents, fieldID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListComputedDependentsRow
+	for rows.Next() {
+		var i ListComputedDependentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TableID,
+			&i.UiType,
+			&i.Options,
 		); err != nil {
 			return nil, err
 		}
@@ -835,6 +939,51 @@ func (q *Queries) ListTableViews(ctx context.Context, arg ListTableViewsParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listViewConfigsForTable = `-- name: ListViewConfigsForTable :many
+SELECT id, config
+FROM meta.views
+WHERE table_id = $1::uuid AND deleted_at IS NULL
+ORDER BY id
+`
+
+type ListViewConfigsForTableRow struct {
+	ID     pgtype.UUID
+	Config []byte
+}
+
+func (q *Queries) ListViewConfigsForTable(ctx context.Context, tableID pgtype.UUID) ([]ListViewConfigsForTableRow, error) {
+	rows, err := q.db.Query(ctx, listViewConfigsForTable, tableID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListViewConfigsForTableRow
+	for rows.Next() {
+		var i ListViewConfigsForTableRow
+		if err := rows.Scan(&i.ID, &i.Config); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockDependencyTable = `-- name: LockDependencyTable :one
+SELECT id FROM meta.tables
+WHERE id = $1 AND deleted_at IS NULL
+FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockDependencyTable(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockDependencyTable, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const lockFieldTable = `-- name: LockFieldTable :one
@@ -1472,6 +1621,22 @@ func (q *Queries) RenumberTables(ctx context.Context, ids []pgtype.UUID) error {
 	return err
 }
 
+const saveDependencyFieldOptions = `-- name: SaveDependencyFieldOptions :exec
+UPDATE meta.fields
+SET options = $1::jsonb, version = version + 1
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type SaveDependencyFieldOptionsParams struct {
+	Options []byte
+	ID      pgtype.UUID
+}
+
+func (q *Queries) SaveDependencyFieldOptions(ctx context.Context, arg SaveDependencyFieldOptionsParams) error {
+	_, err := q.db.Exec(ctx, saveDependencyFieldOptions, arg.Options, arg.ID)
+	return err
+}
+
 const saveManagedView = `-- name: SaveManagedView :exec
 UPDATE meta.views
 SET name = $1, locked = $2, config = $3::jsonb,
@@ -1493,6 +1658,22 @@ func (q *Queries) SaveManagedView(ctx context.Context, arg SaveManagedViewParams
 		arg.Config,
 		arg.ID,
 	)
+	return err
+}
+
+const saveViewConfigForTypeChange = `-- name: SaveViewConfigForTypeChange :exec
+UPDATE meta.views
+SET config = $1::jsonb, version = version + 1, updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type SaveViewConfigForTypeChangeParams struct {
+	Config []byte
+	ID     pgtype.UUID
+}
+
+func (q *Queries) SaveViewConfigForTypeChange(ctx context.Context, arg SaveViewConfigForTypeChangeParams) error {
+	_, err := q.db.Exec(ctx, saveViewConfigForTypeChange, arg.Config, arg.ID)
 	return err
 }
 

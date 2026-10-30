@@ -540,6 +540,203 @@ test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, vali
   await page.request.delete(`/api/v1/tables/${tableId}`, { headers: headers() })
 })
 
+test('AT-323/324 previews type changes, converts explicitly, and propagates choice renames', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(150_000)
+  test.skip(
+    isMobile,
+    'Type conversion and field configuration are covered on desktop.',
+  )
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+
+  const suffix = Date.now()
+  const create = async <T>(path: string, data: unknown): Promise<T> => {
+    const response = await page.request.post(path, { headers: headers(), data })
+    expect(response.status()).toBe(201)
+    return response.json()
+  }
+  const workspace = await create<{ workspace: { id: string } }>(
+    '/api/v1/workspaces',
+    { name: `Type change ${suffix}` },
+  )
+  const book = await create<{ book: { id: string } }>(
+    `/api/v1/workspaces/${workspace.workspace.id}/books`,
+    { name: `Type change book ${suffix}` },
+  )
+  const schema = await create<TableSchema>(
+    `/api/v1/books/${book.book.id}/tables`,
+    { name: `Type change table ${suffix}` },
+  )
+  const tableId = schema.table.id
+  const view = schema.views[0]!
+  const textResult = await create<{
+    field: TableSchema['fields'][number]
+  }>(`/api/v1/tables/${tableId}/fields`, {
+    name: 'Count text',
+    uiType: 'text',
+  })
+  const selectResult = await create<{
+    field: TableSchema['fields'][number]
+  }>(`/api/v1/tables/${tableId}/fields`, {
+    name: 'Status',
+    uiType: 'single_select',
+    options: {
+      choices: [
+        { id: 'open', label: 'Open', color: 'green' },
+        { id: 'closed', label: 'Closed', color: 'gray' },
+      ],
+    },
+    default: 'Open',
+  })
+  const textField = textResult.field
+  const selectField = selectResult.field
+  const inserted = await page.request.post(`/api/v1/tables/${tableId}/rows`, {
+    headers: headers(),
+    data: {
+      rows: ['1', '2', 'x'].map((value, index) => ({
+        fields: {
+          [schema.table.displayFieldId!]: `Row ${index + 1}`,
+          [textField.id]: value,
+          [selectField.id]: 'Open',
+        },
+      })),
+    },
+  })
+  expect(inserted.status()).toBe(201)
+  const viewUpdate = await page.request.patch(`/api/v1/views/${view.id}`, {
+    headers: { ...headers(), 'If-Match': String(view.version) },
+    data: {
+      config: {
+        ...view.config,
+        filter: { field: selectField.id, cmp: 'is', value: 'Open' },
+      },
+    },
+  })
+  expect(viewUpdate.status()).toBe(200)
+  await page.goto(`/t/${tableId}/v/${view.id}`)
+
+  const fieldRow = (id: string) => page.locator(`li[data-field-id="${id}"]`)
+  const actions = async (id: string) => {
+    const row = fieldRow(id)
+    await row.locator('details summary').click()
+    return row
+  }
+  const conversionField = await actions(textField.id)
+  await conversionField
+    .getByRole('button', { name: en.field.panel.changeType, exact: true })
+    .click()
+  const conversionDialog = page.getByRole('dialog', {
+    name: en.field.panel.typeChangeTitle,
+    exact: true,
+  })
+  await conversionDialog
+    .getByRole('combobox', { name: en.field.panel.targetType, exact: true })
+    .selectOption('integer')
+  await conversionDialog
+    .getByRole('button', { name: en.field.panel.checkConversion, exact: true })
+    .click()
+  await expect(conversionDialog).toContainText(
+    en.field.panel.conversionSummary
+      .replace('{total}', '3')
+      .replace('{convertible}', '2')
+      .replace('{failing}', '1'),
+  )
+  await expect(conversionDialog.locator('.type-change-samples')).toContainText(
+    'x',
+  )
+  await conversionDialog
+    .getByRole('button', { name: en.field.panel.abortConversion, exact: true })
+    .click()
+  let unchanged = await schemaOf(page, tableId)
+  expect(
+    unchanged.fields.find((field) => field.id === textField.id)?.uiType,
+  ).toBe('text')
+  let rows = await queryOf(page, view.id)
+  expect(rows.rows).toHaveLength(3)
+  expect(rows.rows.map((row) => row.fields[textField.id])).toEqual(
+    expect.arrayContaining(['1', '2', 'x']),
+  )
+
+  const retryField = await actions(textField.id)
+  await retryField
+    .getByRole('button', { name: en.field.panel.changeType, exact: true })
+    .click()
+  await conversionDialog
+    .getByRole('combobox', { name: en.field.panel.targetType, exact: true })
+    .selectOption('integer')
+  await conversionDialog
+    .getByRole('button', { name: en.field.panel.checkConversion, exact: true })
+    .click()
+  await expect(conversionDialog).toContainText(
+    en.field.panel.conversionSummary
+      .replace('{total}', '3')
+      .replace('{convertible}', '2')
+      .replace('{failing}', '1'),
+  )
+  await conversionDialog
+    .getByRole('button', { name: en.field.panel.convertNull, exact: true })
+    .click()
+  await expect(conversionDialog).not.toBeVisible()
+  unchanged = await schemaOf(page, tableId)
+  expect(
+    unchanged.fields.find((field) => field.id === textField.id)?.uiType,
+  ).toBe('integer')
+  rows = await queryOf(page, view.id)
+  expect(rows.rows).toHaveLength(3)
+  expect(rows.rows.map((row) => row.fields[textField.id])).toEqual(
+    expect.arrayContaining([1, 2, null]),
+  )
+
+  const choiceFieldRow = await actions(selectField.id)
+  await choiceFieldRow
+    .getByRole('button', { name: en.field.panel.edit, exact: true })
+    .click()
+  const editDialog = page.getByRole('dialog', {
+    name: en.field.panel.editTitle,
+    exact: true,
+  })
+  await editDialog
+    .getByRole('textbox', {
+      name: en.field.panel.choiceLabel.replace('{n}', '1'),
+      exact: true,
+    })
+    .fill('Active')
+  await editDialog
+    .getByRole('button', { name: en.field.panel.save, exact: true })
+    .click()
+  await expect(editDialog).not.toBeVisible()
+
+  const renamed = await schemaOf(page, tableId)
+  const renamedField = renamed.fields.find(
+    (field) => field.id === selectField.id,
+  )!
+  expect(renamedField.default).toBe('Active')
+  expect(renamed.views[0]!.config.filter).toMatchObject({
+    field: selectField.id,
+    cmp: 'is',
+    value: 'Active',
+  })
+  rows = await queryOf(page, view.id)
+  expect(rows.rows).toHaveLength(3)
+  expect(rows.rows.map((row) => row.fields[selectField.id])).toEqual(
+    expect.arrayContaining(['Active', 'Active', 'Active']),
+  )
+  const filtered = await page.request.post(`/api/v1/views/${view.id}/query`, {
+    headers: headers(),
+    data: {
+      offset: 0,
+      limit: 100,
+      includeCount: true,
+      filter: { field: selectField.id, cmp: 'is', value: 'Active' },
+    },
+  })
+  expect(filtered.status()).toBe(200)
+  expect(((await filtered.json()) as RowQueryResult).rows).toHaveLength(3)
+})
+
 test('AT-303: required and unique constraints enforcement and defaults on new rows', async ({
   page,
   isMobile,

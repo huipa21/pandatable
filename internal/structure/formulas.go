@@ -22,6 +22,7 @@ type formulaOptions struct {
 	AST        *formula.Node `json:"ast"`
 	FieldIDs   []string      `json:"fieldIds"`
 	ResultType formula.Type  `json:"resultType"`
+	Error      string        `json:"error,omitempty"`
 }
 
 type formulaField struct {
@@ -102,6 +103,10 @@ func inferFormulaType(ast *formula.Node, table rowTable, current string, stack m
 		field, ok := table.byID[fieldID]
 		if !ok {
 			return formula.Null, errors.New("Referenced field is unavailable")
+		}
+		if field.formula == nil && field.error != "" ||
+			field.formula != nil && field.formula.options.Error != "" && field.formula.options.Error != "dependency_type" {
+			return formula.Null, errors.New("A formula dependency is unavailable")
 		}
 		if field.formula != nil {
 			if fieldID == current || stack[fieldID] {
@@ -269,6 +274,12 @@ func enrichRowFormulas(ctx context.Context, tx pgx.Tx, actor Actor, table rowTab
 	}
 	for _, field := range fields {
 		if field.formula == nil {
+			continue
+		}
+		if field.error != "" || field.formula.options.Error != "" {
+			for index := range rows {
+				rows[index].Fields[field.id] = json.RawMessage(`"#ERROR"`)
+			}
 			continue
 		}
 		stack := make(map[string]bool)

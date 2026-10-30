@@ -18,6 +18,7 @@ type computedOptions struct {
 	RelationFieldID string `json:"relationFieldId"`
 	TargetFieldID   string `json:"targetFieldId"`
 	Aggregate       string `json:"aggregate,omitempty"`
+	Error           string `json:"error,omitempty"`
 }
 
 type computedField struct {
@@ -275,6 +276,11 @@ func enrichRowComputed(ctx context.Context, tx pgx.Tx, actor Actor, table rowTab
 	}
 	for _, field := range fields {
 		if field.computed == nil {
+			if field.error != "" {
+				for index := range rows {
+					rows[index].Fields[field.id] = json.RawMessage(`"#ERROR"`)
+				}
+			}
 			continue
 		}
 		target := acl.Resource{Type: acl.Table, ID: field.computed.targetTable}

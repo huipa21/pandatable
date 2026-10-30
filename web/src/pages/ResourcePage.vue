@@ -136,7 +136,95 @@ function applySchema(next: TableSchema) {
     next.schemaVersion < shown.schemaVersion
   )
     return
+  for (const previousField of shown.fields) {
+    if (!['single_select', 'multi_select'].includes(previousField.uiType))
+      continue
+    const updatedField = next.fields.find(
+      (field) => field.id === previousField.id,
+    )
+    if (!updatedField || updatedField.uiType !== previousField.uiType) continue
+    const updatedChoices = new Map(
+      selectChoices(updatedField).map((choice) => [choice.id, choice.label]),
+    )
+    const renamedLabels = new Map<string, string>()
+    for (const choice of selectChoices(previousField)) {
+      const label = updatedChoices.get(choice.id)
+      if (label && label !== choice.label)
+        renamedLabels.set(choice.label, label)
+    }
+    if (!renamedLabels.size) continue
+    filterValue.value = rewriteChoiceFilter(
+      filterValue.value,
+      previousField.id,
+      renamedLabels,
+    )
+    filterDraft.value = rewriteChoiceFilter(
+      filterDraft.value,
+      previousField.id,
+      renamedLabels,
+    )
+    if (localViewConfig.value?.filter) {
+      localViewConfig.value = {
+        ...localViewConfig.value,
+        filter: rewriteChoiceFilter(
+          localViewConfig.value.filter,
+          previousField.id,
+          renamedLabels,
+        ),
+      }
+    }
+  }
   schema.value = next
+}
+
+function selectChoices(field: TableSchema['fields'][number]) {
+  const choices = field.options.choices
+  if (!Array.isArray(choices)) return []
+  return choices.filter(
+    (choice: unknown): choice is { id: string; label: string } =>
+      typeof choice === 'object' &&
+      choice !== null &&
+      'id' in choice &&
+      typeof choice.id === 'string' &&
+      'label' in choice &&
+      typeof choice.label === 'string',
+  )
+}
+
+function rewriteChoiceFilter(
+  filter: FilterNode | null,
+  fieldId: string,
+  labels: ReadonlyMap<string, string>,
+): FilterNode | null {
+  if (!filter) return null
+  if ('op' in filter) {
+    let changed = false
+    const items = filter.items.map((item) => {
+      const next = rewriteChoiceFilter(item, fieldId, labels)
+      if (next !== item) changed = true
+      return next ?? item
+    })
+    return changed ? { ...filter, items } : filter
+  }
+  if (filter.field !== fieldId) return filter
+  const value = filter.value
+  if (typeof value === 'string') {
+    const renamed = labels.get(value)
+    return renamed ? { ...filter, value: renamed } : filter
+  }
+  if (
+    Array.isArray(value) &&
+    value.every((item): item is string => typeof item === 'string')
+  ) {
+    let changed = false
+    const renamed = value.map((item) => {
+      const next = labels.get(item)
+      if (next) changed = true
+      return next ?? item
+    })
+    return changed ? { ...filter, value: renamed } : filter
+  }
+  return filter
 }
 
 // A silent load keeps the shown schema (and any open field editor) while

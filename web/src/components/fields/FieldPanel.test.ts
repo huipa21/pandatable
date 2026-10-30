@@ -363,6 +363,106 @@ it('patches only changed members with If-Match and keeps storage settings fixed'
   }
 })
 
+it('previews a type change and aborts without sending the conversion request', async () => {
+  const { calls } = stubFetch(
+    Response.json({
+      total: 3,
+      convertible: 2,
+      failing: 1,
+      samples: [{ id: '4', value: 'x' }],
+    }),
+  )
+  const wrapper = await setup()
+  try {
+    await row(wrapper, 'qty')
+      .findAll('button')
+      .find((button) => button.text() === 'Change type')!
+      .trigger('click')
+    const dialog = wrapper
+      .findAll('dialog.field-dialog')
+      .find((item) => item.attributes('aria-label') === 'Change field type')!
+    await dialog
+      .findAll('button')
+      .find((button) => button.text() === 'Preview conversion')!
+      .trigger('click')
+    await flushPromises()
+    expect(dialog.text()).toContain(
+      '3 non-empty values: 2 convertible, 1 failing.',
+    )
+    expect(dialog.text()).toContain('Row 4: x')
+    await dialog
+      .findAll('button')
+      .find((button) => button.text() === 'Abort')!
+      .trigger('click')
+    const request = calls()[0]!
+    expect(request[0]).toBe('/api/v1/fields/qty/convert:dry-run')
+    expect(new Headers(request[1].headers).get('If-Match')).toBe('3')
+    expect(JSON.parse(String(request[1].body))).toEqual({ uiType: 'text' })
+    expect(calls()).toHaveLength(1)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('converts only after preview and explicitly selects NULL for failing values', async () => {
+  const next = schema()
+  next.fields[1] = {
+    ...next.fields[1]!,
+    uiType: 'text',
+    isRequired: false,
+    version: 4,
+  }
+  const { calls } = stubFetch(
+    Response.json({
+      total: 3,
+      convertible: 2,
+      failing: 1,
+      samples: [{ id: '4', value: 'x' }],
+    }),
+    Response.json({
+      field: next.fields[1],
+      schema: next,
+      eventId: 'type-event',
+    }),
+  )
+  const wrapper = await setup()
+  try {
+    await row(wrapper, 'qty')
+      .findAll('button')
+      .find((button) => button.text() === 'Change type')!
+      .trigger('click')
+    const dialog = wrapper
+      .findAll('dialog.field-dialog')
+      .find((item) => item.attributes('aria-label') === 'Change field type')!
+    await dialog
+      .findAll('button')
+      .find((button) => button.text() === 'Preview conversion')!
+      .trigger('click')
+    await flushPromises()
+    expect(dialog.text()).toContain(
+      'Required will be turned off so failed values can become NULL.',
+    )
+    await dialog
+      .findAll('button')
+      .find(
+        (button) => button.text() === 'Convert, set failing values to NULL',
+      )!
+      .trigger('click')
+    await flushPromises()
+    const conversion = calls()[1]!
+    expect(conversion[0]).toBe('/api/v1/fields/qty/convert')
+    expect(conversion[1].method).toBe('POST')
+    expect(new Headers(conversion[1].headers).get('If-Match')).toBe('3')
+    expect(JSON.parse(String(conversion[1].body))).toEqual({
+      uiType: 'text',
+      setFailingToNull: true,
+    })
+    expect(wrapper.emitted('update')?.[0]?.[0]).toEqual(next)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('rejects an invalid default locally with a localized reason and sends nothing', async () => {
   const { calls } = stubFetch()
   const wrapper = await setup()
