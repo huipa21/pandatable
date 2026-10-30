@@ -193,6 +193,74 @@ func TestRollupComputedAggregates(t *testing.T) {
 	}
 }
 
+func TestQueryRowsSortsRollupValues(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	workspace := f.workspace(owner)
+	book := f.book(owner, workspace.ID)
+	projects, projectName := relationTable(t, f, owner, book.ID, "Projects")
+	tasks, taskName := relationTable(t, f, owner, book.ID, "Tasks")
+	hours, err := f.service.CreateField(f.ctx, owner, tasks.Table.ID, FieldInput{
+		Name: "Hours", UIType: "integer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	relation, err := f.service.CreateRelation(f.ctx, owner, projects.Table.ID, RelationInput{
+		Name: "Tasks", ReverseName: "Project", TargetTableID: tasks.Table.ID,
+		Kind: "one_many", SourceSide: "parent",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectsByName := make(map[string]string)
+	for _, name := range []string{"Alpha", "Beta", "Empty"} {
+		created, err := f.service.CreateRows(f.ctx, owner, projects.Table.ID, []RowInsert{{
+			Fields: map[string]json.RawMessage{projectName.ID: json.RawMessage(`"` + name + `"`)},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		projectsByName[name] = created[0].ID
+	}
+	for _, item := range []struct {
+		project string
+		hours   string
+	}{{"Alpha", "5"}, {"Beta", "12"}} {
+		created, err := f.service.CreateRows(f.ctx, owner, tasks.Table.ID, []RowInsert{{
+			Fields: map[string]json.RawMessage{
+				taskName.ID:    json.RawMessage(`"` + item.project + ` task"`),
+				hours.Field.ID: json.RawMessage(item.hours),
+			},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.service.ChangeLinks(f.ctx, owner, projects.Table.ID, projectsByName[item.project],
+			relation.Relation.ParentFieldID, LinkChange{Add: []string{created[0].ID}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rollup := computedFieldFor(t, f, owner, projects.Table.ID, "Hours total", "rollup", computedOptions{
+		RelationFieldID: relation.Relation.ParentFieldID,
+		TargetFieldID:   hours.Field.ID,
+		Aggregate:       "sum",
+	})
+	result, err := f.service.QueryRows(f.ctx, owner, projects.Views[0].ID, RowQueryRequest{
+		Sorts: &[]RowSort{{FieldID: rollup.ID, Direction: "desc"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual []string
+	for _, row := range result.Rows {
+		actual = append(actual, wireString(t, row.Fields[projectName.ID]))
+	}
+	if !reflect.DeepEqual(actual, []string{"Beta", "Alpha", "Empty"}) {
+		t.Fatalf("rollup sort order = %v", actual)
+	}
+}
+
 func TestComputedOneToOneAndManyToMany(t *testing.T) {
 	t.Run("one-to-one lookup", func(t *testing.T) {
 		f := newFixture(t)

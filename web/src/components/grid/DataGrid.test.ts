@@ -3,7 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { i18n, loadLocale } from '../../i18n'
-import type { TableSchema } from '../../api/types'
+import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { navUser, tableSchema } from '../../test/navigation'
 import { ThemeMedia } from '../../test/setup'
@@ -438,7 +438,12 @@ it('queries the real view and persists a cell edit without coercing bigint row I
   )?.[1]
   expect(query).toMatchObject({
     method: 'POST',
-    body: JSON.stringify({ offset: 0, limit: 100, includeCount: true }),
+    body: JSON.stringify({
+      offset: 0,
+      limit: 100,
+      includeCount: true,
+      sorts: [],
+    }),
   })
   const patch = fetch.mock.calls.find(([path]) =>
     String(path).endsWith('/9007199254740993'),
@@ -447,6 +452,70 @@ it('queries the real view and persists a cell edit without coercing bigint row I
     method: 'PATCH',
     body: JSON.stringify({ fields: { name: 'changed' } }),
   })
+})
+
+it('adds, prioritizes, changes, and removes transient sort criteria', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'status', 'text')
+  addField(schema, 'due', 'date')
+  const fetch = await mountGrid(schema)
+  const controls = wrapper!.get('details.grid-sorts')
+  const addFieldSelect = controls.get(
+    `select[aria-label="${i18n.global.t('grid.addSortField')}"]`,
+  )
+  const addCriterion = () =>
+    controls
+      .findAll('button')
+      .find((button) => button.text() === i18n.global.t('grid.addSort'))!
+      .trigger('click')
+
+  await addFieldSelect.setValue('status')
+  await addCriterion()
+  await flushPromises()
+  await controls
+    .get(
+      `select[aria-label="${i18n.global.t('grid.sortFieldPosition', { position: 1 })}"]`,
+    )
+    .setValue('status')
+  await controls
+    .get(
+      `select[aria-label="${i18n.global.t('grid.sortDirection', { field: 'status' })}"]`,
+    )
+    .setValue('desc')
+  await flushPromises()
+
+  await addFieldSelect.setValue('due')
+  await addCriterion()
+  await flushPromises()
+  await controls
+    .get(
+      `select[aria-label="${i18n.global.t('grid.sortDirection', { field: 'due' })}"]`,
+    )
+    .setValue('asc')
+  await controls
+    .get(
+      `button[aria-label="${i18n.global.t('grid.moveSortUp', { field: 'due' })}"]`,
+    )
+    .trigger('click')
+  await flushPromises()
+
+  const requests = () =>
+    fetch.mock.calls
+      .filter(([path]) => String(path).endsWith('/query'))
+      .map(([, init]) => JSON.parse(String(init?.body)) as RowQueryRequest)
+  expect(requests().at(-1)?.sorts).toEqual([
+    { fieldId: 'due', direction: 'asc' },
+    { fieldId: 'status', direction: 'desc' },
+  ])
+  await controls
+    .get(
+      `button[aria-label="${i18n.global.t('grid.removeSortField', { field: 'status' })}"]`,
+    )
+    .trigger('click')
+  await flushPromises()
+  expect(requests().at(-1)?.sorts).toEqual([
+    { fieldId: 'due', direction: 'asc' },
+  ])
 })
 
 it('shows codec validation in the cell and never sends an invalid integer write', async () => {

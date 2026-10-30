@@ -258,3 +258,47 @@ func TestFormulaQueryValuesStableReferencesAndDependencyValidation(t *testing.T)
 		t.Fatalf("renamed field = %+v", renamed.Field)
 	}
 }
+
+func TestQueryRowsSortsFormulaValues(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	ft := f.fieldTable(owner)
+	name := fieldByType(ft.schema.Fields, "text")
+	quantity := ft.create(FieldInput{Name: "Quantity", UIType: "integer"})
+	options, err := json.Marshal(map[string]string{"expr": "{Quantity} * 2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	formulaField, err := f.service.CreateField(f.ctx, owner, ft.id(), FieldInput{
+		Name: "Double quantity", UIType: "formula", Options: options,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		label string
+		value string
+	}{{"One", "1"}, {"Three", "3"}, {"Two", "2"}} {
+		if _, err := f.service.CreateRows(f.ctx, owner, ft.id(), []RowInsert{{
+			Fields: map[string]json.RawMessage{
+				name.ID:     rawJSON(`"` + row.label + `"`),
+				quantity.ID: rawJSON(row.value),
+			},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID, RowQueryRequest{
+		Sorts: &[]RowSort{{FieldID: formulaField.Field.ID, Direction: "desc"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual []string
+	for _, row := range result.Rows {
+		actual = append(actual, wireString(t, row.Fields[name.ID]))
+	}
+	if !reflect.DeepEqual(actual, []string{"Three", "Two", "One"}) {
+		t.Fatalf("formula sort order = %v", actual)
+	}
+}

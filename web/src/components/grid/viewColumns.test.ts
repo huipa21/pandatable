@@ -93,6 +93,23 @@ it('drops unknown/deleted/duplicate fields, appends live fields and clamps froze
   })
 })
 
+it('preserves the valid ordered view sort configuration with column edits', () => {
+  const schema = fixture()
+  schema.views[0]!.config.sort = [
+    { field: 'other', dir: 'desc' },
+    { field: 'missing', dir: 'asc' },
+    { field: 'other', dir: 'asc' },
+  ]
+  const normalized = normalizeColumns(schema.views[0]!.config, schema)
+  expect(normalized.sort).toEqual([{ field: 'other', dir: 'desc' }])
+  const changed = applyColumnIntents(
+    schema.views[0]!.config,
+    [{ kind: 'visible', id: 'name', visible: false }],
+    schema,
+  )
+  expect(changed.sort).toEqual([{ field: 'other', dir: 'desc' }])
+})
+
 it('rebases only user intents against live fields and keeps unrelated server widths', () => {
   const schema = fixture()
   const result = applyColumnIntents(

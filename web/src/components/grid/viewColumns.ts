@@ -35,12 +35,29 @@ export function normalizeColumns(
     if (!seen.has(field.id))
       fields.push({ id: field.id, visible: !field.isSystem })
   }
+  const sortable = new Set(
+    schema.fields
+      .filter((field) => field.uiType !== 'link')
+      .map((field) => field.id),
+  )
+  const seenSort = new Set<string>()
+  const sort = (config.sort ?? []).filter((item) => {
+    if (
+      !sortable.has(item.field) ||
+      seenSort.has(item.field) ||
+      !['asc', 'desc'].includes(item.dir)
+    )
+      return false
+    seenSort.add(item.field)
+    return true
+  })
   return {
     fields,
     frozen: Math.max(
       0,
       Math.min(config.frozen, fields.filter((field) => field.visible).length),
     ),
+    ...(config.sort ? { sort } : {}),
   }
 }
 

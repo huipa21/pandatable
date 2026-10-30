@@ -39,6 +39,7 @@ import type {
   RowMutation,
   RowQueryRequest,
   RowQueryResult,
+  RowSort,
   RowValue,
   TableField,
   TableSchema,
@@ -213,6 +214,23 @@ const columnFields = computed(() =>
     return field ? [{ ...column, name: field.name }] : []
   }),
 )
+const sortableFields = computed(() =>
+  [...props.schema.fields]
+    .filter((field) => field.uiType !== 'link')
+    .sort((left, right) => left.position - right.position),
+)
+const sortCriteria = ref<RowSort[]>(
+  (columnState.config.value.sort ?? []).map(({ field, dir }) => ({
+    fieldId: field,
+    direction: dir,
+  })),
+)
+const availableSortFields = computed(() =>
+  sortableFields.value.filter(
+    (field) => !sortCriteria.value.some((sort) => sort.fieldId === field.id),
+  ),
+)
+const sortFieldToAdd = ref('')
 const unsupportedField = computed(() =>
   props.schema.fields.some(
     (field) => field.uiType !== 'link' && !fieldById.value.has(field.id),
@@ -231,6 +249,7 @@ function fetchPage(
     offset,
     limit,
     includeCount,
+    sorts: sortCriteria.value,
     ...(props.filter ? { filter: props.filter } : {}),
     ...(columnState.localQuery.value
       ? { fieldIds: visibleFieldIds.value }
@@ -1149,6 +1168,67 @@ function scroll(event: CustomEvent<ViewPortScrollEvent>) {
   loading.value = rows.snapshot().cachedRows === 0 && rows.total > 0
 }
 
+function updateSortCriteria(next: RowSort[]) {
+  sortCriteria.value = next
+  if (ready.value) void initialize(0)
+}
+
+function addSort() {
+  const fieldId = sortFieldToAdd.value
+  if (!availableSortFields.value.some((field) => field.id === fieldId)) return
+  updateSortCriteria([...sortCriteria.value, { fieldId, direction: 'asc' }])
+  sortFieldToAdd.value = ''
+}
+
+function changeSortField(index: number, fieldId: string) {
+  if (
+    !sortableFields.value.some((field) => field.id === fieldId) ||
+    sortCriteria.value.some(
+      (sort, current) => current !== index && sort.fieldId === fieldId,
+    )
+  )
+    return
+  updateSortCriteria(
+    sortCriteria.value.map((sort, current) =>
+      current === index ? { ...sort, fieldId } : sort,
+    ),
+  )
+}
+
+function changeSortDirection(index: number, direction: string) {
+  if (direction !== 'asc' && direction !== 'desc') return
+  updateSortCriteria(
+    sortCriteria.value.map((sort, current) =>
+      current === index ? { ...sort, direction } : sort,
+    ),
+  )
+}
+
+function moveSort(index: number, direction: -1 | 1) {
+  const neighbor = index + direction
+  if (neighbor < 0 || neighbor >= sortCriteria.value.length) return
+  const next = [...sortCriteria.value]
+  ;[next[index], next[neighbor]] = [next[neighbor]!, next[index]!]
+  updateSortCriteria(next)
+}
+
+function removeSort(index: number) {
+  updateSortCriteria(
+    sortCriteria.value.filter((_, current) => current !== index),
+  )
+}
+
+function sortFieldOptions(index: number) {
+  const selected = sortCriteria.value[index]?.fieldId
+  return sortableFields.value.filter(
+    (field) =>
+      field.id === selected ||
+      !sortCriteria.value.some(
+        (sort, current) => current !== index && sort.fieldId === field.id,
+      ),
+  )
+}
+
 function selectRow(id: string, selected: boolean) {
   const next = new Set(selectedRows.value)
   if (selected) {
@@ -1323,6 +1403,15 @@ watch(
     if (ready.value) void initialize(0)
   },
 )
+watch(
+  () => props.viewId,
+  () => {
+    sortCriteria.value = (columnState.config.value.sort ?? []).map(
+      ({ field, dir }) => ({ fieldId: field, direction: dir }),
+    )
+    if (ready.value) void initialize(0)
+  },
+)
 
 function askDelete() {
   if (selectedRows.value.size > 0) deleteDialog.value?.showModal()
@@ -1462,6 +1551,130 @@ onBeforeUnmount(() => {
               @change="commitFrozen"
             />
           </label>
+        </fieldset>
+      </details>
+      <details v-if="desktop" class="grid-sorts">
+        <summary>{{ t('grid.sort') }}</summary>
+        <fieldset>
+          <legend>{{ t('grid.sortPriority') }}</legend>
+          <ol>
+            <li
+              v-for="(sort, index) in sortCriteria"
+              :key="sort.fieldId"
+              class="grid-sort-criterion"
+            >
+              <label>
+                {{ t('grid.sortFieldPosition', { position: index + 1 }) }}
+                <select
+                  :aria-label="
+                    t('grid.sortFieldPosition', { position: index + 1 })
+                  "
+                  :value="sort.fieldId"
+                  @change="
+                    changeSortField(
+                      index,
+                      ($event.target as HTMLSelectElement).value,
+                    )
+                  "
+                >
+                  <option
+                    v-for="field in sortFieldOptions(index)"
+                    :key="field.id"
+                    :value="field.id"
+                  >
+                    {{ field.name }}
+                  </option>
+                </select>
+              </label>
+              <label>
+                {{ t('grid.sortDirectionLabel') }}
+                <select
+                  :aria-label="
+                    t('grid.sortDirection', {
+                      field:
+                        sortableFields.find(
+                          (field) => field.id === sort.fieldId,
+                        )?.name ?? '',
+                    })
+                  "
+                  :value="sort.direction"
+                  @change="
+                    changeSortDirection(
+                      index,
+                      ($event.target as HTMLSelectElement).value,
+                    )
+                  "
+                >
+                  <option value="asc">{{ t('grid.ascending') }}</option>
+                  <option value="desc">{{ t('grid.descending') }}</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                :disabled="index === 0"
+                :aria-label="
+                  t('grid.moveSortUp', {
+                    field:
+                      sortableFields.find((field) => field.id === sort.fieldId)
+                        ?.name ?? '',
+                  })
+                "
+                @click="moveSort(index, -1)"
+              >
+                {{ t('grid.moveUp') }}
+              </button>
+              <button
+                type="button"
+                :disabled="index === sortCriteria.length - 1"
+                :aria-label="
+                  t('grid.moveSortDown', {
+                    field:
+                      sortableFields.find((field) => field.id === sort.fieldId)
+                        ?.name ?? '',
+                  })
+                "
+                @click="moveSort(index, 1)"
+              >
+                {{ t('grid.moveDown') }}
+              </button>
+              <button
+                type="button"
+                :aria-label="
+                  t('grid.removeSortField', {
+                    field:
+                      sortableFields.find((field) => field.id === sort.fieldId)
+                        ?.name ?? '',
+                  })
+                "
+                @click="removeSort(index)"
+              >
+                {{ t('grid.remove') }}
+              </button>
+            </li>
+          </ol>
+          <label>
+            {{ t('grid.addSortField') }}
+            <select
+              v-model="sortFieldToAdd"
+              :aria-label="t('grid.addSortField')"
+            >
+              <option value="">{{ t('grid.selectSortField') }}</option>
+              <option
+                v-for="field in availableSortFields"
+                :key="field.id"
+                :value="field.id"
+              >
+                {{ field.name }}
+              </option>
+            </select>
+          </label>
+          <button
+            type="button"
+            :disabled="!sortFieldToAdd || !availableSortFields.length"
+            @click="addSort"
+          >
+            {{ t('grid.addSort') }}
+          </button>
         </fieldset>
       </details>
       <span v-if="!columnState.canPersist.value" role="status">{{
@@ -1607,7 +1820,11 @@ onBeforeUnmount(() => {
 .grid-fields {
   position: relative;
 }
-.grid-fields fieldset {
+.grid-sorts {
+  position: relative;
+}
+.grid-fields fieldset,
+.grid-sorts fieldset {
   position: absolute;
   z-index: 2;
   top: 100%;
@@ -1629,10 +1846,22 @@ onBeforeUnmount(() => {
 .grid-column-control > input {
   width: 75px;
 }
-.grid-fields label {
+.grid-fields label,
+.grid-sorts label {
   display: flex;
   gap: 8px;
   padding: 4px;
+}
+.grid-sorts ol {
+  display: grid;
+  gap: 4px;
+  padding-left: 28px;
+}
+.grid-sort-criterion {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 .grid-cell-invalid {
   display: grid;

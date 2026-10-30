@@ -117,11 +117,19 @@ LIMIT $n OFFSET $m;
 
 ### T1.15 basic query implementation (D-132..D-135)
 
-`POST /views/{id}/query` currently implements an unfiltered single-table page
-and optional exact count; filters, search, grouping, aggregates, relations and
-data-version caching remain deferred. It accepts `offset` (0..1,000,000,
-default 0), `limit` (1..100, default 100), optional single-column
-`sort:{fieldId,direction}`, and `includeCount` (default true). The result is
+`POST /views/{id}/query` implements a single-table page and optional exact
+count. Search, grouping, aggregates, relations and data-version caching remain
+deferred. It accepts `offset` (0..1,000,000, default 0), `limit` (1..100,
+default 100), the compatible single-column
+`sort:{fieldId,direction}` or ordered `sorts:[{fieldId,direction},…]` override
+(not both), and `includeCount` (default true). The ordered sort list overrides
+the view's configured sort; omitting both uses the configured list. Duplicate
+criteria are ignored, invalid explicit criteria are rejected, and invalid or
+deleted configured criteria are ignored. Formula, lookup and rollup
+expressions are sortable when their referenced data is readable to the caller;
+configured computed sorts that are not readable are ignored so normal masked
+row values remain available. NULLS LAST applies in either direction, followed
+by row ID ascending for deterministic paging. The result is
 `{rows:[{id,fields}],fieldIds,total,schemaVersion}`; `total` is null when
 `includeCount:false`. Field IDs preserve the view's visible column order.
 Configured visible live fields retain their order; deleted/unknown/duplicate

@@ -241,6 +241,7 @@ export interface Navigation {
 export interface ViewColumns {
   fields: { id: string; visible: boolean; width?: number }[]
   frozen: number
+  sort?: { field: string; dir: 'asc' | 'desc' }[]
 }
 
 export interface TableView extends NavView {
@@ -337,6 +338,7 @@ export interface RowQueryRequest {
   offset?: number
   limit?: number
   sort?: RowSort
+  sorts?: RowSort[]
   includeCount?: boolean
   /** Local grid visibility override; explicit IDs may include system fields. */
   fieldIds?: string[]

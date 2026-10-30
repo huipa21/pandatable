@@ -38,6 +38,7 @@ type RowQueryRequest struct {
 	Offset       *int        `json:"offset"`
 	Limit        *int        `json:"limit"`
 	Sort         *RowSort    `json:"sort"`
+	Sorts        *[]RowSort  `json:"sorts"`
 	IncludeCount *bool       `json:"includeCount"`
 	FieldIDs     *[]string   `json:"fieldIds"`
 	Filter       *FilterNode `json:"filter"`
@@ -654,9 +655,25 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		return RowQueryResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
 	fields := visibleRowFields(table, config.Fields, request.FieldIDs)
-	sortField, direction, err := configuredRowSort(table, config.Sort, request.Sort)
+	sortKeys, explicitSort, err := configuredRowSorts(table, config.Sort, request.Sort, request.Sorts)
 	if err != nil {
 		return RowQueryResult{}, err
+	}
+	var sortArgs []any
+	sortExpressions := make([]string, 0, len(sortKeys))
+	for _, key := range sortKeys {
+		compiler := filterCompiler{ctx: ctx, tx: tx, actor: actor, table: table}
+		expression, _, err := compiler.fieldExpression(key.field)
+		if err != nil {
+			var apiError *apperr.Error
+			if !explicitSort && errors.As(err, &apiError) && apiError.Code == "ERR_VALIDATION" {
+				continue
+			}
+			return RowQueryResult{}, err
+		}
+		sortExpressions = append(sortExpressions,
+			shiftSQLArguments(expression, len(sortArgs))+" "+key.direction+" NULLS LAST")
+		sortArgs = append(sortArgs, compiler.args...)
 	}
 	filterSQL := ""
 	var filterArgs []any
@@ -666,31 +683,29 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 			return RowQueryResult{}, err
 		}
 	}
-	from := table.qualifiedName()
-	if filterSQL != "" {
-		from += ` AS "source"`
-	}
+	from := table.qualifiedName() + ` AS "source"`
 	builder := sq.Select(table.selectColumnList(fields)...).From(from)
-	if sortField != nil {
-		builder = builder.OrderBy(sortField.sqlColumn()+" "+direction+" NULLS LAST", `"id" ASC`)
-	} else {
-		builder = builder.OrderBy(`"id" ASC`)
-	}
-	sql, args, err := builder.Limit(uint64(limit)).Offset(uint64(offset)).
+	sql, args, err := builder.OrderBy(`"source"."id" ASC`).Limit(uint64(limit)).Offset(uint64(offset)).
 		PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return RowQueryResult{}, fmt.Errorf("build view query: %w", err)
 	}
+	sql = shiftSQLArguments(sql, len(filterArgs)+len(sortArgs))
+	orderKeys := make([]string, 0, len(sortExpressions)+1)
+	for _, expression := range sortExpressions {
+		orderKeys = append(orderKeys, shiftSQLArguments(expression, len(filterArgs)))
+	}
+	orderKeys = append(orderKeys, `"source"."id" ASC`)
+	sql = strings.Replace(sql, `ORDER BY "source"."id" ASC`,
+		"ORDER BY "+strings.Join(orderKeys, ", "), 1)
 	if filterSQL != "" {
 		orderAt := strings.Index(sql, " ORDER BY ")
 		if orderAt < 0 {
 			return RowQueryResult{}, errors.New("view query is missing its order clause")
 		}
-		sql = shiftSQLArguments(sql, len(filterArgs))
-		orderAt = strings.Index(sql, " ORDER BY ")
 		sql = sql[:orderAt] + " WHERE " + filterSQL + sql[orderAt:]
-		args = append(append([]any(nil), filterArgs...), args...)
 	}
+	args = append(append(append([]any(nil), filterArgs...), sortArgs...), args...)
 	result := RowQueryResult{Rows: make([]RowRecord, 0, limit), SchemaVersion: table.schemaVersion}
 	result.FieldIDs = make([]string, len(fields))
 	for index, field := range fields {
@@ -780,27 +795,47 @@ func visibleRowFields(table rowTable, config []struct {
 	return visible
 }
 
-func configuredRowSort(table rowTable, configured []struct {
+type rowSortKey struct {
+	field     rowField
+	direction string
+}
+
+func configuredRowSorts(table rowTable, configured []struct {
 	Field string `json:"field"`
 	Dir   string `json:"dir"`
-}, override *RowSort) (*rowField, string, error) {
+}, override *RowSort, overrides *[]RowSort) ([]rowSortKey, bool, error) {
+	if override != nil && overrides != nil {
+		return nil, true, validation("Only one sort request format may be provided")
+	}
+	explicit := override != nil || overrides != nil
+	requested := make([]RowSort, 0, len(configured))
 	if override != nil {
-		field, ok := table.byID[override.FieldID]
-		direction := strings.ToUpper(override.Direction)
-		if !ok || field.relation != nil || field.computed != nil || field.formula != nil || direction != "ASC" && direction != "DESC" {
-			return nil, "", validation("Sort must name a live field and use asc or desc")
+		requested = append(requested, *override)
+	} else if overrides != nil {
+		requested = append(requested, *overrides...)
+	} else {
+		for _, item := range configured {
+			requested = append(requested, RowSort{FieldID: item.Field, Direction: item.Dir})
 		}
-		return &field, direction, nil
 	}
-	if len(configured) == 0 {
-		return nil, "", nil
+	keys := make([]rowSortKey, 0, len(requested))
+	seen := make(map[string]bool, len(requested))
+	for _, item := range requested {
+		field, ok := table.byID[item.FieldID]
+		direction := strings.ToUpper(item.Direction)
+		if !ok || field.relation != nil || direction != "ASC" && direction != "DESC" {
+			if explicit {
+				return nil, true, validation("Sort must name live fields and use asc or desc")
+			}
+			continue
+		}
+		if seen[item.FieldID] {
+			continue
+		}
+		seen[item.FieldID] = true
+		keys = append(keys, rowSortKey{field: field, direction: direction})
 	}
-	field, ok := table.byID[configured[0].Field]
-	direction := strings.ToUpper(configured[0].Dir)
-	if !ok || field.relation != nil || field.computed != nil || field.formula != nil || direction != "ASC" && direction != "DESC" {
-		return nil, "", nil
-	}
-	return &field, direction, nil
+	return keys, explicit, nil
 }
 
 func (s *Service) CreateRows(ctx context.Context, actor Actor, tableID string, input []RowInsert) ([]RowRecord, error) {

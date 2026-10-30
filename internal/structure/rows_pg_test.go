@@ -326,6 +326,112 @@ func TestQueryUsesViewColumnsCountSortAndBounds(t *testing.T) {
 	expectRowError(t, err, 400, "ERR_VALIDATION")
 }
 
+func TestQueryRowsMultiSortKeepsNullsLastAndPagesDeterministically(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	ft := f.fieldTable(owner)
+	status := ft.create(FieldInput{Name: "Status", UIType: "text"})
+	due := ft.create(FieldInput{Name: "Due", UIType: "date"})
+	name := fieldByType(ft.schema.Fields, "text")
+	rows := []struct {
+		name, status, due string
+	}{
+		{"Open early", "Open", `"2026-03-01"`},
+		{"Open latest", "Open", `"2026-03-03"`},
+		{"Open latest tie", "Open", `"2026-03-03"`},
+		{"Open empty due", "Open", "null"},
+		{"Blocked dated", "Blocked", `"2026-03-02"`},
+		{"Blocked empty due", "Blocked", "null"},
+		{"Empty status", "null", `"2026-03-04"`},
+	}
+	inserted := make([]RowRecord, 0, len(rows))
+	for _, row := range rows {
+		created, err := f.service.CreateRows(f.ctx, owner, ft.id(), []RowInsert{{
+			Fields: map[string]json.RawMessage{
+				name.ID: rawJSON(`"` + row.name + `"`),
+				status.ID: func() json.RawMessage {
+					if row.status == "null" {
+						return rawJSON("null")
+					}
+					return rawJSON(`"` + row.status + `"`)
+				}(),
+				due.ID: rawJSON(row.due),
+			},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		inserted = append(inserted, created...)
+	}
+
+	sorts := []RowSort{
+		{FieldID: status.ID, Direction: "asc"},
+		{FieldID: due.ID, Direction: "desc"},
+	}
+	var actual []string
+	var actualIDs []string
+	for offset := 0; offset < len(rows); offset += 2 {
+		result, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID, RowQueryRequest{
+			Offset: intPtr(offset), Limit: intPtr(2), Sorts: &sorts,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range result.Rows {
+			actual = append(actual, wireString(t, row.Fields[name.ID]))
+			actualIDs = append(actualIDs, row.ID)
+		}
+	}
+	want := []string{
+		"Blocked dated", "Blocked empty due",
+		"Open latest", "Open latest tie", "Open early", "Open empty due",
+		"Empty status",
+	}
+	if !reflect.DeepEqual(actual, want) {
+		t.Fatalf("multi-sort order = %v, want %v", actual, want)
+	}
+	seen := make(map[string]bool, len(actualIDs))
+	for _, id := range actualIDs {
+		if seen[id] {
+			t.Fatalf("paged sort returned duplicate row %s", id)
+		}
+		seen[id] = true
+	}
+	if len(seen) != len(inserted) {
+		t.Fatalf("paged sort returned %d unique rows, want %d", len(seen), len(inserted))
+	}
+	for index := 2; index < 4; index++ {
+		if actualIDs[index] != inserted[1+(index-2)].ID {
+			t.Fatalf("equal sort keys did not use row id ascending: %v", actualIDs)
+		}
+	}
+
+	ascending, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID, RowQueryRequest{
+		Sorts: &[]RowSort{{FieldID: due.ID, Direction: "asc"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wireString(t, ascending.Rows[len(ascending.Rows)-1].Fields[name.ID]) != "Blocked empty due" ||
+		wireString(t, ascending.Rows[len(ascending.Rows)-2].Fields[name.ID]) != "Open empty due" {
+		t.Fatalf("ascending NULLS LAST order = %+v", ascending.Rows)
+	}
+
+	config, err := json.Marshal(map[string]any{"sort": []map[string]string{
+		{"field": status.ID, "dir": "asc"},
+		{"field": due.ID, "dir": "desc"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.exec("UPDATE meta.views SET config=config || $1::jsonb WHERE id=$2", config, ft.schema.Views[0].ID)
+	configured, err := f.service.QueryRows(f.ctx, owner, ft.schema.Views[0].ID, RowQueryRequest{})
+	if err != nil || len(configured.Rows) != len(want) ||
+		wireString(t, configured.Rows[0].Fields[name.ID]) != want[0] {
+		t.Fatalf("configured multi-sort = %+v, %v", configured.Rows, err)
+	}
+}
+
 func TestQueryFiltersNestedGroupsAndEscapesLikeWildcards(t *testing.T) {
 	f := newFixture(t)
 	owner := f.user("user", "active", "en")
