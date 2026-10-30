@@ -66,12 +66,11 @@ The resolver reports this as `Access{Level, Visible}`: `Visible` is true when th
 
 Anyone (role `user`) can create a new workspace and becomes its owner.
 
-T1.21/D-148 is a deliberately narrower column-only API than future view
-management in this matrix: persisting columns requires table write/owner even
-for a personal view and rejects locked views even for owners. Read/locked
-users retain local-only desktop column overrides. Personal-view ownership
-still hides the resource from every other user. T2.10 owns view lifecycle,
-lock/unlock and the broader personal/shared-view management permissions.
+T1.21/D-148's column-only persistence restriction was superseded by T2.10
+(D-178). A user with table read access may persist edits to their own personal
+views. Shared-view changes require table write/owner while unlocked; only
+owners may lock/unlock shared views or edit a locked shared view. Personal
+views remain private to their owner.
 
 T1.10 (D-097/D-099) implements the matrix for structure: creating a workspace
 inserts the direct owner grant in the same transaction; creating, renaming,

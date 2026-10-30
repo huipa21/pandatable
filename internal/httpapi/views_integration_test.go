@@ -52,8 +52,12 @@ func TestViewColumnsHTTPPayloadVersionAndPermissions(t *testing.T) {
 		body + `{}`, strings.Repeat(" ", 4096) + body,
 	}
 	for _, member := range []string{"name", "scope", "locked", "position", "filter", "sort", "group", "highlight", "aggregates", "form", "kanban", "calendar", "rowHeight"} {
-		invalid = append(invalid, fmt.Sprintf(`{"%s":null,"config":{"fields":[],"frozen":0}}`, member),
-			fmt.Sprintf(`{"config":{"%s":null,"fields":[],"frozen":0}}`, member))
+		if member != "name" && member != "locked" {
+			invalid = append(invalid, fmt.Sprintf(`{"%s":null,"config":{"fields":[],"frozen":0}}`, member))
+		}
+		if member != "filter" {
+			invalid = append(invalid, fmt.Sprintf(`{"config":{"%s":null,"fields":[],"frozen":0}}`, member))
+		}
 	}
 	for i, rejected := range invalid {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
@@ -71,8 +75,10 @@ func TestViewColumnsHTTPPayloadVersionAndPermissions(t *testing.T) {
 		t.Fatal("schema did not retain columns")
 	}
 	f.exec("UPDATE meta.views SET locked=true WHERE id=$1", id)
-	for _, user := range []*aclUser{owner, writer} {
-		f.expectStatus(f.fieldCall(user, "PATCH", path, body, "2"), 403, "ERR_PERMISSION_DENIED")
+	f.expectStatus(f.fieldCall(writer, "PATCH", path, body, "2"), 403, "ERR_PERMISSION_DENIED")
+	lockedOwnerEdit := decode[viewResponse](f, f.fieldCall(owner, "PATCH", path, body, "2"), 200)
+	if lockedOwnerEdit.View.Version != 3 {
+		t.Fatal("an owner should be able to edit a locked shared view")
 	}
 	personal := f.scan(`INSERT INTO meta.views(table_id,name,type,scope,owner_id,position)
 		VALUES($1,'Personal','grid','personal',$2,99) RETURNING id::text`, table.Table.ID, writer.id)
@@ -82,6 +88,126 @@ func TestViewColumnsHTTPPayloadVersionAndPermissions(t *testing.T) {
 	f.expectStatus(f.fieldCall(writer, "PATCH", "/views/"+personal, body, "2"), 404, "ERR_NOT_FOUND")
 	f.exec("UPDATE meta.workspaces SET deleted_at=now() WHERE id=$1", workspace.ID)
 	f.expectStatus(f.fieldCall(owner, "PATCH", path, body, "2"), 404, "ERR_NOT_FOUND")
+}
+
+func TestViewManagementHTTPAT506AT507(t *testing.T) {
+	f := newACLFixture(t)
+	owner, writer, reader := f.user("user", false), f.user("user", false), f.user("user", false)
+	workspace := f.newWorkspace(owner, "Managed views")
+	book := f.newBook(owner, workspace.ID, "Book")
+	table := f.newTable(owner, book.ID, "Items")
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", writer.id, acl.Write)
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", reader.id, acl.Read)
+	defaultView := table.Views[0]
+	create := func(user *aclUser, name, scope string, status int) structure.View {
+		body := fmt.Sprintf(`{"name":%q,"scope":%q}`, name, scope)
+		return decode[viewResponse](f, f.api(user, "POST", "/tables/"+table.Table.ID+"/views", body), status).View
+	}
+
+	f.expectStatus(f.api(reader, "POST", "/tables/"+table.Table.ID+"/views",
+		`{"name":"Forbidden shared","scope":"shared"}`), 403, "ERR_PERMISSION_DENIED")
+	personal := create(reader, "Reader personal", "personal", 201)
+	shared := create(writer, "Writer shared", "shared", 201)
+	secondShared := create(writer, "Second shared", "shared", 201)
+	duplicate := decode[viewResponse](f, f.api(writer, "POST", "/views/"+defaultView.ID+"/duplicate",
+		`{"name":"Private copy","scope":"personal"}`), 201).View
+	if duplicate.Config.Fields[0].ID != defaultView.Config.Fields[0].ID {
+		t.Fatal("duplicate did not retain the source config")
+	}
+
+	readerSchema := decode[structure.TableSchema](f, f.api(reader, "GET", "/tables/"+table.Table.ID+"/schema", ""), 200)
+	foundShared, foundReaderPersonal, foundWriterPersonal := false, false, false
+	for _, view := range readerSchema.Views {
+		foundShared = foundShared || view.ID == shared.ID
+		foundReaderPersonal = foundReaderPersonal || view.ID == personal.ID
+		foundWriterPersonal = foundWriterPersonal || view.ID == duplicate.ID
+	}
+	if !foundShared || !foundReaderPersonal || foundWriterPersonal {
+		t.Fatalf("reader view list leaked or omitted a view: %+v", readerSchema.Views)
+	}
+	f.expectStatus(f.api(reader, "POST", "/views/"+duplicate.ID+"/query", `{}`), 404, "ERR_NOT_FOUND")
+	f.expectStatus(f.fieldCall(owner, "PATCH", "/views/"+personal.ID,
+		fmt.Sprintf(`{"name":"Other user's view"}`), "1"), 404, "ERR_NOT_FOUND")
+	renamed := decode[viewResponse](f, f.fieldCall(reader, "PATCH", "/views/"+personal.ID,
+		`{"name":"Reader renamed"}`, "1"), 200).View
+	if renamed.Name != "Reader renamed" || renamed.Version != 2 {
+		t.Fatalf("reader personal rename = %+v", renamed)
+	}
+
+	f.expectStatus(f.api(owner, "PATCH", "/views/"+shared.ID, `{"locked":true}`), 400, "ERR_VALIDATION")
+	locked := decode[viewResponse](f, f.fieldCall(owner, "PATCH", "/views/"+shared.ID,
+		`{"locked":true}`, "1"), 200).View
+	if !locked.Locked || locked.Version != 2 {
+		t.Fatalf("lock result = %+v", locked)
+	}
+	f.expectStatus(f.fieldCall(writer, "PATCH", "/views/"+shared.ID,
+		`{"name":"Writer rename"}`, "2"), 403, "ERR_PERMISSION_DENIED")
+	f.expectStatus(f.fieldCall(writer, "PATCH", "/views/"+shared.ID,
+		fmt.Sprintf(`{"config":{"fields":[{"id":%q,"visible":true}],"frozen":0}}`, *table.Table.DisplayFieldID), "2"),
+		403, "ERR_PERMISSION_DENIED")
+	ownerEdit := decode[viewResponse](f, f.fieldCall(owner, "PATCH", "/views/"+shared.ID,
+		fmt.Sprintf(`{"config":{"fields":[{"id":%q,"visible":true}],"frozen":0}}`, *table.Table.DisplayFieldID), "2"), 200).View
+	if ownerEdit.Version != 3 || ownerEdit.Locked != true {
+		t.Fatalf("locked owner config edit = %+v", ownerEdit)
+	}
+	unlocked := decode[viewResponse](f, f.fieldCall(owner, "PATCH", "/views/"+shared.ID,
+		`{"locked":false}`, "3"), 200).View
+	if unlocked.Locked || unlocked.Version != 4 {
+		t.Fatalf("unlock result = %+v", unlocked)
+	}
+	writerRename := decode[viewResponse](f, f.fieldCall(writer, "PATCH", "/views/"+shared.ID,
+		`{"name":"Writer renamed"}`, fmt.Sprint(unlocked.Version)), 200).View
+	if writerRename.Name != "Writer renamed" {
+		t.Fatalf("writer rename = %+v", writerRename)
+	}
+
+	ordered := decode[viewResponse](f, f.fieldCall(writer, "POST", "/views/"+secondShared.ID+"/move",
+		fmt.Sprintf(`{"beforeId":%q}`, shared.ID), fmt.Sprint(secondShared.Version)), 200).View
+	if ordered.Position >= shared.Position || ordered.Version != secondShared.Version+1 {
+		t.Fatalf("reorder result = %+v (before position %v)", ordered, shared.Position)
+	}
+	stale := f.fieldCall(writer, "PATCH", "/views/"+shared.ID, `{"name":"stale"}`, "1")
+	f.expectStatus(stale, 409, "ERR_VERSION_CONFLICT")
+
+	f.expectStatus(f.fieldCall(owner, "DELETE", "/views/"+duplicate.ID, "", "1"), 404, "ERR_NOT_FOUND")
+	f.expectStatus(f.fieldCall(reader, "DELETE", "/views/"+personal.ID, "", fmt.Sprint(renamed.Version)), 200, "")
+
+	_ = secondShared
+}
+
+func TestViewManagementHTTPAT508ConcurrentSaves(t *testing.T) {
+	f := newACLFixture(t)
+	owner, writer := f.user("user", false), f.user("user", false)
+	workspace := f.newWorkspace(owner, "View concurrency")
+	book := f.newBook(owner, workspace.ID, "Book")
+	table := f.newTable(owner, book.ID, "Items")
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", writer.id, acl.Write)
+	view := table.Views[0]
+	body := fmt.Sprintf(`{"config":{"fields":[{"id":%q,"visible":true,"width":240}],"frozen":0}}`,
+		*table.Table.DisplayFieldID)
+	var wg sync.WaitGroup
+	responses := make(chan *httptest.ResponseRecorder, 2)
+	start := make(chan struct{})
+	for _, user := range []*aclUser{owner, writer} {
+		wg.Go(func() {
+			<-start
+			responses <- f.fieldCall(user, "PATCH", "/views/"+view.ID, body, "1")
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(responses)
+	statuses := map[int]int{}
+	for response := range responses {
+		statuses[response.Code]++
+	}
+	if statuses[200] != 1 || statuses[409] != 1 {
+		t.Fatalf("two-client saves = %v", statuses)
+	}
+	schema := decode[structure.TableSchema](f, f.api(owner, "GET", "/tables/"+table.Table.ID+"/schema", ""), 200)
+	if schema.Views[0].Version != 2 {
+		t.Fatalf("version did not advance exactly once: %+v", schema.Views[0])
+	}
 }
 
 func TestViewColumnsHTTPCleanupConcurrentAndTransport(t *testing.T) {

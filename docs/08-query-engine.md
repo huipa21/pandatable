@@ -40,7 +40,7 @@ All row reads go through `internal/query`, which compiles a **view config** (+ a
 
 The config is validated server-side against current fields; references to deleted fields are dropped silently on read and cleaned on next save. View config updates use optimistic concurrency (`version`); conflicts → client reloads and re-applies.
 
-T1.21 implements the Grid column subset (D-148): ordered
+T1.21 introduced the Grid column subset (D-148): ordered
 `fields:[{id,visible,width?}]` and `frozen`. T2.7–T2.9 add configured sort,
 grouping/aggregates, and highlights. Schema/view responses include the
 sanitized supported subset, not arbitrary future config. Live configured
@@ -51,14 +51,16 @@ rejects non-live or duplicate IDs, validates integer widths 60..1000 and a
 frozen count from zero to the effective visible-column count. Missing widths
 render at 180 px; the existing default display field retains its stored 240 px.
 
-`PATCH /views/{id}` requires `{config:{fields,frozen}}` and a view version in
-`If-Match`. It updates the supported column and query members while preserving
-`rowHeight` and other stored members, cleans the config, and increments the
-view version once (not the table schema version). Effective write/owner and an
-unlocked Grid are required, including for personal views; another user's
-personal view is 404. Readers and locked views use memory-only desktop
-overrides. The D-138 transient query override remains available and does not
-persist anything.
+`PATCH /views/{id}` keeps the versioned `{config:{fields,frozen}}` column
+contract and also accepts view metadata edits. Every persisted existing-view
+edit requires the authoritative version in `If-Match`, increments that view's
+version once, and leaves table schema version unchanged. Config updates merge
+supported members into stored JSON, preserving untouched values such as
+`filter`, `rowHeight`, sort, grouping, highlights, aggregates, and future
+members. D-178 supersedes D-148/D-149's narrower T1.21 persistence rules:
+readers can persist their own personal views; shared edits need table write
+access unless locked, when only owners may edit. Only owners may lock/unlock
+shared views. Personal views remain owner-only 404 to other users.
 
 T2.9 (D-177) stores up to 20 ordered highlight rules in `highlight`. The
 `when` tree uses the same server filter validation/compiler and bound values.
@@ -67,7 +69,11 @@ matching rule winning for each target. Targets must name unique live fields;
 colors must be one of the six palette tokens. Incomplete editor drafts remain
 local until the rule is valid.
 
-**Personal overrides (not saved):** a user may temporarily change filter/sort in a locked or shared view without saving ("unsaved changes — save as personal view?").
+**Personal overrides:** readers and users of locked shared views may apply
+temporary in-memory filter, sort, column, and highlight changes. “Save as
+personal view” duplicates the supported source config plus the current
+overrides without writing to the shared view. The D-138 transient query
+override remains available and does not persist anything.
 
 ## 2. Filter operators
 

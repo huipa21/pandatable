@@ -241,6 +241,8 @@ export interface Navigation {
 export interface ViewColumns {
   fields: { id: string; visible: boolean; width?: number }[]
   frozen: number
+  filter?: FilterNode | null
+  rowHeight?: 'short' | 'medium' | 'tall' | 'extra'
   sort?: { field: string; dir: 'asc' | 'desc' }[]
   groupBy?: string[]
   aggregates?: { fieldId: string; aggregate: string }[]

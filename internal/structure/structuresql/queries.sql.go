@@ -21,6 +21,17 @@ func (q *Queries) BumpSchemaVersion(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const deleteManagedView = `-- name: DeleteManagedView :exec
+UPDATE meta.views
+SET deleted_at = now(), version = version + 1, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) DeleteManagedView(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteManagedView, id)
+	return err
+}
+
 const fieldTable = `-- name: FieldTable :one
 
 SELECT f.table_id
@@ -337,6 +348,61 @@ func (q *Queries) InsertField(ctx context.Context, arg InsertFieldParams) (pgtyp
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err
+}
+
+const insertManagedView = `-- name: InsertManagedView :one
+INSERT INTO meta.views (table_id, name, type, scope, owner_id, position, config, created_by)
+VALUES ($1::uuid, $2, $3, $4,
+        $5::uuid, $6, $7::jsonb,
+        $8::uuid)
+RETURNING id, name, type, scope, locked, position, version, config
+`
+
+type InsertManagedViewParams struct {
+	TableID   pgtype.UUID
+	Name      string
+	Type      string
+	Scope     string
+	OwnerID   pgtype.UUID
+	Position  float64
+	Config    []byte
+	CreatedBy pgtype.UUID
+}
+
+type InsertManagedViewRow struct {
+	ID       pgtype.UUID
+	Name     string
+	Type     string
+	Scope    string
+	Locked   bool
+	Position float64
+	Version  int32
+	Config   []byte
+}
+
+func (q *Queries) InsertManagedView(ctx context.Context, arg InsertManagedViewParams) (InsertManagedViewRow, error) {
+	row := q.db.QueryRow(ctx, insertManagedView,
+		arg.TableID,
+		arg.Name,
+		arg.Type,
+		arg.Scope,
+		arg.OwnerID,
+		arg.Position,
+		arg.Config,
+		arg.CreatedBy,
+	)
+	var i InsertManagedViewRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Type,
+		&i.Scope,
+		&i.Locked,
+		&i.Position,
+		&i.Version,
+		&i.Config,
+	)
+	return i, err
 }
 
 const insertTable = `-- name: InsertTable :one
@@ -827,6 +893,62 @@ func (q *Queries) LockRowTable(ctx context.Context, id pgtype.UUID) (LockRowTabl
 	return i, err
 }
 
+const lockTableViewsForManagement = `-- name: LockTableViewsForManagement :many
+SELECT id, name, type, scope, owner_id, locked, position, version, config
+FROM meta.views
+WHERE table_id = $1::uuid AND deleted_at IS NULL
+  AND (scope = 'shared' OR owner_id = $2::uuid)
+ORDER BY position, id
+FOR NO KEY UPDATE
+`
+
+type LockTableViewsForManagementParams struct {
+	TableID pgtype.UUID
+	UserID  pgtype.UUID
+}
+
+type LockTableViewsForManagementRow struct {
+	ID       pgtype.UUID
+	Name     string
+	Type     string
+	Scope    string
+	OwnerID  pgtype.UUID
+	Locked   bool
+	Position float64
+	Version  int32
+	Config   []byte
+}
+
+func (q *Queries) LockTableViewsForManagement(ctx context.Context, arg LockTableViewsForManagementParams) ([]LockTableViewsForManagementRow, error) {
+	rows, err := q.db.Query(ctx, lockTableViewsForManagement, arg.TableID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockTableViewsForManagementRow
+	for rows.Next() {
+		var i LockTableViewsForManagementRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Type,
+			&i.Scope,
+			&i.OwnerID,
+			&i.Locked,
+			&i.Position,
+			&i.Version,
+			&i.Config,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockViewColumns = `-- name: LockViewColumns :one
 SELECT id, name, type, scope, owner_id, locked, position, version, config
 FROM meta.views
@@ -940,6 +1062,22 @@ func (q *Queries) MaxUserFieldPosition(ctx context.Context, tableID pgtype.UUID)
 	var position float64
 	err := row.Scan(&position)
 	return position, err
+}
+
+const moveManagedView = `-- name: MoveManagedView :exec
+UPDATE meta.views
+SET position = $1, version = version + 1, updated_at = now()
+WHERE id = $2 AND deleted_at IS NULL
+`
+
+type MoveManagedViewParams struct {
+	Position float64
+	ID       pgtype.UUID
+}
+
+func (q *Queries) MoveManagedView(ctx context.Context, arg MoveManagedViewParams) error {
+	_, err := q.db.Exec(ctx, moveManagedView, arg.Position, arg.ID)
+	return err
 }
 
 const navBooks = `-- name: NavBooks :many
@@ -1334,18 +1472,27 @@ func (q *Queries) RenumberTables(ctx context.Context, ids []pgtype.UUID) error {
 	return err
 }
 
-const saveViewColumns = `-- name: SaveViewColumns :exec
-UPDATE meta.views SET config = config || $1::jsonb, version = version + 1, updated_at = now()
-WHERE id = $2 AND deleted_at IS NULL
+const saveManagedView = `-- name: SaveManagedView :exec
+UPDATE meta.views
+SET name = $1, locked = $2, config = $3::jsonb,
+    version = version + 1, updated_at = now()
+WHERE id = $4 AND deleted_at IS NULL
 `
 
-type SaveViewColumnsParams struct {
-	Columns []byte
-	ID      pgtype.UUID
+type SaveManagedViewParams struct {
+	Name   string
+	Locked bool
+	Config []byte
+	ID     pgtype.UUID
 }
 
-func (q *Queries) SaveViewColumns(ctx context.Context, arg SaveViewColumnsParams) error {
-	_, err := q.db.Exec(ctx, saveViewColumns, arg.Columns, arg.ID)
+func (q *Queries) SaveManagedView(ctx context.Context, arg SaveManagedViewParams) error {
+	_, err := q.db.Exec(ctx, saveManagedView,
+		arg.Name,
+		arg.Locked,
+		arg.Config,
+		arg.ID,
+	)
 	return err
 }
 

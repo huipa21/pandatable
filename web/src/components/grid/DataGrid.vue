@@ -47,6 +47,7 @@ import type {
   TableField,
   TableSchema,
   TableView,
+  ViewColumns,
 } from '../../api/types'
 import { bindField, type BoundField } from '../../fields/registry'
 import { fieldErrorMessage } from '../../fields/messages'
@@ -91,6 +92,7 @@ const emit = defineEmits<{
   schemaChanged: []
   expand: [rowId: string]
   viewUpdated: [view: TableView]
+  viewConfigChanged: [config: ViewColumns, hasLocalChanges: boolean]
 }>()
 const { t, locale } = useI18n()
 const { template } = useTemplates()
@@ -215,11 +217,21 @@ const canWrite = computed(
     props.identity === auth.user?.id &&
     (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
 )
+const canPersistView = computed(() => {
+  if (props.identity !== auth.user?.id) return false
+  const selected = props.schema.views.find((item) => item.id === props.viewId)
+  return (
+    selected?.scope === 'personal' ||
+    (selected?.scope === 'shared' &&
+      (props.schema.myLevel === 'owner' ||
+        (props.schema.myLevel === 'write' && !selected.locked)))
+  )
+})
 const columnState = useViewColumns({
   schema: () => props.schema,
   viewId: () => props.viewId,
   identity: () => (props.identity === auth.user?.id ? props.identity : ''),
-  canWrite: () => canWrite.value,
+  canWrite: () => canPersistView.value,
   failure: (cause) => {
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
@@ -234,6 +246,12 @@ const columnState = useViewColumns({
   message: (cause) =>
     t('grid.columnSaveFailed', { message: errorMessage(cause) }),
 })
+watch(
+  () => [columnState.config.value, columnState.localQuery.value] as const,
+  ([config, hasLocalChanges]) =>
+    emit('viewConfigChanged', config, hasLocalChanges),
+  { deep: true, immediate: true },
+)
 const highlightDrafts = shallowRef<HighlightDraft[]>(
   (columnState.config.value.highlight ?? []).map((rule) => ({
     ...rule,

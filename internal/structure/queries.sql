@@ -204,14 +204,41 @@ WHERE table_id = sqlc.arg(table_id)::uuid AND deleted_at IS NULL
   AND (scope = 'shared' OR owner_id = sqlc.arg(user_id)::uuid)
 ORDER BY position, id;
 
+-- name: LockTableViewsForManagement :many
+SELECT id, name, type, scope, owner_id, locked, position, version, config
+FROM meta.views
+WHERE table_id = sqlc.arg(table_id)::uuid AND deleted_at IS NULL
+  AND (scope = 'shared' OR owner_id = sqlc.arg(user_id)::uuid)
+ORDER BY position, id
+FOR NO KEY UPDATE;
+
+-- name: InsertManagedView :one
+INSERT INTO meta.views (table_id, name, type, scope, owner_id, position, config, created_by)
+VALUES (sqlc.arg(table_id)::uuid, sqlc.arg(name), sqlc.arg(type), sqlc.arg(scope),
+        sqlc.narg(owner_id)::uuid, sqlc.arg(position), sqlc.arg(config)::jsonb,
+        sqlc.arg(created_by)::uuid)
+RETURNING id, name, type, scope, locked, position, version, config;
+
 -- name: LockViewColumns :one
 SELECT id, name, type, scope, owner_id, locked, position, version, config
 FROM meta.views
 WHERE id = $1 AND table_id = $2 AND deleted_at IS NULL
 FOR NO KEY UPDATE;
 
--- name: SaveViewColumns :exec
-UPDATE meta.views SET config = config || sqlc.arg(columns)::jsonb, version = version + 1, updated_at = now()
+-- name: SaveManagedView :exec
+UPDATE meta.views
+SET name = sqlc.arg(name), locked = sqlc.arg(locked), config = sqlc.arg(config)::jsonb,
+    version = version + 1, updated_at = now()
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: MoveManagedView :exec
+UPDATE meta.views
+SET position = sqlc.arg(position), version = version + 1, updated_at = now()
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
+-- name: DeleteManagedView :exec
+UPDATE meta.views
+SET deleted_at = now(), version = version + 1, updated_at = now()
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
 
 -- T1.15 row/query metadata. Physical names are validated in Go before quoting.

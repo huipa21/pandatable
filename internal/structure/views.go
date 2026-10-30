@@ -1,6 +1,7 @@
 package structure
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,9 @@ type ViewColumn struct {
 type ViewColumns struct {
 	Fields     []ViewColumn    `json:"fields"`
 	Frozen     int             `json:"frozen"`
+	Filter     json.RawMessage `json:"filter,omitempty"`
+	FilterSet  bool            `json:"-"`
+	RowHeight  string          `json:"rowHeight,omitempty"`
 	Sort       []ViewSort      `json:"sort,omitempty"`
 	GroupBy    []string        `json:"groupBy,omitempty"`
 	Aggregates []ViewAggregate `json:"aggregates,omitempty"`
@@ -71,6 +75,9 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 	}
 	result := ViewColumns{
 		Fields:     make([]ViewColumn, 0, len(fields)),
+		Filter:     append(json.RawMessage(nil), config.Filter...),
+		FilterSet:  config.FilterSet,
+		RowHeight:  config.RowHeight,
 		GroupBy:    append([]string(nil), config.GroupBy...),
 		Aggregates: append([]ViewAggregate(nil), config.Aggregates...),
 		Highlight:  append([]HighlightRule(nil), config.Highlight...),
@@ -131,17 +138,18 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		return View{}, acl.ErrNotFound()
 	}
 	var result View
-	err = s.withWritableTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	user, ok := acl.ParseUUID(actor.ID)
+	if !ok {
+		return View{}, acl.ErrValidation()
+	}
+	err = s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
 		q := structuresql.New(tx)
 		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{ID: uuid, TableID: table.id})
 		if err != nil {
 			return notFoundIfNoRows(err, "lock view columns")
 		}
-		if stored.Scope == "personal" && stored.OwnerID.String() != actor.ID {
-			return acl.ErrNotFound()
-		}
-		if stored.Locked {
-			return acl.ErrPermissionDenied()
+		if err := authorizeViewMutation(ctx, s, tx, actor, user, table, stored.Scope, stored.OwnerID, stored.Locked, false); err != nil {
+			return err
 		}
 		if stored.Type != "grid" || version < 1 || input.Fields == nil {
 			return validation("A grid column configuration is required")
@@ -149,84 +157,13 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		if stored.Version != version {
 			return apperr.New(409, "ERR_VERSION_CONFLICT", "The view changed; reload and retry")
 		}
-		var existing ViewColumns
-		if err := json.Unmarshal(stored.Config, &existing); err != nil {
-			return fmt.Errorf("decode stored view config: %w", err)
-		}
-		if input.GroupBy == nil {
-			input.GroupBy = existing.GroupBy
-		}
-		if input.Aggregates == nil {
-			input.Aggregates = existing.Aggregates
-		}
-		if input.Sort == nil {
-			input.Sort = existing.Sort
-		}
-		providedHighlight := input.Highlight != nil
-		if !providedHighlight {
-			input.Highlight = existing.Highlight
-		}
-		if !providedHighlight {
-			input.Highlight = normalizeHighlightRules(input.Highlight, rowFieldIDs(table))
-		}
-		if err := validateGroupConfig(input, table); err != nil {
-			return err
-		}
-		if _, _, _, err := compileHighlightRules(ctx, tx, actor, table, input.Highlight); err != nil {
-			return err
-		}
-		seen := make(map[string]bool, len(input.Fields))
-		visible := 0
-		for _, column := range input.Fields {
-			if _, live := table.byID[column.ID]; !live || seen[column.ID] {
-				return validation("Columns must reference unique live table fields")
-			}
-			if column.Width != nil && (*column.Width < MinColumnWidth || *column.Width > MaxColumnWidth) {
-				return validation("Column width is outside bounds")
-			}
-			seen[column.ID] = true
-			if column.Visible {
-				visible++
-			}
-		}
-		for _, field := range table.fields {
-			if !field.system && !seen[field.id] {
-				visible++
-			}
-		}
-		if input.Frozen < 0 || input.Frozen > visible {
-			return validation("Frozen columns exceed the visible column count")
-		}
-		fields := make([]Field, len(table.fields))
-		for index, field := range table.fields {
-			fields[index] = Field{ID: field.id, IsSystem: field.system}
-		}
-		clean, err := normalizeViewColumns(input, fields)
+		raw, clean, err := normalizeManagedViewConfig(ctx, tx, actor, table, stored.Config, input)
 		if err != nil {
 			return err
 		}
-		var storedConfig map[string]json.RawMessage
-		if err := json.Unmarshal(stored.Config, &storedConfig); err != nil {
-			return fmt.Errorf("decode stored view config: %w", err)
-		}
-		if storedConfig == nil {
-			storedConfig = make(map[string]json.RawMessage)
-		}
-		for key, value := range map[string]any{
-			"fields": clean.Fields, "frozen": clean.Frozen, "sort": clean.Sort,
-			"groupBy": clean.GroupBy, "aggregates": clean.Aggregates, "highlight": clean.Highlight,
-		} {
-			encoded, err := json.Marshal(value)
-			if err != nil {
-				return fmt.Errorf("encode view config member %s: %w", key, err)
-			}
-			storedConfig[key] = encoded
-		}
-		raw, err := json.Marshal(storedConfig)
-		if err != nil {
-			return fmt.Errorf("encode merged view config: %w", err)
-		}
-		if err := q.SaveViewColumns(ctx, structuresql.SaveViewColumnsParams{ID: uuid, Columns: raw}); err != nil {
+		if err := q.SaveManagedView(ctx, structuresql.SaveManagedViewParams{
+			ID: uuid, Name: stored.Name, Locked: stored.Locked, Config: raw,
+		}); err != nil {
 			return fmt.Errorf("save view columns: %w", err)
 		}
 		result = View{ID: id, Name: stored.Name, Type: stored.Type, Scope: stored.Scope, Locked: stored.Locked,
@@ -234,6 +171,123 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		return nil
 	})
 	return result, err
+}
+
+func normalizeManagedViewConfig(ctx context.Context, tx pgx.Tx, actor Actor, table rowTable,
+	storedConfig []byte, input ViewColumns,
+) ([]byte, ViewColumns, error) {
+	if input.Fields == nil {
+		return nil, ViewColumns{}, validation("A grid column configuration is required")
+	}
+	var existing ViewColumns
+	if err := json.Unmarshal(storedConfig, &existing); err != nil {
+		return nil, ViewColumns{}, fmt.Errorf("decode stored view config: %w", err)
+	}
+	if input.GroupBy == nil {
+		input.GroupBy = existing.GroupBy
+	}
+	if input.Aggregates == nil {
+		input.Aggregates = existing.Aggregates
+	}
+	if input.Sort == nil {
+		input.Sort = existing.Sort
+	}
+	if !input.FilterSet {
+		input.Filter = existing.Filter
+		input.FilterSet = existing.FilterSet
+	}
+	if input.RowHeight == "" {
+		input.RowHeight = existing.RowHeight
+	} else if input.RowHeight != "short" && input.RowHeight != "medium" &&
+		input.RowHeight != "tall" && input.RowHeight != "extra" {
+		return nil, ViewColumns{}, validation("Row height is invalid")
+	}
+	if input.Highlight == nil {
+		input.Highlight = normalizeHighlightRules(existing.Highlight, rowFieldIDs(table))
+	}
+	if err := validateGroupConfig(input, table); err != nil {
+		return nil, ViewColumns{}, err
+	}
+	if _, _, _, err := compileHighlightRules(ctx, tx, actor, table, input.Highlight); err != nil {
+		return nil, ViewColumns{}, err
+	}
+	if input.FilterSet && !bytes.Equal(bytes.TrimSpace(input.Filter), []byte("null")) {
+		var filter FilterNode
+		decoder := json.NewDecoder(bytes.NewReader(input.Filter))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&filter); err != nil {
+			return nil, ViewColumns{}, validation("View filter is invalid")
+		}
+		if _, _, err := compileRowFilter(ctx, tx, actor, table, &filter); err != nil {
+			return nil, ViewColumns{}, err
+		}
+	}
+	seen := make(map[string]bool, len(input.Fields))
+	visible := 0
+	for _, column := range input.Fields {
+		if _, live := table.byID[column.ID]; !live || seen[column.ID] {
+			return nil, ViewColumns{}, validation("Columns must reference unique live table fields")
+		}
+		if column.Width != nil && (*column.Width < MinColumnWidth || *column.Width > MaxColumnWidth) {
+			return nil, ViewColumns{}, validation("Column width is outside bounds")
+		}
+		seen[column.ID] = true
+		if column.Visible {
+			visible++
+		}
+	}
+	for _, field := range table.fields {
+		if !field.system && !seen[field.id] {
+			visible++
+		}
+	}
+	if input.Frozen < 0 || input.Frozen > visible {
+		return nil, ViewColumns{}, validation("Frozen columns exceed the visible column count")
+	}
+	fields := make([]Field, len(table.fields))
+	for index, field := range table.fields {
+		fields[index] = Field{ID: field.id, IsSystem: field.system}
+	}
+	clean, err := normalizeViewColumns(input, fields)
+	if err != nil {
+		return nil, ViewColumns{}, err
+	}
+	var stored map[string]json.RawMessage
+	if err := json.Unmarshal(storedConfig, &stored); err != nil {
+		return nil, ViewColumns{}, fmt.Errorf("decode stored view config: %w", err)
+	}
+	if stored == nil {
+		stored = make(map[string]json.RawMessage)
+	}
+	for key, value := range map[string]any{
+		"fields": clean.Fields, "frozen": clean.Frozen, "sort": clean.Sort,
+		"groupBy": clean.GroupBy, "aggregates": clean.Aggregates, "highlight": clean.Highlight,
+	} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil, ViewColumns{}, fmt.Errorf("encode view config member %s: %w", key, err)
+		}
+		stored[key] = encoded
+	}
+	if input.FilterSet {
+		filter := input.Filter
+		if len(filter) == 0 {
+			filter = json.RawMessage("null")
+		}
+		stored["filter"] = append(json.RawMessage(nil), filter...)
+	}
+	if input.RowHeight != "" {
+		encoded, err := json.Marshal(input.RowHeight)
+		if err != nil {
+			return nil, ViewColumns{}, fmt.Errorf("encode view row height: %w", err)
+		}
+		stored["rowHeight"] = encoded
+	}
+	raw, err := json.Marshal(stored)
+	if err != nil {
+		return nil, ViewColumns{}, fmt.Errorf("encode merged view config: %w", err)
+	}
+	return raw, clean, nil
 }
 
 func fieldIDs(fields []Field) map[string]bool {

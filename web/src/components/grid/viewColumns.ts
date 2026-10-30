@@ -164,9 +164,7 @@ export function useViewColumns(options: {
   const failure = ref('')
   const retryable = ref(false)
   const localQuery = ref(false)
-  const canPersist = computed(
-    () => options.canWrite() && !!view() && !view()!.locked,
-  )
+  const canPersist = computed(() => options.canWrite() && !!view())
   let intents: ColumnIntent[] = []
   let pendingHighlights: HighlightRule[] | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -303,7 +301,11 @@ export function useViewColumns(options: {
         config.value = normalizeColumns(next.config, latest)
         if (pendingHighlights !== undefined)
           config.value = { ...config.value, highlight: pendingHighlights }
-        if (next.locked || !['write', 'owner'].includes(latest.myLevel)) {
+        if (!(
+          next.scope === 'personal' ||
+          latest.myLevel === 'owner' ||
+          (latest.myLevel === 'write' && !next.locked)
+        )) {
           intents = []
           options.failure(new RequestError('ERR_PERMISSION_DENIED', 403))
         } else if (

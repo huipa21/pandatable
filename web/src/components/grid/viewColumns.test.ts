@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { defineComponent, reactive } from 'vue'
+import { defineComponent, shallowReactive } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import type { TableSchema } from '../../api/types'
 import { tableSchema } from '../../test/navigation'
@@ -43,7 +43,7 @@ function fixture() {
 }
 
 function mounted(schema: TableSchema = fixture()) {
-  const state = reactive({ schema, identity: 'actor', canWrite: true })
+  const state = shallowReactive({ schema, identity: 'actor', canWrite: true })
   const updated = vi.fn()
   const failure = vi.fn()
   let columns!: ReturnType<typeof useViewColumns>
@@ -241,7 +241,7 @@ it.each(['reader', 'locked'])(
     const schema = fixture()
     if (mode === 'locked') schema.views[0]!.locked = true
     const { columns, state } = mounted(schema)
-    if (mode === 'reader') state.canWrite = false
+    state.canWrite = false
     await flushPromises()
     columns.change({ kind: 'visible', id: 'name', visible: false })
     columns.change({ kind: 'width', id: 'other', width: 350 })
@@ -255,6 +255,48 @@ it.each(['reader', 'locked'])(
     expect(columns.config.value.frozen).toBe(1)
   },
 )
+
+it('allows an owner to save edits to a locked shared view', async () => {
+  const fetch = vi.fn(async (_url: unknown, init?: RequestInit) =>
+    Response.json({
+      view: {
+        ...fixture().views[0],
+        locked: true,
+        version: 2,
+        config: JSON.parse(String(init?.body)).config,
+      },
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const schema = fixture()
+  schema.views[0]!.locked = true
+  const { columns } = mounted(schema)
+  columns.change({ kind: 'visible', id: 'name', visible: false })
+  await debounce()
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(columns.canPersist.value).toBe(true)
+})
+
+it('allows a reader to persist edits to their own personal view', async () => {
+  const fetch = vi.fn(async (_url: unknown, init?: RequestInit) =>
+    Response.json({
+      view: {
+        ...fixture().views[0],
+        scope: 'personal',
+        version: 2,
+        config: JSON.parse(String(init?.body)).config,
+      },
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const schema = fixture()
+  schema.views[0]!.scope = 'personal'
+  const { columns, state } = mounted(schema)
+  state.canWrite = true
+  columns.change({ kind: 'visible', id: 'name', visible: false })
+  await debounce()
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
 
 it('does not block more intents during a save and serializes the next version', async () => {
   let resolve!: (response: Response) => void

@@ -10,7 +10,7 @@ Vue 3 (Composition API, `<script setup>`), TypeScript (strict), Vite, Pinia, Vue
 ┌────────────────────────────────────────────────────────────────────┐
 │ ☰ PandaTable   Workspace ▸ Book ▸ Table      🔔  [EN|中文] [☀|🌙] 👤 │  ← header (language + theme toggles side by side, all users)
 ├──────────────┬─────────────────────────────────────────────────────┤
-│ Sidebar      │ View tabs:  Grid ▾ | My view | + View                │
+│ Sidebar      │ View tabs:  Shared | Personal | + View               │
 │  Workspaces  │ Toolbar: Fields · Filter · Sort · Group · Highlight │
 │   └ Books    │          · Row height · Search · Export · Share(👥) │
 │      └ Tables│ ┌─────────────────────────────────────────────────┐ │
