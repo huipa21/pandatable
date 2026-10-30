@@ -58,6 +58,10 @@ export function normalizeColumns(
       Math.min(config.frozen, fields.filter((field) => field.visible).length),
     ),
     ...(config.sort ? { sort } : {}),
+    ...(config.groupBy ? { groupBy: [...config.groupBy] } : {}),
+    ...(config.aggregates
+      ? { aggregates: config.aggregates.map((item) => ({ ...item })) }
+      : {}),
   }
 }
 

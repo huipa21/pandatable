@@ -35,13 +35,14 @@ type RowSort struct {
 }
 
 type RowQueryRequest struct {
-	Offset       *int        `json:"offset"`
-	Limit        *int        `json:"limit"`
-	Sort         *RowSort    `json:"sort"`
-	Sorts        *[]RowSort  `json:"sorts"`
-	IncludeCount *bool       `json:"includeCount"`
-	FieldIDs     *[]string   `json:"fieldIds"`
-	Filter       *FilterNode `json:"filter"`
+	Offset       *int              `json:"offset"`
+	Limit        *int              `json:"limit"`
+	Sort         *RowSort          `json:"sort"`
+	Sorts        *[]RowSort        `json:"sorts"`
+	IncludeCount *bool             `json:"includeCount"`
+	FieldIDs     *[]string         `json:"fieldIds"`
+	Filter       *FilterNode       `json:"filter"`
+	GroupPath    []json.RawMessage `json:"groupPath,omitempty"`
 }
 
 type RowRecord struct {
@@ -96,6 +97,8 @@ type rowViewConfig struct {
 		Field string `json:"field"`
 		Dir   string `json:"dir"`
 	} `json:"sort"`
+	GroupBy    []string        `json:"groupBy"`
+	Aggregates []ViewAggregate `json:"aggregates"`
 }
 
 func physicalTable(schema, name string) (string, error) {
@@ -654,6 +657,11 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err := json.Unmarshal(lockedView.Config, &config); err != nil {
 		return RowQueryResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
+	if err := validateGroupConfig(ViewColumns{
+		GroupBy: config.GroupBy, Aggregates: config.Aggregates,
+	}, table); err != nil {
+		return RowQueryResult{}, err
+	}
 	fields := visibleRowFields(table, config.Fields, request.FieldIDs)
 	sortKeys, explicitSort, err := configuredRowSorts(table, config.Sort, request.Sort, request.Sorts)
 	if err != nil {
@@ -683,6 +691,17 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 			return RowQueryResult{}, err
 		}
 	}
+	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, config.GroupBy, request.GroupPath)
+	if err != nil {
+		return RowQueryResult{}, err
+	}
+	whereSQL := filterSQL
+	if groupSQL != "" {
+		if whereSQL != "" {
+			whereSQL += " AND "
+		}
+		whereSQL += "(" + shiftSQLArguments(groupSQL, len(filterArgs)) + ")"
+	}
 	from := table.qualifiedName() + ` AS "source"`
 	builder := sq.Select(table.selectColumnList(fields)...).From(from)
 	sql, args, err := builder.OrderBy(`"source"."id" ASC`).Limit(uint64(limit)).Offset(uint64(offset)).
@@ -690,22 +709,22 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err != nil {
 		return RowQueryResult{}, fmt.Errorf("build view query: %w", err)
 	}
-	sql = shiftSQLArguments(sql, len(filterArgs)+len(sortArgs))
+	sql = shiftSQLArguments(sql, len(filterArgs)+len(groupArgs)+len(sortArgs))
 	orderKeys := make([]string, 0, len(sortExpressions)+1)
 	for _, expression := range sortExpressions {
-		orderKeys = append(orderKeys, shiftSQLArguments(expression, len(filterArgs)))
+		orderKeys = append(orderKeys, shiftSQLArguments(expression, len(filterArgs)+len(groupArgs)))
 	}
 	orderKeys = append(orderKeys, `"source"."id" ASC`)
 	sql = strings.Replace(sql, `ORDER BY "source"."id" ASC`,
 		"ORDER BY "+strings.Join(orderKeys, ", "), 1)
-	if filterSQL != "" {
+	if whereSQL != "" {
 		orderAt := strings.Index(sql, " ORDER BY ")
 		if orderAt < 0 {
 			return RowQueryResult{}, errors.New("view query is missing its order clause")
 		}
-		sql = sql[:orderAt] + " WHERE " + filterSQL + sql[orderAt:]
+		sql = sql[:orderAt] + " WHERE " + whereSQL + sql[orderAt:]
 	}
-	args = append(append(append([]any(nil), filterArgs...), sortArgs...), args...)
+	args = append(append(append(append([]any(nil), filterArgs...), groupArgs...), sortArgs...), args...)
 	result := RowQueryResult{Rows: make([]RowRecord, 0, limit), SchemaVersion: table.schemaVersion}
 	result.FieldIDs = make([]string, len(fields))
 	for index, field := range fields {
@@ -714,15 +733,15 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if includeCount {
 		var total int64
 		countBuilder := sq.Select("count(*)").From(from)
-		if filterSQL != "" {
-			countBuilder = countBuilder.Where(sq.Expr(filterSQL))
+		if whereSQL != "" {
+			countBuilder = countBuilder.Where(sq.Expr(whereSQL))
 		}
 		countQuery, countArgs, err := countBuilder.
 			PlaceholderFormat(sq.Dollar).ToSql()
 		if err != nil {
 			return RowQueryResult{}, fmt.Errorf("build row count query: %w", err)
 		}
-		countArgs = append(append([]any(nil), filterArgs...), countArgs...)
+		countArgs = append(append(append([]any(nil), filterArgs...), groupArgs...), countArgs...)
 		if err := tx.QueryRow(ctx, countQuery, countArgs...).Scan(&total); err != nil {
 			return RowQueryResult{}, rowDatabaseError(fmt.Errorf("count view rows: %w", err))
 		}

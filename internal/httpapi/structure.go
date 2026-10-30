@@ -36,6 +36,7 @@ func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Patch("/fields/{id}", api.authenticated(api.updateField))
 	router.Delete("/fields/{id}", api.authenticated(api.deleteField))
 	router.Post("/views/{id}/query", api.authenticated(api.queryRows))
+	router.Post("/views/{id}/groups", api.authenticated(api.queryGroups))
 	router.Patch("/views/{id}", api.authenticated(api.updateViewColumns))
 	router.Get("/tables/{id}/rows/{rowId}", api.authenticated(api.getRow))
 	router.Post("/tables/{id}/rows/{rowId}/links/{fieldId}", api.authenticated(api.changeLinks))

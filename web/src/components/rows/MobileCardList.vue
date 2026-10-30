@@ -7,8 +7,10 @@ import type {
   DataRow,
   FilterNode,
   RowMutation,
+  RowGroupResult,
   RowQueryRequest,
   RowQueryResult,
+  RowValue,
   TableSchema,
 } from '../../api/types'
 import { bindField } from '../../fields/registry'
@@ -19,6 +21,7 @@ import { useNavStore } from '../../stores/nav'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
 import { RemoteRowsWindow, remotePageSize } from '../grid/remoteWindow'
+import { GroupedRowsWindow, type GroupNode } from '../grid/groupedRows'
 
 const props = defineProps<{
   schema: TableSchema
@@ -42,12 +45,14 @@ const confirmation = ref<HTMLDialogElement>()
 const heading = ref<HTMLElement>()
 const error = ref<unknown>(null)
 const initializing = ref(false)
+const groupLoading = ref(false)
 const saving = ref(false)
 const page = ref(0)
 const revision = ref(0)
 const selected = ref(new Set<string>())
 const override = ref<string[] | null>(null)
-let rows: RemoteRowsWindow | undefined
+let remoteRows: RemoteRowsWindow | undefined
+let groupedRows: GroupedRowsWindow | undefined
 let generation = 0
 let disposed = false
 let mutation: AbortController | undefined
@@ -71,13 +76,17 @@ const fields = computed(() =>
 const display = computed(() =>
   fields.value.find((field) => field.id === props.schema.table.displayFieldId),
 )
+const view = computed(() =>
+  props.schema.views.find((candidate) => candidate.id === props.viewId),
+)
+const groupBy = computed(() => view.value?.config.groupBy ?? [])
 const state = computed(() => {
   void revision.value
-  return rows?.snapshot()
+  return groupedRows?.snapshot() ?? remoteRows?.snapshot()
 })
 const visibleIds = computed(() => {
   void revision.value
-  return override.value ?? rows?.fieldIds ?? []
+  return override.value ?? remoteRows?.fieldIds ?? []
 })
 const preview = computed(() =>
   visibleIds.value
@@ -91,16 +100,43 @@ const cards = computed(() => {
   const start = page.value * remotePageSize
   const count = Math.max(
     0,
-    Math.min(remotePageSize, (rows?.total ?? 0) - start),
+    Math.min(remotePageSize, (remoteRows?.total ?? 0) - start),
   )
   return Array.from({ length: count }, (_, index) =>
-    rows?.rowAt(start + index),
+    remoteRows?.rowAt(start + index),
   ).filter((row) => row !== null && row !== undefined)
+})
+type CardListEntry =
+  | { kind: 'group'; key: string; group: GroupNode }
+  | { kind: 'row'; key: string; row: DataRow }
+const mobileEntries = computed<CardListEntry[]>(() => {
+  void revision.value
+  if (!groupedRows)
+    return cards.value.map((row) => ({ kind: 'row', key: row.id, row }))
+  const start = page.value * remotePageSize
+  return groupedRows.entries
+    .slice(start, start + remotePageSize)
+    .flatMap<CardListEntry>((entry, index) => {
+      if (entry.kind === 'group')
+        return [
+          {
+            kind: 'group' as const,
+            key: JSON.stringify(entry.group.path),
+            group: entry.group,
+          },
+        ]
+      const row = groupedRows?.rowAt(start + index)
+      return row ? [{ kind: 'row' as const, key: row.id, row }] : []
+    })
 })
 const loading = computed(
   () =>
     initializing.value ||
-    ((state.value?.total ?? 0) > 0 && cards.value.length === 0 && !error.value),
+    groupLoading.value ||
+    (!groupedRows &&
+      (state.value?.total ?? 0) > 0 &&
+      cards.value.length === 0 &&
+      !error.value),
 )
 const pageCount = computed(() =>
   Math.max(1, Math.ceil((state.value?.total ?? 0) / remotePageSize)),
@@ -117,16 +153,100 @@ function hasTitle(row: DataRow) {
   const value = display.value ? row.fields[display.value.id] : undefined
   return isWireValue(value) && value !== null
 }
+function hasRelationValue(field: { id: string; uiType: string }, row: DataRow) {
+  return field.uiType === 'link' && isWireValue(row.fields[field.id])
+}
+function groupKeyLabel(key: RowValue) {
+  if (key === null) return t('grid.groupEmpty')
+  if (Array.isArray(key)) return key.map(String).join(', ')
+  return String(key)
+}
+function groupTitle(group: GroupNode) {
+  const field = props.schema.fields.find(
+    (candidate) => candidate.id === groupBy.value[group.level],
+  )
+  return t('grid.groupHeader', {
+    field: field?.name ?? '',
+    value: groupKeyLabel(group.key),
+    count: group.count,
+  })
+}
+function groupAggregateText(aggregate: GroupNode['aggregates'][number]) {
+  const field = props.schema.fields.find(
+    (candidate) => candidate.id === aggregate.fieldId,
+  )
+  return t('grid.groupAggregate', {
+    field: field?.name ?? '',
+    aggregate: groupAggregateLabel(aggregate.aggregate),
+    value: String(aggregate.value ?? ''),
+  })
+}
+function groupAggregateLabel(aggregate: string) {
+  switch (aggregate) {
+    case 'count':
+      return t('grid.aggregateLabels.count')
+    case 'count_empty':
+      return t('grid.aggregateLabels.count_empty')
+    case 'count_filled':
+      return t('grid.aggregateLabels.count_filled')
+    case 'unique':
+      return t('grid.aggregateLabels.unique')
+    case 'sum':
+      return t('grid.aggregateLabels.sum')
+    case 'avg':
+      return t('grid.aggregateLabels.avg')
+    case 'min':
+      return t('grid.aggregateLabels.min')
+    case 'max':
+      return t('grid.aggregateLabels.max')
+    case 'earliest':
+      return t('grid.aggregateLabels.earliest')
+    case 'latest':
+      return t('grid.aggregateLabels.latest')
+    case 'percent_checked':
+      return t('grid.aggregateLabels.percent_checked')
+    default:
+      return aggregate
+  }
+}
+function groupActionLabel(group: GroupNode) {
+  const field = props.schema.fields.find(
+    (candidate) => candidate.id === groupBy.value[group.level],
+  )
+  const params = { field: field?.name ?? '', value: groupKeyLabel(group.key) }
+  return group.expanded
+    ? t('grid.collapseGroup', params)
+    : t('grid.expandGroup', params)
+}
+async function toggleGroup(group: GroupNode) {
+  if (!groupedRows || loading.value || saving.value) return
+  const token = generation
+  groupLoading.value = true
+  error.value = null
+  try {
+    await groupedRows.toggle(group.path)
+    if (current(token)) {
+      page.value = Math.min(page.value, pageCount.value - 1)
+      revision.value++
+    }
+  } catch (cause) {
+    failure(cause, token)
+  } finally {
+    if (current(token)) groupLoading.value = false
+  }
+}
 
 function failure(cause: unknown, token: number) {
   if (!current(token)) return
   error.value = cause
   if (!(cause instanceof RequestError)) return
   if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
-    rows?.dispose()
+    remoteRows?.dispose()
+    groupedRows?.dispose()
     void router.replace('/change-password')
   } else if ([401, 403, 404].includes(cause.status)) {
-    rows?.dispose()
+    remoteRows?.dispose()
+    groupedRows?.dispose()
     selected.value.clear()
     if (cause.status === 401) {
       auth.setUser(null)
@@ -136,14 +256,18 @@ function failure(cause: unknown, token: number) {
       emit('schemaChanged')
     }
   } else if (cause.code === 'ERR_SCHEMA_CHANGED') {
-    rows?.dispose()
+    remoteRows?.dispose()
+    groupedRows?.dispose()
     emit('schemaChanged')
   }
 }
 
 async function refresh(anchor = page.value * remotePageSize) {
   mutation?.abort()
-  rows?.dispose()
+  remoteRows?.dispose()
+  groupedRows?.dispose()
+  remoteRows = undefined
+  groupedRows = undefined
   const token = ++generation
   saving.value = false
   selected.value.clear()
@@ -165,43 +289,86 @@ async function refresh(anchor = page.value * remotePageSize) {
       body,
       AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     )
+  const fetchRows = async (
+    offset: number,
+    limit: number,
+    includeCount: boolean,
+    signal: AbortSignal,
+    groupPath?: RowValue[],
+  ) => {
+    const body = {
+      offset,
+      limit,
+      includeCount,
+      ...(fieldIds ? { fieldIds } : {}),
+      ...(filter ? { filter } : {}),
+      ...(groupPath?.length ? { groupPath } : {}),
+    }
+    let result = await query(body, signal)
+    if (!current(token) || signal.aborted) return result
+    const visible = result.fieldIds
+    if (displayId && !visible.includes(displayId)) {
+      const extra = await query(
+        { ...body, fieldIds: [...visible, displayId] },
+        signal,
+      )
+      if (extra.schemaVersion !== result.schemaVersion)
+        throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+      result = { ...extra, fieldIds: visible }
+    }
+    if (
+      current(token) &&
+      !signal.aborted &&
+      result.schemaVersion !== schemaVersion
+    )
+      throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+    return result
+  }
+  if (groupBy.value.length > 0) {
+    groupedRows = new GroupedRowsWindow(
+      {
+        groups: async (path, signal) => {
+          const result = await request<RowGroupResult>(
+            `/views/${viewId}/groups`,
+            'POST',
+            { path, ...(filter ? { filter } : {}) },
+            AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+          )
+          if (result.schemaVersion !== schemaVersion) {
+            emit('schemaChanged')
+            throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+          }
+          return result.groups
+        },
+        rows: (path, offset, limit, includeCount, signal) =>
+          fetchRows(offset, limit, includeCount, signal, path),
+      },
+      Math.max(1, Math.min(3, groupBy.value.length)),
+      `pandatable:groups:${props.identity}:${props.viewId}`,
+      () => {
+        if (current(token)) revision.value++
+      },
+      (cause) => failure(cause, token),
+    )
+    await groupedRows.initialize()
+    if (current(token)) {
+      page.value = 0
+      initializing.value = false
+      revision.value++
+    }
+    return
+  }
   const window = new RemoteRowsWindow(
     {
-      fetch: async (offset, limit, includeCount, signal) => {
-        const body = {
-          offset,
-          limit,
-          includeCount,
-          ...(fieldIds ? { fieldIds } : {}),
-          ...(filter ? { filter } : {}),
-        }
-        let result = await query(body, signal)
-        if (!current(token) || signal.aborted) return result
-        const visible = result.fieldIds
-        if (displayId && !visible.includes(displayId)) {
-          const extra = await query(
-            { ...body, fieldIds: [...visible, displayId] },
-            signal,
-          )
-          if (extra.schemaVersion !== result.schemaVersion)
-            throw new RequestError('ERR_SCHEMA_CHANGED', 409)
-          result = { ...extra, fieldIds: visible }
-        }
-        if (
-          current(token) &&
-          !signal.aborted &&
-          result.schemaVersion !== schemaVersion
-        )
-          throw new RequestError('ERR_SCHEMA_CHANGED', 409)
-        return result
-      },
+      fetch: (offset, limit, includeCount, signal) =>
+        fetchRows(offset, limit, includeCount, signal),
     },
     () => {
       revision.value++
     },
     (cause) => failure(cause, token),
   )
-  rows = window
+  remoteRows = window
   await window.initialize(anchor)
   if (current(token)) {
     page.value = Math.max(0, window.snapshot().activePage)
@@ -216,7 +383,8 @@ async function move(delta: number) {
     return
   page.value = next
   selected.value.clear()
-  rows?.load(next * remotePageSize)
+  if (groupedRows) groupedRows.load(next * remotePageSize)
+  else remoteRows?.load(next * remotePageSize)
   revision.value++
   await nextTick()
   heading.value?.focus()
@@ -270,6 +438,8 @@ watch(
     () => props.identity,
     () => auth.user?.id,
     () => JSON.stringify(props.filter),
+    () => JSON.stringify(view.value?.config.groupBy ?? []),
+    () => JSON.stringify(view.value?.config.aggregates ?? []),
   ],
   () => {
     confirmation.value?.close()
@@ -293,7 +463,8 @@ onBeforeUnmount(() => {
   disposed = true
   generation++
   mutation?.abort()
-  rows?.dispose()
+  remoteRows?.dispose()
+  groupedRows?.dispose()
   options.value?.close()
   confirmation.value?.close()
 })
@@ -322,58 +493,89 @@ onBeforeUnmount(() => {
     <template v-else-if="!loading && identity === auth.user?.id">
       <p v-if="state?.total === 0">{{ t('grid.empty') }}</p>
       <ul class="mobile-card-list">
-        <li v-for="row in cards" :key="row.id" :data-row-id="row.id">
-          <button
-            type="button"
-            class="mobile-card"
-            :aria-label="t('rowExpand.open', { id: row.id })"
-            :aria-describedby="`row-title-${row.id}`"
-            @click="emit('expand', row.id)"
+        <li
+          v-for="entry in mobileEntries"
+          :key="entry.key"
+          :class="entry.kind === 'group' ? 'mobile-group-item' : undefined"
+          :data-row-id="entry.kind === 'row' ? entry.row.id : undefined"
+        >
+          <div
+            v-if="entry.kind === 'group'"
+            class="mobile-group-header"
+            :data-level="entry.group.level"
           >
-            <span :id="`row-title-${row.id}`" class="card-title">
-              <FieldRenderer
-                v-if="display?.bound.ok && hasTitle(row)"
-                :field="display.bound.value"
-                :value="wireValue(row.fields[display.id])"
-                :env="env"
-                :table-id="schema.table.id"
-                :identity="identity"
-                :resolve-user="resolveUser"
-                :links="false"
-              />
-              <span v-else>{{ t('mobileRows.untitled', { id: row.id }) }}</span>
+            <button
+              type="button"
+              :data-group-path="JSON.stringify(entry.group.path)"
+              :aria-label="groupActionLabel(entry.group)"
+              :aria-expanded="entry.group.expanded"
+              @click="toggleGroup(entry.group)"
+            >
+              <span class="mobile-group-indicator" aria-hidden="true"></span>
+              {{ groupTitle(entry.group) }}
+            </button>
+            <span
+              v-for="aggregate in entry.group.aggregates"
+              :key="`${aggregate.fieldId}:${aggregate.aggregate}`"
+            >
+              {{ groupAggregateText(aggregate) }}
             </span>
-            <span v-for="field in preview" :key="field.id" class="card-field">
-              <span class="card-label">{{ field.name }}</span>
-              <RelationLinks
-                v-if="
-                  field.uiType === 'link' && isWireValue(row.fields[field.id])
-                "
-                :links="row.fields[field.id]"
+          </div>
+          <template v-else>
+            <button
+              type="button"
+              class="mobile-card"
+              :aria-label="t('rowExpand.open', { id: entry.row.id })"
+              :aria-describedby="`row-title-${entry.row.id}`"
+              @click="emit('expand', entry.row.id)"
+            >
+              <span :id="`row-title-${entry.row.id}`" class="card-title">
+                <FieldRenderer
+                  v-if="display?.bound.ok && hasTitle(entry.row)"
+                  :field="display.bound.value"
+                  :value="wireValue(entry.row.fields[display.id])"
+                  :env="env"
+                  :table-id="schema.table.id"
+                  :identity="identity"
+                  :resolve-user="resolveUser"
+                  :links="false"
+                />
+                <span v-else>{{
+                  t('mobileRows.untitled', { id: entry.row.id })
+                }}</span>
+              </span>
+              <span v-for="field in preview" :key="field.id" class="card-field">
+                <span class="card-label">{{ field.name }}</span>
+                <RelationLinks
+                  v-if="hasRelationValue(field, entry.row)"
+                  :links="entry.row.fields[field.id]"
+                />
+                <FieldRenderer
+                  v-else-if="
+                    field.bound.ok && isWireValue(entry.row.fields[field.id])
+                  "
+                  :field="field.bound.value"
+                  :value="wireValue(entry.row.fields[field.id])"
+                  :env="env"
+                  :table-id="schema.table.id"
+                  :identity="identity"
+                  :resolve-user="resolveUser"
+                  :links="false"
+                />
+                <span v-else>{{ t('grid.unsupportedField') }}</span>
+              </span>
+            </button>
+            <label v-if="canWrite" class="card-selection">
+              <input
+                v-model="selected"
+                type="checkbox"
+                :value="entry.row.id"
+                :disabled="saving"
+                :aria-label="t('grid.selectRow', { id: entry.row.id })"
               />
-              <FieldRenderer
-                v-else-if="field.bound.ok && isWireValue(row.fields[field.id])"
-                :field="field.bound.value"
-                :value="wireValue(row.fields[field.id])"
-                :env="env"
-                :table-id="schema.table.id"
-                :identity="identity"
-                :resolve-user="resolveUser"
-                :links="false"
-              />
-              <span v-else>{{ t('grid.unsupportedField') }}</span>
-            </span>
-          </button>
-          <label v-if="canWrite" class="card-selection">
-            <input
-              v-model="selected"
-              type="checkbox"
-              :value="row.id"
-              :disabled="saving"
-              :aria-label="t('grid.selectRow', { id: row.id })"
-            />
-            {{ t('grid.selectRow', { id: row.id }) }}
-          </label>
+              {{ t('grid.selectRow', { id: entry.row.id }) }}
+            </label>
+          </template>
         </li>
       </ul>
     </template>
@@ -506,6 +708,35 @@ button,
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+.mobile-card-list .mobile-group-item {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+.mobile-group-header {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+}
+.mobile-group-header button {
+  min-height: 44px;
+  text-align: start;
+  font-weight: 700;
+}
+.mobile-group-indicator {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-inline-end: 6px;
+  border-block: 4px solid transparent;
+  border-inline-start: 6px solid currentColor;
+  transition: transform 100ms;
+}
+.mobile-group-header button[aria-expanded='true'] .mobile-group-indicator {
+  transform: rotate(90deg);
 }
 .mobile-card {
   display: grid;

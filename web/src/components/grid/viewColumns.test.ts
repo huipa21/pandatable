@@ -93,21 +93,29 @@ it('drops unknown/deleted/duplicate fields, appends live fields and clamps froze
   })
 })
 
-it('preserves the valid ordered view sort configuration with column edits', () => {
+it('preserves the view query configuration with column edits', () => {
   const schema = fixture()
   schema.views[0]!.config.sort = [
     { field: 'other', dir: 'desc' },
     { field: 'missing', dir: 'asc' },
     { field: 'other', dir: 'asc' },
   ]
+  schema.views[0]!.config.groupBy = ['other', 'name']
+  schema.views[0]!.config.aggregates = [{ fieldId: 'other', aggregate: 'sum' }]
   const normalized = normalizeColumns(schema.views[0]!.config, schema)
   expect(normalized.sort).toEqual([{ field: 'other', dir: 'desc' }])
+  expect(normalized.groupBy).toEqual(['other', 'name'])
+  expect(normalized.aggregates).toEqual([
+    { fieldId: 'other', aggregate: 'sum' },
+  ])
   const changed = applyColumnIntents(
     schema.views[0]!.config,
     [{ kind: 'visible', id: 'name', visible: false }],
     schema,
   )
   expect(changed.sort).toEqual([{ field: 'other', dir: 'desc' }])
+  expect(changed.groupBy).toEqual(['other', 'name'])
+  expect(changed.aggregates).toEqual([{ fieldId: 'other', aggregate: 'sum' }])
 })
 
 it('rebases only user intents against live fields and keeps unrelated server widths', () => {

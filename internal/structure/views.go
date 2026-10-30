@@ -9,6 +9,7 @@ import (
 
 	"pandatable/internal/acl"
 	"pandatable/internal/apperr"
+	"pandatable/internal/codec"
 	"pandatable/internal/structure/structuresql"
 )
 
@@ -24,8 +25,15 @@ type ViewColumn struct {
 }
 
 type ViewColumns struct {
-	Fields []ViewColumn `json:"fields"`
-	Frozen int          `json:"frozen"`
+	Fields     []ViewColumn    `json:"fields"`
+	Frozen     int             `json:"frozen"`
+	GroupBy    []string        `json:"groupBy,omitempty"`
+	Aggregates []ViewAggregate `json:"aggregates,omitempty"`
+}
+
+type ViewAggregate struct {
+	FieldID   string    `json:"fieldId"`
+	Aggregate codec.Agg `json:"aggregate"`
 }
 
 func readViewColumns(raw []byte, fields []Field) (ViewColumns, error) {
@@ -41,7 +49,11 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 	for _, field := range fields {
 		live[field.ID] = true
 	}
-	result := ViewColumns{Fields: make([]ViewColumn, 0, len(fields))}
+	result := ViewColumns{
+		Fields:     make([]ViewColumn, 0, len(fields)),
+		GroupBy:    append([]string(nil), config.GroupBy...),
+		Aggregates: append([]ViewAggregate(nil), config.Aggregates...),
+	}
 	seen := make(map[string]bool, len(fields))
 	visible := 0
 	for _, column := range config.Fields {
@@ -101,6 +113,19 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		if stored.Version != version {
 			return apperr.New(409, "ERR_VERSION_CONFLICT", "The view changed; reload and retry")
 		}
+		var existing ViewColumns
+		if err := json.Unmarshal(stored.Config, &existing); err != nil {
+			return fmt.Errorf("decode stored view config: %w", err)
+		}
+		if input.GroupBy == nil {
+			input.GroupBy = existing.GroupBy
+		}
+		if input.Aggregates == nil {
+			input.Aggregates = existing.Aggregates
+		}
+		if err := validateGroupConfig(input, table); err != nil {
+			return err
+		}
 		seen := make(map[string]bool, len(input.Fields))
 		visible := 0
 		for _, column := range input.Fields {
@@ -143,4 +168,38 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		return nil
 	})
 	return result, err
+}
+
+func validateGroupConfig(config ViewColumns, table rowTable) error {
+	if len(config.GroupBy) > 3 {
+		return validation("Grouping supports at most three fields")
+	}
+	seenGroups := make(map[string]bool, len(config.GroupBy))
+	for _, id := range config.GroupBy {
+		field, ok := table.byID[id]
+		if !ok || field.relation != nil || seenGroups[id] {
+			return validation("Grouping fields must be unique live non-link fields")
+		}
+		seenGroups[id] = true
+	}
+	seenAggregates := make(map[string]bool, len(config.Aggregates))
+	for _, aggregate := range config.Aggregates {
+		field, ok := table.byID[aggregate.FieldID]
+		if !ok || field.codec == nil {
+			return validation("Aggregate fields must be live stored fields")
+		}
+		supported := false
+		for _, candidate := range field.codec.Aggregates() {
+			if candidate == aggregate.Aggregate && candidate != codec.AggNone {
+				supported = true
+				break
+			}
+		}
+		key := aggregate.FieldID + "\x00" + string(aggregate.Aggregate)
+		if !supported || seenAggregates[key] {
+			return validation("Aggregate is unsupported or duplicated for its field")
+		}
+		seenAggregates[key] = true
+	}
+	return nil
 }

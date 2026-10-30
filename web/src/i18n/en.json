@@ -123,7 +123,25 @@
     "remove": "Remove",
     "addSortField": "Add sort field",
     "selectSortField": "Select a field",
-    "addSort": "Add sort"
+    "addSort": "Add sort",
+    "groupEmpty": "(empty)",
+    "groupHeader": "{field}: {value} ({count})",
+    "expandGroup": "Expand {field}: {value}",
+    "collapseGroup": "Collapse {field}: {value}",
+    "groupAggregate": "{field} {aggregate}: {value}",
+    "aggregateLabels": {
+      "count": "Count",
+      "count_empty": "Count empty",
+      "count_filled": "Count filled",
+      "unique": "Unique",
+      "sum": "Sum",
+      "avg": "Average",
+      "min": "Minimum",
+      "max": "Maximum",
+      "earliest": "Earliest",
+      "latest": "Latest",
+      "percent_checked": "Percent checked"
+    }
   },
   "filter": {
     "group": "Filter group",

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"net/http"
@@ -25,7 +26,9 @@ func (api *authHTTP) updateViewColumns(w http.ResponseWriter, r *http.Request, u
 				Visible *bool           `json:"visible"`
 				Width   json.RawMessage `json:"width"`
 			} `json:"fields"`
-			Frozen *int `json:"frozen"`
+			Frozen     *int            `json:"frozen"`
+			GroupBy    json.RawMessage `json:"groupBy"`
+			Aggregates json.RawMessage `json:"aggregates"`
 		} `json:"config"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
@@ -37,7 +40,33 @@ func (api *authHTTP) updateViewColumns(w http.ResponseWriter, r *http.Request, u
 		api.fail(w, r, invalid)
 		return
 	}
-	config := structure.ViewColumns{Fields: make([]structure.ViewColumn, 0, len(*input.Config.Fields)), Frozen: *input.Config.Frozen}
+	var groupBy []string
+	if len(input.Config.GroupBy) > 0 {
+		if bytes.Equal(bytes.TrimSpace(input.Config.GroupBy), []byte("null")) ||
+			json.Unmarshal(input.Config.GroupBy, &groupBy) != nil || groupBy == nil {
+			api.fail(w, r, invalid)
+			return
+		}
+	}
+	var aggregates []structure.ViewAggregate
+	if len(input.Config.Aggregates) > 0 {
+		if bytes.Equal(bytes.TrimSpace(input.Config.Aggregates), []byte("null")) {
+			api.fail(w, r, invalid)
+			return
+		}
+		decoder := json.NewDecoder(bytes.NewReader(input.Config.Aggregates))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&aggregates); err != nil || aggregates == nil {
+			api.fail(w, r, invalid)
+			return
+		}
+	}
+	config := structure.ViewColumns{
+		Fields:     make([]structure.ViewColumn, 0, len(*input.Config.Fields)),
+		Frozen:     *input.Config.Frozen,
+		GroupBy:    groupBy,
+		Aggregates: aggregates,
+	}
 	for _, column := range *input.Config.Fields {
 		if column.ID == nil || column.Visible == nil {
 			api.fail(w, r, invalid)

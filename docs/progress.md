@@ -56,7 +56,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.5 | Formula engine | ✅ | 2026-10-29 | AT-409 and task gates pass; D-172 records the stable-reference formula contract. [Record](task-prompts/T2.5.md#record-2026-10-29). |
 | T2.6 | Filter engine & UI | ✅ | 2026-10-30 | Server-side filter compiler and localized nested UI pass AT-501/502; formula/rollup filter and sort evidence now completes AT-410 with T2.7. Task gates pass. [Record](task-prompts/T2.6.md#record-2026-10-30). |
 | T2.7 | Sort | ✅ | 2026-10-30 | AT-503/410 and task gates pass: ordered transient sort controls, NULLS LAST deterministic paging, and formula/rollup sorting; D-175 preserves the legacy request. [Record](task-prompts/T2.7.md#record-2026-10-30). |
-| T2.8 | Grouping | ⬜ | | |
+| T2.8 | Grouping | ✅ | 2026-10-30 | AT-504 and task gates pass: filtered three-level buckets, empty and sorted multi-select keys, grouped row paging, localized desktop/mobile headers, and persistent expansion; D-176 records view-config storage. [Record](task-prompts/T2.8.md#record-2026-10-30). |
 | T2.9 | Highlight | ⬜ | | |
 | T2.10 | View management | ⬜ | | |
 | T2.11 | Search & aggregates | ⬜ | | |
@@ -119,6 +119,7 @@ Summary updated at each milestone end.
 | 2026-10-29 | T2.5 Done: AT-409 and both task gates pass; formula parsing, query-time computation, API checks and localized editor are complete. D-172 records implementation choices. |
 | 2026-10-30 | T2.6 filter implementation and task gates pass; AT-501/502 pass and AT-410 filter evidence is partial pending T2.7 computed-field sorting. D-173/D-174 record the operator contracts; PG18 regression covers timezone-relative date, lookup, formula, and rollup filters. |
 | 2026-10-30 | T2.7 Done: AT-503/410 pass; transient multi-sort controls, computed-field sorting, NULLS LAST and deterministic paging pass task gates. D-175 extends the query contract compatibly; detailed evidence in the T2.7 record. |
+| 2026-10-30 | T2.8 Done: AT-504 and both task gates pass; filtered grouped queries, canonical group keys, aggregates, virtual desktop/mobile group rows, and collapse persistence are complete. D-176 records view-config storage; details in the [T2.8 record](task-prompts/T2.8.md#record-2026-10-30). |
 | 2026-10-30 | T2.6 Done: AT-501/502 and AT-410 pass after T2.7 adds computed-field sorting; server filter coverage and task gates were already green. |
 | 2026-10-28 | T1.23 Done: full AT-301..304 production-browser scenarios plus required PG18 catalog/authorship checks pass; T1.13/T1.14/T1.15 flip to Done. D-156 configurable PGDG mirror (fixes repeated image-build stalls), D-157 E2E harness pacing/optional-failure/editor-opening rules. Default-parallel check and complete E2E 23/0/2 pass. M1 stays open (T1.8, T1.9, T1.22, AT-312/NFR-2). |
 | 2026-10-26 | T1.10 implemented: workspace/book/table API (`internal/structure`), atomic metadata+DDL, system fields/Name/default Grid, reorder, soft delete, `/nav`, D-097..D-103 and sqlc `structuresql`. Required PG18 tests, serial full check and image E2E 11/2 pass; default-parallel Suite cleanup failure recorded. Sidebar UI and linked UI/field acceptance stay pending, so In progress; T1.11 prompt created. Retained Podman VM/dev DB restored stopped. |

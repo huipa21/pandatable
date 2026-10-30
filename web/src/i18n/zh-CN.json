@@ -123,7 +123,25 @@
     "remove": "移除",
     "addSortField": "添加排序字段",
     "selectSortField": "选择字段",
-    "addSort": "添加排序"
+    "addSort": "添加排序",
+    "groupEmpty": "（空）",
+    "groupHeader": "{field}：{value}（{count}）",
+    "expandGroup": "展开{field}：{value}",
+    "collapseGroup": "折叠{field}：{value}",
+    "groupAggregate": "{field}{aggregate}：{value}",
+    "aggregateLabels": {
+      "count": "计数",
+      "count_empty": "空值计数",
+      "count_filled": "非空计数",
+      "unique": "唯一值",
+      "sum": "求和",
+      "avg": "平均值",
+      "min": "最小值",
+      "max": "最大值",
+      "earliest": "最早",
+      "latest": "最晚",
+      "percent_checked": "已选百分比"
+    }
   },
   "filter": {
     "group": "筛选组",

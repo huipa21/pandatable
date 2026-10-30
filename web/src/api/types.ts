@@ -242,6 +242,8 @@ export interface ViewColumns {
   fields: { id: string; visible: boolean; width?: number }[]
   frozen: number
   sort?: { field: string; dir: 'asc' | 'desc' }[]
+  groupBy?: string[]
+  aggregates?: { fieldId: string; aggregate: string }[]
 }
 
 export interface TableView extends NavView {
@@ -344,6 +346,8 @@ export interface RowQueryRequest {
   fieldIds?: string[]
   /** Transient filter override; never saved to the view config. */
   filter?: FilterNode | null
+  /** Group values to apply before paging expanded group rows. */
+  groupPath?: RowValue[]
 }
 
 export interface RowQueryResult {
@@ -351,6 +355,28 @@ export interface RowQueryResult {
   /** Visible field UUIDs in view-config order. */
   fieldIds: string[]
   total: number | null
+  schemaVersion: number
+}
+
+export interface RowGroupRequest {
+  path: RowValue[]
+  filter?: FilterNode | null
+}
+
+export interface RowGroupAggregate {
+  fieldId: string
+  aggregate: string
+  value: RowValue
+}
+
+export interface RowGroupBucket {
+  key: RowValue
+  count: number
+  aggregates: RowGroupAggregate[]
+}
+
+export interface RowGroupResult {
+  groups: RowGroupBucket[]
   schemaVersion: number
 }
 

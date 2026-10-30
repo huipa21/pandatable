@@ -39,6 +39,7 @@ import type {
   RowMutation,
   RowQueryRequest,
   RowQueryResult,
+  RowGroupResult,
   RowSort,
   RowValue,
   TableField,
@@ -56,6 +57,7 @@ import GridCellContent from './GridCellContent.vue'
 import GridRelationCell from '../relations/GridRelationCell.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
+import { GroupedRowsWindow, type GroupNode } from './groupedRows'
 import { formatTsv, parseTsv, TsvError } from './tsv'
 import { useViewColumns, minColumnWidth, maxColumnWidth } from './viewColumns'
 
@@ -242,6 +244,7 @@ function fetchPage(
   limit: number,
   includeCount: boolean,
   signal: AbortSignal,
+  groupPath?: RowValue[],
 ): Promise<RowQueryResult> {
   if (props.identity !== auth.user?.id)
     throw new Error('Grid identity changed before query')
@@ -251,6 +254,7 @@ function fetchPage(
     includeCount,
     sorts: sortCriteria.value,
     ...(props.filter ? { filter: props.filter } : {}),
+    ...(groupPath?.length ? { groupPath } : {}),
     ...(columnState.localQuery.value
       ? { fieldIds: visibleFieldIds.value }
       : {}),
@@ -269,7 +273,7 @@ function fetchPage(
   })
 }
 
-const rows = new RemoteRowsWindow(
+const remoteRows = new RemoteRowsWindow(
   { fetch: fetchPage },
   () => {
     if (!ready.value || disposed.value) return
@@ -284,12 +288,135 @@ const rows = new RemoteRowsWindow(
   },
 )
 
+const groupBy = computed(() => columnState.config.value.groupBy ?? [])
+const groupedMode = computed(() => groupBy.value.length > 0)
+const groupedRows = new GroupedRowsWindow(
+  {
+    groups: async (path, signal) => {
+      const result = await request<RowGroupResult>(
+        `/views/${props.viewId}/groups`,
+        'POST',
+        {
+          path,
+          ...(props.filter ? { filter: props.filter } : {}),
+        },
+        AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+      )
+      if (result.schemaVersion !== props.schema.schemaVersion) {
+        emit('schemaChanged')
+        throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+      }
+      return result.groups
+    },
+    rows: (path, offset, limit, includeCount, signal) =>
+      fetchPage(offset, limit, includeCount, signal, path),
+  },
+  Math.max(1, Math.min(3, groupBy.value.length)),
+  `pandatable:groups:${props.identity}:${props.viewId}`,
+  () => {
+    if (!ready.value || disposed.value) return
+    if (groupedRows.snapshot().cachedRows > 0) loading.value = false
+    syncSource()
+  },
+  (cause) => {
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+    error.value = cause
+    loading.value = false
+  },
+)
+
+const rows = {
+  get total() {
+    return groupedMode.value ? groupedRows.total : remoteRows.total
+  },
+  snapshot: () =>
+    groupedMode.value ? groupedRows.snapshot() : remoteRows.snapshot(),
+  initialize: (anchor = 0) =>
+    groupedMode.value
+      ? groupedRows.initialize()
+      : remoteRows.initialize(anchor),
+  load: (index: number) =>
+    groupedMode.value ? groupedRows.load(index) : remoteRows.load(index),
+  ensureLoaded: (index: number) =>
+    groupedMode.value
+      ? groupedRows.ensureLoaded(index)
+      : remoteRows.ensureLoaded(index),
+  rowAt: (index: number) =>
+    groupedMode.value ? groupedRows.rowAt(index) : remoteRows.rowAt(index),
+  indexOfRow: (id: string) =>
+    groupedMode.value ? groupedRows.indexOfRow(id) : remoteRows.indexOfRow(id),
+  updateRow: (index: number, row: DataRow) =>
+    groupedMode.value
+      ? groupedRows.updateRow(index, row)
+      : remoteRows.updateRow(index, row),
+  dispose: () => {
+    groupedRows.dispose()
+    remoteRows.dispose()
+  },
+}
+
 interface GridModel {
   __rowId: string
+  __groupId: string
   [key: string]: RowValue | string
 }
 
-const emptyModel: GridModel = { __rowId: '' }
+const emptyModel: GridModel = { __rowId: '', __groupId: '' }
+const groupNodes = new Map<string, GroupNode>()
+
+function groupPathKey(path: RowValue[]) {
+  return JSON.stringify(path)
+}
+
+function groupKeyLabel(key: RowValue) {
+  if (key === null) return t('grid.groupEmpty')
+  if (Array.isArray(key)) return key.map(String).join(', ')
+  return String(key)
+}
+
+function groupTitle(group: GroupNode) {
+  const field = props.schema.fields.find(
+    (candidate) => candidate.id === groupBy.value[group.level],
+  )
+  return t('grid.groupHeader', {
+    field: field?.name ?? '',
+    value: groupKeyLabel(group.key),
+    count: group.count,
+  })
+}
+
+function groupActionLabel(group: GroupNode) {
+  const field = props.schema.fields.find(
+    (candidate) => candidate.id === groupBy.value[group.level],
+  )
+  const params = {
+    field: field?.name ?? '',
+    value: groupKeyLabel(group.key),
+  }
+  return group.expanded
+    ? t('grid.collapseGroup', params)
+    : t('grid.expandGroup', params)
+}
+
+async function toggleGroup(group: GroupNode) {
+  try {
+    await groupedRows.toggle(group.path)
+  } catch (cause) {
+    error.value = cause
+  }
+}
+
+function modelForGroup(group: GroupNode): GridModel {
+  const id = groupPathKey(group.path)
+  groupNodes.set(id, group)
+  const model: GridModel = { __rowId: '', __groupId: id }
+  const firstFieldId = visibleFieldIds.value[0]
+  if (firstFieldId) model[firstFieldId] = null
+  for (const aggregate of group.aggregates)
+    model[aggregate.fieldId] = aggregate.value
+  return model
+}
 
 function wireValue(value: unknown): WireValue {
   if (isWireValue(value)) return value
@@ -398,6 +525,46 @@ const columns = computed<ColumnRegular[]>(() => {
     const item = boundFor(id)
     if (!item) continue
     const { field, bound } = item
+    const fieldCellTemplate = template<CellTemplateProp>(GridCellContent, {
+      props: (context) => {
+        const groupId = context.model.__groupId
+        const group =
+          typeof groupId === 'string' ? groupNodes.get(groupId) : undefined
+        const aggregate = group?.aggregates.find(
+          (candidate) => candidate.fieldId === field.id,
+        )
+        return {
+          field: bound,
+          value: wireValue(context.value),
+          env: fieldEnvironment.value,
+          tableId: props.schema.table.id,
+          identity: props.identity,
+          message:
+            cellErrors.value.get(
+              `${String(context.model.__rowId)}:${field.id}`,
+            ) ?? '',
+          group: group
+            ? {
+                header: field.id === visibleFieldIds.value[0],
+                path: JSON.stringify(group.path),
+                label: groupTitle(group),
+                expanded: group.expanded,
+                ariaLabel: groupActionLabel(group),
+                aggregate: aggregate
+                  ? t('grid.groupAggregate', {
+                      field: field.name,
+                      aggregate: groupAggregateLabel(aggregate.aggregate),
+                      value: String(aggregate.value ?? ''),
+                    })
+                  : undefined,
+                toggle: () => void toggleGroup(group),
+              }
+            : undefined,
+        }
+      },
+      key: (context) =>
+        `${String(context.model.__groupId ?? context.model.__rowId)}:${field.id}`,
+    })
     definitions.push({
       prop: field.id,
       name: field.name,
@@ -409,24 +576,40 @@ const columns = computed<ColumnRegular[]>(() => {
       pin: index < columnState.config.value.frozen ? 'colPinStart' : undefined,
       readonly: !canWrite.value || bound.readOnly,
       editor: bound.readOnly ? undefined : field.id,
-      cellTemplate: template<CellTemplateProp>(GridCellContent, {
-        props: (context) => ({
-          field: bound,
-          value: wireValue(context.value),
-          env: fieldEnvironment.value,
-          tableId: props.schema.table.id,
-          identity: props.identity,
-          message:
-            cellErrors.value.get(
-              `${String(context.model.__rowId)}:${field.id}`,
-            ) ?? '',
-        }),
-        key: (context) => `${String(context.model.__rowId)}:${field.id}`,
-      }),
+      cellTemplate: fieldCellTemplate,
     })
   }
   return definitions
 })
+
+function groupAggregateLabel(aggregate: string) {
+  switch (aggregate) {
+    case 'count':
+      return t('grid.aggregateLabels.count')
+    case 'count_empty':
+      return t('grid.aggregateLabels.count_empty')
+    case 'count_filled':
+      return t('grid.aggregateLabels.count_filled')
+    case 'unique':
+      return t('grid.aggregateLabels.unique')
+    case 'sum':
+      return t('grid.aggregateLabels.sum')
+    case 'avg':
+      return t('grid.aggregateLabels.avg')
+    case 'min':
+      return t('grid.aggregateLabels.min')
+    case 'max':
+      return t('grid.aggregateLabels.max')
+    case 'earliest':
+      return t('grid.aggregateLabels.earliest')
+    case 'latest':
+      return t('grid.aggregateLabels.latest')
+    case 'percent_checked':
+      return t('grid.aggregateLabels.percent_checked')
+    default:
+      return aggregate
+  }
+}
 
 const editors = computed(() =>
   Object.fromEntries(
@@ -439,7 +622,7 @@ const editors = computed(() =>
 )
 
 function modelFor(row: DataRow | null): GridModel {
-  return row ? { __rowId: row.id, ...row.fields } : emptyModel
+  return row ? { __rowId: row.id, __groupId: '', ...row.fields } : emptyModel
 }
 
 function mutate<T>(
@@ -1100,16 +1283,25 @@ function documentKeydown(event: KeyboardEvent) {
 }
 
 function syncSource() {
+  if (groupedMode.value) {
+    groupNodes.clear()
+    gridSource.value = groupedRows.entries.map((entry, index) =>
+      entry.kind === 'group'
+        ? modelForGroup(entry.group)
+        : modelFor(rows.rowAt(index)),
+    )
+    return
+  }
   let source = gridSource.value
   let changed = false
-  if (source.length !== rows.slots.length) {
-    source = Array.from({ length: rows.slots.length }, () => emptyModel)
-    syncedRows.length = rows.slots.length
+  if (source.length !== remoteRows.slots.length) {
+    source = Array.from({ length: remoteRows.slots.length }, () => emptyModel)
+    syncedRows.length = remoteRows.slots.length
     syncedRows.fill(null)
     syncedPages.clear()
     changed = true
   }
-  const cachedPages = new Set(rows.snapshot().cachedPages)
+  const cachedPages = new Set(remoteRows.snapshot().cachedPages)
   for (const page of syncedPages) {
     if (cachedPages.has(page)) continue
     const start = page * remotePageSize
@@ -1123,9 +1315,9 @@ function syncSource() {
   }
   for (const page of cachedPages) {
     const start = page * remotePageSize
-    const end = Math.min(start + remotePageSize, rows.slots.length)
+    const end = Math.min(start + remotePageSize, remoteRows.slots.length)
     for (let index = start; index < end; index++) {
-      const row = rows.rowAt(index)
+      const row = remoteRows.rowAt(index)
       if (syncedRows[index] === row) continue
       source[index] = modelFor(row)
       syncedRows[index] = row
@@ -1165,7 +1357,8 @@ function scroll(event: CustomEvent<ViewPortScrollEvent>) {
   if (event.detail.dimension !== 'rgRow') return
   const index = Math.max(0, Math.floor(event.detail.coordinate / 32))
   rows.load(index)
-  loading.value = rows.snapshot().cachedRows === 0 && rows.total > 0
+  loading.value =
+    !groupedMode.value && rows.snapshot().cachedRows === 0 && rows.total > 0
 }
 
 function updateSortCriteria(next: RowSort[]) {
@@ -1257,6 +1450,7 @@ async function routerReplaceLogin() {
 async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   event.preventDefault()
   if (!canWrite.value || disposed.value) return
+  if (event.detail.model?.__groupId) return
   if (typeof event.detail.prop !== 'string') return
   const item = boundFor(event.detail.prop)
   const rowId = event.detail.model?.__rowId ?? focused?.model?.__rowId
@@ -1873,6 +2067,17 @@ onBeforeUnmount(() => {
 }
 .grid-validation-summary {
   white-space: pre-wrap;
+}
+.data-grid .grid-group-toggle {
+  width: 100%;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.data-grid .grid-group-cell {
+  white-space: nowrap;
 }
 .data-grid button,
 .data-grid summary {
