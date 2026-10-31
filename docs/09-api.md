@@ -338,9 +338,9 @@ filesystem traversal or ACL invalidation is needed: no ACL state changes.
 Existing NULL-profile-timezone auth readers observe the new team default on
 their next read; explicit timezones remain unchanged. New admin-created users
 receive the current default locale, but existing users' locale/theme/timezone
-are not rewritten. Setup retains its explicit chosen locale. Upload enforcement,
-currency-field creation and history/trash purge consumers do not exist yet:
-these values persist for T2.2/T2.1/T3.4/T3.6, not completed AT-322.
+are not rewritten. Setup retains its explicit chosen locale. Upload limits,
+currency defaults and history retention have active consumers; Trash purge
+remains deferred to T3.6.
 
 `GET /meta/app` is public and returns **only** `{appName,defaultLocale}`. It
 does not read privileged settings. No query parameters; no-store, same bounded
@@ -731,7 +731,7 @@ row version, validator, migration or relaxed authorization/body limit exists.
 | GET | `/tables/{id}/directory/mentions?q={text}` | Table read access; 2–100 characters; returns up to 20 active users with table read access and `hasMore`. |
 | GET/POST | `/tables/{id}/rows/{rowId}/comments` | Table read access; listing accepts `offset` and optional comment UUID `focus`, returning `{items,hasMore}`; POST accepts `{body}` and returns `{comment,eventId}`. |
 | PATCH/DELETE | `/comments/{id}` | Author may edit or delete; table owner may delete any comment. PATCH accepts `{body}` and returns `{comment,eventId}`; DELETE returns `{eventId}`. |
-| GET | `/tables/{id}/rows/{rowId}/history` | paged |
+| GET | `/tables/{id}/rows/{rowId}/history?offset={n}` | Effective table read access; 50 newest-first entries with `{items,hasMore}`. |
 | GET | `/notifications?offset={n}` | Recipient's visible mentions, newest first, with `{items,unreadCount,hasMore}`. |
 | POST | `/notifications/read` | `{id}` marks the caller's notification read idempotently and returns `{eventId}`. |
 
@@ -741,6 +741,15 @@ requested comment before normal newest-first ordering. An absent focus returns
 UTF-8 bytes with at most 50 distinct `@username` mentions. Email-like tokens are
 not mentions. Mutations resolve eligible active table readers inside the
 transaction, and row responses include `commentCount` when nonzero.
+
+History offsets are nonnegative and at most 1,000,000; unknown or repeated query
+parameters are rejected. Each item contains a decimal-string `id`, `authorId`
+(UUID or null), `authorName` (empty for a deleted user), `action`, `changes`
+and `createdAt`. The author name comes from the history author, not the sharing
+directory. Changes use field IDs and optional `o`/`n` wire values. Link deltas
+use arrays of `{id,label}` for the linked rows. Deleted-row history remains
+readable with table access; an unknown row ID returns an empty page. Table-level
+`type_change` events have no row ID and are not included in this row endpoint.
 
 ### Files
 | POST | `/tables/{id}/fields/{fieldId}/attachments` | Authenticated `multipart/form-data` with one `file` part; requires table write access; enforces the per-file admin MiB limit, sniffed MIME and field options. |

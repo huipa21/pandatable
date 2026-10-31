@@ -67,7 +67,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.1 | Realtime hub | ✅ | 2026-10-31 | D-183; AT-601/602/603/605/107 and task gates pass. [Record](task-prompts/T3.1.md#record-2026-10-31). |
 | T3.2 | Presence | ✅ | 2026-10-31 | D-184; AT-604 and task gates pass. [Record](task-prompts/T3.2.md#record-2026-10-31). |
 | T3.3 | Comments & notifications | ✅ | 2026-10-31 | D-185; AT-606 and task gates pass. [Record](task-prompts/T3.3.md#record-2026-10-31). |
-| T3.4 | Row history | ⬜ | | |
+| T3.4 | Row history | ✅ | 2026-10-31 | D-186; AT-607 and task gates pass. [Record](task-prompts/T3.4.md#record-2026-10-31). |
 | T3.5 | Undo/redo | ⬜ | | |
 | T3.6 | Trash & purge | ⬜ | | |
 | T3.7 | Export | ⬜ | | |
@@ -111,6 +111,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-31 | T3.4 Done: transactional row/link history, localized timeline and retention pass AT-607 and task gates. |
 | 2026-10-31 | T3.3 Done: comments, access-filtered mentions and live notifications pass AT-606 and task gates. |
 | 2026-10-31 | T3.2 Done: per-table presence, localized avatars and focused-cell indicators pass AT-604 and task gates. |
 | 2026-10-31 | T3.1 Done: transactional realtime delivery, reconnect/resync, access revocation and focused task gates pass. |

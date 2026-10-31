@@ -763,6 +763,14 @@ func TestTypeChangeDryRunAndConvertFailingValuesToNull(t *testing.T) {
 	if got := scanOne[int](f, "SELECT count(*) FROM meta.row_history WHERE table_id=$1 AND action='type_change'", ft.id()); got != 1 {
 		t.Fatalf("type change recorded %d events", got)
 	}
+	if got := scanOne[bool](f, `SELECT row_id IS NULL AND changes = jsonb_build_object(
+		$2::text, jsonb_build_object('o','text','n','integer'))
+		FROM meta.row_history WHERE table_id=$1 AND action='type_change'`, ft.id(), field.ID); !got {
+		t.Fatal("type change history did not record the field-keyed old and new types")
+	}
+	if got := scanOne[int](f, "SELECT count(*) FROM meta.row_history WHERE table_id=$1 AND row_id IS NOT NULL", ft.id()); got != 0 {
+		t.Fatalf("type conversion recorded %d per-row events", got)
+	}
 }
 
 func TestTypeChangeSpecializedMultiSelectToSingleSelect(t *testing.T) {

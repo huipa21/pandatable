@@ -299,7 +299,7 @@ Corrupt stored types/values fail explicitly; absent rows use defaults.
 | default_currency | string / CNY | checked-in ISO 4217; field creation deferred T2.1 |
 | default_locale | string / en | en or zh-CN; new admin-created users and non-explicit browser fallback |
 | upload_max_mb | integer / 20 | 1..100 MiB; enforcement deferred T2.2 |
-| history_retention_days | integer / 90 | 1..3650; consumer deferred T3.4 |
+| history_retention_days | integer / 90 | 1..3650; T3.4 daily history retention job |
 | trash_retention_days | integer / 30 | 1..3650; consumer deferred T3.6 |
 
 Setup's marker remains private/unpatchable. Existing user preferences are not

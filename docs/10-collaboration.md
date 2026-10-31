@@ -73,11 +73,17 @@ handler tx ──► pg_notify('pt_events', '{"t":"row.updated","tableId":"…",
 - Field conversion records one table-level `type_change` event with NULL
   `row_id` (D-071), not one event per converted row. All row actions require a
   row ID; metadata-table purge cascades history, while physical row deletion
-  does not. This schema exists now; capture/retention jobs remain later work.
-- Link changes recorded on both rows as `link`/`unlink` with the other row's id + display value.
-- Bulk paste over N rows → N history rows (one per row) in one INSERT.
-- Retention: daily job deletes history older than `history_retention_days` (default 90).
-- UI: "History" tab in row expand modal — timeline grouped by user + minute.
+  does not. Type-change `o`/`n` values are the old/new UI types, keyed by field ID.
+- Link changes are recorded on both rows as `link`/`unlink` with arrays of the
+  other rows' IDs and display values, grouped per affected row and action.
+  Replacement and deletion-triggered unlinking are included; deletion
+  snapshots retain the logical links. No-op edits or links add no history.
+- Bulk paste over N changed rows → N history rows (one per row) in one INSERT.
+- The retention worker runs at startup and every 24 hours, using the current
+  `history_retention_days` (default 90); it deletes entries strictly older than
+  the cutoff and logs failures.
+- UI: the "History" tab in the row expand modal groups the timeline by user
+  and minute and refreshes through the existing realtime events.
 - This is **not** an audit log: not tamper-proof, no login/admin/action logs (out of scope).
 
 ## 5. Undo / redo (FR-G6)

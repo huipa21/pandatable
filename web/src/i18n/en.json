@@ -52,6 +52,33 @@
     "uncertain": "The comment may not have been saved. Refresh before retrying.",
     "limit": "Comments must be at most 4096 UTF-8 bytes."
   },
+  "history": {
+    "tabs": "Row information",
+    "details": "Details",
+    "title": "History",
+    "loading": "Loading history…",
+    "stale": "Previously loaded history may be out of date.",
+    "empty": "No history yet.",
+    "deletedUser": "Deleted user",
+    "deletedField": "Deleted field ({id})",
+    "loadMore": "Load older history",
+    "noValue": "No value",
+    "emptyText": "Empty text",
+    "emptyList": "Empty list",
+    "yes": "Yes",
+    "no": "No",
+    "separator": ", ",
+    "linkValue": "{label} (row {id})",
+    "transition": "{old} → {new}",
+    "actions": {
+      "insert": "Row created",
+      "update": "Row updated",
+      "delete": "Row deleted",
+      "link": "Linked row",
+      "unlink": "Unlinked row",
+      "restore": "Row restored"
+    }
+  },
   "notifications": {
     "button": "Notifications: {count} unread",
     "title": "Notifications",
@@ -418,7 +445,7 @@
     "historyRetentionDays": "History retention (1–3650 days)",
     "trashRetentionDays": "Trash retention (1–3650 days)",
     "defaultsNotice": "Defaults do not overwrite existing user choices. Timezone changes apply to users without an override; language changes apply to new users and browsers without an explicit local language choice.",
-    "deferredNotice": "History and Trash retention jobs are not active yet.",
+    "deferredNotice": "The Trash retention job is not active yet.",
     "loading": "Loading settings",
     "save": "Save settings",
     "reload": "Reload settings",

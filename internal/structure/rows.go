@@ -279,13 +279,23 @@ func (table rowTable) selectColumns(fields []rowField) string {
 }
 
 func (table rowTable) selectColumnList(fields []rowField) []string {
+	return table.selectColumnListAlias(fields, "")
+}
+
+func (table rowTable) selectColumnListAlias(fields []rowField, alias string) []string {
+	columnName := func(column string) string {
+		if alias != "" {
+			return pgx.Identifier{alias, column}.Sanitize()
+		}
+		return pgx.Identifier{column}.Sanitize()
+	}
 	columns := make([]string, 0, len(fields)+1)
-	columns = append(columns, pgx.Identifier{"id"}.Sanitize())
+	columns = append(columns, columnName("id"))
 	for _, field := range fields {
 		if field.relation != nil || field.computed != nil || field.formula != nil {
 			continue
 		}
-		column := field.sqlColumn()
+		column := columnName(field.column)
 		if field.kind == codec.JSON {
 			column += "::text"
 		}
@@ -952,6 +962,13 @@ func (s *Service) CreateRows(ctx context.Context, actor Actor, tableID string, i
 			}
 			result = append(result, record)
 		}
+		history, err := snapshotHistories(table, result, actor, "insert")
+		if err != nil {
+			return err
+		}
+		if err := insertHistory(ctx, tx, history); err != nil {
+			return err
+		}
 		return emitRows(ctx, tx, actor, table.id.String(), "row.created", result, nil)
 	})
 	return result, err
@@ -1024,6 +1041,13 @@ func (s *Service) SubmitForm(ctx context.Context, actor Actor, viewID string, in
 			return err
 		}
 		result = record
+		history, err := snapshotHistories(table, []RowRecord{record}, actor, "insert")
+		if err != nil {
+			return err
+		}
+		if err := insertHistory(ctx, tx, history); err != nil {
+			return err
+		}
 		return emitRows(ctx, tx, actor, table.id.String(), "row.created", []RowRecord{record}, nil)
 	})
 	return result, err
@@ -1070,7 +1094,8 @@ func insertRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, ta
 		sq.Expr("transaction_timestamp()"), user)
 	query, args, err := builder.Columns(columns...).
 		Values(valuesWithDefaults...).
-		Suffix("RETURNING " + table.selectColumns(table.fields)).
+		Suffix("RETURNING WITH (NEW AS history_new) " +
+			strings.Join(table.selectColumnListAlias(table.fields, "history_new"), ", ")).
 		ToSql()
 	if err != nil {
 		return RowRecord{}, fmt.Errorf("build row insert: %w", err)
@@ -1101,9 +1126,16 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 	}
 	var result RowRecord
 	err = s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
-		record, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input)
+		record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input)
 		if err != nil {
 			return err
+		}
+		if len(changes) > 0 {
+			if err := insertHistory(ctx, tx, []historyWrite{{
+				TableID: table.id.String(), RowID: id, UserID: actor.ID, Action: "update", Changes: changes,
+			}}); err != nil {
+				return err
+			}
 		}
 		if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
 			return err
@@ -1119,9 +1151,9 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 }
 
 func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
-	id int64, input map[string]json.RawMessage) (RowRecord, error) {
+	id int64, input map[string]json.RawMessage) (RowRecord, map[string]HistoryChange, error) {
 	if len(input) == 0 {
-		return RowRecord{}, validation("At least one field value is required")
+		return RowRecord{}, nil, validation("At least one field value is required")
 	}
 	lockQuery, lockArgs, err := sq.Select(pgx.Identifier{"id"}.Sanitize()).
 		From(table.qualifiedName()).
@@ -1129,16 +1161,16 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 		Suffix("FOR UPDATE").
 		PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
-		return RowRecord{}, fmt.Errorf("build row lock query: %w", err)
+		return RowRecord{}, nil, fmt.Errorf("build row lock query: %w", err)
 	}
 	if err := tx.QueryRow(ctx, lockQuery, lockArgs...).Scan(new(int64)); errors.Is(err, pgx.ErrNoRows) {
-		return RowRecord{}, acl.ErrNotFound()
+		return RowRecord{}, nil, acl.ErrNotFound()
 	} else if err != nil {
-		return RowRecord{}, fmt.Errorf("lock row for patch: %w", err)
+		return RowRecord{}, nil, fmt.Errorf("lock row for patch: %w", err)
 	}
 	fields, values, err := sortedFieldValues(ctx, queries, table, input)
 	if err != nil {
-		return RowRecord{}, err
+		return RowRecord{}, nil, err
 	}
 	builder := sq.Update(table.qualifiedName()).PlaceholderFormat(sq.Dollar)
 	for index, field := range fields {
@@ -1146,31 +1178,31 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 	}
 	user, ok := acl.ParseUUID(actor.ID)
 	if !ok {
-		return RowRecord{}, acl.ErrValidation()
+		return RowRecord{}, nil, acl.ErrValidation()
 	}
 	query, args, err := builder.
 		Set("updated_at", sq.Expr("transaction_timestamp()")).
 		Set("updated_by", user).
 		Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): id}).
-		Suffix("RETURNING " + table.selectColumns(table.fields)).
+		Suffix(patchReturning(table, fields)).
 		ToSql()
 	if err != nil {
-		return RowRecord{}, fmt.Errorf("build row patch: %w", err)
+		return RowRecord{}, nil, fmt.Errorf("build row patch: %w", err)
 	}
-	record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
+	record, changes, err := scanPatchedRow(queryUncachedRow(ctx, tx, query, args...), table, fields)
 	if err != nil {
-		return RowRecord{}, fmt.Errorf("patch row: %w", err)
+		return RowRecord{}, nil, fmt.Errorf("patch row: %w", err)
 	}
 	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
-		return RowRecord{}, err
+		return RowRecord{}, nil, err
 	}
 	if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
-		return RowRecord{}, err
+		return RowRecord{}, nil, err
 	}
 	if err := enrichRowFormulas(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
-		return RowRecord{}, err
+		return RowRecord{}, nil, err
 	}
-	return record, nil
+	return record, changes, nil
 }
 
 func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, input []RowPatch) ([]RowRecord, error) {
@@ -1203,13 +1235,22 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 		return ids[order[left]] < ids[order[right]]
 	})
 	err := s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
+		history := make([]historyWrite, 0, len(input))
 		for _, index := range order {
 			item := input[index]
-			record, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields)
+			record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields)
 			if err != nil {
 				return err
 			}
 			result[index] = record
+			if len(changes) > 0 {
+				history = append(history, historyWrite{
+					TableID: table.id.String(), RowID: ids[index], UserID: actor.ID, Action: "update", Changes: changes,
+				})
+			}
+		}
+		if err := insertHistory(ctx, tx, history); err != nil {
+			return err
 		}
 		if err := enrichCommentCounts(ctx, tx, table.id, result); err != nil {
 			return err
@@ -1275,17 +1316,12 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 		if len(records) != len(ids) {
 			return acl.ErrNotFound()
 		}
-		if err := s.deleteRelatedRows(ctx, tx, actor, table, sorted, make(map[string]map[int64]bool)); err != nil {
+		history := newDeleteHistoryState()
+		if err := s.deleteRelatedRows(ctx, tx, actor, table, sorted, history); err != nil {
 			return err
 		}
-		deleteQuery, deleteArgs, err := sq.Delete(table.qualifiedName()).
-			Where(sq.Expr(`"id" = ANY(?::bigint[])`, sorted)).
-			PlaceholderFormat(sq.Dollar).ToSql()
-		if err != nil {
-			return fmt.Errorf("build row delete query: %w", err)
-		}
-		if _, err := tx.Exec(ctx, deleteQuery, deleteArgs...); err != nil {
-			return fmt.Errorf("delete rows: %w", err)
+		if err := deletePhysicalRows(ctx, tx, table, sorted, actor, history); err != nil {
+			return err
 		}
 		result = records
 		return emitRows(ctx, tx, actor, table.id.String(), "row.deleted", records, nil)

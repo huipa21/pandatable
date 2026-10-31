@@ -373,6 +373,25 @@ export interface DataRow {
   _hl_cells?: Record<string, HighlightColor>
 }
 
+export interface RowHistoryChange {
+  o?: RowValue
+  n?: RowValue
+}
+
+export interface RowHistory {
+  id: string
+  authorId: string | null
+  authorName: string
+  action: 'insert' | 'update' | 'delete' | 'link' | 'unlink' | 'restore'
+  changes: Record<string, RowHistoryChange>
+  createdAt: string
+}
+
+export interface HistoryListing {
+  items: RowHistory[]
+  hasMore: boolean
+}
+
 export interface MentionUser {
   id: string
   username: string

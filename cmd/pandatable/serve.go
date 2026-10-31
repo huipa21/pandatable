@@ -104,9 +104,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		defer close(autoIndexDone)
 		structureService.RunAutoIndexWorker(autoIndexCtx, logger)
 	}()
+	historyDone := make(chan struct{})
+	go func() {
+		defer close(historyDone)
+		structureService.RunHistoryRetentionWorker(autoIndexCtx, logger)
+	}()
 	defer func() {
 		stopAutoIndex()
 		<-autoIndexDone
+		<-historyDone
 	}()
 	return httpapi.Run(ctx, listener, handler, logger)
 }

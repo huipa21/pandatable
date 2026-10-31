@@ -26,6 +26,7 @@ import RelationLinks from '../relations/RelationLinks.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
 import CellPresence from '../presence/CellPresence.vue'
 import CommentPanel from './CommentPanel.vue'
+import HistoryPanel from './HistoryPanel.vue'
 
 const rowPatchBodyLimit = 64 * 1024
 
@@ -50,6 +51,9 @@ const realtime = useRealtimeStore()
 const resolveUser = (id: string) =>
   userLabel(props.identity, props.schema.table.id, id)
 const dialog = ref<HTMLDialogElement>()
+const detailsTab = ref<HTMLButtonElement>()
+const historyTab = ref<HTMLButtonElement>()
+const activeTab = ref<'details' | 'history'>('details')
 const row = ref<DataRow | null>(null)
 const loading = ref(false)
 const saving = ref(false)
@@ -318,6 +322,10 @@ function startEditing(id: string) {
   error.value = null
 }
 
+function canEditField(isSystem: boolean, readOnly: boolean) {
+  return canWrite.value && !isSystem && !readOnly
+}
+
 async function discardDraftAttachments() {
   if (!creating.value || draftCleanupStarted) return
   draftCleanupStarted = true
@@ -353,6 +361,27 @@ function close() {
   controller?.abort()
   dialog.value?.close()
   emit('close')
+}
+
+function switchTab(tab: 'details' | 'history', focus = false) {
+  activeTab.value = tab
+  if (focus)
+    void nextTick(() =>
+      (tab === 'details' ? detailsTab.value : historyTab.value)?.focus(),
+    )
+}
+
+function tabKey(event: KeyboardEvent) {
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    event.preventDefault()
+    switchTab(activeTab.value === 'details' ? 'history' : 'details', true)
+  } else if (event.key === 'Home') {
+    event.preventDefault()
+    switchTab('details', true)
+  } else if (event.key === 'End') {
+    event.preventDefault()
+    switchTab('history', true)
+  }
 }
 
 function relationUpdated(updated: DataRow) {
@@ -510,8 +539,16 @@ watch(editing, () => {
   changedBy.value = ''
 })
 watch(
-  () => props.rowId,
-  () => realtime.setFocus(props.schema.table.id, null),
+  [
+    () => props.schema.table.id,
+    () => props.rowId,
+    () => props.identity,
+    () => auth.user?.id,
+  ],
+  () => {
+    activeTab.value = 'details'
+    realtime.setFocus(props.schema.table.id, null)
+  },
 )
 watch([editing, saving, relationEditing, loading], flushRealtimeReload)
 onBeforeUnmount(() => {
@@ -562,102 +599,154 @@ function leaveField(event: FocusEvent) {
     </button>
     <p v-if="saved" role="status">{{ t('rowExpand.saved') }}</p>
     <template v-if="row || (creating && canWrite && !blocked)">
-      <p v-if="!canWrite">{{ t('rowExpand.readOnly') }}</p>
-      <p>{{ creating ? t('mobileRows.defaults') : t('rowExpand.hint') }}</p>
-      <p v-if="creating && error">{{ t('mobileRows.uncertain') }}</p>
-      <section
-        v-for="item in fields"
-        :key="item.field.id"
-        class="row-field"
-        :aria-label="item.field.name"
-        :data-field-id="item.field.id"
-        @focusin="focusField(item.field.id)"
-        @focusout="leaveField"
+      <div
+        v-if="row && rowId"
+        class="row-tabs"
+        role="tablist"
+        :aria-label="t('history.tabs')"
+        @keydown="tabKey"
       >
-        <CellPresence
-          v-if="rowId"
-          :table-id="schema.table.id"
-          :row-id="rowId"
-          :field-id="item.field.id"
-          :identity="identity"
-        />
-        <h3>{{ item.field.name }}</h3>
-        <p v-if="item.field.description">{{ item.field.description }}</p>
-        <p v-if="creating && item.field.isSystem">
-          {{ t('rowExpand.system') }}
-        </p>
-        <template
-          v-else-if="item.field.uiType === 'link' && item.value.ok && !creating"
+        <button
+          :id="`row-details-tab-${rowId}`"
+          ref="detailsTab"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === 'details'"
+          :aria-controls="`row-details-panel-${rowId}`"
+          :tabindex="activeTab === 'details' ? 0 : -1"
+          @click="switchTab('details')"
         >
-          <RelationLinks
-            :links="item.value.value"
-            :editable="canWrite"
-            @edit="relationEditing = item.field.id"
+          {{ t('history.details') }}
+        </button>
+        <button
+          :id="`row-history-tab-${rowId}`"
+          ref="historyTab"
+          type="button"
+          role="tab"
+          :aria-selected="activeTab === 'history'"
+          :aria-controls="`row-history-panel-${rowId}`"
+          :tabindex="activeTab === 'history' ? 0 : -1"
+          @click="switchTab('history')"
+        >
+          {{ t('history.title') }}
+        </button>
+      </div>
+      <div
+        v-show="creating || activeTab === 'details'"
+        :id="rowId ? `row-details-panel-${rowId}` : undefined"
+        :role="rowId ? 'tabpanel' : undefined"
+        :aria-labelledby="rowId ? `row-details-tab-${rowId}` : undefined"
+      >
+        <p v-if="!canWrite">{{ t('rowExpand.readOnly') }}</p>
+        <p>{{ creating ? t('mobileRows.defaults') : t('rowExpand.hint') }}</p>
+        <p v-if="creating && error">{{ t('mobileRows.uncertain') }}</p>
+        <section
+          v-for="item in fields"
+          :key="item.field.id"
+          class="row-field"
+          :aria-label="item.field.name"
+          :data-field-id="item.field.id"
+          @focusin="focusField(item.field.id)"
+          @focusout="leaveField"
+        >
+          <CellPresence
+            v-if="rowId"
+            :table-id="schema.table.id"
+            :row-id="rowId"
+            :field-id="item.field.id"
+            :identity="identity"
           />
-        </template>
-        <template v-else-if="item.result.ok && item.value.ok">
-          <template v-if="editing === item.field.id && canWrite">
-            <fieldset :disabled="saving">
-              <legend>{{ item.field.name }}</legend>
-              <p v-if="changedBy" role="status">
-                {{ t('realtime.changedBy', { name: changedBy }) }}
-              </p>
-              <FieldEditor
+          <h3>{{ item.field.name }}</h3>
+          <p v-if="item.field.description">{{ item.field.description }}</p>
+          <p v-if="creating && item.field.isSystem">
+            {{ t('rowExpand.system') }}
+          </p>
+          <template
+            v-else-if="
+              item.field.uiType === 'link' && item.value.ok && !creating
+            "
+          >
+            <RelationLinks
+              :links="item.value.value"
+              :editable="canWrite"
+              @edit="relationEditing = item.field.id"
+            />
+          </template>
+          <template v-else-if="item.result.ok && item.value.ok">
+            <template v-if="editing === item.field.id && canWrite">
+              <fieldset :disabled="saving">
+                <legend>{{ item.field.name }}</legend>
+                <p v-if="changedBy" role="status">
+                  {{ t('realtime.changedBy', { name: changedBy }) }}
+                </p>
+                <FieldEditor
+                  :field="item.result.value"
+                  :value="item.value.value"
+                  :env="env"
+                  :table-id="schema.table.id"
+                  :field-id="item.field.id"
+                  :preserve-uploads="preserveUploads"
+                  :identity="identity"
+                  :resolve-user="resolveUser"
+                  :submit-label="
+                    creating ? t('field.editor.apply') : t('rowExpand.save')
+                  "
+                  @commit="save"
+                  @cancel="editing = null"
+                />
+                <button type="button" @click="editing = null">
+                  {{ t('admin.cancel') }}
+                </button>
+              </fieldset>
+            </template>
+            <template v-else>
+              <FieldRenderer
                 :field="item.result.value"
                 :value="item.value.value"
                 :env="env"
                 :table-id="schema.table.id"
-                :field-id="item.field.id"
-                :preserve-uploads="preserveUploads"
                 :identity="identity"
                 :resolve-user="resolveUser"
-                :submit-label="
-                  creating ? t('field.editor.apply') : t('rowExpand.save')
-                "
-                @commit="save"
-                @cancel="editing = null"
               />
-              <button type="button" @click="editing = null">
-                {{ t('admin.cancel') }}
+              <button
+                v-if="
+                  canEditField(item.field.isSystem, item.result.value.readOnly)
+                "
+                type="button"
+                :disabled="saving"
+                @click="startEditing(item.field.id)"
+              >
+                {{ t('rowExpand.edit', { name: item.field.name }) }}
               </button>
-            </fieldset>
+              <span
+                v-else-if="item.field.isSystem || item.result.value.readOnly"
+                v-text="t('rowExpand.system')"
+              />
+            </template>
           </template>
-          <template v-else>
-            <FieldRenderer
-              :field="item.result.value"
-              :value="item.value.value"
-              :env="env"
-              :table-id="schema.table.id"
-              :identity="identity"
-              :resolve-user="resolveUser"
-            />
-            <button
-              v-if="
-                canWrite && !item.field.isSystem && !item.result.value.readOnly
-              "
-              type="button"
-              :disabled="saving"
-              @click="startEditing(item.field.id)"
-            >
-              {{ t('rowExpand.edit', { name: item.field.name }) }}
-            </button>
-            <span
-              v-else-if="item.field.isSystem || item.result.value.readOnly"
-              v-text="t('rowExpand.system')"
-            />
-          </template>
-        </template>
-        <p v-else role="alert">{{ t('grid.unsupportedField') }}</p>
-      </section>
-      <CommentPanel
-        v-if="row && rowId && !blocked"
+          <p v-else role="alert">{{ t('grid.unsupportedField') }}</p>
+        </section>
+        <CommentPanel
+          v-if="row && rowId && !blocked"
+          :table-id="schema.table.id"
+          :view-id="viewId"
+          :row-id="rowId"
+          :identity="identity"
+          :level="schema.myLevel"
+          :focus-comment="focusComment"
+          @changed="emit('saved')"
+          @schema-changed="emit('schemaChanged')"
+        />
+      </div>
+      <HistoryPanel
+        v-if="row && rowId && activeTab === 'history' && !blocked"
+        :id="`row-history-panel-${rowId}`"
+        role="tabpanel"
+        :aria-labelledby="`row-history-tab-${rowId}`"
         :table-id="schema.table.id"
-        :view-id="viewId"
         :row-id="rowId"
         :identity="identity"
-        :level="schema.myLevel"
-        :focus-comment="focusComment"
-        @changed="emit('saved')"
+        :fields="schema.fields"
         @schema-changed="emit('schemaChanged')"
       />
       <button
@@ -702,6 +791,16 @@ header {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+.row-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.row-tabs [aria-selected='true'] {
+  font-weight: 700;
+  border-bottom-width: 3px;
 }
 h2,
 h3 {

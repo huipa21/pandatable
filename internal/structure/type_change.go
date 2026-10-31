@@ -378,8 +378,8 @@ func (s *Service) ConvertFieldType(ctx context.Context, actor Actor, id string, 
 		if err := recheckTypeDependencies(ctx, c, table, field.ID, codec.Kind(input.UIType)); err != nil {
 			return err
 		}
-		changes, err := json.Marshal(map[string]string{
-			"fieldId": field.ID.String(), "from": field.UiType, "to": input.UIType,
+		changes, err := json.Marshal(map[string]map[string]string{
+			field.ID.String(): {"o": field.UiType, "n": input.UIType},
 		})
 		if err != nil {
 			return fmt.Errorf("encode type change history: %w", err)

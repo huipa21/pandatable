@@ -630,6 +630,18 @@ func (q *Queries) InsertRowComment(ctx context.Context, arg InsertRowCommentPara
 	return id, err
 }
 
+const insertRowHistoryBatch = `-- name: InsertRowHistoryBatch :exec
+INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes)
+SELECT (item->>'table_id')::uuid, (item->>'row_id')::bigint,
+       (item->>'user_id')::uuid, item->>'action', item->'changes'
+FROM jsonb_array_elements($1::jsonb) AS item
+`
+
+func (q *Queries) InsertRowHistoryBatch(ctx context.Context, entries []byte) error {
+	_, err := q.db.Exec(ctx, insertRowHistoryBatch, entries)
+	return err
+}
+
 const insertTable = `-- name: InsertTable :one
 INSERT INTO meta.tables (book_id, name, pg_name, position, created_by)
 VALUES ($1, $2, $3, $4, $5)
@@ -1120,6 +1132,64 @@ func (q *Queries) ListRowFields(ctx context.Context, tableID pgtype.UUID) ([]Lis
 			&i.PgColumn,
 			&i.Options,
 			&i.IsSystem,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRowHistory = `-- name: ListRowHistory :many
+SELECT h.id, h.user_id, COALESCE(u.display_name, '')::text AS author_name,
+       h.action, h.changes, h.created_at
+FROM meta.row_history h
+LEFT JOIN meta.users u ON u.id = h.user_id
+WHERE h.table_id = $1::uuid AND h.row_id = $2::bigint
+ORDER BY h.id DESC
+LIMIT $4::int OFFSET $3::int
+`
+
+type ListRowHistoryParams struct {
+	TableID    pgtype.UUID
+	RowID      int64
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListRowHistoryRow struct {
+	ID         int64
+	UserID     pgtype.UUID
+	AuthorName string
+	Action     string
+	Changes    []byte
+	CreatedAt  pgtype.Timestamptz
+}
+
+func (q *Queries) ListRowHistory(ctx context.Context, arg ListRowHistoryParams) ([]ListRowHistoryRow, error) {
+	rows, err := q.db.Query(ctx, listRowHistory,
+		arg.TableID,
+		arg.RowID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRowHistoryRow
+	for rows.Next() {
+		var i ListRowHistoryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AuthorName,
+			&i.Action,
+			&i.Changes,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1873,6 +1943,18 @@ func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWo
 	return items, nil
 }
 
+const purgeRowHistory = `-- name: PurgeRowHistory :execrows
+DELETE FROM meta.row_history WHERE created_at < $1::timestamptz
+`
+
+func (q *Queries) PurgeRowHistory(ctx context.Context, cutoff pgtype.Timestamptz) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeRowHistory, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const readDefaultCurrency = `-- name: ReadDefaultCurrency :one
 
 SELECT COALESCE(
@@ -1889,6 +1971,21 @@ func (q *Queries) ReadDefaultCurrency(ctx context.Context) (interface{}, error) 
 	var coalesce interface{}
 	err := row.Scan(&coalesce)
 	return coalesce, err
+}
+
+const readHistoryRetentionDays = `-- name: ReadHistoryRetentionDays :one
+SELECT COALESCE(
+    (SELECT CASE WHEN jsonb_typeof(value) = 'number' THEN (value #>> '{}')::int ELSE 0 END
+     FROM meta.settings WHERE key = 'history_retention_days'),
+    90
+)::int
+`
+
+func (q *Queries) ReadHistoryRetentionDays(ctx context.Context) (int32, error) {
+	row := q.db.QueryRow(ctx, readHistoryRetentionDays)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const releaseDevSeedLock = `-- name: ReleaseDevSeedLock :one

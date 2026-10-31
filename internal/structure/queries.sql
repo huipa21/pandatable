@@ -207,6 +207,31 @@ INSERT INTO meta.row_history (table_id, user_id, action, changes)
 VALUES (sqlc.arg(table_id)::uuid, sqlc.arg(user_id)::uuid, 'type_change',
         sqlc.arg(changes)::jsonb);
 
+-- name: InsertRowHistoryBatch :exec
+INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes)
+SELECT (item->>'table_id')::uuid, (item->>'row_id')::bigint,
+       (item->>'user_id')::uuid, item->>'action', item->'changes'
+FROM jsonb_array_elements(sqlc.arg(entries)::jsonb) AS item;
+
+-- name: ListRowHistory :many
+SELECT h.id, h.user_id, COALESCE(u.display_name, '')::text AS author_name,
+       h.action, h.changes, h.created_at
+FROM meta.row_history h
+LEFT JOIN meta.users u ON u.id = h.user_id
+WHERE h.table_id = sqlc.arg(table_id)::uuid AND h.row_id = sqlc.arg(row_id)::bigint
+ORDER BY h.id DESC
+LIMIT sqlc.arg(page_limit)::int OFFSET sqlc.arg(page_offset)::int;
+
+-- name: ReadHistoryRetentionDays :one
+SELECT COALESCE(
+    (SELECT CASE WHEN jsonb_typeof(value) = 'number' THEN (value #>> '{}')::int ELSE 0 END
+     FROM meta.settings WHERE key = 'history_retention_days'),
+    90
+)::int;
+
+-- name: PurgeRowHistory :execrows
+DELETE FROM meta.row_history WHERE created_at < sqlc.arg(cutoff)::timestamptz;
+
 -- name: SetFieldPosition :exec
 UPDATE meta.fields SET position = $2, version = version + 1
 WHERE id = $1 AND deleted_at IS NULL;

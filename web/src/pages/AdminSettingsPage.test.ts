@@ -61,7 +61,7 @@ it('loads catalogs, sends only changed fields and shows persisted values/notices
     release(Response.json(settings))
     await flushPromises()
     expect(wrapper.text()).toContain(
-      'History and Trash retention jobs are not active yet.',
+      'The Trash retention job is not active yet.',
     )
     await wrapper
       .get('input[aria-label="Application name"]')
@@ -88,7 +88,7 @@ it('loads catalogs, sends only changed fields and shows persisted values/notices
     i18n.global.locale.value = 'zh-CN'
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('设置')
-    expect(wrapper.text()).toContain('历史记录和回收站保留任务尚未启用')
+    expect(wrapper.text()).toContain('回收站保留任务尚未启用')
   } finally {
     wrapper.unmount()
     i18n.global.locale.value = 'en'

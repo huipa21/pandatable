@@ -115,6 +115,42 @@ it('reports field focus in the row dialog and clears it on blur', async () => {
   expect(setFocus).toHaveBeenLastCalledWith('t', null)
 })
 
+it('opens the localized History tab with keyboard navigation', async () => {
+  const fetcher = vi.fn(async (url: string) => {
+    if (url.endsWith('/history'))
+      return Response.json({
+        items: [
+          {
+            id: '1',
+            authorId: navUser.id,
+            authorName: 'Alice',
+            action: 'update',
+            changes: { name: { o: 'Original', n: 'Changed' } },
+            createdAt: '2026-10-31T12:00:00Z',
+          },
+        ],
+        hasMore: false,
+      })
+    return Response.json(stored)
+  })
+  const { wrapper } = await setup(tableSchema(), fetcher)
+  const tabs = wrapper.findAll('[role="tab"]')
+  expect(tabs.map((tab) => tab.text())).toEqual(['Details', 'History'])
+  expect(tabs[0]!.attributes('aria-selected')).toBe('true')
+  await wrapper
+    .get('[role="tablist"]')
+    .trigger('keydown', { key: 'ArrowRight' })
+  await flushPromises()
+  expect(tabs[1]!.attributes('aria-selected')).toBe('true')
+  expect(wrapper.get('.history').text()).toContain('Original → Changed')
+  expect(wrapper.get('.history').text()).toContain('Alice')
+  i18n.global.locale.value = 'zh-CN'
+  await flushPromises()
+  expect(wrapper.get('.history').text()).toContain('历史记录')
+  await wrapper.get('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
+  expect(tabs[0]!.attributes('aria-selected')).toBe('true')
+})
+
 it('preserves active edits, identifies remote changes, and refreshes after cancel or save', async () => {
   class Socket {
     static OPEN = 1

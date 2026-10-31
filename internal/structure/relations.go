@@ -498,19 +498,19 @@ func lockRelationRows(ctx context.Context, tx pgx.Tx, table rowTable, ids []int6
 	return nil
 }
 
-func relationExec(ctx context.Context, tx pgx.Tx, query string, args ...any) error {
-	if _, err := tx.Exec(ctx, query, args...); err != nil {
-		var postgres *pgconn.PgError
-		if errors.As(err, &postgres) && postgres.Code == "23505" {
-			return apperr.New(409, "ERR_RELATION_CONFLICT", "This row is already linked")
-		}
-		return fmt.Errorf("change relation links: %w", err)
+func relationExecutionError(err error) error {
+	if err == nil {
+		return nil
 	}
-	return nil
+	var postgres *pgconn.PgError
+	if errors.As(err, &postgres) && postgres.Code == "23505" {
+		return apperr.New(409, "ERR_RELATION_CONFLICT", "This row is already linked")
+	}
+	return fmt.Errorf("change relation links: %w", err)
 }
 
 func updateForeignLinks(ctx context.Context, tx pgx.Tx, table rowTable, column string, ids []int64,
-	target *int64, actor pgtype.UUID) error {
+	target *int64, actor pgtype.UUID, edges *[]relationEdge) error {
 	if err := ddl.ValidateIdentifier(ddl.Column, column); err != nil {
 		return err
 	}
@@ -519,8 +519,31 @@ func updateForeignLinks(ctx context.Context, tx pgx.Tx, table rowTable, column s
 		value = *target
 	}
 	query := "UPDATE " + table.qualifiedName() + " SET " + pgx.Identifier{column}.Sanitize() +
-		"=$1, \"updated_at\"=transaction_timestamp(), \"updated_by\"=$2 WHERE \"id\"=ANY($3::bigint[])"
-	return relationExec(ctx, tx, query, value, actor, ids)
+		"=$1, \"updated_at\"=transaction_timestamp(), \"updated_by\"=$2 WHERE \"id\"=ANY($3::bigint[]) " +
+		"RETURNING WITH (OLD AS history_old, NEW AS history_new) history_new.\"id\", " +
+		pgx.Identifier{"history_old", column}.Sanitize() + ", " + pgx.Identifier{"history_new", column}.Sanitize()
+	rows, err := tx.Query(ctx, query, value, actor, ids)
+	if err != nil {
+		return relationExecutionError(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var child int64
+		var old, newValue pgtype.Int8
+		if err := rows.Scan(&child, &old, &newValue); err != nil {
+			return relationExecutionError(err)
+		}
+		if edges == nil || old.Valid == newValue.Valid && (!old.Valid || old.Int64 == newValue.Int64) {
+			continue
+		}
+		if old.Valid {
+			*edges = append(*edges, relationEdge{parent: old.Int64, child: child, action: "unlink"})
+		}
+		if newValue.Valid {
+			*edges = append(*edges, relationEdge{parent: newValue.Int64, child: child, action: "link"})
+		}
+	}
+	return relationExecutionError(rows.Err())
 }
 
 func rowLinkValue(ctx context.Context, tx pgx.Tx, table rowTable, id int64, column string) (*int64, error) {
@@ -652,17 +675,21 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 		if !valid {
 			return acl.ErrValidation()
 		}
+		var historyEdges []relationEdge
 		if relation.kind == "many_many" {
-			if err := changeJunctionLinks(ctx, tx, relation, field.relationSide, sourceID, add, remove, user); err != nil {
+			if err := changeJunctionLinks(ctx, tx, relation, field.relationSide, sourceID, add, remove, user, &historyEdges); err != nil {
 				return err
 			}
 		} else if relation.kind == "one_one" {
 			if err := changeOneToOneLinks(ctx, tx, table, targetTable, relation, field.relationSide,
-				sourceID, add, remove, change.Replace, user); err != nil {
+				sourceID, add, remove, change.Replace, user, &historyEdges); err != nil {
 				return err
 			}
 		} else if err := changeOneToManyLinks(ctx, tx, table, relation, field.relationSide,
-			sourceID, add, remove, user); err != nil {
+			sourceID, add, remove, user, &historyEdges); err != nil {
+			return err
+		}
+		if err := recordRelationHistory(ctx, tx, actor, relation, historyEdges); err != nil {
 			return err
 		}
 
@@ -711,7 +738,7 @@ func uniqueSortedIDs(ids []int64) []int64 {
 }
 
 func changeJunctionLinks(ctx context.Context, tx pgx.Tx, relation relationRecord, side string,
-	sourceID int64, add, remove []int64, actor pgtype.UUID) error {
+	sourceID int64, add, remove []int64, actor pgtype.UUID, edges *[]relationEdge) error {
 	if err := ddl.ValidateIdentifier(ddl.Junction, relation.junction.String); err != nil {
 		return err
 	}
@@ -726,23 +753,39 @@ func changeJunctionLinks(ctx context.Context, tx pgx.Tx, relation relationRecord
 	}
 	for _, id := range remove {
 		query := "DELETE FROM " + junction + " WHERE " + pgx.Identifier{sourceColumn}.Sanitize() +
-			"=$1 AND " + pgx.Identifier{targetColumn}.Sanitize() + "=$2"
-		if _, err := tx.Exec(ctx, query, sourceID, id); err != nil {
+			"=$1 AND " + pgx.Identifier{targetColumn}.Sanitize() +
+			`=$2 RETURNING WITH (OLD AS history_old) history_old."parent_id", history_old."child_id"`
+		var edge relationEdge
+		err := tx.QueryRow(ctx, query, sourceID, id).Scan(&edge.parent, &edge.child)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
 			return fmt.Errorf("remove relation junction link: %w", err)
 		}
+		edge.action = "unlink"
+		*edges = append(*edges, edge)
 	}
 	for _, id := range add {
 		query := "INSERT INTO " + junction + " (" + pgx.Identifier{sourceColumn}.Sanitize() + "," +
-			pgx.Identifier{targetColumn}.Sanitize() + `,"created_by") VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`
-		if _, err := tx.Exec(ctx, query, sourceID, id, actor); err != nil {
+			pgx.Identifier{targetColumn}.Sanitize() + `,"created_by") VALUES ($1,$2,$3) ON CONFLICT DO NOTHING ` +
+			`RETURNING WITH (NEW AS history_new) history_new."parent_id", history_new."child_id"`
+		var edge relationEdge
+		err := tx.QueryRow(ctx, query, sourceID, id, actor).Scan(&edge.parent, &edge.child)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
 			return fmt.Errorf("add relation junction link: %w", err)
 		}
+		edge.action = "link"
+		*edges = append(*edges, edge)
 	}
 	return nil
 }
 
 func changeOneToManyLinks(ctx context.Context, tx pgx.Tx, table rowTable, relation relationRecord, side string,
-	sourceID int64, add, remove []int64, actor pgtype.UUID) error {
+	sourceID int64, add, remove []int64, actor pgtype.UUID, edges *[]relationEdge) error {
 	if err := ddl.ValidateIdentifier(ddl.Column, relation.fkColumn.String); err != nil {
 		return err
 	}
@@ -754,12 +797,12 @@ func changeOneToManyLinks(ctx context.Context, tx pgx.Tx, table rowTable, relati
 			return err
 		}
 		for _, id := range remove {
-			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{id}, nil, actor); err != nil {
+			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{id}, nil, actor, edges); err != nil {
 				return err
 			}
 		}
 		if len(add) > 0 {
-			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, add, &sourceID, actor); err != nil {
+			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, add, &sourceID, actor, edges); err != nil {
 				return err
 			}
 		}
@@ -771,14 +814,14 @@ func changeOneToManyLinks(ctx context.Context, tx pgx.Tx, table rowTable, relati
 			return err
 		}
 		if current != nil && containsID(remove, *current) {
-			if err := updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, nil, actor); err != nil {
+			if err := updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, nil, actor, edges); err != nil {
 				return err
 			}
 		}
 	}
 	if len(add) > 0 {
 		parent := add[0]
-		if err := updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, &parent, actor); err != nil {
+		if err := updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, &parent, actor, edges); err != nil {
 			return err
 		}
 	}
@@ -786,7 +829,7 @@ func changeOneToManyLinks(ctx context.Context, tx pgx.Tx, table rowTable, relati
 }
 
 func changeOneToOneLinks(ctx context.Context, tx pgx.Tx, table, target rowTable, relation relationRecord, side string,
-	sourceID int64, add, remove []int64, replace bool, actor pgtype.UUID) error {
+	sourceID int64, add, remove []int64, replace bool, actor pgtype.UUID, edges *[]relationEdge) error {
 	if err := ddl.ValidateIdentifier(ddl.Column, relation.fkColumn.String); err != nil {
 		return err
 	}
@@ -802,7 +845,7 @@ func changeOneToOneLinks(ctx context.Context, tx pgx.Tx, table, target rowTable,
 			} else if err != nil {
 				return fmt.Errorf("check one-to-one link: %w", err)
 			}
-			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{id}, nil, actor); err != nil {
+			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{id}, nil, actor, edges); err != nil {
 				return err
 			}
 		} else {
@@ -811,7 +854,7 @@ func changeOneToOneLinks(ctx context.Context, tx pgx.Tx, table, target rowTable,
 				return err
 			}
 			if current != nil && *current == id {
-				if err := updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, nil, actor); err != nil {
+				if err := updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, nil, actor, edges); err != nil {
 					return err
 				}
 			}
@@ -836,19 +879,19 @@ func changeOneToOneLinks(ctx context.Context, tx pgx.Tx, table, target rowTable,
 		}
 		if replace {
 			if oldParent != nil && *oldParent != sourceID {
-				if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{childID}, nil, actor); err != nil {
+				if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{childID}, nil, actor, edges); err != nil {
 					return err
 				}
 			}
 			if otherChild, exists, err := relatedRowFor(ctx, tx, child, relation.fkColumn.String, sourceID); err != nil {
 				return err
 			} else if exists && otherChild != childID {
-				if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{otherChild}, nil, actor); err != nil {
+				if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{otherChild}, nil, actor, edges); err != nil {
 					return err
 				}
 			}
 		}
-		if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{childID}, &sourceID, actor); err != nil {
+		if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{childID}, &sourceID, actor, edges); err != nil {
 			return err
 		}
 		return nil
@@ -863,12 +906,12 @@ func changeOneToOneLinks(ctx context.Context, tx pgx.Tx, table, target rowTable,
 		if linkedChild, exists, err := relatedRowFor(ctx, tx, child, relation.fkColumn.String, parentID); err != nil {
 			return err
 		} else if exists && linkedChild != sourceID {
-			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{linkedChild}, nil, actor); err != nil {
+			if err := updateForeignLinks(ctx, tx, child, relation.fkColumn.String, []int64{linkedChild}, nil, actor, edges); err != nil {
 				return err
 			}
 		}
 	}
-	return updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, &parentID, actor)
+	return updateForeignLinks(ctx, tx, table, relation.fkColumn.String, []int64{sourceID}, &parentID, actor, edges)
 }
 
 func relationRowTable(ctx context.Context, tx pgx.Tx, tableID pgtype.UUID) (rowTable, error) {
@@ -950,23 +993,26 @@ func linkedRowIDs(ctx context.Context, tx pgx.Tx, relation relationRecord, side 
 }
 
 func (s *Service) deleteRelatedRows(ctx context.Context, tx pgx.Tx, actor Actor,
-	table rowTable, ids []int64, visited map[string]map[int64]bool) error {
+	table rowTable, ids []int64, state *deleteHistoryState) error {
 	if len(ids) == 0 {
 		return nil
 	}
 	tableID := table.id.String()
-	if visited[tableID] == nil {
-		visited[tableID] = make(map[int64]bool)
+	if state.visited[tableID] == nil {
+		state.visited[tableID] = make(map[int64]bool)
 	}
 	pending := make([]int64, 0, len(ids))
 	for _, id := range ids {
-		if !visited[tableID][id] {
-			visited[tableID][id] = true
+		if !state.visited[tableID][id] {
+			state.visited[tableID][id] = true
 			pending = append(pending, id)
 		}
 	}
 	if len(pending) == 0 {
 		return nil
+	}
+	if err := state.remember(ctx, tx, actor, table, pending); err != nil {
+		return err
 	}
 	relations, err := relationRows(ctx, tx, table.id)
 	if err != nil {
@@ -1019,10 +1065,10 @@ func (s *Service) deleteRelatedRows(ctx context.Context, tx pgx.Tx, actor Actor,
 			if err := lockRelationRows(ctx, tx, target, linked); err != nil {
 				return err
 			}
-			if err := s.deleteRelatedRows(ctx, tx, actor, target, linked, visited); err != nil {
+			if err := s.deleteRelatedRows(ctx, tx, actor, target, linked, state); err != nil {
 				return err
 			}
-			if err := deletePhysicalRows(ctx, tx, target, linked); err != nil {
+			if err := deletePhysicalRows(ctx, tx, target, linked, actor, state); err != nil {
 				return err
 			}
 		}
@@ -1041,7 +1087,7 @@ func (s *Service) deleteRelatedRows(ctx context.Context, tx pgx.Tx, actor Actor,
 			if err := lockRelationRows(ctx, tx, target, linked); err != nil {
 				return err
 			}
-			if err := updateForeignLinks(ctx, tx, target, relation.fkColumn.String, linked, nil, user); err != nil {
+			if err := updateForeignLinks(ctx, tx, target, relation.fkColumn.String, linked, nil, user, nil); err != nil {
 				return err
 			}
 		}
@@ -1050,17 +1096,6 @@ func (s *Service) deleteRelatedRows(ctx context.Context, tx pgx.Tx, actor Actor,
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-func deletePhysicalRows(ctx context.Context, tx pgx.Tx, table rowTable, ids []int64) error {
-	if len(ids) == 0 {
-		return nil
-	}
-	query := "DELETE FROM " + table.qualifiedName() + ` WHERE "id"=ANY($1::bigint[])`
-	if _, err := tx.Exec(ctx, query, ids); err != nil {
-		return fmt.Errorf("delete linked rows: %w", err)
 	}
 	return nil
 }
