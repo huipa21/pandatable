@@ -33,6 +33,16 @@ handler tx ──► pg_notify('pt_events', '{"t":"row.updated","tableId":"…",
 - Hub broadcasts presence per table, throttled to 4/s.
 - UI: avatar stack in table header; colored outline + name tag on cell another user edits.
 - Stale presence removed after 60 s without heartbeat.
+- Reports repeat every 20 s and are tied to the authenticated connection and
+  table subscription. Unsubscribe, access denial, and disconnect remove that
+  connection promptly. Concurrent tabs aggregate to one user; the most
+  recently changed tab supplies focus.
+- Reports validate that the view belongs to the subscribed table and is shared
+  or owned by the sender. Snapshots are ACL-checked and contain only user IDs,
+  display names, and same-view cell coordinates. Another user's view ID and
+  cell values are never sent. A deadline-aware scheduler reserves expiry
+  broadcasts and may group expirations up to 250 ms early to meet the 60 s
+  bound without exceeding 4/s.
 
 ## 3. Comments & notifications (FR-C3)
 

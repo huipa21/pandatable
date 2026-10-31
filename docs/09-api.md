@@ -756,6 +756,7 @@ Client → server:
 |---|---|
 | `sub` | `{ tableId }` (server checks table read access and replies with `subscribed` or `sub.denied`) |
 | `unsub` | `{ tableId }` |
+| `presence` | `{ tableId, viewId?, cell?: { rowId, fieldId } }` — report the current view and focused cell, or omit `cell` to clear focus; requires an authorized subscription and an accessible view belonging to that table |
 | `ping` | |
 
 Server → client:
@@ -768,6 +769,7 @@ Server → client:
 | `schema.changed` | `{ tableId, schemaVersion, by, eventId }` — reload schema |
 | `view.changed` | `{ tableId, viewId, version, by, eventId }` |
 | `nav.changed` | `{ by, eventId }` — refresh the authorized sidebar; contains no resource IDs |
+| `presence` | `{ tableId, viewId?, users: [{ userId, name, cell? }] }` — current collaborators; `viewId` is the recipient's own view, and cell details appear only for that view |
 | `pong` | |
 | `session.revoked` | user disabled / logged out elsewhere |
 | `error` | `{ code }` for unsupported client message types |
@@ -787,5 +789,15 @@ resubscribes, and reloads the visible window without event replay. The server
 sends a WebSocket heartbeat every 25 seconds and rechecks session validity
 without extending its idle expiry.
 
-The `presence`, `comment.created`, and `notification` message types remain
-reserved for later tasks and are not implemented by T3.1.
+Presence snapshots contain no other users' view IDs or row values. The client
+reports changes at most once per 200 ms and repeats its latest state every 20 s;
+the hub rechecks table access, coalesces snapshots to at most four per second
+per table, and removes disconnected, unsubscribed, denied, or stale entries.
+Stale entries are removed by 60 s without a report; expirations within 250 ms
+may be grouped slightly early. A user's concurrent tabs share one avatar, with
+the most recently changed tab supplying focus. Invalid presence payloads and
+reports without a subscription receive `ERR_VALIDATION`; missing, hidden or
+other-table views receive `ERR_NOT_FOUND`.
+
+The `comment.created` and `notification` message types remain reserved for
+later tasks.

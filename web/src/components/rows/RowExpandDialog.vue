@@ -24,6 +24,7 @@ import FieldEditor from '../fields/FieldEditor.vue'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
+import CellPresence from '../presence/CellPresence.vue'
 
 const rowPatchBodyLimit = 64 * 1024
 
@@ -506,8 +507,13 @@ watch(
 watch(editing, () => {
   changedBy.value = ''
 })
+watch(
+  () => props.rowId,
+  () => realtime.setFocus(props.schema.table.id, null),
+)
 watch([editing, saving, relationEditing, loading], flushRealtimeReload)
 onBeforeUnmount(() => {
+  realtime.setFocus(props.schema.table.id, null)
   void discardDraftAttachments()
   disposed = true
   generation++
@@ -520,6 +526,20 @@ const relationField = computed(
     props.schema.fields.find((field) => field.id === relationEditing.value) ??
     null,
 )
+
+function focusField(fieldId: string) {
+  if (props.rowId)
+    realtime.setFocus(props.schema.table.id, { rowId: props.rowId, fieldId })
+}
+
+function leaveField(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (
+    !(next instanceof Node) ||
+    !(event.currentTarget as HTMLElement).contains(next)
+  )
+    realtime.setFocus(props.schema.table.id, null)
+}
 </script>
 
 <template>
@@ -549,7 +569,16 @@ const relationField = computed(
         class="row-field"
         :aria-label="item.field.name"
         :data-field-id="item.field.id"
+        @focusin="focusField(item.field.id)"
+        @focusout="leaveField"
       >
+        <CellPresence
+          v-if="rowId"
+          :table-id="schema.table.id"
+          :row-id="rowId"
+          :field-id="item.field.id"
+          :identity="identity"
+        />
         <h3>{{ item.field.name }}</h3>
         <p v-if="item.field.description">{{ item.field.description }}</p>
         <p v-if="creating && item.field.isSystem">
@@ -667,6 +696,7 @@ h3 {
   overflow-wrap: anywhere;
 }
 .row-field {
+  position: relative;
   display: grid;
   gap: 8px;
   padding: 16px 0;

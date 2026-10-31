@@ -2,6 +2,17 @@ import { onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { isOwnEvent } from '../api/eventIds'
 
+export interface PresenceCell {
+  rowId: string
+  fieldId: string
+}
+
+export interface PresenceUser {
+  userId: string
+  name: string
+  cell?: PresenceCell
+}
+
 export interface RealtimeEvent {
   t: string
   tableId?: string
@@ -15,10 +26,43 @@ export interface RealtimeEvent {
   viewId?: string
   version?: number
   code?: string
+  users?: PresenceUser[]
 }
 
 type Listener = (event: RealtimeEvent) => void
 type SocketStatus = 'idle' | 'connecting' | 'connected' | 'retrying'
+
+interface LocalPresence {
+  viewId: string
+  cell: PresenceCell | null
+  lastSent?: number
+  timer?: ReturnType<typeof setTimeout>
+}
+
+const presenceInterval = 200
+const presenceHeartbeat = 20_000
+
+function isPresenceUser(value: unknown): value is PresenceUser {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('userId' in value) ||
+    typeof value.userId !== 'string' ||
+    !('name' in value) ||
+    typeof value.name !== 'string'
+  )
+    return false
+  if (!('cell' in value) || value.cell === undefined) return true
+  const cell = value.cell
+  return (
+    typeof cell === 'object' &&
+    cell !== null &&
+    'rowId' in cell &&
+    typeof cell.rowId === 'string' &&
+    'fieldId' in cell &&
+    typeof cell.fieldId === 'string'
+  )
+}
 
 function parseEvent(raw: unknown): RealtimeEvent {
   if (typeof raw !== 'string') throw new Error('Realtime message is not text')
@@ -31,7 +75,14 @@ function parseEvent(raw: unknown): RealtimeEvent {
   )
     throw new Error('Realtime message has no type')
   const event = value as RealtimeEvent
-  for (const item of [event.tableId, event.by, event.byName, event.eventId]) {
+  for (const item of [
+    event.tableId,
+    event.by,
+    event.byName,
+    event.eventId,
+    event.viewId,
+    event.code,
+  ]) {
     if (item !== undefined && typeof item !== 'string')
       throw new Error('Realtime message has invalid identifiers')
   }
@@ -54,23 +105,118 @@ function parseEvent(raw: unknown): RealtimeEvent {
       ))
   )
     throw new Error('Realtime message has invalid cell changes')
+  if (
+    event.t === 'presence' &&
+    (!event.tableId ||
+      !Array.isArray(event.users) ||
+      event.users.some((user) => !isPresenceUser(user)))
+  )
+    throw new Error('Realtime message has invalid presence')
   return event
 }
 
 export const useRealtimeStore = defineStore('realtime', () => {
   const status = ref<SocketStatus>('idle')
   const error = ref<unknown>(null)
+  const presence = ref<Record<string, PresenceUser[]>>({})
   const listeners = new Map<string, Set<Listener>>()
   const globalListeners = new Set<Listener>()
+  const localPresence = new Map<string, LocalPresence>()
+  const acknowledged = new Set<string>()
   let identity: string | null = null
   let socket: WebSocket | undefined
   let retry: ReturnType<typeof setTimeout> | undefined
+  let heartbeat: ReturnType<typeof setInterval> | undefined
   let generation = 0
   let delay = 1000
 
   function send(type: string, tableId: string) {
     if (socket?.readyState === WebSocket.OPEN)
       socket.send(JSON.stringify({ t: type, tableId }))
+  }
+
+  function clearVisible(tableId: string) {
+    if (!Object.hasOwn(presence.value, tableId)) return
+    const next = { ...presence.value }
+    delete next[tableId]
+    presence.value = next
+  }
+
+  function clearConnectionPresence() {
+    acknowledged.clear()
+    presence.value = {}
+    for (const state of localPresence.values()) {
+      clearTimeout(state.timer)
+      state.timer = undefined
+      state.lastSent = undefined
+    }
+  }
+
+  function flushPresence(tableId: string) {
+    const state = localPresence.get(tableId)
+    if (!state) return
+    state.timer = undefined
+    if (!acknowledged.has(tableId) || socket?.readyState !== WebSocket.OPEN)
+      return
+    socket.send(
+      JSON.stringify({
+        t: 'presence',
+        tableId,
+        ...(state.viewId ? { viewId: state.viewId } : {}),
+        ...(state.cell ? { cell: state.cell } : {}),
+      }),
+    )
+    state.lastSent = performance.now()
+  }
+
+  function queuePresence(tableId: string) {
+    const state = localPresence.get(tableId)
+    if (
+      !state ||
+      state.timer ||
+      !acknowledged.has(tableId) ||
+      socket?.readyState !== WebSocket.OPEN
+    )
+      return
+    const wait =
+      state.lastSent === undefined
+        ? 0
+        : Math.max(0, state.lastSent + presenceInterval - performance.now())
+    if (wait === 0) flushPresence(tableId)
+    else state.timer = setTimeout(() => flushPresence(tableId), wait)
+  }
+
+  function setView(tableId: string, viewId: string) {
+    if (!listeners.has(tableId)) return
+    let state = localPresence.get(tableId)
+    if (!state) {
+      state = { viewId, cell: null }
+      localPresence.set(tableId, state)
+    } else if (state.viewId === viewId) {
+      return
+    } else {
+      state.viewId = viewId
+      state.cell = null
+    }
+    const users = presence.value[tableId]
+    if (users)
+      presence.value = {
+        ...presence.value,
+        [tableId]: users.map(({ userId, name }) => ({ userId, name })),
+      }
+    queuePresence(tableId)
+  }
+
+  function setFocus(tableId: string, cell: PresenceCell | null) {
+    const state = localPresence.get(tableId)
+    if (!state) return
+    if (
+      state.cell?.rowId === cell?.rowId &&
+      state.cell?.fieldId === cell?.fieldId
+    )
+      return
+    state.cell = cell
+    queuePresence(tableId)
   }
 
   function schedule(current: number) {
@@ -87,9 +233,38 @@ export const useRealtimeStore = defineStore('realtime', () => {
   function dispatch(event: RealtimeEvent) {
     if (event.by === identity && isOwnEvent(event.eventId)) return
     if (event.t === 'subscribed' && event.tableId) {
+      if (!listeners.has(event.tableId)) return
+      acknowledged.add(event.tableId)
+      queuePresence(event.tableId)
       for (const listener of listeners.get(event.tableId) ?? [])
         listener({ t: 'resync', tableId: event.tableId })
       return
+    }
+    if (event.t === 'sub.denied' && event.tableId) {
+      acknowledged.delete(event.tableId)
+      clearVisible(event.tableId)
+      const state = localPresence.get(event.tableId)
+      if (state) {
+        clearTimeout(state.timer)
+        state.timer = undefined
+      }
+    } else if (
+      event.t === 'presence' &&
+      event.tableId &&
+      event.users &&
+      acknowledged.has(event.tableId)
+    ) {
+      const state = localPresence.get(event.tableId)
+      const sameView = !!state && (event.viewId ?? '') === state.viewId
+      presence.value = {
+        ...presence.value,
+        [event.tableId]: sameView
+          ? event.users
+          : event.users.map(({ userId, name }) => ({ userId, name })),
+      }
+      error.value = null
+    } else if (event.t === 'error') {
+      error.value = new Error(`Realtime protocol error: ${event.code ?? ''}`)
     }
     if (event.tableId) {
       for (const listener of listeners.get(event.tableId) ?? []) listener(event)
@@ -136,6 +311,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     next.onclose = () => {
       if (current !== generation || socket !== next) return
       socket = undefined
+      clearConnectionPresence()
       schedule(current)
     }
   }
@@ -144,7 +320,11 @@ export const useRealtimeStore = defineStore('realtime', () => {
     generation++
     identity = null
     clearTimeout(retry)
+    clearInterval(heartbeat)
     retry = undefined
+    heartbeat = undefined
+    clearConnectionPresence()
+    localPresence.clear()
     const previous = socket
     socket = undefined
     previous?.close(1000, 'Client stopped')
@@ -157,7 +337,12 @@ export const useRealtimeStore = defineStore('realtime', () => {
     if (identity === userId) return
     stop()
     identity = userId
-    if (identity) open(generation)
+    if (identity) {
+      heartbeat = setInterval(() => {
+        for (const tableId of localPresence.keys()) queuePresence(tableId)
+      }, presenceHeartbeat)
+      open(generation)
+    }
   }
 
   function subscribe(tableId: string, listener: Listener): () => void {
@@ -172,6 +357,11 @@ export const useRealtimeStore = defineStore('realtime', () => {
       group.delete(listener)
       if (group.size === 0 && listeners.get(tableId) === group) {
         listeners.delete(tableId)
+        acknowledged.delete(tableId)
+        const state = localPresence.get(tableId)
+        if (state) clearTimeout(state.timer)
+        localPresence.delete(tableId)
+        clearVisible(tableId)
         send('unsub', tableId)
       }
     }
@@ -183,5 +373,15 @@ export const useRealtimeStore = defineStore('realtime', () => {
   }
 
   onScopeDispose(stop)
-  return { status, error, start, stop, subscribe, onGlobal }
+  return {
+    status,
+    error,
+    presence,
+    start,
+    stop,
+    subscribe,
+    onGlobal,
+    setView,
+    setFocus,
+  }
 })

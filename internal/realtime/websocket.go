@@ -25,8 +25,9 @@ const (
 )
 
 type outgoing struct {
-	event events.Event
-	close bool
+	event    events.Event
+	presence *presenceSnapshot
+	close    bool
 }
 
 type client struct {
@@ -42,8 +43,10 @@ type client struct {
 }
 
 type incoming struct {
-	Type    string `json:"t"`
-	TableID string `json:"tableId"`
+	Type    string        `json:"t"`
+	TableID string        `json:"tableId"`
+	ViewID  string        `json:"viewId"`
+	Cell    *presenceCell `json:"cell"`
 }
 
 // Serve authenticates before calling this method; origin is checked both here
@@ -90,7 +93,14 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, user auth.User, toke
 	_ = conn.CloseNow()
 	h.mu.Lock()
 	delete(h.clients, c)
+	for _, table := range h.presence {
+		if _, ok := table.entries[c]; ok {
+			delete(table.entries, c)
+			table.dirty = true
+		}
+	}
 	h.mu.Unlock()
+	h.wakePresence()
 }
 
 func socketError(w http.ResponseWriter, status int, code string) {
@@ -103,8 +113,12 @@ func socketError(w http.ResponseWriter, status int, code string) {
 func (c *client) send(event events.Event, closeAfter bool) {
 	event.Recipient = ""
 	event.SourceTableID = ""
+	c.enqueue(outgoing{event: event, close: closeAfter})
+}
+
+func (c *client) enqueue(message outgoing) {
 	select {
-	case c.out <- outgoing{event: event, close: closeAfter}:
+	case c.out <- message:
 	case <-c.ctx.Done():
 	default:
 		c.hub.logger.Warn("WebSocket client fell behind; reconnect required", "user_id", c.user.ID)
@@ -133,9 +147,9 @@ func (c *client) readLoop() {
 				c.send(events.Event{Type: "subscribed", TableID: message.TableID}, false)
 			}
 		case "unsub":
-			c.mu.Lock()
-			delete(c.subs, message.TableID)
-			c.mu.Unlock()
+			c.unsubscribe(message.TableID)
+		case "presence":
+			c.reportPresence(message)
 		default:
 			c.send(events.Event{Type: "error", TableID: message.TableID, Code: "ERR_UNSUPPORTED"}, false)
 		}
@@ -153,7 +167,11 @@ func (c *client) writeLoop() {
 			return
 		case msg := <-c.out:
 			ctx, cancel := context.WithTimeout(c.ctx, operationTimeout)
-			err := wsjson.Write(ctx, c.conn, msg.event)
+			var payload any = msg.event
+			if msg.presence != nil {
+				payload = msg.presence
+			}
+			err := wsjson.Write(ctx, c.conn, payload)
 			cancel()
 			if err != nil {
 				if c.ctx.Err() == nil {
@@ -204,6 +222,13 @@ func (c *client) subscribed(tableID string) bool {
 	return ok
 }
 
+func (c *client) unsubscribe(tableID string) {
+	c.mu.Lock()
+	delete(c.subs, tableID)
+	c.hub.removePresence(c, tableID)
+	c.mu.Unlock()
+}
+
 func (c *client) checkAccess(tableID string) bool {
 	return c.authorized(tableID, true)
 }
@@ -221,9 +246,7 @@ func (c *client) authorized(tableID string, reportDenial bool) bool {
 	var app *apperr.Error
 	if errors.As(err, &app) {
 		if reportDenial {
-			c.mu.Lock()
-			delete(c.subs, tableID)
-			c.mu.Unlock()
+			c.unsubscribe(tableID)
 			c.send(events.Event{Type: "sub.denied", TableID: tableID, Code: app.Code}, false)
 		}
 	} else if c.ctx.Err() == nil {

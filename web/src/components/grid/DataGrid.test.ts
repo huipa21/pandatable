@@ -2,9 +2,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import type { Component } from 'vue'
 import { i18n, loadLocale } from '../../i18n'
 import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
+import { useRealtimeStore } from '../../stores/realtime'
 import { navUser, tableSchema } from '../../test/navigation'
 import { ThemeMedia } from '../../test/setup'
 import DataGrid from './DataGrid.vue'
@@ -421,6 +423,56 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
   await flushPromises()
   return fetch
 }
+
+it('reports grid focus and clears it when focus leaves the grid', async () => {
+  await mountGrid(schemaFor('text', 'read'))
+  const setFocus = vi.spyOn(useRealtimeStore(), 'setFocus')
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  expect(setFocus).toHaveBeenLastCalledWith('t', {
+    rowId: '9007199254740993',
+    fieldId: 'name',
+  })
+  await wrapper!.get('[data-testid="fake-grid"]').trigger('focusout', {
+    relatedTarget: document.body,
+  })
+  expect(setFocus).toHaveBeenLastCalledWith('t', null)
+})
+
+it('keeps presence on a cell while its editor receives focus', async () => {
+  await mountGrid(schemaFor('text'))
+  const setFocus = vi.spyOn(useRealtimeStore(), 'setFocus')
+  const editors = wrapper!
+    .findComponent({ name: 'RevoGrid' })
+    .props('editors') as Record<string, Component>
+  const editor = mount(editors.name!, {
+    props: {
+      column: { prop: 'name' },
+      prop: 'name',
+      rowIndex: 0,
+      val: 'before',
+      save: vi.fn(),
+      close: vi.fn(),
+    },
+    global: { plugins: [pinia, i18n] },
+  })
+  try {
+    expect(setFocus).toHaveBeenLastCalledWith('t', {
+      rowId: '9007199254740993',
+      fieldId: 'name',
+    })
+    setFocus.mockClear()
+    await wrapper!.get('[data-testid="fake-grid"]').trigger('focusout', {
+      relatedTarget: document.body,
+    })
+    expect(setFocus).not.toHaveBeenCalled()
+  } finally {
+    editor.unmount()
+    setFocus.mockRestore()
+  }
+})
 
 it('expands the focused loaded row with Space but leaves native controls and IME alone', async () => {
   await mountGrid(schemaFor('text', 'read'))

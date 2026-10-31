@@ -95,6 +95,185 @@ func readRealtime(t *testing.T, f *aclFixture, conn *websocket.Conn, kind string
 	}
 }
 
+type presenceFrame struct {
+	Type    string `json:"t"`
+	TableID string `json:"tableId"`
+	ViewID  string `json:"viewId"`
+	Users   []struct {
+		UserID string `json:"userId"`
+		Name   string `json:"name"`
+		Cell   *struct {
+			RowID   string `json:"rowId"`
+			FieldID string `json:"fieldId"`
+		} `json:"cell"`
+	} `json:"users"`
+}
+
+func readPresence(t *testing.T, f *aclFixture, conn *websocket.Conn, accept func(presenceFrame) bool) presenceFrame {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(f.ctx, 5*time.Second)
+	defer cancel()
+	for {
+		var frame presenceFrame
+		if err := wsjson.Read(ctx, conn, &frame); err != nil {
+			t.Fatalf("read presence: %v", err)
+		}
+		if frame.Type == "presence" && accept(frame) {
+			return frame
+		}
+	}
+}
+
+func TestRealtimePresenceLifecycleAndACL(t *testing.T) {
+	f := newACLFixture(t)
+	owner, bob, stranger := f.user("admin", false), f.user("user", false), f.user("user", false)
+	workspace := f.newWorkspace(owner, "Presence")
+	book := f.newBook(owner, workspace.ID, "Book")
+	table := f.newTable(owner, book.ID, "Rows")
+	other := f.newTable(owner, book.ID, "Other")
+	grant := f.grantOK(owner, acl.Table, table.Table.ID, "user", bob.id, acl.Read)
+	f.grantOK(owner, acl.Table, other.Table.ID, "user", stranger.id, acl.Read)
+	privateView := decode[viewResponse](f, f.api(bob, "POST", "/tables/"+table.Table.ID+"/views",
+		`{"name":"Bob private","scope":"personal"}`), 201).View
+	created := decode[rowsResponse](f, f.api(owner, "POST", "/tables/"+table.Table.ID+"/rows",
+		`{"rows":[{"fields":{}},{"fields":{}}]}`), 201)
+	rowID, otherRowID := created.Rows[0].ID, created.Rows[1].ID
+	viewID, fieldID := table.Views[0].ID, table.Fields[0].ID
+	server, _ := realtimeServer(t, f)
+	aliceSocket := dialRealtime(t, f, server, owner, server.URL)
+	bobSocket := dialRealtime(t, f, server, bob, server.URL)
+	strangerSocket := dialRealtime(t, f, server, stranger, server.URL)
+	for _, socket := range []*websocket.Conn{aliceSocket, bobSocket} {
+		sendRealtime(t, f, socket, "sub", table.Table.ID)
+		readRealtime(t, f, socket, "subscribed")
+	}
+	sendRealtime(t, f, strangerSocket, "sub", table.Table.ID)
+	if denied := readRealtime(t, f, strangerSocket, "sub.denied"); denied.Code != "ERR_NOT_FOUND" {
+		t.Fatalf("hidden presence subscription was not denied: %+v", denied)
+	}
+	report := func(socket *websocket.Conn, tableID, view, row string) {
+		t.Helper()
+		message := map[string]any{
+			"t": "presence", "tableId": tableID, "viewId": view,
+			"userId": owner.id, "name": "Forged",
+		}
+		if row != "" {
+			message["cell"] = map[string]string{"rowId": row, "fieldId": fieldID}
+		}
+		if err := wsjson.Write(f.ctx, socket, message); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report(strangerSocket, table.Table.ID, viewID, rowID)
+	if failure := readRealtime(t, f, strangerSocket, "error"); failure.Code != "ERR_VALIDATION" {
+		t.Fatalf("unsubscribed presence was accepted: %+v", failure)
+	}
+	sendRealtime(t, f, strangerSocket, "sub", other.Table.ID)
+	readRealtime(t, f, strangerSocket, "subscribed")
+	report(strangerSocket, other.Table.ID, other.Views[0].ID, "")
+	strangerPresence := readPresence(t, f, strangerSocket, func(frame presenceFrame) bool {
+		return frame.TableID == other.Table.ID && len(frame.Users) == 1
+	})
+	if strangerPresence.Users[0].UserID != stranger.id {
+		t.Fatalf("presence leaked across tables: %+v", strangerPresence)
+	}
+
+	report(aliceSocket, table.Table.ID, viewID, "")
+	report(bobSocket, table.Table.ID, viewID, rowID)
+	bobFocused := func(row string) func(presenceFrame) bool {
+		return func(frame presenceFrame) bool {
+			for _, user := range frame.Users {
+				if user.UserID == bob.id && user.Name == bob.login && user.Cell != nil &&
+					user.Cell.RowID == row && user.Cell.FieldID == fieldID {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	initial := readPresence(t, f, aliceSocket, bobFocused(rowID))
+	if initial.TableID != table.Table.ID || initial.ViewID != viewID || len(initial.Users) != 2 {
+		t.Fatalf("wrong presence snapshot: %+v", initial)
+	}
+
+	report(bobSocket, table.Table.ID, privateView.ID, otherRowID)
+	readPresence(t, f, aliceSocket, func(frame presenceFrame) bool {
+		for _, user := range frame.Users {
+			if user.UserID == bob.id {
+				return user.Cell == nil
+			}
+		}
+		return false
+	})
+	report(aliceSocket, table.Table.ID, privateView.ID, "")
+	if denied := readRealtime(t, f, aliceSocket, "error"); denied.Code != "ERR_NOT_FOUND" {
+		t.Fatalf("another user's personal view was accepted: %+v", denied)
+	}
+	report(aliceSocket, table.Table.ID, other.Views[0].ID, "")
+	if denied := readRealtime(t, f, aliceSocket, "error"); denied.Code != "ERR_NOT_FOUND" {
+		t.Fatalf("a view from another table was accepted: %+v", denied)
+	}
+	report(aliceSocket, table.Table.ID, "018f0000-0000-7000-8000-000000000003", "")
+	if denied := readRealtime(t, f, aliceSocket, "error"); denied.Code != "ERR_NOT_FOUND" {
+		t.Fatalf("a missing view was accepted: %+v", denied)
+	}
+	report(bobSocket, table.Table.ID, privateView.ID, rowID)
+	readPresence(t, f, bobSocket, func(frame presenceFrame) bool {
+		return frame.ViewID == privateView.ID && bobFocused(rowID)(frame)
+	})
+	alicePrivateSnapshot := readPresence(t, f, aliceSocket, func(frame presenceFrame) bool {
+		for _, user := range frame.Users {
+			if user.UserID == bob.id {
+				return true
+			}
+		}
+		return false
+	})
+	if alicePrivateSnapshot.ViewID != viewID {
+		t.Fatalf("rejected view changed the recipient's presence: %+v", alicePrivateSnapshot)
+	}
+	for _, user := range alicePrivateSnapshot.Users {
+		if user.UserID == bob.id && user.Cell != nil {
+			t.Fatalf("personal-view focus leaked to another user: %+v", alicePrivateSnapshot)
+		}
+	}
+	report(bobSocket, table.Table.ID, viewID, rowID)
+	readPresence(t, f, aliceSocket, bobFocused(rowID))
+
+	secondTab := dialRealtime(t, f, server, bob, server.URL)
+	sendRealtime(t, f, secondTab, "sub", table.Table.ID)
+	readRealtime(t, f, secondTab, "subscribed")
+	report(secondTab, table.Table.ID, viewID, otherRowID)
+	readPresence(t, f, aliceSocket, bobFocused(otherRowID))
+	if err := secondTab.CloseNow(); err != nil {
+		t.Fatal(err)
+	}
+	readPresence(t, f, aliceSocket, bobFocused(rowID))
+
+	sendRealtime(t, f, bobSocket, "unsub", table.Table.ID)
+	leftAt := time.Now()
+	noBob := func(frame presenceFrame) bool {
+		for _, user := range frame.Users {
+			if user.UserID == bob.id {
+				return false
+			}
+		}
+		return frame.TableID == table.Table.ID
+	}
+	readPresence(t, f, aliceSocket, noBob)
+	if time.Since(leftAt) >= 60*time.Second {
+		t.Fatal("presence departure exceeded 60 seconds")
+	}
+
+	sendRealtime(t, f, bobSocket, "sub", table.Table.ID)
+	readRealtime(t, f, bobSocket, "subscribed")
+	report(bobSocket, table.Table.ID, viewID, rowID)
+	readPresence(t, f, aliceSocket, bobFocused(rowID))
+	f.expectStatus(f.api(owner, "DELETE", "/grants/"+grant.Grant.ID, ""), 200, "")
+	readRealtime(t, f, bobSocket, "sub.denied")
+	readPresence(t, f, aliceSocket, noBob)
+}
+
 func TestRealtimeProtocolTransactionsACLAndRevocation(t *testing.T) {
 	f := newACLFixture(t)
 	owner, bob, stranger := f.user("admin", false), f.user("user", false), f.user("user", false)

@@ -65,7 +65,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.14 | Auto-index job | ✅ | 2026-10-31 | D-020 auto-index job and metadata tracking pass PG18 tests and task gates; AT-512's 200k filter/sort/group performance criterion remains pending for T2.15. |
 | T2.15 | Perf pass | 🟨 | 2026-10-31 | Local benchmark and task gates pass; AT-512 target-host acceptance remains pending. [Record](task-prompts/T2.15.md#record-2026-10-31). |
 | T3.1 | Realtime hub | ✅ | 2026-10-31 | D-183; AT-601/602/603/605/107 and task gates pass. [Record](task-prompts/T3.1.md#record-2026-10-31). |
-| T3.2 | Presence | ⬜ | | |
+| T3.2 | Presence | ✅ | 2026-10-31 | D-184; AT-604 and task gates pass. [Record](task-prompts/T3.2.md#record-2026-10-31). |
 | T3.3 | Comments & notifications | ⬜ | | |
 | T3.4 | Row history | ⬜ | | |
 | T3.5 | Undo/redo | ⬜ | | |
@@ -111,6 +111,7 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-31 | T3.2 Done: per-table presence, localized avatars and focused-cell indicators pass AT-604 and task gates. |
 | 2026-10-31 | T3.1 Done: transactional realtime delivery, reconnect/resync, access revocation and focused task gates pass. |
 | 2026-10-31 | T3.1 realtime hub implementation started. |
 | 2026-10-31 | T2.15 implementation and task gates pass locally; target-host performance acceptance remains pending. |

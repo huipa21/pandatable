@@ -21,6 +21,7 @@ import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
+import CellPresence from '../presence/CellPresence.vue'
 import { RemoteRowsWindow, remotePageSize } from '../grid/remoteWindow'
 import { RealtimeRowSync } from '../grid/realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from '../grid/groupedRows'
@@ -625,6 +626,13 @@ onBeforeUnmount(() => {
                 <span v-else>{{
                   t('mobileRows.untitled', { id: entry.row.id })
                 }}</span>
+                <CellPresence
+                  v-if="display"
+                  :table-id="schema.table.id"
+                  :row-id="entry.row.id"
+                  :field-id="display.id"
+                  :identity="identity"
+                />
               </span>
               <span v-for="field in preview" :key="field.id" class="card-field">
                 <span class="card-label">{{ field.name }}</span>
@@ -645,6 +653,12 @@ onBeforeUnmount(() => {
                   :links="false"
                 />
                 <span v-else>{{ t('grid.unsupportedField') }}</span>
+                <CellPresence
+                  :table-id="schema.table.id"
+                  :row-id="entry.row.id"
+                  :field-id="field.id"
+                  :identity="identity"
+                />
               </span>
             </button>
             <label v-if="canWrite" class="card-selection">
@@ -826,6 +840,10 @@ button,
   gap: 8px;
   text-align: start;
   padding: 12px;
+}
+.card-title,
+.card-field {
+  position: relative;
 }
 .card-title {
   font-weight: 700;

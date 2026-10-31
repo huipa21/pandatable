@@ -34,19 +34,27 @@ type Hub struct {
 	sessions sessionChecker
 	logger   *slog.Logger
 
-	mu      sync.Mutex
-	clients map[*client]struct{}
-	ready   bool
-	ctx     context.Context
-	cancel  context.CancelFunc
-	done    chan struct{}
+	mu           sync.Mutex
+	clients      map[*client]struct{}
+	presence     map[string]*presenceTable
+	presenceSeq  uint64
+	presenceWake chan struct{}
+	presenceDone chan struct{}
+	ready        bool
+	ctx          context.Context
+	cancel       context.CancelFunc
+	done         chan struct{}
 }
 
 func New(pool *db.Pool, resolver *acl.Resolver, sessions *auth.Service, logger *slog.Logger) (*Hub, error) {
 	if pool == nil || pool.Pool == nil || resolver == nil || sessions == nil || logger == nil {
 		return nil, errors.New("realtime hub requires database, ACL, sessions and logger")
 	}
-	return &Hub{pool: pool, acl: resolver, sessions: sessions, logger: logger, clients: make(map[*client]struct{})}, nil
+	return &Hub{
+		pool: pool, acl: resolver, sessions: sessions, logger: logger,
+		clients: make(map[*client]struct{}), presence: make(map[string]*presenceTable),
+		presenceWake: make(chan struct{}, 1),
+	}, nil
 }
 
 func (h *Hub) connect(ctx context.Context) (*pgx.Conn, error) {
@@ -76,9 +84,11 @@ func (h *Hub) Start(ctx context.Context) error {
 	}
 	h.ctx, h.cancel = context.WithCancel(ctx)
 	h.done = make(chan struct{})
+	h.presenceDone = make(chan struct{})
 	h.ready = true
 	h.mu.Unlock()
 	go h.listen(conn)
+	go h.runPresence()
 	return nil
 }
 
@@ -165,7 +175,7 @@ func (h *Hub) disconnectAll() {
 
 func (h *Hub) Close() {
 	h.mu.Lock()
-	cancel, done := h.cancel, h.done
+	cancel, done, presenceDone := h.cancel, h.done, h.presenceDone
 	h.ready = false
 	h.mu.Unlock()
 	if cancel != nil {
@@ -173,6 +183,9 @@ func (h *Hub) Close() {
 	}
 	if done != nil {
 		<-done
+	}
+	if presenceDone != nil {
+		<-presenceDone
 	}
 }
 

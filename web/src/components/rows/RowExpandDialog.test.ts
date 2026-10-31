@@ -105,6 +105,16 @@ const textCases = [
   ['url', {}, 'https://example.com/a', 'https://example.com/a'],
 ] as const
 
+it('reports field focus in the row dialog and clears it on blur', async () => {
+  const { wrapper } = await setup()
+  const setFocus = vi.spyOn(useRealtimeStore(), 'setFocus')
+  const button = wrapper.get('.row-field button')
+  await button.trigger('focusin')
+  expect(setFocus).toHaveBeenLastCalledWith('t', { rowId: id, fieldId: 'name' })
+  await button.trigger('focusout', { relatedTarget: document.body })
+  expect(setFocus).toHaveBeenLastCalledWith('t', null)
+})
+
 it('preserves active edits, identifies remote changes, and refreshes after cancel or save', async () => {
   class Socket {
     static OPEN = 1

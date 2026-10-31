@@ -3,6 +3,7 @@ import type { HighlightColor } from '../../api/types'
 import type { BoundField } from '../../fields/registry'
 import type { FieldEnv, WireValue } from '../../fields/types'
 import FieldRenderer from '../fields/FieldRenderer.vue'
+import CellPresence from '../presence/CellPresence.vue'
 
 defineProps<{
   field: BoundField
@@ -11,6 +12,8 @@ defineProps<{
   message: string
   tableId: string
   identity: string
+  rowId: string
+  fieldId: string
   rowHighlight?: HighlightColor
   cellHighlight?: HighlightColor
   group?: {
@@ -67,11 +70,19 @@ defineProps<{
       :table-id="tableId"
       :identity="identity"
     />
+    <CellPresence
+      v-if="!group"
+      :table-id="tableId"
+      :row-id="rowId"
+      :field-id="fieldId"
+      :identity="identity"
+    />
   </div>
 </template>
 
 <style scoped>
 .grid-highlight-cell {
+  position: relative;
   min-height: 100%;
   padding-inline: 4px;
 }

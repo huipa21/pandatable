@@ -16,13 +16,30 @@ const headers = () => ({
   'X-PT-CSRF': '1',
 })
 
-type Frame = { t?: string; tableId?: string }
+type Frame = {
+  t?: string
+  tableId?: string
+  viewId?: string
+  cell?: { rowId?: string; fieldId?: string }
+  users?: { userId: string; cell?: { rowId?: string; fieldId?: string } }[]
+}
 type SocketWindow = Window & { testRealtimeSocket?: WebSocket }
 
 function trackFrames(page: Page) {
   const frames: Frame[] = []
   page.on('websocket', (socket) => {
     socket.on('framereceived', (frame) => {
+      if (typeof frame.payload === 'string')
+        frames.push(JSON.parse(frame.payload) as Frame)
+    })
+  })
+  return frames
+}
+
+function trackSentFrames(page: Page) {
+  const frames: Frame[] = []
+  page.on('websocket', (socket) => {
+    socket.on('framesent', (frame) => {
       if (typeof frame.payload === 'string')
         frames.push(JSON.parse(frame.payload) as Frame)
     })
@@ -72,7 +89,14 @@ async function createTable(page: Page, suffix: string) {
   expect(created.status()).toBe(201)
   const row = ((await created.json()).rows as DataRow[])[0]!
   const viewId = schema.views[0]!.id
-  return { tableId, fieldId, row, path: `/t/${tableId}/v/${viewId}` }
+  return {
+    tableId,
+    fieldId,
+    row,
+    viewId,
+    viewName: schema.views[0]!.name,
+    path: `/t/${tableId}/v/${viewId}`,
+  }
 }
 
 async function waitForSubscription(frames: Frame[], tableId: string) {
@@ -111,6 +135,204 @@ async function openEditor(page: Page, fieldId: string) {
   await expect(editor).toBeVisible()
   return editor
 }
+
+test('AT-604: collaborators enter, focus, switch views, and leave', async ({
+  page,
+  browser,
+  isMobile,
+}) => {
+  test.setTimeout(120_000)
+  await login(page, 'first-admin', 'Setup-password-123')
+  const { tableId, fieldId, row, viewId, viewName, path } = await createTable(
+    page,
+    `presence-${Date.now()}-${isMobile ? 'mobile' : 'desktop'}`,
+  )
+  const username = `presence-bob-${Date.now()}-${isMobile ? 'm' : 'd'}`
+  const createdUser = await page.request.post('/api/v1/admin/users', {
+    headers: headers(),
+    data: {
+      username,
+      displayName: 'Bob',
+      role: 'user',
+      password: 'Temporary-password-123',
+    },
+  })
+  expect(createdUser.status()).toBe(201)
+  const userId = (await createdUser.json()).user.id as string
+  const grant = await page.request.put('/api/v1/grants', {
+    headers: headers(),
+    data: {
+      resourceType: 'table',
+      resourceId: tableId,
+      principalType: 'user',
+      principalId: userId,
+      level: 'write',
+    },
+  })
+  expect(grant.status()).toBe(201)
+  const bobContext = await browser.newContext({
+    baseURL: process.env.PT_E2E_BASE_URL,
+    viewport: isMobile
+      ? { width: 390, height: 844 }
+      : { width: 1440, height: 900 },
+    isMobile,
+    hasTouch: isMobile,
+  })
+  const bob = await bobContext.newPage()
+  const bobDiagnostics = await observeBrowser(bob)
+  try {
+    await login(bob, username, 'Temporary-password-123')
+    const changed = await bobContext.request.post('/api/v1/auth/password', {
+      headers: headers(),
+      data: {
+        current: 'Temporary-password-123',
+        new: 'Changed-password-123',
+      },
+    })
+    expect(changed.status()).toBe(200)
+    await login(bob, username, 'Changed-password-123')
+    const privateView = await bobContext.request.post(
+      `/api/v1/tables/${tableId}/views`,
+      { headers: headers(), data: { name: 'Bob private', scope: 'personal' } },
+    )
+    expect(privateView.status()).toBe(201)
+    const privateViewId = (await privateView.json()).view.id as string
+    const aliceFrames = trackFrames(page)
+    const bobFrames = trackFrames(bob)
+    const bobSentFrames = trackSentFrames(bob)
+    await page.goto(path)
+    await waitForSubscription(aliceFrames, tableId)
+    await bob.goto(path)
+    await waitForSubscription(bobFrames, tableId)
+
+    const avatar = page.locator(
+      `.presence-avatar[data-presence-user="${userId}"]`,
+    )
+    await expect(avatar).toHaveAttribute('title', 'Bob is viewing this table')
+    await expect(
+      bob.locator(
+        '.presence-avatar[title="First Administrator is viewing this table"]',
+      ),
+    ).toBeVisible()
+
+    const outline = page.locator(
+      `.cell-presence[data-presence-row="${row.id}"][data-presence-field="${fieldId}"]`,
+    )
+    const nameTag = outline.locator(`[data-presence-user="${userId}"]`)
+    async function focusBob() {
+      const sentBeforeFocus = bobSentFrames.length
+      const receivedBeforeFocus = aliceFrames.length
+      if (isMobile) {
+        await bob
+          .locator(`[data-row-id="${row.id}"] button.mobile-card`)
+          .click()
+        const field = bob
+          .locator('dialog.row-expand')
+          .locator(`[data-field-id="${fieldId}"]`)
+        await field.getByRole('button').click()
+        await field.locator('.field-editor input').focus()
+      } else {
+        await expect(
+          bob.getByText('Initial value', { exact: true }),
+        ).toBeVisible()
+        await openEditor(bob, fieldId)
+      }
+      await expect
+        .poll(() =>
+          bobSentFrames
+            .slice(sentBeforeFocus)
+            .filter((frame) => frame.t === 'presence'),
+        )
+        .toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              tableId,
+              viewId,
+              cell: { rowId: row.id, fieldId },
+            }),
+          ]),
+        )
+      await expect
+        .poll(() =>
+          aliceFrames
+            .slice(receivedBeforeFocus)
+            .filter(
+              (frame) => frame.t === 'presence' && frame.tableId === tableId,
+            ),
+        )
+        .toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              viewId,
+              users: expect.arrayContaining([
+                expect.objectContaining({
+                  userId,
+                  cell: { rowId: row.id, fieldId },
+                }),
+              ]),
+            }),
+          ]),
+        )
+      await expect(nameTag).toHaveText('Bob')
+    }
+
+    await focusBob()
+    const avatarColor = await avatar.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    )
+    const outlineColor = await outline.evaluate(
+      (element) => getComputedStyle(element).borderTopColor,
+    )
+    expect(outlineColor).toBe(avatarColor)
+    if (isMobile)
+      await bob
+        .locator('dialog.row-expand')
+        .getByRole('button', { name: en.rowExpand.close, exact: true })
+        .click()
+    const beforeSwitch = aliceFrames.length
+    await bob
+      .locator('.view-links')
+      .getByRole('link', { name: 'Bob private', exact: true })
+      .click()
+    await expect
+      .poll(() =>
+        bobSentFrames.some(
+          (frame) => frame.t === 'presence' && frame.viewId === privateViewId,
+        ),
+      )
+      .toBe(true)
+    await expect
+      .poll(() =>
+        aliceFrames
+          .slice(beforeSwitch)
+          .some((frame) => frame.t === 'presence' && frame.tableId === tableId),
+      )
+      .toBe(true)
+    await expect(nameTag).toHaveCount(0)
+    await expect(avatar).toBeVisible()
+    expect(aliceFrames.some((frame) => frame.viewId === privateViewId)).toBe(
+      false,
+    )
+    await bob
+      .locator('.view-links')
+      .getByRole('link', { name: viewName, exact: true })
+      .click()
+    await expect(
+      bob
+        .locator('.view-links')
+        .getByRole('link', { name: viewName, exact: true }),
+    ).toHaveAttribute('aria-current', 'page')
+    await focusBob()
+    const leftAt = Date.now()
+    await bob.goto('/home')
+    await expect(avatar).toHaveCount(0)
+    await expect(nameTag).toHaveCount(0)
+    expect(Date.now() - leftAt).toBeLessThan(60_000)
+    expectBrowserClean(bob, bobDiagnostics)
+  } finally {
+    await bobContext.close()
+  }
+})
 
 test('AT-601/602/603/605/107: live grid, LWW, reconnect and revocation', async ({
   page,

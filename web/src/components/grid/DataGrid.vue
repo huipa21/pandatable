@@ -221,7 +221,10 @@ const gridEditorComponent = defineComponent({
         typeof focusedId === 'string'
           ? focusedId
           : (rows.rowAt(editorProps.rowIndex)?.id ?? '')
-      if (rowId) activeEdit.value = { rowId, fieldId, changedBy: '' }
+      if (rowId) {
+        activeEdit.value = { rowId, fieldId, changedBy: '' }
+        realtime.setFocus(props.schema.table.id, { rowId, fieldId })
+      }
     })
     onBeforeUnmount(() => {
       if (
@@ -229,6 +232,8 @@ const gridEditorComponent = defineComponent({
         activeEdit.value.fieldId === fieldId
       ) {
         activeEdit.value = null
+        if (!host.value?.$el.contains(document.activeElement))
+          realtime.setFocus(props.schema.table.id, null)
         queueMicrotask(flushDeferredRealtime)
       }
     })
@@ -1009,6 +1014,10 @@ const columns = computed<ColumnRegular[]>(() => {
             editable: canWrite.value,
             rowHighlight: rowHighlight(context.model),
             cellHighlight: cellHighlight(context.model, relationField.id),
+            tableId: props.schema.table.id,
+            rowId: String(context.model.__rowId ?? ''),
+            fieldId: relationField.id,
+            identity: props.identity,
             open: () =>
               openRelationPicker(
                 relationField,
@@ -1038,6 +1047,8 @@ const columns = computed<ColumnRegular[]>(() => {
           env: fieldEnvironment.value,
           tableId: props.schema.table.id,
           identity: props.identity,
+          rowId: String(context.model.__rowId ?? ''),
+          fieldId: field.id,
           rowHighlight: rowHighlight(context.model),
           cellHighlight: cellHighlight(context.model, field.id),
           message:
@@ -1897,6 +1908,25 @@ function created() {
 
 function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
   focused = event.detail
+  const rowId = event.detail.model?.__rowId
+  const fieldId = event.detail.column?.prop
+  realtime.setFocus(
+    props.schema.table.id,
+    typeof rowId === 'string' &&
+      typeof fieldId === 'string' &&
+      props.schema.fields.some((field) => field.id === fieldId)
+      ? { rowId, fieldId }
+      : null,
+  )
+}
+
+function focusLeft(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (
+    !activeEdit.value &&
+    (!(next instanceof Node) || !host.value?.$el.contains(next))
+  )
+    realtime.setFocus(props.schema.table.id, null)
 }
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
@@ -2135,6 +2165,7 @@ watch(
   () => {
     if (ready.value) {
       focused = undefined
+      realtime.setFocus(props.schema.table.id, null)
       void initialize(rows.snapshot().activePage * remotePageSize)
     }
   },
@@ -2225,6 +2256,7 @@ defineExpose({
 
 onBeforeUnmount(() => {
   disposed.value = true
+  realtime.setFocus(props.schema.table.id, null)
   keyboardGeneration++
   clearTimeout(searchTimer)
   footerController?.abort()
@@ -2708,6 +2740,7 @@ onBeforeUnmount(() => {
       @viewportscroll="scroll"
       @beforeedit="edit"
       @afterfocus="focusChanged"
+      @focusout="focusLeft"
       @beforecopyregion="beforeCopyRegion"
       @beforecopyapply="copy"
       @beforepasteapply="paste"

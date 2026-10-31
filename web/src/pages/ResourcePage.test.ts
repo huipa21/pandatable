@@ -4,7 +4,9 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { i18n, loadLocale } from '../i18n'
 import { useNavStore } from '../stores/nav'
-import { navigation, tableSchema } from '../test/navigation'
+import { useAuthStore } from '../stores/auth'
+import { useRealtimeStore } from '../stores/realtime'
+import { navigation, navUser, tableSchema } from '../test/navigation'
 import ResourcePage from './ResourcePage.vue'
 import { errorMessage, RequestError } from '../api/client'
 import { ThemeMedia } from '../test/setup'
@@ -32,6 +34,7 @@ async function setup(path: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/home', component: { template: '<div />' } },
       { path: '/w/:workspaceId', component: ResourcePage },
       { path: '/w/:wid/b/:bookId', component: ResourcePage },
       { path: '/t/:tableId/v/:viewId', component: ResourcePage },
@@ -60,6 +63,28 @@ async function setup(path: string) {
   await flushPromises()
   return { wrapper, router, nav }
 }
+
+it('reports table opening and view changes without changing subscriptions', async () => {
+  useAuthStore().setUser(navUser)
+  const realtime = useRealtimeStore()
+  const setView = vi.spyOn(realtime, 'setView')
+  const schema = tableSchema()
+  schema.views.push({ ...schema.views[0]!, id: 'v2', name: 'Other' })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(Response.json(schema))),
+  )
+  const { wrapper, router } = await setup('/t/t/v/v')
+  try {
+    expect(setView).toHaveBeenLastCalledWith('t', 'v')
+    await router.push('/t/t/v/v2')
+    await flushPromises()
+    expect(setView).toHaveBeenLastCalledWith('t', 'v2')
+  } finally {
+    wrapper.unmount()
+    setView.mockRestore()
+  }
+})
 
 it('switches at 768px without mounting the grid for mobile cards, preserves row links and closes new drafts on navigation', async () => {
   vi.stubGlobal(

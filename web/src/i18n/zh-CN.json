@@ -24,6 +24,12 @@
     "changedBy": "编辑期间已被 {name} 修改",
     "unknownEditor": "其他用户"
   },
+  "presence": {
+    "collaborators": "正在查看此表的协作者",
+    "viewing": "{name} 正在查看此表",
+    "focusedCell": "{name} 正聚焦于此单元格",
+    "unavailable": "在线状态不可用，请重新连接或刷新后重试。"
+  },
   "nav": {
     "notFoundTitle": "这里还没有内容",
     "notFoundDescription": "此页面暂不可用，请返回欢迎页。",

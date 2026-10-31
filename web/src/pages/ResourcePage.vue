@@ -25,6 +25,7 @@ import { useAuthStore } from '../stores/auth'
 import { tablePath, useNavStore, type NavigationItem } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
 import { useRealtimeStore } from '../stores/realtime'
+import PresenceAvatars from '../components/presence/PresenceAvatars.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -332,6 +333,14 @@ watch(
           void loadSchema(true)
       }),
     )
+  },
+  { immediate: true },
+)
+watch(
+  [() => route.params.tableId, () => view.value?.id, () => auth.user?.id],
+  ([tableId, viewId, userId]) => {
+    if (typeof tableId === 'string' && userId)
+      realtime.setView(tableId, viewId ?? '')
   },
   { immediate: true },
 )
@@ -646,7 +655,14 @@ onBeforeUnmount(() => {
       <button @click="loadSchema()">{{ t('auth.retry') }}</button>
     </div>
     <template v-else-if="node">
-      <h1>{{ schema?.table.name ?? node.name }}</h1>
+      <header class="resource-heading">
+        <h1>{{ schema?.table.name ?? node.name }}</h1>
+        <PresenceAvatars
+          v-if="kind === 'table'"
+          :table-id="node.id"
+          :identity="auth.user?.id ?? ''"
+        />
+      </header>
       <button v-if="canShare" @click="sharing.open(node)">
         {{ t('sharing.open') }}
       </button>
@@ -677,6 +693,7 @@ onBeforeUnmount(() => {
           {{ createResourceLabel(node.childKind) }}
         </button>
       </template>
+
       <template v-else-if="schema">
         <dl class="schema-summary">
           <dt>{{ t('nav.displayField') }}</dt>
@@ -920,3 +937,12 @@ onBeforeUnmount(() => {
     </button>
   </section>
 </template>
+
+<style scoped>
+.resource-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+</style>

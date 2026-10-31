@@ -136,6 +136,133 @@ describe('realtime connection', () => {
     disposePinia(pinia)
   })
 
+  it('reports the latest focus at most every 200 ms, heartbeats, and stops on unsubscribe', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useRealtimeStore()
+    store.start('user')
+    const remove = store.subscribe('table', vi.fn())
+    store.setView('table', 'view-a')
+    const socket = FakeSocket.sockets[0]!
+    socket.open()
+    expect(socket.sent.map((value) => JSON.parse(value))).toEqual([
+      { t: 'sub', tableId: 'table' },
+    ])
+    socket.message({ t: 'subscribed', tableId: 'table' })
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      t: 'presence',
+      tableId: 'table',
+      viewId: 'view-a',
+    })
+
+    store.setFocus('table', { rowId: '1', fieldId: 'field' })
+    store.setFocus('table', { rowId: '9007199254740993', fieldId: 'field' })
+    await vi.advanceTimersByTimeAsync(199)
+    expect(socket.sent).toHaveLength(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      t: 'presence',
+      tableId: 'table',
+      viewId: 'view-a',
+      cell: { rowId: '9007199254740993', fieldId: 'field' },
+    })
+
+    store.setView('table', 'view-b')
+    await vi.advanceTimersByTimeAsync(200)
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      t: 'presence',
+      tableId: 'table',
+      viewId: 'view-b',
+    })
+    const beforeHeartbeat = socket.sent.length
+    await vi.advanceTimersByTimeAsync(19_600)
+    expect(socket.sent).toHaveLength(beforeHeartbeat + 1)
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      t: 'presence',
+      tableId: 'table',
+      viewId: 'view-b',
+    })
+
+    store.setFocus('table', { rowId: '2', fieldId: 'field' })
+    remove()
+    const afterUnsubscribe = socket.sent.length
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      t: 'unsub',
+      tableId: 'table',
+    })
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(socket.sent).toHaveLength(afterUnsubscribe)
+    store.stop()
+    disposePinia(pinia)
+  })
+
+  it('clears stale snapshots on view changes, disconnect, denial, and identity stop', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useRealtimeStore()
+    store.start('user')
+    const remove = store.subscribe('table', vi.fn())
+    store.setView('table', 'view-a')
+    const socket = FakeSocket.sockets[0]!
+    socket.open()
+    socket.message({ t: 'subscribed', tableId: 'table' })
+    const users = [
+      {
+        userId: 'bob',
+        name: 'Bob',
+        cell: { rowId: '1', fieldId: 'field' },
+      },
+    ]
+    socket.message({ t: 'presence', tableId: 'table', viewId: 'view-a', users })
+    expect(store.presence.table).toEqual(users)
+
+    store.setView('table', 'view-b')
+    expect(store.presence.table).toEqual([{ userId: 'bob', name: 'Bob' }])
+    socket.message({ t: 'presence', tableId: 'table', viewId: 'view-a', users })
+    expect(store.presence.table).toEqual([{ userId: 'bob', name: 'Bob' }])
+    socket.close()
+    expect(store.presence).toEqual({})
+    await vi.advanceTimersByTimeAsync(1000)
+    const next = FakeSocket.sockets[1]!
+    next.open()
+    next.message({ t: 'subscribed', tableId: 'table' })
+    expect(JSON.parse(next.sent.at(-1)!)).toEqual({
+      t: 'presence',
+      tableId: 'table',
+      viewId: 'view-b',
+    })
+    next.message({ t: 'presence', tableId: 'table', viewId: 'view-b', users })
+    expect(store.presence.table).toEqual(users)
+    next.message({ t: 'sub.denied', tableId: 'table', code: 'ERR_NOT_FOUND' })
+    next.message({ t: 'presence', tableId: 'table', viewId: 'view-b', users })
+    expect(store.presence).toEqual({})
+    store.stop()
+    remove()
+    disposePinia(pinia)
+  })
+
+  it('rejects malformed presence snapshots rather than showing partial data', () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useRealtimeStore()
+    store.start('user')
+    store.subscribe('table', vi.fn())
+    store.setView('table', 'view')
+    const socket = FakeSocket.sockets[0]!
+    socket.open()
+    socket.message({ t: 'subscribed', tableId: 'table' })
+    socket.message({
+      t: 'presence',
+      tableId: 'table',
+      users: [{ userId: 'bob', name: 'Bob', cell: { rowId: 1 } }],
+    })
+    expect(store.error).toBeInstanceOf(Error)
+    expect(store.presence).toEqual({})
+    expect(store.status).toBe('retrying')
+    store.stop()
+    disposePinia(pinia)
+  })
+
   it('creates event IDs when secure-context-only randomUUID is unavailable', () => {
     const getRandomValues = vi.fn((bytes: Uint8Array) => bytes.fill(7))
     vi.stubGlobal('crypto', { getRandomValues })

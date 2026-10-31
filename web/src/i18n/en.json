@@ -24,6 +24,12 @@
     "changedBy": "Changed by {name} while you were editing",
     "unknownEditor": "Another user"
   },
+  "presence": {
+    "collaborators": "Collaborators viewing this table",
+    "viewing": "{name} is viewing this table",
+    "focusedCell": "{name} is focused on this cell",
+    "unavailable": "Presence is unavailable. Reconnect or reload to try again."
+  },
   "nav": {
     "notFoundTitle": "Nothing here yet",
     "notFoundDescription": "This page is not available. Return to the welcome page to get started.",
