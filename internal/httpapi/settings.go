@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 
@@ -113,7 +112,7 @@ func (api *authHTTP) updateSettings(w http.ResponseWriter, r *http.Request, _ au
 	writeJSON(w, 200, struct {
 		Settings admin.Settings `json:"settings"`
 		EventID  string         `json:"eventId"`
-	}{result, rand.Text()})
+	}{result, eventID(r)})
 }
 
 func (api *authHTTP) listWorkspaces(w http.ResponseWriter, r *http.Request, _ auth.User, token string) {

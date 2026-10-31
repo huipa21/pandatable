@@ -177,14 +177,18 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     await createForm
       .getByLabel(en.nav.viewName, { exact: true })
       .fill('Writer personal')
-    await createForm.locator('select').selectOption('personal')
+    await createForm
+      .getByLabel(en.nav.viewScopeLabel)
+      .selectOption('personal', { timeout: 10_000 })
     await createForm.getByRole('button', { name: en.nav.createView }).click()
     await expect(writerPage).toHaveURL(/\/t\/[^/]+\/v\/[^/]+$/)
 
     await createForm
       .getByLabel(en.nav.viewName, { exact: true })
       .fill('Shared board')
-    await createForm.locator('select').selectOption('shared')
+    await createForm
+      .getByLabel(en.nav.viewScopeLabel)
+      .selectOption('shared', { timeout: 10_000 })
     await createForm.getByRole('button', { name: en.nav.createView }).click()
     const writerSchemaResponse = await writerPage.request.get(
       `/api/v1/tables/${tableId}/schema`,

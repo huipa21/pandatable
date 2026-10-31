@@ -159,6 +159,51 @@ it('refreshes unchanged-route schema on nav revision and removes sharing when th
   }
 })
 
+it('preserves the open row dialog when navigation reports a permission change', async () => {
+  let level: 'owner' | 'read' = 'owner'
+  const fetcher = vi.fn(() =>
+    Promise.resolve(Response.json({ ...tableSchema(), myLevel: level })),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const { wrapper, nav } = await setup('/t/t/v/v/r/1')
+  try {
+    const dialog = wrapper.get('[data-testid="row-dialog"]').element
+    level = 'read'
+    nav.tree!.workspaces[0]!.books[0]!.tables[0]!.level = level
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="row-dialog"]').element).toBe(dialog)
+    expect(wrapper.get('.schema-summary').text()).toContain('Read')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('restarts an in-flight schema read when the navigation permission changes', async () => {
+  let release!: (response: Response) => void
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        }),
+    )
+    .mockResolvedValue(Response.json({ ...tableSchema(), myLevel: 'read' }))
+  vi.stubGlobal('fetch', fetcher)
+  const { wrapper, nav } = await setup('/t/t/v/v')
+  try {
+    nav.tree!.workspaces[0]!.books[0]!.tables[0]!.level = 'read'
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    release(Response.json(tableSchema()))
+    await flushPromises()
+    expect(wrapper.get('.schema-summary').text()).toContain('Read')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('replaces a table shortcut with its real Grid id and ignores schema reads from an abandoned route', async () => {
   vi.stubGlobal(
     'fetch',

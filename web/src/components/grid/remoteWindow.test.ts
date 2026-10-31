@@ -156,4 +156,60 @@ describe('production query window', () => {
     expect(window.snapshot().pending).toBe(0)
     expect(window.slots).toHaveLength(0)
   })
+
+  it('marks affected cached neighbor pages stale without discarding the active page', async () => {
+    const provider = source(400)
+    const window = new RemoteRowsWindow(provider, vi.fn(), vi.fn())
+    await window.initialize(100)
+    await Promise.resolve()
+    expect(window.snapshot().cachedPages).toEqual([0, 1, 2])
+    window.invalidateOffscreen(['10000000001', '10000000101'])
+    expect(window.snapshot().cachedPages).toEqual([1, 2])
+    expect(window.rowAt(1)).toBeNull()
+    expect(window.rowAt(101)?.id).toBe('10000000101')
+    window.dispose()
+  })
+
+  it('cancels stale in-flight pages and reloads an active page after a remote edit', async () => {
+    const pending: {
+      offset: number
+      signal: AbortSignal
+      resolve: (result: RowQueryResult) => void
+    }[] = []
+    const result = (offset: number, includeCount: boolean): RowQueryResult => ({
+      rows: Array.from({ length: 100 }, (_, index) => row(offset + index)),
+      fieldIds: ['value'],
+      total: includeCount ? 400 : null,
+      schemaVersion: 1,
+    })
+    const window = new RemoteRowsWindow(
+      {
+        fetch: (offset, _limit, includeCount, signal) =>
+          includeCount
+            ? Promise.resolve(result(offset, true))
+            : new Promise((resolve) =>
+                pending.push({ offset, signal, resolve }),
+              ),
+      },
+      vi.fn(),
+      vi.fn(),
+    )
+    await window.initialize()
+    const neighbor = pending.find((item) => item.offset === 100)!
+    window.load(200)
+    const staleActive = pending.find((item) => item.offset === 200)!
+    window.invalidateOffscreen(['10000000201'])
+    expect(neighbor.signal.aborted).toBe(true)
+    expect(staleActive.signal.aborted).toBe(true)
+    const refreshed = pending.filter((item) => item.offset === 200).at(-1)!
+    expect(refreshed).not.toBe(staleActive)
+    neighbor.resolve(result(100, false))
+    staleActive.resolve(result(200, false))
+    const fresh = result(200, false)
+    fresh.rows[1]!.fields.value = 'new'
+    refreshed.resolve(fresh)
+    await vi.waitFor(() => expect(window.rowAt(201)?.fields.value).toBe('new'))
+    expect(window.rowAt(101)).toBeNull()
+    window.dispose()
+  })
 })

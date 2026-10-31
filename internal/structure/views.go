@@ -185,7 +185,7 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 	if !ok {
 		return View{}, acl.ErrValidation()
 	}
-	err = s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	err = s.withViewTable(ctx, actor, view.TableID.String(), &result, func(tx pgx.Tx, table rowTable) error {
 		q := structuresql.New(tx)
 		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{ID: uuid, TableID: table.id})
 		if err != nil {
@@ -233,7 +233,7 @@ func (s *Service) UpdateViewForm(ctx context.Context, actor Actor, id string, ve
 		return View{}, acl.ErrValidation()
 	}
 	var result View
-	err = s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	err = s.withViewTable(ctx, actor, view.TableID.String(), &result, func(tx pgx.Tx, table rowTable) error {
 		q := structuresql.New(tx)
 		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{ID: uuid, TableID: table.id})
 		if err != nil {

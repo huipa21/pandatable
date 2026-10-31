@@ -37,6 +37,7 @@ type RowSort struct {
 type RowQueryRequest struct {
 	Offset       *int              `json:"offset"`
 	Limit        *int              `json:"limit"`
+	IDs          *[]string         `json:"ids"`
 	Sort         *RowSort          `json:"sort"`
 	Sorts        *[]RowSort        `json:"sorts"`
 	IncludeCount *bool             `json:"includeCount"`
@@ -727,6 +728,26 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		return RowQueryResult{}, err
 	}
 	conditionSQL, conditionArgs := combineQueryConditions(filterSQL, filterArgs, searchSQL, searchArgs)
+	if request.IDs != nil {
+		if len(*request.IDs) == 0 || len(*request.IDs) > maxQueryLimit {
+			return RowQueryResult{}, validation("Query row IDs are outside the supported bounds")
+		}
+		ids := make([]int64, 0, len(*request.IDs))
+		seen := make(map[int64]bool, len(*request.IDs))
+		for _, raw := range *request.IDs {
+			id, err := canonicalRowID(raw)
+			if err != nil || seen[id] {
+				return RowQueryResult{}, validation("Query row IDs must be unique and valid")
+			}
+			seen[id] = true
+			ids = append(ids, id)
+		}
+		if conditionSQL != "" {
+			conditionSQL += " AND "
+		}
+		conditionSQL += fmt.Sprintf(`"source"."id" = ANY($%d::bigint[])`, len(conditionArgs)+1)
+		conditionArgs = append(conditionArgs, ids)
+	}
 	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, config.GroupBy, request.GroupPath)
 	if err != nil {
 		return RowQueryResult{}, err
@@ -920,7 +941,7 @@ func (s *Service) CreateRows(ctx context.Context, actor Actor, tableID string, i
 			}
 			result = append(result, record)
 		}
-		return nil
+		return emitRows(ctx, tx, actor, table.id.String(), "row.created", result, nil)
 	})
 	return result, err
 }
@@ -992,7 +1013,7 @@ func (s *Service) SubmitForm(ctx context.Context, actor Actor, viewID string, in
 			return err
 		}
 		result = record
-		return nil
+		return emitRows(ctx, tx, actor, table.id.String(), "row.created", []RowRecord{record}, nil)
 	})
 	return result, err
 }
@@ -1074,7 +1095,11 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 			return err
 		}
 		result = record
-		return nil
+		if err := emitRows(ctx, tx, actor, table.id.String(), "row.updated", []RowRecord{record},
+			changedFields([]RowPatch{{Fields: input}})); err != nil {
+			return err
+		}
+		return emitRelatedRowInvalidations(ctx, tx, table.id)
 	})
 	return result, err
 }
@@ -1172,7 +1197,10 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 			}
 			result[index] = record
 		}
-		return nil
+		if err := emitPatches(ctx, tx, actor, table.id.String(), result, input); err != nil {
+			return err
+		}
+		return emitRelatedRowInvalidations(ctx, tx, table.id)
 	})
 	return result, err
 }
@@ -1240,7 +1268,7 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 			return fmt.Errorf("delete rows: %w", err)
 		}
 		result = records
-		return nil
+		return emitRows(ctx, tx, actor, table.id.String(), "row.deleted", records, nil)
 	})
 	return result, err
 }

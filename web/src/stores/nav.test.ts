@@ -129,7 +129,11 @@ it('refetches after mutations/403/404, sends CSRF and index, and surfaces stale 
     expect.objectContaining({
       method: 'POST',
       body: '{"name":"表"}',
-      headers: { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PT-CSRF': '1',
+        'X-PT-Event-ID': expect.stringMatching(/^[0-9a-f]{32}$/),
+      },
       signal: expect.any(AbortSignal),
     }),
   )

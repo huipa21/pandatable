@@ -11,6 +11,7 @@ import (
 
 	"pandatable/internal/acl/aclsql"
 	"pandatable/internal/db"
+	"pandatable/internal/events"
 )
 
 // Service implements the grants API. Every mutation re-evaluates the caller's
@@ -299,7 +300,10 @@ func (service *Service) mutate(ctx context.Context, userID string, resource Reso
 			return err
 		}
 		mutated, err = fn(queries, user, path)
-		return err
+		if err != nil || !mutated {
+			return err
+		}
+		return events.Emit(ctx, tx, events.Event{Type: "nav.changed", By: userID})
 	})
 	if mutated {
 		service.resolver.Invalidate()

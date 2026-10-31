@@ -19,6 +19,11 @@
     "localeError": "The language could not be loaded. Check your connection and try again.",
     "backToLogin": "Back to welcome"
   },
+  "realtime": {
+    "reconnecting": "Live updates are disconnected. Reconnecting…",
+    "changedBy": "Changed by {name} while you were editing",
+    "unknownEditor": "Another user"
+  },
   "nav": {
     "notFoundTitle": "Nothing here yet",
     "notFoundDescription": "This page is not available. Return to the welcome page to get started.",

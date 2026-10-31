@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"errors"
 	"io"
 	"mime"
@@ -128,7 +127,7 @@ func (api *authHTTP) deleteAttachment(w http.ResponseWriter, r *http.Request, us
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) discardAttachment(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -138,5 +137,5 @@ func (api *authHTTP) discardAttachment(w http.ResponseWriter, r *http.Request, u
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }

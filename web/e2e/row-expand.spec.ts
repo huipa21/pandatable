@@ -500,11 +500,20 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
         })
       ).status(),
     ).toBe(200)
-    expectHTTPFailure(reader, 'PATCH', apiRowPath, 403)
-    await readerName.getByRole('button', { name: en.rowExpand.save }).click()
+    await expect(
+      readerDialog.getByText(en.rowExpand.readOnly, { exact: true }),
+    ).toBeVisible()
     await expect(readerDialog.getByRole('alert')).toContainText(
       en.errors.ERR_PERMISSION_DENIED,
     )
+    expect(
+      (
+        await reader.request.patch(apiRowPath, {
+          headers: h,
+          data: { fields: { [nameField.id]: 'must not save' } },
+        })
+      ).status(),
+    ).toBe(403)
     await expect(
       readerDialog.getByText(en.rowExpand.saved, { exact: true }),
     ).toHaveCount(0)

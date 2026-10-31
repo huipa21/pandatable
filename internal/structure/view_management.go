@@ -11,6 +11,7 @@ import (
 
 	"pandatable/internal/acl"
 	"pandatable/internal/apperr"
+	"pandatable/internal/events"
 	"pandatable/internal/structure/structuresql"
 )
 
@@ -51,7 +52,7 @@ func (s *Service) UpdateViewMetadata(ctx context.Context, actor Actor, id string
 		return View{}, acl.ErrValidation()
 	}
 	var result View
-	err = s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	err = s.withViewTable(ctx, actor, view.TableID.String(), &result, func(tx pgx.Tx, table rowTable) error {
 		q := structuresql.New(tx)
 		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{
 			ID: viewID, TableID: table.id,
@@ -113,7 +114,7 @@ func (s *Service) CreateView(ctx context.Context, actor Actor, tableID string, i
 	}
 
 	var result View
-	err = s.withViewTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
+	err = s.withViewTable(ctx, actor, tableID, &result, func(tx pgx.Tx, table rowTable) error {
 		target := acl.Resource{Type: acl.Table, ID: table.id}
 		level := acl.Read
 		if input.Scope == "shared" {
@@ -174,7 +175,7 @@ func (s *Service) DuplicateView(ctx context.Context, actor Actor, id, name, scop
 		return View{}, notFoundIfNoRows(err, "read source view")
 	}
 	var result View
-	err = s.withViewTable(ctx, actor, source.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	err = s.withViewTable(ctx, actor, source.TableID.String(), &result, func(tx pgx.Tx, table rowTable) error {
 		target := acl.Resource{Type: acl.Table, ID: table.id}
 		if source.Scope == "personal" && source.OwnerID.String() != actor.ID {
 			return acl.ErrNotFound()
@@ -250,7 +251,8 @@ func (s *Service) DeleteView(ctx context.Context, actor Actor, id string, versio
 	if !ok {
 		return acl.ErrValidation()
 	}
-	return s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	notification := View{ID: id, Scope: view.Scope, Version: version}
+	return s.withViewTable(ctx, actor, view.TableID.String(), &notification, func(tx pgx.Tx, table rowTable) error {
 		q := structuresql.New(tx)
 		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{
 			ID: viewID, TableID: table.id,
@@ -288,7 +290,7 @@ func (s *Service) MoveView(ctx context.Context, actor Actor, id string, version 
 		return View{}, acl.ErrValidation()
 	}
 	var result View
-	err = s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+	err = s.withViewTable(ctx, actor, view.TableID.String(), &result, func(tx pgx.Tx, table rowTable) error {
 		q := structuresql.New(tx)
 		views, err := q.LockTableViewsForManagement(ctx, structuresql.LockTableViewsForManagementParams{
 			TableID: table.id, UserID: user,
@@ -356,7 +358,7 @@ func (s *Service) MoveView(ctx context.Context, actor Actor, id string, version 
 	return result, err
 }
 
-func (s *Service) withViewTable(ctx context.Context, actor Actor, tableID string, run func(pgx.Tx, rowTable) error) error {
+func (s *Service) withViewTable(ctx context.Context, actor Actor, tableID string, changed *View, run func(pgx.Tx, rowTable) error) error {
 	target, err := resourceOf(acl.Table, tableID)
 	if err != nil {
 		return err
@@ -390,7 +392,21 @@ func (s *Service) withViewTable(ctx context.Context, actor Actor, tableID string
 		if err != nil {
 			return err
 		}
-		return run(tx, table)
+		if err := run(tx, table); err != nil {
+			return err
+		}
+		if changed == nil || changed.ID == "" {
+			return fmt.Errorf("changed view is missing from realtime event")
+		}
+		recipient := ""
+		if changed.Scope == "personal" {
+			recipient = actor.ID
+		}
+		if err := events.Emit(ctx, tx, events.Event{Type: "view.changed", TableID: table.id.String(),
+			ViewID: changed.ID, Version: changed.Version, By: actor.ID, Recipient: recipient}); err != nil {
+			return err
+		}
+		return events.Emit(ctx, tx, events.Event{Type: "nav.changed", By: actor.ID, Recipient: recipient})
 	})
 	return rowDatabaseError(err)
 }

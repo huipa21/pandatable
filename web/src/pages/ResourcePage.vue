@@ -24,6 +24,7 @@ import type {
 import { useAuthStore } from '../stores/auth'
 import { tablePath, useNavStore, type NavigationItem } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
+import { useRealtimeStore } from '../stores/realtime'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -31,6 +32,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
 const sharing = useSharingStore()
+const realtime = useRealtimeStore()
 const schema = shallowRef<TableSchema | null>(null)
 // Lazy so the field registry/editor stay out of the initial bundle (D-130).
 const FieldPanel = defineAsyncComponent(
@@ -294,21 +296,44 @@ watch(
     () => route.params.workspaceId,
     () => route.params.wid,
     () => node.value?.id,
-    () => node.value?.name,
-    () => node.value?.level,
   ],
   () => void loadSchema(),
   { immediate: true },
 )
 watch(
-  () => nav.revision,
-  () => {
-    if (!loading.value) void loadSchema(true)
+  [
+    () => nav.revision,
+    () => node.value?.id,
+    () => node.value?.name,
+    () => node.value?.level,
+  ],
+  ([revision, id, name, level], [oldRevision, oldId, oldName, oldLevel]) => {
+    const metadataChanged =
+      id === oldId && (name !== oldName || level !== oldLevel)
+    if (metadataChanged || (revision !== oldRevision && !loading.value))
+      void loadSchema(true)
   },
 )
 watch(
   () => auth.user?.id,
   () => void loadSchema(),
+)
+watch(
+  [() => route.params.tableId, () => auth.user?.id],
+  ([tableId, userId], _previous, onCleanup) => {
+    if (typeof tableId !== 'string' || !userId) return
+    onCleanup(
+      realtime.subscribe(tableId, (event) => {
+        if (
+          ['schema.changed', 'view.changed', 'sub.denied', 'resync'].includes(
+            event.t,
+          )
+        )
+          void loadSchema(true)
+      }),
+    )
+  },
+  { immediate: true },
 )
 watch(
   [

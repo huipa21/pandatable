@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 
@@ -45,7 +44,7 @@ func (api *authHTTP) submitForm(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusCreated, struct {
 		Row     structure.RowRecord `json:"row"`
 		EventID string              `json:"eventId"`
-	}{row, rand.Text()})
+	}{row, eventID(r)})
 }
 
 func (api *authHTTP) queryRows(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -115,7 +114,7 @@ func (api *authHTTP) createRows(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusCreated, struct {
 		Rows    []structure.RowRecord `json:"rows"`
 		EventID string                `json:"eventId"`
-	}{rows, rand.Text()})
+	}{rows, eventID(r)})
 }
 
 func (api *authHTTP) patchRows(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -134,7 +133,7 @@ func (api *authHTTP) patchRows(w http.ResponseWriter, r *http.Request, user auth
 	writeJSON(w, http.StatusOK, struct {
 		Rows    []structure.RowRecord `json:"rows"`
 		EventID string                `json:"eventId"`
-	}{rows, rand.Text()})
+	}{rows, eventID(r)})
 }
 
 func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -154,7 +153,7 @@ func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.
 	writeJSON(w, http.StatusOK, struct {
 		Row     structure.RowRecord `json:"row"`
 		EventID string              `json:"eventId"`
-	}{row, rand.Text()})
+	}{row, eventID(r)})
 }
 
 func (api *authHTTP) changeLinks(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -177,7 +176,7 @@ func (api *authHTTP) changeLinks(w http.ResponseWriter, r *http.Request, user au
 	writeJSON(w, http.StatusOK, struct {
 		Row     structure.RowRecord `json:"row"`
 		EventID string              `json:"eventId"`
-	}{row, rand.Text()})
+	}{row, eventID(r)})
 }
 
 func (api *authHTTP) deleteRows(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -196,5 +195,5 @@ func (api *authHTTP) deleteRows(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusOK, struct {
 		Rows    []structure.RowRecord `json:"rows"`
 		EventID string                `json:"eventId"`
-	}{rows, rand.Text()})
+	}{rows, eventID(r)})
 }

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -48,7 +47,7 @@ func (api *authHTTP) createRelation(w http.ResponseWriter, r *http.Request, user
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, relationResponse{result, rand.Text()})
+	writeJSON(w, http.StatusCreated, relationResponse{result, eventID(r)})
 }
 
 // ifMatch reads the required resource version: a positive integer, optionally
@@ -100,7 +99,7 @@ func (api *authHTTP) createField(w http.ResponseWriter, r *http.Request, user au
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, fieldResponse{result, rand.Text()})
+	writeJSON(w, http.StatusCreated, fieldResponse{result, eventID(r)})
 }
 
 func (api *authHTTP) updateField(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -131,7 +130,7 @@ func (api *authHTTP) updateField(w http.ResponseWriter, r *http.Request, user au
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
+	writeJSON(w, http.StatusOK, fieldResponse{result, eventID(r)})
 }
 
 func (api *authHTTP) dryRunFieldType(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -180,7 +179,7 @@ func (api *authHTTP) convertFieldType(w http.ResponseWriter, r *http.Request, us
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
+	writeJSON(w, http.StatusOK, fieldResponse{result, eventID(r)})
 }
 
 func (api *authHTTP) deleteField(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -194,5 +193,5 @@ func (api *authHTTP) deleteField(w http.ResponseWriter, r *http.Request, user au
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, fieldResponse{result, rand.Text()})
+	writeJSON(w, http.StatusOK, fieldResponse{result, eventID(r)})
 }

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 
@@ -13,7 +12,7 @@ import (
 )
 
 func actorOf(user auth.User) structure.Actor {
-	return structure.Actor{ID: user.ID, Locale: user.Locale, Timezone: user.EffectiveTimezone}
+	return structure.Actor{ID: user.ID, Name: user.DisplayName, Locale: user.Locale, Timezone: user.EffectiveTimezone}
 }
 
 func (api *authHTTP) mountStructure(router chi.Router) {
@@ -142,7 +141,7 @@ func (api *authHTTP) createWorkspace(w http.ResponseWriter, r *http.Request, use
 	writeJSON(w, http.StatusCreated, struct {
 		Workspace structure.Workspace `json:"workspace"`
 		EventID   string              `json:"eventId"`
-	}{workspace, rand.Text()})
+	}{workspace, eventID(r)})
 }
 
 func (api *authHTTP) updateWorkspace(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -174,7 +173,7 @@ func (api *authHTTP) updateWorkspace(w http.ResponseWriter, r *http.Request, use
 	writeJSON(w, http.StatusOK, struct {
 		Workspace structure.Workspace `json:"workspace"`
 		EventID   string              `json:"eventId"`
-	}{workspace, rand.Text()})
+	}{workspace, eventID(r)})
 }
 
 func (api *authHTTP) deleteWorkspace(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -182,7 +181,7 @@ func (api *authHTTP) deleteWorkspace(w http.ResponseWriter, r *http.Request, use
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }
 
 type namedInput struct {
@@ -208,7 +207,7 @@ func (api *authHTTP) createBook(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusCreated, struct {
 		Book    structure.Book `json:"book"`
 		EventID string         `json:"eventId"`
-	}{book, rand.Text()})
+	}{book, eventID(r)})
 }
 
 func (api *authHTTP) updateBook(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -226,7 +225,7 @@ func (api *authHTTP) updateBook(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusOK, struct {
 		Book    structure.Book `json:"book"`
 		EventID string         `json:"eventId"`
-	}{book, rand.Text()})
+	}{book, eventID(r)})
 }
 
 func (api *authHTTP) deleteBook(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -234,7 +233,7 @@ func (api *authHTTP) deleteBook(w http.ResponseWriter, r *http.Request, user aut
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) createTable(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -251,7 +250,7 @@ func (api *authHTTP) createTable(w http.ResponseWriter, r *http.Request, user au
 	writeJSON(w, http.StatusCreated, struct {
 		structure.TableSchema
 		EventID string `json:"eventId"`
-	}{schema, rand.Text()})
+	}{schema, eventID(r)})
 }
 
 func (api *authHTTP) updateTable(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -273,7 +272,7 @@ func (api *authHTTP) updateTable(w http.ResponseWriter, r *http.Request, user au
 	writeJSON(w, http.StatusOK, struct {
 		Table   structure.Table `json:"table"`
 		EventID string          `json:"eventId"`
-	}{table, rand.Text()})
+	}{table, eventID(r)})
 }
 
 func (api *authHTTP) deleteTable(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -281,7 +280,7 @@ func (api *authHTTP) deleteTable(w http.ResponseWriter, r *http.Request, user au
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) tableSchema(w http.ResponseWriter, r *http.Request, user auth.User) {

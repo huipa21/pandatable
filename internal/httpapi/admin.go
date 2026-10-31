@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -149,7 +148,7 @@ func (api *authHTTP) createUser(w http.ResponseWriter, r *http.Request, _ auth.U
 	writeJSON(w, 201, struct {
 		User    admin.User `json:"user"`
 		EventID string     `json:"eventId"`
-	}{user, rand.Text()})
+	}{user, eventID(r)})
 }
 
 func (api *authHTTP) updateUser(w http.ResponseWriter, r *http.Request, actor auth.User, token string) {
@@ -188,7 +187,7 @@ func (api *authHTTP) updateUser(w http.ResponseWriter, r *http.Request, actor au
 	writeJSON(w, 200, struct {
 		admin.UpdateResult
 		EventID string `json:"eventId"`
-	}{result, rand.Text()})
+	}{result, eventID(r)})
 }
 
 func (api *authHTTP) resetUserPassword(w http.ResponseWriter, r *http.Request, actor auth.User, token string) {
@@ -207,5 +206,5 @@ func (api *authHTTP) resetUserPassword(w http.ResponseWriter, r *http.Request, a
 	if id == actor.ID {
 		api.clearCookie(w)
 	}
-	writeJSON(w, 200, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, 200, map[string]string{"eventId": eventID(r)})
 }

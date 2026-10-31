@@ -58,12 +58,14 @@ import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
+import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
 import FilterBuilder from '../filters/FilterBuilder.vue'
 import GridRelationCell from '../relations/GridRelationCell.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
+import { RealtimeRowSync } from './realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
 import { formatTsv, parseTsv, TsvError } from './tsv'
 import {
@@ -103,6 +105,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
 const preferences = usePreferencesStore()
+const realtime = useRealtimeStore()
 const host = ref<{ $el: HTMLElement & Components.RevoGrid }>()
 const ready = ref(false)
 const disposed = ref(false)
@@ -142,6 +145,14 @@ let savedHighlightFingerprint = JSON.stringify(
 const syncedPages = new Set<number>()
 const syncedRows: (DataRow | null)[] = []
 const mutationControllers = new Set<AbortController>()
+const activeEdit = shallowRef<{
+  rowId: string
+  fieldId: string
+  changedBy: string
+} | null>(null)
+const deferredRows = new Map<string, DataRow>()
+let remoteReloadPending = false
+let realtimeEpoch = 0
 let focused: FocusAfterRenderEvent | undefined
 let footerController: AbortController | undefined
 let footerGeneration = 0
@@ -202,6 +213,25 @@ const gridEditorComponent = defineComponent({
     rowIndex: { type: Number, required: true },
   },
   setup(editorProps) {
+    let rowId = ''
+    const fieldId = String(editorProps.column.prop)
+    onMounted(() => {
+      const focusedId = focused?.model?.__rowId
+      rowId =
+        typeof focusedId === 'string'
+          ? focusedId
+          : (rows.rowAt(editorProps.rowIndex)?.id ?? '')
+      if (rowId) activeEdit.value = { rowId, fieldId, changedBy: '' }
+    })
+    onBeforeUnmount(() => {
+      if (
+        activeEdit.value?.rowId === rowId &&
+        activeEdit.value.fieldId === fieldId
+      ) {
+        activeEdit.value = null
+        queueMicrotask(flushDeferredRealtime)
+      }
+    })
     return () => {
       const item = fieldById.value.get(String(editorProps.column.prop))
       if (!item) {
@@ -216,6 +246,11 @@ const gridEditorComponent = defineComponent({
         tableId: props.schema.table.id,
         fieldId: item.field.id,
         identity: props.identity,
+        changedBy:
+          activeEdit.value?.rowId === rowId &&
+          activeEdit.value.fieldId === fieldId
+            ? activeEdit.value.changedBy
+            : '',
       })
     }
   },
@@ -701,11 +736,112 @@ const rows = {
     groupedMode.value
       ? groupedRows.updateRow(index, row)
       : remoteRows.updateRow(index, row),
+  invalidateOffscreen: (ids: readonly string[]) => {
+    if (!groupedMode.value) remoteRows.invalidateOffscreen(ids)
+  },
   dispose: () => {
     groupedRows.dispose()
     remoteRows.dispose()
   },
 }
+
+function requestRealtimeReload() {
+  remoteReloadPending = true
+  flushDeferredRealtime()
+}
+
+function flushDeferredRealtime() {
+  if (disposed.value || !ready.value || activeEdit.value || saving.value) return
+  if (remoteReloadPending) {
+    remoteReloadPending = false
+    deferredRows.clear()
+    void initialize(
+      Math.max(0, rows.snapshot().activePage) * remotePageSize,
+      true,
+    )
+    return
+  }
+  for (const row of deferredRows.values()) {
+    const index = rows.indexOfRow(row.id)
+    if (index >= 0) rows.updateRow(index, row)
+  }
+  deferredRows.clear()
+}
+
+const rowSync = new RealtimeRowSync({
+  window: () => (ready.value && !disposed.value ? rows : undefined),
+  epoch: () => realtimeEpoch,
+  fetch: async (ids, signal) => {
+    const result = await request<RowQueryResult>(
+      `/views/${props.viewId}/query`,
+      'POST',
+      {
+        ids,
+        limit: ids.length,
+        includeCount: false,
+        fieldIds: visibleFieldIds.value,
+        sorts: sortCriteria.value,
+        ...(props.filter ? { filter: props.filter } : {}),
+        ...(searchTerm.value ? { search: searchTerm.value } : {}),
+      } satisfies RowQueryRequest,
+      AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    )
+    if (result.schemaVersion !== props.schema.schemaVersion) {
+      emit('schemaChanged')
+      throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+    }
+    return result
+  },
+  merge: (row) => {
+    if (activeEdit.value || saving.value) {
+      deferredRows.set(row.id, row)
+      return
+    }
+    const index = rows.indexOfRow(row.id)
+    if (index >= 0) rows.updateRow(index, row)
+  },
+  reload: requestRealtimeReload,
+  needsReload: () =>
+    groupedMode.value ||
+    sortCriteria.value.length > 0 ||
+    !!props.filter ||
+    !!searchTerm.value,
+  failed: (cause) => {
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+    error.value = cause
+  },
+})
+
+function handleRealtime(event: RealtimeEvent) {
+  if (event.t === 'row.updated' && event.ids) {
+    if (!ready.value) {
+      requestRealtimeReload()
+      return
+    }
+    const edit = activeEdit.value
+    if (edit && event.ids.includes(edit.rowId)) {
+      const fields = event.changes?.[edit.rowId] ?? event.fields
+      if (!fields || fields.includes(edit.fieldId))
+        activeEdit.value = {
+          ...edit,
+          changedBy: event.byName || event.by || t('realtime.unknownEditor'),
+        }
+    }
+    rowSync.update(event.ids)
+    void loadFooterAggregates()
+  } else if (
+    ['row.created', 'row.deleted', 'row.bulk', 'resync'].includes(event.t) ||
+    (event.t === 'view.changed' && event.viewId === props.viewId)
+  ) {
+    requestRealtimeReload()
+  }
+}
+
+const removeRealtimeListener = realtime.subscribe(
+  props.schema.table.id,
+  handleRealtime,
+)
 
 interface GridModel {
   __rowId?: string
@@ -1732,6 +1868,7 @@ function syncSource() {
 }
 
 async function initialize(anchor = 0, preserveCellErrors = false) {
+  realtimeEpoch++
   loading.value = true
   error.value = null
   if (!preserveCellErrors) cellErrors.value.clear()
@@ -1755,7 +1892,7 @@ function refreshHighlightedRows() {
 
 function created() {
   ready.value = true
-  void initialize()
+  void initialize().then(flushDeferredRealtime)
 }
 
 function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
@@ -2016,6 +2153,18 @@ watch(searchTerm, () => {
   }, 250)
 })
 watch(
+  saving,
+  (isSaving) => {
+    realtimeEpoch++
+    if (rowSync.hasWork() || deferredRows.size) {
+      deferredRows.clear()
+      remoteReloadPending = true
+    }
+    if (!isSaving) flushDeferredRealtime()
+  },
+  { flush: 'sync' },
+)
+watch(
   () => JSON.stringify(columnState.config.value.aggregates ?? []),
   () => {
     if (ready.value) void loadFooterAggregates()
@@ -2084,6 +2233,9 @@ onBeforeUnmount(() => {
   document.removeEventListener('keydown', documentKeydown, true)
   for (const controller of mutationControllers) controller.abort()
   mutationControllers.clear()
+  removeRealtimeListener()
+  rowSync.dispose()
+  deferredRows.clear()
   rows.dispose()
 })
 </script>

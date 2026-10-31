@@ -14,6 +14,7 @@ import (
 	"pandatable/internal/config"
 	"pandatable/internal/db"
 	"pandatable/internal/httpapi"
+	"pandatable/internal/realtime"
 	"pandatable/internal/structure"
 	"pandatable/internal/web"
 )
@@ -66,6 +67,14 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure attachment service: %w", err)
 	}
+	hub, err := realtime.New(pool, resolver, authService, logger)
+	if err != nil {
+		return fmt.Errorf("configure realtime hub: %w", err)
+	}
+	if err := hub.Start(ctx); err != nil {
+		return fmt.Errorf("start realtime hub: %w", err)
+	}
+	defer hub.Close()
 	monitor, err := admin.NewSystemMonitor(ctx, adminService, cfg.DataDir, version, processStarted, logger)
 	if err != nil {
 		return fmt.Errorf("configure system monitor: %w", err)
@@ -80,7 +89,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
 		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor,
-		Attachments: attachmentService, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Attachments: attachmentService, Realtime: hub, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -114,7 +113,7 @@ func (api *authHTTP) createGroup(w http.ResponseWriter, r *http.Request, _ auth.
 	writeJSON(w, 201, struct {
 		Group   admin.Group `json:"group"`
 		EventID string      `json:"eventId"`
-	}{group, rand.Text()})
+	}{group, eventID(r)})
 }
 
 func (api *authHTTP) updateGroup(w http.ResponseWriter, r *http.Request, _ auth.User, token string) {
@@ -144,7 +143,7 @@ func (api *authHTTP) updateGroup(w http.ResponseWriter, r *http.Request, _ auth.
 	writeJSON(w, 200, struct {
 		Group   admin.Group `json:"group"`
 		EventID string      `json:"eventId"`
-	}{group, rand.Text()})
+	}{group, eventID(r)})
 }
 
 func (api *authHTTP) deleteGroup(w http.ResponseWriter, r *http.Request, _ auth.User, token string) {
@@ -152,7 +151,7 @@ func (api *authHTTP) deleteGroup(w http.ResponseWriter, r *http.Request, _ auth.
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, 200, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) addGroupMember(w http.ResponseWriter, r *http.Request, _ auth.User, token string) {
@@ -167,7 +166,7 @@ func (api *authHTTP) addGroupMember(w http.ResponseWriter, r *http.Request, _ au
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 201, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, 201, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) removeGroupMember(w http.ResponseWriter, r *http.Request, _ auth.User, token string) {
@@ -175,5 +174,5 @@ func (api *authHTTP) removeGroupMember(w http.ResponseWriter, r *http.Request, _
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, 200, map[string]string{"eventId": eventID(r)})
 }

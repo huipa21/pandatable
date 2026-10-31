@@ -19,6 +19,11 @@
     "localeError": "无法加载语言，请检查网络连接后重试。",
     "backToLogin": "返回欢迎页"
   },
+  "realtime": {
+    "reconnecting": "实时更新已断开，正在重新连接…",
+    "changedBy": "编辑期间已被 {name} 修改",
+    "unknownEditor": "其他用户"
+  },
   "nav": {
     "notFoundTitle": "这里还没有内容",
     "notFoundDescription": "此页面暂不可用，请返回欢迎页。",

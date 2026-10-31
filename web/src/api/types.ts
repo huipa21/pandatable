@@ -384,6 +384,8 @@ export type FilterNode =
 export interface RowQueryRequest {
   offset?: number
   limit?: number
+  /** Fetch up to 100 specific rows while applying the current view filters. */
+  ids?: string[]
   sort?: RowSort
   sorts?: RowSort[]
   includeCount?: boolean

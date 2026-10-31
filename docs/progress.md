@@ -64,7 +64,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.13 | Form view | ✅ | 2026-10-31 | D-178; AT-511 and both task gates pass. Versioned form configuration, localized builder/rendering, and permission-checked atomic row submission are complete. [Record](task-prompts/T2.13.md#record-2026-10-31). |
 | T2.14 | Auto-index job | ✅ | 2026-10-31 | D-020 auto-index job and metadata tracking pass PG18 tests and task gates; AT-512's 200k filter/sort/group performance criterion remains pending for T2.15. |
 | T2.15 | Perf pass | 🟨 | 2026-10-31 | Local benchmark and task gates pass; AT-512 target-host acceptance remains pending. [Record](task-prompts/T2.15.md#record-2026-10-31). |
-| T3.1 | Realtime hub | ⬜ | | |
+| T3.1 | Realtime hub | ✅ | 2026-10-31 | D-183; AT-601/602/603/605/107 and task gates pass. [Record](task-prompts/T3.1.md#record-2026-10-31). |
 | T3.2 | Presence | ⬜ | | |
 | T3.3 | Comments & notifications | ⬜ | | |
 | T3.4 | Row history | ⬜ | | |
@@ -111,6 +111,8 @@ Summary updated at each milestone end.
 
 | Date | Change |
 |---|---|
+| 2026-10-31 | T3.1 Done: transactional realtime delivery, reconnect/resync, access revocation and focused task gates pass. |
+| 2026-10-31 | T3.1 realtime hub implementation started. |
 | 2026-10-31 | T2.15 implementation and task gates pass locally; target-host performance acceptance remains pending. |
 | 2026-10-31 | T2.14 Done: restart-safe shared-view auto-indexing, metadata retries, `ptdev check`, and focused search E2E pass; AT-512 performance remains pending for T2.15. |
 | 2026-10-29 | T2.1 Done: AT-320/326 and task gates pass; batch-2 codecs, typed DDL, field UI/user picker, docs and browser coverage complete. D-159..D-162 record the contracts; M2 remains In Progress. |

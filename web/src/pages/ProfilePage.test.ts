@@ -83,7 +83,11 @@ it('loads the own profile, sends only changed fields, and saves through the exis
       '/api/v1/auth/me',
       expect.objectContaining({
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PT-CSRF': '1',
+          'X-PT-Event-ID': expect.stringMatching(/^[0-9a-f]{32}$/),
+        },
         body: JSON.stringify({ displayName: 'Alice A.' }),
       }),
     )

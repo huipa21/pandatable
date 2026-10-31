@@ -153,7 +153,11 @@ it('serializes reviewed writes, sends CSRF, reconciles nav and reloads without o
     '/api/v1/grants',
     expect.objectContaining({
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PT-CSRF': '1',
+        'X-PT-Event-ID': expect.stringMatching(/^[0-9a-f]{32}$/),
+      },
       body: JSON.stringify({
         resourceType: 'table',
         resourceId: 't',

@@ -18,6 +18,7 @@ import (
 	"pandatable/internal/apperr"
 	"pandatable/internal/auth"
 	"pandatable/internal/db"
+	"pandatable/internal/events"
 )
 
 type Service struct {
@@ -203,7 +204,18 @@ func (service *Service) adminMutation(ctx context.Context, token string, target 
 				return fmt.Errorf("lock managed user: %w", err)
 			}
 		}
-		return fn(queries, &invalidate)
+		if err := fn(queries, &invalidate); err != nil {
+			return err
+		}
+		if invalidate {
+			if err := events.Emit(ctx, tx, events.Event{Type: "nav.changed", By: actor.String()}); err != nil {
+				return err
+			}
+		}
+		if target.Valid && !groupOperation {
+			return events.Emit(ctx, tx, events.Event{Type: "session.check", Recipient: target.String()})
+		}
+		return nil
 	})
 	if invalidate {
 		// WithTx can report an uncertain commit; invalidation is required then too.

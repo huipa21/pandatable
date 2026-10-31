@@ -19,6 +19,7 @@ import (
 	"pandatable/internal/apperr"
 	"pandatable/internal/db"
 	"pandatable/internal/ddl"
+	"pandatable/internal/events"
 	"pandatable/internal/structure/structuresql"
 )
 
@@ -34,6 +35,7 @@ const (
 // display names written into new tables.
 type Actor struct {
 	ID       string
+	Name     string
 	Locale   string
 	Timezone string
 }
@@ -57,9 +59,11 @@ func New(pool *db.Pool, resolver *acl.Resolver) (*Service, error) {
 // Target visibility is always checked first so hidden resources stay 404 even
 // when a sibling or ancestor is visible.
 type scope struct {
-	target     acl.Resource
-	owner      func(acl.Path) acl.Resource
-	affectsACL bool
+	target        acl.Resource
+	owner         func(acl.Path) acl.Resource
+	affectsACL    bool
+	schemaChanged bool
+	readOnly      bool
 }
 
 type txn struct {
@@ -132,6 +136,12 @@ func (s *Service) run(ctx context.Context, actor Actor, sc scope, fn func(*txn) 
 			return err
 		}
 		written = sc.affectsACL
+		if sc.schemaChanged {
+			return emitSchema(ctx, tx, actor, sc.target.ID)
+		}
+		if !sc.readOnly {
+			return events.Emit(ctx, tx, events.Event{Type: "nav.changed", By: actor.ID})
+		}
 		return nil
 	})
 	if written {

@@ -1,5 +1,6 @@
 import { i18n } from '../i18n'
 import type { AttachmentValue } from './types'
+import { newEventId } from './eventIds'
 
 /** Safe, bounded error details; server messages are never shown. */
 export interface ErrorDetails {
@@ -56,7 +57,11 @@ export async function request<T>(
   const headers: Record<string, string> | undefined =
     method === 'GET'
       ? undefined
-      : { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' }
+      : {
+          'Content-Type': 'application/json',
+          'X-PT-CSRF': '1',
+          'X-PT-Event-ID': newEventId(),
+        }
   if (headers && options.ifMatch !== undefined)
     headers['If-Match'] = String(options.ifMatch)
   const response = await fetch(`/api/v1${path}`, {
@@ -98,7 +103,7 @@ export async function uploadAttachment(
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',
-      headers: { 'X-PT-CSRF': '1' },
+      headers: { 'X-PT-CSRF': '1', 'X-PT-Event-ID': newEventId() },
       body: form,
       signal,
     },

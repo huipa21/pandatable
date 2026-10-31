@@ -35,7 +35,11 @@ it('uses same-origin CSRF login, never persists credentials, and surfaces servic
     expect.objectContaining({
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-PT-CSRF': '1',
+        'X-PT-Event-ID': expect.stringMatching(/^[0-9a-f]{32}$/),
+      },
       body: JSON.stringify({ login: 'alice', password: 'Temporary-123' }),
     }),
   )

@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/json"
 	"net/http"
 
@@ -27,7 +26,7 @@ func (api *authHTTP) createView(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusCreated, struct {
 		View    structure.View `json:"view"`
 		EventID string         `json:"eventId"`
-	}{view, rand.Text()})
+	}{view, eventID(r)})
 }
 
 func (api *authHTTP) duplicateView(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -58,7 +57,7 @@ func (api *authHTTP) duplicateView(w http.ResponseWriter, r *http.Request, user 
 	writeJSON(w, http.StatusCreated, struct {
 		View    structure.View `json:"view"`
 		EventID string         `json:"eventId"`
-	}{view, rand.Text()})
+	}{view, eventID(r)})
 }
 
 func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -86,7 +85,7 @@ func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user aut
 		writeJSON(w, http.StatusOK, struct {
 			View    structure.View `json:"view"`
 			EventID string         `json:"eventId"`
-		}{view, rand.Text()})
+		}{view, eventID(r)})
 		return
 	}
 	if input.Name != nil || input.Locked != nil {
@@ -107,7 +106,7 @@ func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user aut
 		writeJSON(w, http.StatusOK, struct {
 			View    structure.View `json:"view"`
 			EventID string         `json:"eventId"`
-		}{view, rand.Text()})
+		}{view, eventID(r)})
 		return
 	}
 	view, err := api.structure.UpdateViewColumns(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, config)
@@ -118,7 +117,7 @@ func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user aut
 	writeJSON(w, http.StatusOK, struct {
 		View    structure.View `json:"view"`
 		EventID string         `json:"eventId"`
-	}{view, rand.Text()})
+	}{view, eventID(r)})
 }
 
 func (api *authHTTP) deleteView(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -131,7 +130,7 @@ func (api *authHTTP) deleteView(w http.ResponseWriter, r *http.Request, user aut
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) moveView(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -155,7 +154,7 @@ func (api *authHTTP) moveView(w http.ResponseWriter, r *http.Request, user auth.
 	writeJSON(w, http.StatusOK, struct {
 		View    structure.View `json:"view"`
 		EventID string         `json:"eventId"`
-	}{view, rand.Text()})
+	}{view, eventID(r)})
 }
 
 func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {

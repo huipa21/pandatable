@@ -17,6 +17,7 @@ import (
 	"pandatable/internal/apperr"
 	"pandatable/internal/auth/authsql"
 	"pandatable/internal/db"
+	"pandatable/internal/events"
 )
 
 const (
@@ -266,18 +267,42 @@ func (service *Service) Authenticate(ctx context.Context, token string) (Session
 	return Session{User: user, ExpiresAt: touched.ExpiresAt.Time.UTC()}, nil
 }
 
+// CheckSession verifies an existing socket without extending its idle lifetime.
+func (service *Service) CheckSession(ctx context.Context, token, userID string) error {
+	hash, err := tokenHash(token)
+	if err != nil {
+		return unauthenticated()
+	}
+	var id pgtype.UUID
+	if err := id.Scan(userID); err != nil || !id.Valid {
+		return unauthenticated()
+	}
+	_, err = service.queries.CheckSession(ctx, authsql.CheckSessionParams{
+		IDHash: hash, UserID: id, Now: timestamp(service.now()),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return unauthenticated()
+	}
+	if err != nil {
+		return fmt.Errorf("check realtime session: %w", err)
+	}
+	return nil
+}
+
 func (service *Service) Logout(ctx context.Context, token string) error {
 	hash, err := tokenHash(token)
 	if err != nil {
 		return unauthenticated()
 	}
-	if err := service.queries.RevokeSession(ctx, hash); err != nil {
-		return fmt.Errorf("revoke session: %w", err)
-	}
-	return nil
+	return service.pool.WithTx(ctx, func(tx pgx.Tx) error {
+		if err := service.queries.WithTx(tx).RevokeSession(ctx, hash); err != nil {
+			return fmt.Errorf("revoke session: %w", err)
+		}
+		return events.Emit(ctx, tx, events.Event{Type: "session.check"})
+	})
 }
 
-func (service *Service) withSession(ctx context.Context, token string, fn func(*authsql.Queries, authsql.LockUserRow, time.Time) error) error {
+func (service *Service) withSession(ctx context.Context, token string, checkSessions bool, fn func(*authsql.Queries, authsql.LockUserRow, time.Time) error) error {
 	hash, err := tokenHash(token)
 	if err != nil {
 		return unauthenticated()
@@ -310,7 +335,13 @@ func (service *Service) withSession(ctx context.Context, token string, fn func(*
 		if err != nil {
 			return fmt.Errorf("check locked session: %w", err)
 		}
-		return fn(queries, locked, now)
+		if err := fn(queries, locked, now); err != nil {
+			return err
+		}
+		if checkSessions {
+			return events.Emit(ctx, tx, events.Event{Type: "session.check", Recipient: id.String()})
+		}
+		return nil
 	})
 }
 
@@ -318,7 +349,7 @@ func (service *Service) ChangePassword(ctx context.Context, token, current, next
 	if !validPassword(next) {
 		return validation()
 	}
-	return service.withSession(ctx, token, func(queries *authsql.Queries, locked authsql.LockUserRow, now time.Time) error {
+	return service.withSession(ctx, token, true, func(queries *authsql.Queries, locked authsql.LockUserRow, now time.Time) error {
 		match, err := service.passwords.Verify(ctx, current, locked.PasswordHash)
 		if errors.Is(err, ErrPassword) {
 			return credentials()
@@ -365,7 +396,7 @@ func (service *Service) UpdateProfile(ctx context.Context, token string, patch P
 		return User{}, validation()
 	}
 	var user User
-	err := service.withSession(ctx, token, func(queries *authsql.Queries, locked authsql.LockUserRow, now time.Time) error {
+	err := service.withSession(ctx, token, false, func(queries *authsql.Queries, locked authsql.LockUserRow, now time.Time) error {
 		row, err := queries.GetUser(ctx, locked.ID)
 		if err != nil {
 			return fmt.Errorf("read editable profile: %w", err)

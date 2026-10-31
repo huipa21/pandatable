@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"crypto/rand"
 	"net/http"
 	"net/url"
 
@@ -130,7 +129,7 @@ func (api *authHTTP) putGrant(w http.ResponseWriter, r *http.Request, user auth.
 	writeJSON(w, status, struct {
 		acl.PutResult
 		EventID string `json:"eventId"`
-	}{result, rand.Text()})
+	}{result, eventID(r)})
 }
 
 func (api *authHTTP) deleteGrant(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -138,5 +137,5 @@ func (api *authHTTP) deleteGrant(w http.ResponseWriter, r *http.Request, user au
 		api.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, http.StatusOK, map[string]string{"eventId": eventID(r)})
 }

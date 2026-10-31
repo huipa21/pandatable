@@ -18,9 +18,11 @@ import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
 import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
+import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
 import { RemoteRowsWindow, remotePageSize } from '../grid/remoteWindow'
+import { RealtimeRowSync } from '../grid/realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from '../grid/groupedRows'
 
 const props = defineProps<{
@@ -38,6 +40,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
+const realtime = useRealtimeStore()
 const resolveUser = (id: string) =>
   userLabel(props.identity, props.schema.table.id, id)
 const options = ref<HTMLDialogElement>()
@@ -56,6 +59,7 @@ let groupedRows: GroupedRowsWindow | undefined
 let generation = 0
 let disposed = false
 let mutation: AbortController | undefined
+let realtimeReloadPending = false
 const env = computed<FieldEnv>(() => ({
   timeZone: auth.user?.effectiveTimezone,
   locale: locale.value,
@@ -377,6 +381,83 @@ async function refresh(anchor = page.value * remotePageSize) {
   }
 }
 
+function requestRealtimeReload() {
+  if (saving.value || initializing.value) {
+    realtimeReloadPending = true
+    return
+  }
+  realtimeReloadPending = false
+  void refresh()
+}
+
+const rowSync = new RealtimeRowSync({
+  window: () =>
+    remoteRows || groupedRows
+      ? {
+          snapshot: () => (groupedRows ?? remoteRows)!.snapshot(),
+          indexOfRow: (id) => (groupedRows ?? remoteRows)!.indexOfRow(id),
+          invalidateOffscreen: (ids) => remoteRows?.invalidateOffscreen(ids),
+        }
+      : undefined,
+  epoch: () => generation,
+  fetch: async (ids, signal) => {
+    const fieldIds = [...visibleIds.value]
+    if (display.value && !fieldIds.includes(display.value.id))
+      fieldIds.push(display.value.id)
+    const result = await request<RowQueryResult>(
+      `/views/${props.viewId}/query`,
+      'POST',
+      {
+        ids,
+        limit: ids.length,
+        includeCount: false,
+        fieldIds,
+        ...(props.filter ? { filter: props.filter } : {}),
+      } satisfies RowQueryRequest,
+      AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    )
+    if (result.schemaVersion !== props.schema.schemaVersion) {
+      emit('schemaChanged')
+      throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+    }
+    return result
+  },
+  merge: (row) => {
+    const window = groupedRows ?? remoteRows
+    const index = window?.indexOfRow(row.id) ?? -1
+    if (index >= 0) window?.updateRow(index, row)
+  },
+  reload: requestRealtimeReload,
+  needsReload: () =>
+    !!groupedRows || !!props.filter || !!view.value?.config.sort?.length,
+  failed: (cause) => failure(cause, generation),
+})
+
+function handleRealtime(event: RealtimeEvent) {
+  if (event.t === 'row.updated' && event.ids) {
+    if (initializing.value) requestRealtimeReload()
+    else rowSync.update(event.ids)
+  } else if (
+    ['row.created', 'row.deleted', 'row.bulk', 'resync'].includes(event.t) ||
+    (event.t === 'view.changed' && event.viewId === props.viewId)
+  ) {
+    requestRealtimeReload()
+  }
+}
+
+watch(
+  [() => props.schema.table.id, () => props.identity, () => auth.user?.id],
+  ([tableId, identity, userId], _previous, onCleanup) => {
+    if (!tableId || !identity || identity !== userId) return
+    onCleanup(realtime.subscribe(tableId, handleRealtime))
+  },
+  { immediate: true },
+)
+watch([saving, initializing], ([isSaving, isInitializing]) => {
+  if (!isSaving && !isInitializing && realtimeReloadPending)
+    requestRealtimeReload()
+})
+
 async function move(delta: number) {
   const next = page.value + delta
   if (saving.value || loading.value || next < 0 || next >= pageCount.value)
@@ -463,6 +544,7 @@ onBeforeUnmount(() => {
   disposed = true
   generation++
   mutation?.abort()
+  rowSync.dispose()
   remoteRows?.dispose()
   groupedRows?.dispose()
   options.value?.close()

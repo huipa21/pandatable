@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { i18n, loadLocale } from '../../i18n'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
+import { useRealtimeStore } from '../../stores/realtime'
 import { navUser, tableSchema } from '../../test/navigation'
 import type { DataRow } from '../../api/types'
 import RowExpandDialog from './RowExpandDialog.vue'
@@ -104,6 +105,81 @@ const textCases = [
   ['url', {}, 'https://example.com/a', 'https://example.com/a'],
 ] as const
 
+it('preserves active edits, identifies remote changes, and refreshes after cancel or save', async () => {
+  class Socket {
+    static OPEN = 1
+    static current: Socket
+    readyState = 0
+    onopen: (() => void) | null = null
+    onmessage: ((event: MessageEvent) => void) | null = null
+    onclose: (() => void) | null = null
+
+    constructor() {
+      Socket.current = this
+    }
+
+    send() {}
+
+    close() {
+      this.readyState = 3
+      this.onclose?.()
+    }
+
+    message(event: object) {
+      this.onmessage?.(
+        new MessageEvent('message', { data: JSON.stringify(event) }),
+      )
+    }
+  }
+  vi.stubGlobal('WebSocket', Socket)
+  const { wrapper, fetcher } = await setup()
+  const realtime = useRealtimeStore()
+  realtime.start(navUser.id)
+  const socket = Socket.current
+  socket.readyState = Socket.OPEN
+  socket.onopen?.()
+  socket.message({ t: 'subscribed', tableId: 't' })
+  await flushPromises()
+  fetcher.mockClear()
+
+  await wrapper.get('.row-field button').trigger('click')
+  const editor = wrapper.get('.field-editor input')
+  await editor.setValue('Local draft')
+  stored.fields.name = 'Bob saved'
+  socket.message({
+    t: 'row.updated',
+    tableId: 't',
+    ids: [id],
+    fields: ['name'],
+    by: 'bob',
+    byName: 'Bob',
+  })
+  await flushPromises()
+  expect(wrapper.get('[role="status"]').text()).toContain('Changed by Bob')
+  expect((editor.element as HTMLInputElement).value).toBe('Local draft')
+  expect(fetcher).not.toHaveBeenCalled()
+  await wrapper.get('fieldset > button').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Bob saved')
+
+  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.field-editor input').setValue('Local wins')
+  stored.fields.name = 'Bob again'
+  socket.message({
+    t: 'row.updated',
+    tableId: 't',
+    ids: [id],
+    fields: ['name'],
+    by: 'bob',
+    byName: 'Bob',
+  })
+  await wrapper.get('.field-editor button').trigger('click')
+  await flushPromises()
+  expect(stored.fields.name).toBe('Local wins')
+  expect(wrapper.text()).toContain('Local wins')
+  realtime.stop()
+})
+
 it.each(textCases)(
   'saves and reloads %s using the existing codec and exact wire value',
   async (kind, options, input, expected) => {
@@ -124,7 +200,11 @@ it.each(textCases)(
         method: 'PATCH',
         cache: 'no-store',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'X-PT-CSRF': '1' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-PT-CSRF': '1',
+          'X-PT-Event-ID': expect.stringMatching(/^[0-9a-f]{32}$/),
+        },
         body: JSON.stringify({ fields: { name: expected } }),
         signal: expect.any(AbortSignal),
       }),
@@ -451,6 +531,18 @@ it('does not re-fetch on identical schema refreshes, but updates permission cont
   expect(wrapper.findAll('.row-field button')).toHaveLength(0)
   await wrapper.setProps({ schema: tableSchema() })
   expect(wrapper.findAll('.row-field button')).toHaveLength(1)
+  expect(fetcher).toHaveBeenCalledTimes(1)
+})
+
+it('reports lost write permission when a realtime ACL refresh interrupts an edit', async () => {
+  const { wrapper, fetcher } = await setup()
+  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.field-editor input').setValue('Unsaved draft')
+  await wrapper.setProps({ schema: { ...tableSchema(), myLevel: 'read' } })
+  expect(wrapper.get('[role="alert"]').text()).toContain(
+    'You do not have permission',
+  )
+  expect(wrapper.find('.field-editor').exists()).toBe(false)
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
 

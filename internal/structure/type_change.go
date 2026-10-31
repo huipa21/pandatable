@@ -170,7 +170,7 @@ func (s *Service) DryRunTypeChange(ctx context.Context, actor Actor, id string, 
 		return TypeChangeDryRun{}, err
 	}
 	var result TypeChangeDryRun
-	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+	err = s.run(ctx, actor, scope{target: target, readOnly: true}, func(c *txn) error {
 		table, err := lockTable(ctx, c, target.ID)
 		if err != nil {
 			return err
@@ -267,7 +267,7 @@ func (s *Service) ConvertFieldType(ctx context.Context, actor Actor, id string, 
 		return FieldResult{}, err
 	}
 	var result FieldResult
-	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+	err = s.run(ctx, actor, scope{target: target, schemaChanged: true}, func(c *txn) error {
 		table, err := lockTable(ctx, c, target.ID)
 		if err != nil {
 			return err
@@ -473,6 +473,9 @@ func recheckTypeDependencies(ctx context.Context, c *txn, table lockedTable, fie
 			return fmt.Errorf("read computed dependency table: %w", err)
 		}
 		if err := recheckFormulaTable(ctx, c, rowTable.ID, rowTable.PgSchema, rowTable.PgName, rowTable.SchemaVersion); err != nil {
+			return err
+		}
+		if err := emitSchema(ctx, c.tx, c.actor, tableID); err != nil {
 			return err
 		}
 	}

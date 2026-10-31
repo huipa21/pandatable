@@ -23,6 +23,8 @@ import (
 	"pandatable/internal/apperr"
 	"pandatable/internal/attachments"
 	"pandatable/internal/auth"
+	"pandatable/internal/events"
+	"pandatable/internal/realtime"
 	"pandatable/internal/structure"
 )
 
@@ -35,6 +37,7 @@ type AuthOptions struct {
 	Admin          *admin.Service
 	System         *admin.SystemMonitor
 	Attachments    *attachments.Service
+	Realtime       *realtime.Hub
 	BaseURL        string
 	TrustedProxies []netip.Prefix
 }
@@ -46,6 +49,7 @@ type authHTTP struct {
 	admin       *admin.Service
 	attachments *attachments.Service
 	system      *admin.SystemMonitor
+	realtime    *realtime.Hub
 	logger      *slog.Logger
 	origin      string
 	secure      bool
@@ -64,7 +68,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
 	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, attachments: options.Attachments,
-		system: options.System, logger: logger, origin: origin,
+		system: options.System, realtime: options.Realtime, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -147,11 +151,27 @@ func (api *authHTTP) protect(next http.Handler) http.Handler {
 				return
 			}
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		ids := r.Header.Values("X-PT-Event-ID")
+		id := rand.Text()
+		if len(ids) > 1 || len(ids) == 1 && !events.ValidID(ids[0]) {
+			api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Invalid event ID"))
+			return
+		}
+		if len(ids) == 1 {
+			id = ids[0]
+		}
+		ctx := events.WithID(r.Context(), id)
+		if r.URL.Path == "/api/v1/ws" {
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+func eventID(r *http.Request) string { return events.ID(r.Context()) }
 
 func (api *authHTTP) cookie(w http.ResponseWriter, token string, expires time.Time) {
 	maxAge := int(time.Until(expires).Seconds())
@@ -258,6 +278,9 @@ func (api *authHTTP) mount(router chi.Router) {
 	router.Patch("/auth/me", api.profile)
 	router.Post("/auth/password", api.password)
 	router.Get("/meta/timezones", api.timezones)
+	if api.realtime != nil {
+		router.Get("/ws", api.websocket)
+	}
 	if api.acl != nil {
 		api.mountGrants(router)
 	}
@@ -272,6 +295,15 @@ func (api *authHTTP) mount(router chi.Router) {
 		router.Get("/meta/currencies", api.currencies)
 		api.mountAdmin(router)
 	}
+}
+
+func (api *authHTTP) websocket(w http.ResponseWriter, r *http.Request) {
+	session, token, ok := api.session(w, r, false)
+	if !ok {
+		return
+	}
+	api.cookie(w, token, session.ExpiresAt)
+	api.realtime.Serve(w, r, session.User, token, api.origin)
 }
 
 func (api *authHTTP) setupStatus(w http.ResponseWriter, r *http.Request) {
@@ -315,7 +347,7 @@ func (api *authHTTP) setup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, struct {
 		User    auth.User `json:"user"`
 		EventID string    `json:"eventId"`
-	}{session.User, rand.Text()})
+	}{session.User, eventID(r)})
 }
 
 func (api *authHTTP) login(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +376,7 @@ func (api *authHTTP) login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, struct {
 		User    auth.User `json:"user"`
 		EventID string    `json:"eventId"`
-	}{session.User, rand.Text()})
+	}{session.User, eventID(r)})
 }
 
 func (api *authHTTP) logout(w http.ResponseWriter, r *http.Request) {
@@ -357,7 +389,7 @@ func (api *authHTTP) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.clearCookie(w)
-	writeJSON(w, 200, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, 200, map[string]string{"eventId": eventID(r)})
 }
 
 func (api *authHTTP) me(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +419,7 @@ func (api *authHTTP) password(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	api.clearCookie(w)
-	writeJSON(w, 200, map[string]string{"eventId": rand.Text()})
+	writeJSON(w, 200, map[string]string{"eventId": eventID(r)})
 }
 
 func patchString(raw json.RawMessage, nullable bool) (*string, error) {
@@ -439,7 +471,7 @@ func (api *authHTTP) profile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, struct {
 		User    auth.User `json:"user"`
 		EventID string    `json:"eventId"`
-	}{user, rand.Text()})
+	}{user, eventID(r)})
 }
 
 func (api *authHTTP) timezones(w http.ResponseWriter, r *http.Request) {

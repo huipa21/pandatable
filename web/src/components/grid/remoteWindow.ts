@@ -146,6 +146,34 @@ export class RemoteRowsWindow {
     this.changed()
   }
 
+  invalidateOffscreen(ids: readonly string[]) {
+    if (this.disposed || !ids.length) return
+    const affected = new Set(ids)
+    let changed = false
+    for (const [page, controller] of this.pending) {
+      controller.abort()
+      this.pending.delete(page)
+    }
+    for (const [page, rows] of this.cache) {
+      if (page === this.activePage || !rows.some((row) => affected.has(row.id)))
+        continue
+      this.slots.fill(
+        emptyRow,
+        page * remotePageSize,
+        page * remotePageSize + rows.length,
+      )
+      this.cache.delete(page)
+      changed = true
+    }
+    if (
+      this.initialized &&
+      this.activePage >= 0 &&
+      !this.cache.has(this.activePage)
+    )
+      void this.fetchPage(this.activePage, this.generation, false)
+    if (changed) this.changed()
+  }
+
   dispose() {
     if (this.disposed) return
     this.disposed = true

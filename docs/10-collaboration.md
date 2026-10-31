@@ -3,14 +3,27 @@
 ## 1. Realtime (FR-C1, FR-C5)
 
 ```
-handler tx ──► pg_notify('pt_events', '{"tbl":"…","op":"update","ids":[…],"f":[…],"by":"…","ev":"…"}')
+handler tx ──► pg_notify('pt_events', '{"t":"row.updated","tableId":"…","ids":[…],"fields":[…],"by":"…","eventId":"…"}')
                      │ (delivered on commit only)
                LISTEN conn (1 dedicated pgx conn) ──► hub ──► subscribed WS clients
 ```
 
-- NOTIFY payload kept small (< 8000 bytes): ids capped at 500; above that → `{"op":"bulk","tbl":…}` meaning "reload view".
-- Clients: for `row.updated` with ids currently in viewport → `GET` those rows via a batched query (`/views/{id}/query` with `ids` filter) and merge; outside viewport → mark cache stale.
-- Echo suppression: client ignores events whose `eventId` it produced.
+- NOTIFY payload stays below 7,900 bytes, with at most 500 row IDs. Larger
+  events become `{"t":"row.bulk","tableId":"…"}`, meaning "reload view".
+  Notifications are part of the mutation transaction and cannot escape a
+  rollback.
+- Clients batch-refetch visible affected rows via `POST /views/{id}/query`
+  with an `ids` filter (at most 100 per request), merge them, and invalidate
+  offscreen pages and potentially stale in-flight page reads.
+- Echo suppression: each tab preallocates an `eventId` before a mutation and
+  ignores matching events only when their actor is the current user (D-183).
+- Subscription and delivery both enforce table read ACLs. Personal-view
+  changes go only to their owner; sanitized `nav.changed` invalidations refresh
+  authorized sidebars and trigger subscription rechecks. Disabled or revoked
+  sessions receive `session.revoked`.
+- Related row-value changes invalidate dependent tables for clients allowed to
+  read both tables; the invalidation omits the source and actor. Type changes
+  also notify tables whose computed-field schema version changes.
 - **Conflict policy:** last write wins per cell. PATCH carries only changed fields, so concurrent edits of different cells in the same row never clash. If a remote update hits the cell the local user is currently editing, the editor shows a small "changed by X" badge; on save, local value wins (LWW) — user can press Esc to take the remote value.
 - WS heartbeat 25 s; reconnect with exponential backoff (1 s → 30 s), on reconnect client resubscribes and reloads visible window (no event replay needed).
 

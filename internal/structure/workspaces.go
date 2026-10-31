@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/events"
 	"pandatable/internal/structure/structuresql"
 )
 
@@ -97,7 +98,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, actor Actor, input Worksp
 		}
 		created = workspaceDTO(row.ID, row.Name, row.Icon, row.Color, row.CreatedAt)
 		written = true
-		return nil
+		return events.Emit(ctx, tx, events.Event{Type: "nav.changed", By: actor.ID})
 	})
 	if written {
 		s.resolver.Invalidate()

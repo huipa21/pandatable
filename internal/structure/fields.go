@@ -316,7 +316,7 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 	}
 	var result FieldResult
 	err = retryCollisions(func() error {
-		return s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+		return s.run(ctx, actor, scope{target: target, schemaChanged: true}, func(c *txn) error {
 			table, err := lockTable(ctx, c, target.ID)
 			if err != nil {
 				return err
@@ -403,7 +403,7 @@ func (s *Service) createComputedField(ctx context.Context, actor Actor, tableID 
 		return FieldResult{}, err
 	}
 	var result FieldResult
-	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+	err = s.run(ctx, actor, scope{target: target, schemaChanged: true}, func(c *txn) error {
 		var config computedOptions
 		if err := json.Unmarshal(options, &config); err != nil {
 			return fmt.Errorf("decode normalized computed options: %w", err)
@@ -481,7 +481,7 @@ func (s *Service) createFormulaField(ctx context.Context, actor Actor, tableID s
 		return FieldResult{}, err
 	}
 	var result FieldResult
-	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+	err = s.run(ctx, actor, scope{target: target, schemaChanged: true}, func(c *txn) error {
 		table, err := lockTable(ctx, c, target.ID)
 		if err != nil {
 			return err
@@ -644,7 +644,7 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 		return FieldResult{}, validation("Index is outside the sibling range")
 	}
 	var result FieldResult
-	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+	err = s.run(ctx, actor, scope{target: target, schemaChanged: true}, func(c *txn) error {
 		table, err := lockTable(ctx, c, target.ID)
 		if err != nil {
 			return err
@@ -851,7 +851,7 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 		return FieldResult{}, err
 	}
 	var result FieldResult
-	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
+	err = s.run(ctx, actor, scope{target: target, schemaChanged: true}, func(c *txn) error {
 		relation, relationErr := relationForField(ctx, c.tx, fieldID)
 		if relationErr != nil && !errors.Is(relationErr, pgx.ErrNoRows) {
 			return relationErr

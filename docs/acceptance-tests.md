@@ -141,7 +141,7 @@ versions, resolved failures and owned cleanup are recorded in
 | AT-104 | Pass | No registration UI; real non-admin create request gets 403 `ERR_PERMISSION_DENIED` (unauthenticated 401). |
 | AT-105 | Pass | Desktop/mobile production UI creates normalized users with temporary passwords; login/deep routes force `/change-password`; successful change revokes sessions and requires re-login. |
 | AT-106 | Pass | Admin reset through the real UI revokes the existing browser session (me=401); reset password login requires change. PG18 verifies all-session atomicity/rollback and old-password login race. |
-| AT-107 | Pass | Disable logs the open tab out on its next request; login is denied; retained identity is visible and re-enables. PG18 verifies retained workspace/creator/grants and immediate cache invalidation (no TTL wait). |
+| AT-107 | Pass | Disable sends `session.revoked` and logs the open tab out within 5 s; login is denied; retained identity is visible and re-enables. PG18 verifies retained workspace/creator/grants and immediate cache invalidation (no TTL wait). |
 | AT-108 | Pass | Non-admin sees no Admin link; `/admin/users` and unknown `/admin/*` deep routes redirect home; independent API denial and forced/disabled authorization verified. |
 | AT-002/003/004/101/103/802/803 | Preserved | Required PG18 Windows gate and production setup/shell/spike suite pass; image 162,975,200 bytes, linux/amd64, UID/GID 10001, healthcheck and PG18 client; 143 locale keys, CSP unchanged. |
 
@@ -550,11 +550,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 
 ## AT-6xx Collaboration (M3)
 
-- **AT-601 — Realtime rows** · M3 · alice and bob view T; bob edits a cell → alice sees new value < 1 s; bob adds/deletes rows → alice's grid updates.
-- **AT-602 — LWW on same cell** · M3 · alice and bob edit same cell; last saved wins; both end with same value; editor shows "changed by bob" badge while alice is editing.
-- **AT-603 — Schema realtime** · M3 · alice adds field → bob's grid shows new column without reload.
+- **AT-601 — Realtime rows** · M3 · alice and bob view T; bob edits a cell → alice sees new value < 1 s; bob adds/deletes rows → alice's grid updates. **Evidence: PASS** — `realtime.spec.ts` measures sub-second propagation and verifies create/delete on desktop and mobile; PG18 tests cover transaction rollback, ACLs and the 501-row bulk fallback.
+- **AT-602 — LWW on same cell** · M3 · alice and bob edit same cell; last saved wins; both end with same value; editor shows "changed by bob" badge while alice is editing. **Evidence: PASS** — `realtime.spec.ts` checks the remote-editor badge, retained draft, last-save convergence and Escape; mobile row-dialog editing is also covered.
+- **AT-603 — Schema realtime** · M3 · alice adds field → bob's grid shows new column without reload. **Evidence: PASS** — `realtime.spec.ts` verifies the new column without navigation; PG18 tests cover dependent schema notifications.
 - **AT-604 — Presence** · M3 · bob opens T → alice sees bob's avatar; bob focuses a cell → alice sees outline with bob's name; bob leaves → avatar gone < 60 s.
-- **AT-605 — Reconnect** · M3 · Disconnecting network for 30 s and reconnecting resyncs the visible window (changes made meanwhile appear).
+- **AT-605 — Reconnect** · M3 · Disconnecting network for 30 s and reconnecting resyncs the visible window (changes made meanwhile appear). **Evidence: PASS** — `realtime.spec.ts` holds a browser offline for 30 s, changes a row, and verifies visible-window resync after reconnect; Go tests cover listener recovery.
 - **AT-606 — Comments & mentions** · M3 · alice comments "@bob please check" on a row → bob gets bell notification live; clicking opens row modal at comment; mention list only offers users with access.
 - **AT-607 — Row history** · M3 · Edits, paste, link/unlink appear in the row's History tab with user, time, old → new values; history older than retention deleted by job *(API, time-travel)*.
 - **AT-608 — Undo/redo** · M3 · Edit cell, paste range, fill-down, delete 3 rows, link change → Ctrl+Z undoes each in reverse order (deleted rows return with same ids, links, comments); Ctrl+Y redoes.

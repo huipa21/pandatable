@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, type PropType } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { EditorType } from '@revolist/vue3-datagrid'
 import FieldEditor from '../fields/FieldEditor.vue'
 import type { BoundField } from '../../fields/registry'
@@ -19,7 +20,9 @@ const props = defineProps({
   tableId: { type: String, required: true },
   fieldId: { type: String, required: true },
   identity: { type: String, required: true },
+  changedBy: { type: String, default: '' },
 })
+const { t } = useI18n()
 const field = computed(() => props.boundField)
 const env = computed(() => props.fieldEnv)
 const value = computed<WireValue>(() => {
@@ -43,6 +46,9 @@ function cancel() {
 </script>
 
 <template>
+  <span v-if="changedBy" class="remote-edit-indicator" role="status">
+    {{ t('realtime.changedBy', { name: changedBy }) }}
+  </span>
   <FieldEditor
     :field="field"
     :value="value"
@@ -56,3 +62,14 @@ function cancel() {
     @cancel="cancel"
   />
 </template>
+
+<style scoped>
+.remote-edit-indicator {
+  display: block;
+  padding: 0.25rem 0.4rem;
+  color: var(--pt-text, inherit);
+  background: var(--pt-surface, Canvas);
+  border: 1px solid currentColor;
+  font-size: 0.75rem;
+}
+</style>

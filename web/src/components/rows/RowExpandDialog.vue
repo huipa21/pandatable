@@ -19,6 +19,7 @@ import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
 import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
+import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import FieldEditor from '../fields/FieldEditor.vue'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
@@ -42,6 +43,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
+const realtime = useRealtimeStore()
 const resolveUser = (id: string) =>
   userLabel(props.identity, props.schema.table.id, id)
 const dialog = ref<HTMLDialogElement>()
@@ -50,6 +52,7 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref<unknown>(null)
 const editing = ref<string | null>(null)
+const changedBy = ref('')
 const relationEditing = ref<string | null>(null)
 const saved = ref(false)
 const preserveUploads = ref(false)
@@ -62,6 +65,8 @@ const title = computed(() =>
     : t('rowExpand.title', { id: props.rowId }),
 )
 let controller: AbortController | undefined
+let realtimeController: AbortController | undefined
+let realtimeReloadPending = false
 let generation = 0
 let disposed = false
 let draftCleanupStarted = false
@@ -135,6 +140,11 @@ function current(token: number) {
 
 function begin() {
   controller?.abort()
+  if (realtimeController) {
+    realtimeReloadPending = true
+    realtimeController.abort()
+  }
+  realtimeController = undefined
   controller = new AbortController()
   return {
     token: ++generation,
@@ -348,6 +358,79 @@ function relationUpdated(updated: DataRow) {
   emit('saved')
 }
 
+function flushRealtimeReload() {
+  if (
+    !realtimeReloadPending ||
+    disposed ||
+    blocked.value ||
+    loading.value ||
+    saving.value ||
+    editing.value ||
+    relationEditing.value ||
+    !row.value ||
+    props.rowId === null
+  )
+    return
+  realtimeReloadPending = false
+  realtimeController?.abort()
+  const requestController = new AbortController()
+  realtimeController = requestController
+  const token = generation
+  const rowId = props.rowId
+  const signal = AbortSignal.any([
+    requestController.signal,
+    AbortSignal.timeout(10_000),
+  ])
+  void request<DataRow>(
+    `/tables/${props.schema.table.id}/rows/${encodeURIComponent(rowId)}`,
+    'GET',
+    undefined,
+    signal,
+  )
+    .then((result) => {
+      if (
+        !current(token) ||
+        requestController.signal.aborted ||
+        props.rowId !== rowId
+      )
+        return
+      if (
+        loading.value ||
+        saving.value ||
+        editing.value ||
+        relationEditing.value
+      ) {
+        realtimeReloadPending = true
+        return
+      }
+      row.value = result
+    })
+    .catch((cause: unknown) => {
+      if (current(token) && !requestController.signal.aborted) failure(cause)
+    })
+    .finally(() => {
+      if (realtimeController === requestController)
+        realtimeController = undefined
+    })
+}
+
+function handleRealtime(event: RealtimeEvent) {
+  const rowId = props.rowId
+  if (!rowId) return
+  if (event.t === 'row.updated' && event.ids?.includes(rowId)) {
+    const fields = event.changes?.[rowId] ?? event.fields
+    if (editing.value && (!fields || fields.includes(editing.value)))
+      changedBy.value = event.byName || event.by || t('realtime.unknownEditor')
+  } else if (
+    !(event.t === 'row.deleted' && event.ids?.includes(rowId)) &&
+    event.t !== 'row.bulk' &&
+    event.t !== 'resync'
+  )
+    return
+  realtimeReloadPending = true
+  flushRealtimeReload()
+}
+
 watch(
   [
     () => props.schema.table.id,
@@ -378,24 +461,58 @@ watch(
 )
 watch(
   () => props.schema.myLevel,
-  () => {
+  (next, previous) => {
     if (loading.value) {
       void load()
       return
     }
+    const lostWrite =
+      (previous === 'write' || previous === 'owner') &&
+      next !== 'write' &&
+      next !== 'owner' &&
+      (!!editing.value || saving.value || !!relationEditing.value)
     generation++
     controller?.abort()
+    if (realtimeController) {
+      realtimeController.abort()
+      realtimeController = undefined
+      realtimeReloadPending = true
+    }
     saving.value = false
     editing.value = null
     saved.value = false
+    if (lostWrite) error.value = new RequestError('ERR_PERMISSION_DENIED', 403)
     if (creating.value) draft.value = {}
+    flushRealtimeReload()
   },
 )
+watch(
+  [
+    () => props.schema.table.id,
+    () => props.rowId,
+    () => props.identity,
+    () => auth.user?.id,
+  ],
+  ([tableId, rowId, identity, userId], _previous, onCleanup) => {
+    realtimeController?.abort()
+    realtimeController = undefined
+    realtimeReloadPending = false
+    changedBy.value = ''
+    if (rowId && identity === userId)
+      onCleanup(realtime.subscribe(tableId, handleRealtime))
+  },
+  { immediate: true },
+)
+watch(editing, () => {
+  changedBy.value = ''
+})
+watch([editing, saving, relationEditing, loading], flushRealtimeReload)
 onBeforeUnmount(() => {
   void discardDraftAttachments()
   disposed = true
   generation++
   controller?.abort()
+  realtimeController?.abort()
   dialog.value?.close()
 })
 const relationField = computed(
@@ -451,6 +568,9 @@ const relationField = computed(
           <template v-if="editing === item.field.id && canWrite">
             <fieldset :disabled="saving">
               <legend>{{ item.field.name }}</legend>
+              <p v-if="changedBy" role="status">
+                {{ t('realtime.changedBy', { name: changedBy }) }}
+              </p>
               <FieldEditor
                 :field="item.result.value"
                 :value="item.value.value"

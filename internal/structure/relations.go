@@ -177,7 +177,7 @@ func (s *Service) CreateRelation(ctx context.Context, actor Actor, tableID strin
 
 	var result RelationResult
 	err = retryCollisions(func() error {
-		return s.run(ctx, actor, scope{target: source}, func(c *txn) error {
+		return s.run(ctx, actor, scope{target: source, schemaChanged: true}, func(c *txn) error {
 			sourceTable, err := lockTable(ctx, c, source.ID)
 			if err != nil {
 				return err
@@ -328,6 +328,9 @@ func (s *Service) CreateRelation(ctx context.Context, actor Actor, tableID strin
 				return errors.New("created relation field missing from schema")
 			}
 			result = RelationResult{Field: created, Schema: schema, Relation: relation}
+			if target.ID != source.ID {
+				return emitSchema(ctx, c.tx, actor, target.ID)
+			}
 			return nil
 		})
 	})
@@ -422,6 +425,11 @@ func (s *Service) deleteRelationField(ctx context.Context, c *txn, source locked
 	schema, err := loadSchema(ctx, c.q, c.tx, source.ID, c.user, acl.Owner)
 	if err != nil {
 		return FieldResult{}, err
+	}
+	if otherID != source.ID {
+		if err := emitSchema(ctx, c.tx, c.actor, otherID); err != nil {
+			return FieldResult{}, err
+		}
 	}
 	return FieldResult{Schema: schema}, nil
 }
@@ -678,7 +686,10 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 			return err
 		}
 		result = record
-		return nil
+		if err := emitRows(ctx, tx, actor, table.id.String(), "row.updated", []RowRecord{record}, []string{fieldID}); err != nil {
+			return err
+		}
+		return emitRelatedRowInvalidation(ctx, tx, targetTable.id, table.id)
 	})
 	return result, err
 }
@@ -974,6 +985,9 @@ func (s *Service) deleteRelatedRows(ctx context.Context, tx pgx.Tx, actor Actor,
 			continue
 		}
 		if relation.fkColumn.Valid && side == "child" {
+			if err := emitRelatedRowInvalidation(ctx, tx, targetID, table.id); err != nil {
+				return err
+			}
 			continue
 		}
 		target, err := relationReadTable(ctx, tx, targetID)
@@ -1025,6 +1039,11 @@ func (s *Service) deleteRelatedRows(ctx context.Context, tx pgx.Tx, actor Actor,
 				return err
 			}
 			if err := updateForeignLinks(ctx, tx, target, relation.fkColumn.String, linked, nil, user); err != nil {
+				return err
+			}
+		}
+		if len(linked) > 0 {
+			if err := emitRelatedRowInvalidation(ctx, tx, targetID, table.id); err != nil {
 				return err
 			}
 		}
