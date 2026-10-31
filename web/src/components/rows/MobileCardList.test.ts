@@ -6,6 +6,7 @@ import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { i18n, loadLocale } from '../../i18n'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
+import { useUndoStore } from '../../stores/undo'
 import { navUser, tableSchema } from '../../test/navigation'
 import MobileCardList from './MobileCardList.vue'
 
@@ -248,6 +249,30 @@ it('deletes only confirmed selected page rows and does not invent success on fai
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).not.toBe('')
   expect(wrapper.findAll('.mobile-card')).toHaveLength(0)
+  expect(useUndoStore().canUndo).toBe(false)
+})
+
+it('records the authoritative snapshot for a successful mobile deletion', async () => {
+  const fetcher = provider()
+  const delegate = fetcher.getMockImplementation()!
+  const deleted = { id: '9007199254740993', fields: { name: 'Title 0' } }
+  fetcher.mockImplementation(async (url, init) =>
+    init?.method === 'DELETE'
+      ? Response.json({ rows: [deleted], eventId: 'event' })
+      : delegate(url, init),
+  )
+  const { wrapper } = await setup(fetcher)
+  await wrapper.get('.card-selection input').setValue(true)
+  await wrapper.get('.mobile-toolbar button').trigger('click')
+  await wrapper.findAll('dialog.mobile-sheet button')[2]!.trigger('click')
+  await wrapper
+    .findAll('dialog.mobile-sheet')[1]!
+    .findAll('button')[0]!
+    .trigger('click')
+  await flushPromises()
+  expect(useUndoStore().undoStack).toEqual([
+    { steps: [{ kind: 'restore', tableId: 't', rows: [deleted] }] },
+  ])
 })
 
 it.each(['view', 'schema', 'identity', 'unmount'])(

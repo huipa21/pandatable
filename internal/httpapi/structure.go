@@ -55,6 +55,8 @@ func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Get("/notifications", api.authenticated(api.listNotifications))
 	router.Post("/notifications/read", api.authenticated(api.readNotification))
 	router.Post("/tables/{id}/rows/{rowId}/links/{fieldId}", api.authenticated(api.changeLinks))
+	router.Post("/tables/{id}/rows:restore", api.authenticated(api.restoreRows))
+	router.Patch("/tables/{id}/rows:guarded", api.authenticated(api.patchGuardedRows))
 	router.Post("/tables/{id}/rows", api.authenticated(api.createRows))
 	router.Patch("/tables/{id}/rows", api.authenticated(api.patchRows))
 	router.Patch("/tables/{id}/rows/{rowId}", api.authenticated(api.patchRow))

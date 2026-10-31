@@ -178,6 +178,10 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_UNIQUE_CONFLICT')
     case 'ERR_SCHEMA_CHANGED':
       return t('errors.ERR_SCHEMA_CHANGED')
+    case 'ERR_UNDO_CONFLICT':
+      return t('errors.ERR_UNDO_CONFLICT')
+    case 'ERR_UNDO_UNAVAILABLE':
+      return t('errors.ERR_UNDO_UNAVAILABLE')
     case 'ERR_UPLOAD_TOO_LARGE':
       return t('errors.ERR_UPLOAD_TOO_LARGE')
     case 'ERR_ATTACHMENT_TYPE':

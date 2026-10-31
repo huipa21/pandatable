@@ -372,6 +372,14 @@ export const useRealtimeStore = defineStore('realtime', () => {
     return () => globalListeners.delete(listener)
   }
 
+  function invalidateLocal(tableId: string, viewId?: string) {
+    dispatch(
+      viewId
+        ? { t: 'view.changed', tableId, viewId }
+        : { t: 'row.bulk', tableId },
+    )
+  }
+
   onScopeDispose(stop)
   return {
     status,
@@ -381,6 +389,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     stop,
     subscribe,
     onGlobal,
+    invalidateLocal,
     setView,
     setFocus,
   }

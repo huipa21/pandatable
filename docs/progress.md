@@ -68,7 +68,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.2 | Presence | ✅ | 2026-10-31 | D-184; AT-604 and task gates pass. [Record](task-prompts/T3.2.md#record-2026-10-31). |
 | T3.3 | Comments & notifications | ✅ | 2026-10-31 | D-185; AT-606 and task gates pass. [Record](task-prompts/T3.3.md#record-2026-10-31). |
 | T3.4 | Row history | ✅ | 2026-10-31 | D-186; AT-607 and task gates pass. [Record](task-prompts/T3.4.md#record-2026-10-31). |
-| T3.5 | Undo/redo | ⬜ | | |
+| T3.5 | Undo/redo | ✅ | 2026-11-01 | D-187; AT-608/609 and both task gates pass. [Record](task-prompts/T3.5.md#record-2026-11-01). |
 | T3.6 | Trash & purge | ⬜ | | |
 | T3.7 | Export | ⬜ | | |
 | T3.8 | Import | ⬜ | | |
@@ -109,8 +109,11 @@ Summary updated at each milestone end.
 
 ## Change log
 
+Newest first: add new lines directly below the header row.
+
 | Date | Change |
 |---|---|
+| 2026-11-01 | T3.5 Done: per-tab undo/redo, guarded conflicts and exact-ID restoration pass AT-608/609 and task gates. |
 | 2026-10-31 | T3.4 Done: transactional row/link history, localized timeline and retention pass AT-607 and task gates. |
 | 2026-10-31 | T3.3 Done: comments, access-filtered mentions and live notifications pass AT-606 and task gates. |
 | 2026-10-31 | T3.2 Done: per-table presence, localized avatars and focused-cell indicators pass AT-604 and task gates. |
@@ -118,44 +121,44 @@ Summary updated at each milestone end.
 | 2026-10-31 | T3.1 realtime hub implementation started. |
 | 2026-10-31 | T2.15 implementation and task gates pass locally; target-host performance acceptance remains pending. |
 | 2026-10-31 | T2.14 Done: restart-safe shared-view auto-indexing, metadata retries, `ptdev check`, and focused search E2E pass; AT-512 performance remains pending for T2.15. |
-| 2026-10-29 | T2.1 Done: AT-320/326 and task gates pass; batch-2 codecs, typed DDL, field UI/user picker, docs and browser coverage complete. D-159..D-162 record the contracts; M2 remains In Progress. |
-| 2026-10-29 | D-158 gate levels: per task `ptdev check` + `ptdev e2e --fast` (host-built binary on the shared runtime stage); complete production-image E2E once per phase. Dockerfile Go/pnpm cache mounts, compact Playwright reporter, per-task evidence moved to `docs/archive/`, task-prompt template and reading budget. |
-| 2026-10-29 | T2.2 Done: AT-111/321/322 pass; attachment APIs, local storage/thumbnails, ACL, row integrity, UI, and admin limits pass `ptdev check` and fast browser gates. D-163..D-169 record confirmed contracts. T1.8 stays In Progress for AT-112/117. |
-| 2026-10-29 | T2.3 Done: AT-401..406 and both task gates pass. Relation metadata/DDL, link mutations, delete policies, field/grid UI and localized picker are covered by PG18 and real-browser tests; D-170 records ACL policy. |
-| 2026-10-29 | T2.4 Done: AT-407/408/411 and both task gates pass. Lookup/rollup computation, localized configuration, cross-table masking, relation-kind coverage and D-171 dependency protection are complete. |
-| 2026-10-29 | T2.5 Done: AT-409 and both task gates pass; formula parsing, query-time computation, API checks and localized editor are complete. D-172 records implementation choices. |
-| 2026-10-30 | T2.6 filter implementation and task gates pass; AT-501/502 pass and AT-410 filter evidence is partial pending T2.7 computed-field sorting. D-173/D-174 record the operator contracts; PG18 regression covers timezone-relative date, lookup, formula, and rollup filters. |
-| 2026-10-30 | T2.7 Done: AT-503/410 pass; transient multi-sort controls, computed-field sorting, NULLS LAST and deterministic paging pass task gates. D-175 extends the query contract compatibly; detailed evidence in the T2.7 record. |
-| 2026-10-30 | T2.8 Done: AT-504 and both task gates pass; filtered grouped queries, canonical group keys, aggregates, virtual desktop/mobile group rows, and collapse persistence are complete. D-176 records view-config storage; details in the [T2.8 record](task-prompts/T2.8.md#record-2026-10-30). |
-| 2026-10-30 | T2.9 Done: AT-505 and both task gates pass; ordered highlight query/compiler, production rule editor and reorder controls, independent row/cell rendering, and light/dark palette checks complete. D-177 records the bounded rule and color contract; details in the [T2.9 record](task-prompts/T2.9.md#record-2026-10-30). |
-| 2026-10-30 | T2.10 Done: D-178, AT-506–508, live-PG `ptdev check`, and focused production-browser E2E pass; shared/personal lifecycle, permissions, locking, ordering, temporary overrides, and optimistic conflicts verified. [T2.10 record](task-prompts/T2.10.md#record-2026-10-30). |
-| 2026-10-30 | T2.11 Done: D-179, AT-509/510, `ptdev check` (562 tests), and focused production-browser E2E (2 passed, 1 intentional mobile skip) pass; details in the [T2.11 record](task-prompts/T2.11.md#record-2026-10-30). |
+| 2026-10-31 | T2.13 Done: AT-511, `ptdev check`, and fast Form-view E2E pass (3/3). Versioned configuration, owner/writer submission, read-only denial, and 390 px layout are verified; details in the [T2.13 record](task-prompts/T2.13.md#record-2026-10-31). |
+| 2026-10-31 | T2.12 Done: D-180, AT-323/324, `ptdev check`, and focused field-acceptance E2E pass (5/5). Atomic owner-only conversion, dependency rechecks, and choice rename propagation are verified; details in the [T2.12 record](task-prompts/T2.12.md#record-2026-10-31). |
 | 2026-10-30 | T2.6 Done: AT-501/502 and AT-410 pass after T2.7 adds computed-field sorting; server filter coverage and task gates were already green. |
+| 2026-10-30 | T2.11 Done: D-179, AT-509/510, `ptdev check` (562 tests), and focused production-browser E2E (2 passed, 1 intentional mobile skip) pass; details in the [T2.11 record](task-prompts/T2.11.md#record-2026-10-30). |
+| 2026-10-30 | T2.10 Done: D-178, AT-506–508, live-PG `ptdev check`, and focused production-browser E2E pass; shared/personal lifecycle, permissions, locking, ordering, temporary overrides, and optimistic conflicts verified. [T2.10 record](task-prompts/T2.10.md#record-2026-10-30). |
+| 2026-10-30 | T2.9 Done: AT-505 and both task gates pass; ordered highlight query/compiler, production rule editor and reorder controls, independent row/cell rendering, and light/dark palette checks complete. D-177 records the bounded rule and color contract; details in the [T2.9 record](task-prompts/T2.9.md#record-2026-10-30). |
+| 2026-10-30 | T2.8 Done: AT-504 and both task gates pass; filtered grouped queries, canonical group keys, aggregates, virtual desktop/mobile group rows, and collapse persistence are complete. D-176 records view-config storage; details in the [T2.8 record](task-prompts/T2.8.md#record-2026-10-30). |
+| 2026-10-30 | T2.7 Done: AT-503/410 pass; transient multi-sort controls, computed-field sorting, NULLS LAST and deterministic paging pass task gates. D-175 extends the query contract compatibly; detailed evidence in the T2.7 record. |
+| 2026-10-30 | T2.6 filter implementation and task gates pass; AT-501/502 pass and AT-410 filter evidence is partial pending T2.7 computed-field sorting. D-173/D-174 record the operator contracts; PG18 regression covers timezone-relative date, lookup, formula, and rollup filters. |
+| 2026-10-29 | T2.5 Done: AT-409 and both task gates pass; formula parsing, query-time computation, API checks and localized editor are complete. D-172 records implementation choices. |
+| 2026-10-29 | T2.4 Done: AT-407/408/411 and both task gates pass. Lookup/rollup computation, localized configuration, cross-table masking, relation-kind coverage and D-171 dependency protection are complete. |
+| 2026-10-29 | T2.3 Done: AT-401..406 and both task gates pass. Relation metadata/DDL, link mutations, delete policies, field/grid UI and localized picker are covered by PG18 and real-browser tests; D-170 records ACL policy. |
+| 2026-10-29 | T2.2 Done: AT-111/321/322 pass; attachment APIs, local storage/thumbnails, ACL, row integrity, UI, and admin limits pass `ptdev check` and fast browser gates. D-163..D-169 record confirmed contracts. T1.8 stays In Progress for AT-112/117. |
+| 2026-10-29 | D-158 gate levels: per task `ptdev check` + `ptdev e2e --fast` (host-built binary on the shared runtime stage); complete production-image E2E once per phase. Dockerfile Go/pnpm cache mounts, compact Playwright reporter, per-task evidence moved to `docs/archive/`, task-prompt template and reading budget. |
+| 2026-10-29 | T2.1 Done: AT-320/326 and task gates pass; batch-2 codecs, typed DDL, field UI/user picker, docs and browser coverage complete. D-159..D-162 record the contracts; M2 remains In Progress. |
 | 2026-10-28 | T1.23 Done: full AT-301..304 production-browser scenarios plus required PG18 catalog/authorship checks pass; T1.13/T1.14/T1.15 flip to Done. D-156 configurable PGDG mirror (fixes repeated image-build stalls), D-157 E2E harness pacing/optional-failure/editor-opening rules. Default-parallel check and complete E2E 23/0/2 pass. M1 stays open (T1.8, T1.9, T1.22, AT-312/NFR-2). |
 | 2026-10-26 | T1.10 implemented: workspace/book/table API (`internal/structure`), atomic metadata+DDL, system fields/Name/default Grid, reorder, soft delete, `/nav`, D-097..D-103 and sqlc `structuresql`. Required PG18 tests, serial full check and image E2E 11/2 pass; default-parallel Suite cleanup failure recorded. Sidebar UI and linked UI/field acceptance stay pending, so In progress; T1.11 prompt created. Retained Podman VM/dev DB restored stopped. |
 | 2026-10-26 | T1.6 completed: group CRUD/members, linked group/user detail, D-084..087, deterministic grant/member/delete concurrency and immediate ACL invalidation. AT-109 production desktop/mobile and full 11/2 image suite pass; full check passes with GOFLAGS=-p=1 (default-parallel testdb cleanup failures recorded, not relaxed). T1.7 prompt created; original stopped DB/VM state restored. |
 | 2026-10-26 | T1.4 implemented and verified: `internal/acl` resolver/grants service, `/api/v1/grants` routes, `require` guard, D-079/D-080, sqlc `aclsql`, docs and T1.5 prompt. Required PG18 tests (x3), Windows check and image E2E pass. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.3 started after reading the required docs and T1.2 handoff; D-078 records the confirmed setup policies. AT-101 and the required PG18/local gates now pass; exact evidence follows. No migration or shared/remote deployment. |
 | 2026-10-25 | T1.2 backend implementation verified and handed off; D-072..077, static sqlc auth queries, API/types/testing docs and T1.3 prompt added. Windows check, required PG18 and final 8/2 image E2E pass. Kept T1.2 in progress because the user explicitly deferred auth/profile UI and full AT-117. No shared/remote deployment or unrelated task completion. |
-| 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
-| 2026-10-24 | T1.1 started with a clean worktree; required design/runtime/test docs inspected. Started the existing stopped Podman machine and retained dev DB without reset. User confirmed grant-reference and history clarifications before coding. |
-| 2026-10-24 | T1.1 Done: reversible metadata 0002, exact PG18 catalog/default/constraint/delete tests, sentinel-preserving concurrent upgrades and populated down/up, three real serve lifecycles with unchanged migration records (AT-002). Windows check, shell/spike E2E and AT-004 pass. D-069..071, data-model/testing docs, completion record and T1.2 prompt added; unrelated platform acceptance remains pending. |
-| 2026-10-24 | T0.8 started with a clean worktree; pinned engine/adapter APIs and isolated prototype design inspected. |
-| 2026-10-24 | T0.8 scoped spike complete: 200k window/cache, custom editor/renderer, quoted TSV and fill, grouped sample, frozen columns, translations/themes and emulated tablet demonstrated under unchanged CSP. D-066..068 confirm D-005; 20 unit tests, Windows local gate and eight image-backed browser checks pass (two intentional mobile exclusions). T1.1 handoff created; unrelated platform acceptance remains pending. |
-| 2026-10-24 | Resolved OQ-1..4: external Caddy, local Podman/Docker build + image transfer, `ptdev` tool, timezone & currency defaults. Added 14-dev-build-release.md, D-046..D-050, AT-005/006/117/326. |
-| 2026-10-24 | T0.1: Go scaffold + stdlib ptdev commands and unit tests; D-051; local gate and Podman PG18 lifecycle verified; T0.2 handoff added. Existing stopped Podman machine started. |
-| 2026-10-24 | T0.2: implementation started. |
-| 2026-10-24 | T0.7: implementation started after reading the T0.6 handoff, binding decisions and current tooling; worktree clean. |
-| 2026-10-24 | T0.7 implementation/scoped verification complete: shared migrated package databases with bounded skips and fail-closed gate, pinned Playwright and isolated Compose runner, real success/failure/cancellation cleanup, D-063..D-065 and T0.8 handoff. Full AT-006 awaits Linux/Docker, so T0.7/M0 remain in progress. |
-| 2026-10-24 | T0.2: config precedence/validation, CLI routing, JSON logging, and T0.3 task prompt implemented; focused tests, `ptdev check`, and PowerShell/Git Bash CLI smoke checks pass. `golangci-lint` unavailable; full AT-006 remains pending. |
-| 2026-10-24 | T0.3: implementation started. |
-| 2026-10-24 | T0.3: pgx pool/retries, safe transaction helper, advisory-locked embedded Goose migration, and migrate CLI complete. PostgreSQL 18.6 integration, repeated CLI migrations, and `ptdev check` pass; `golangci-lint` unavailable. Full AT-006 remains pending. |
-| 2026-10-24 | : implementation started. |
-| 2026-10-24 | T0.4 implementation verified: chi HTTP foundation, safe JSON logs/errors, embedded-asset boundary, automatic migrations and bounded shutdown. Focused tests, PostgreSQL 18.6 restarts, ptdev check and Linux cross-build pass; D-053..D-055 and T0.5 handoff added. AT-001 remains pending, so T0.4 and M0 stay in progress. |
-| 2026-10-24 | T0.5 started: inspected build/HTTP boundaries and Node/pnpm compatibility; implemented localized Vue shell and direct-process dev workflow. |
-| 2026-10-24 | T0.5 complete: AT-003 embedded-browser and AT-802 local gate pass; ten frontend tests, Go checks, production build, real dev proxy/cancellation and Linux compilation verified. Added D-056/D-057 and T0.6 prompt; M0/T0.4 remain in progress pending stack acceptance. |
 | 2026-10-24 | T0.6 implementation and scoped verification: source-allowlisted image, executable healthcheck, Compose/Caddy examples, image export and opt-in remote tooling. AT-004 and Windows/Podman stack/browser/persistence checks pass; full AT-001/005/006 remain pending. D-058..D-062 and T0.7 handoff added. |
+| 2026-10-24 | T0.5 complete: AT-003 embedded-browser and AT-802 local gate pass; ten frontend tests, Go checks, production build, real dev proxy/cancellation and Linux compilation verified. Added D-056/D-057 and T0.6 prompt; M0/T0.4 remain in progress pending stack acceptance. |
+| 2026-10-24 | T0.5 started: inspected build/HTTP boundaries and Node/pnpm compatibility; implemented localized Vue shell and direct-process dev workflow. |
+| 2026-10-24 | T0.4 implementation verified: chi HTTP foundation, safe JSON logs/errors, embedded-asset boundary, automatic migrations and bounded shutdown. Focused tests, PostgreSQL 18.6 restarts, ptdev check and Linux cross-build pass; D-053..D-055 and T0.5 handoff added. AT-001 remains pending, so T0.4 and M0 stay in progress. |
+| 2026-10-24 | : implementation started. |
+| 2026-10-24 | T0.3: pgx pool/retries, safe transaction helper, advisory-locked embedded Goose migration, and migrate CLI complete. PostgreSQL 18.6 integration, repeated CLI migrations, and `ptdev check` pass; `golangci-lint` unavailable. Full AT-006 remains pending. |
+| 2026-10-24 | T0.3: implementation started. |
+| 2026-10-24 | T0.2: config precedence/validation, CLI routing, JSON logging, and T0.3 task prompt implemented; focused tests, `ptdev check`, and PowerShell/Git Bash CLI smoke checks pass. `golangci-lint` unavailable; full AT-006 remains pending. |
+| 2026-10-24 | T0.7 implementation/scoped verification complete: shared migrated package databases with bounded skips and fail-closed gate, pinned Playwright and isolated Compose runner, real success/failure/cancellation cleanup, D-063..D-065 and T0.8 handoff. Full AT-006 awaits Linux/Docker, so T0.7/M0 remain in progress. |
+| 2026-10-24 | T0.7: implementation started after reading the T0.6 handoff, binding decisions and current tooling; worktree clean. |
+| 2026-10-24 | T0.2: implementation started. |
+| 2026-10-24 | T0.1: Go scaffold + stdlib ptdev commands and unit tests; D-051; local gate and Podman PG18 lifecycle verified; T0.2 handoff added. Existing stopped Podman machine started. |
+| 2026-10-24 | Resolved OQ-1..4: external Caddy, local Podman/Docker build + image transfer, `ptdev` tool, timezone & currency defaults. Added 14-dev-build-release.md, D-046..D-050, AT-005/006/117/326. |
+| 2026-10-24 | T0.8 scoped spike complete: 200k window/cache, custom editor/renderer, quoted TSV and fill, grouped sample, frozen columns, translations/themes and emulated tablet demonstrated under unchanged CSP. D-066..068 confirm D-005; 20 unit tests, Windows local gate and eight image-backed browser checks pass (two intentional mobile exclusions). T1.1 handoff created; unrelated platform acceptance remains pending. |
+| 2026-10-24 | T0.8 started with a clean worktree; pinned engine/adapter APIs and isolated prototype design inspected. |
+| 2026-10-24 | T1.1 Done: reversible metadata 0002, exact PG18 catalog/default/constraint/delete tests, sentinel-preserving concurrent upgrades and populated down/up, three real serve lifecycles with unchanged migration records (AT-002). Windows check, shell/spike E2E and AT-004 pass. D-069..071, data-model/testing docs, completion record and T1.2 prompt added; unrelated platform acceptance remains pending. |
+| 2026-10-24 | T1.1 started with a clean worktree; required design/runtime/test docs inspected. Started the existing stopped Podman machine and retained dev DB without reset. User confirmed grant-reference and history clarifications before coding. |
+| 2026-10-24 | Initial planning docs created from interview (Q1–Q51). |
 
 Per-task verification evidence for M0–M1 lives in [archive/progress-m0-m1.md](archive/progress-m0-m1.md) and the task-prompt records. Keep new entries here to one table row plus one change-log line (D-158).
-| 2026-10-31 | T2.12 Done: D-180, AT-323/324, `ptdev check`, and focused field-acceptance E2E pass (5/5). Atomic owner-only conversion, dependency rechecks, and choice rename propagation are verified; details in the [T2.12 record](task-prompts/T2.12.md#record-2026-10-31). |
-| 2026-10-31 | T2.13 Done: AT-511, `ptdev check`, and fast Form-view E2E pass (3/3). Versioned configuration, owner/writer submission, read-only denial, and 390 px layout are verified; details in the [T2.13 record](task-prompts/T2.13.md#record-2026-10-31). |

@@ -14,7 +14,9 @@ import (
 
 const (
 	bulkRowsBodyLimit      = 512 << 10
+	guardedRowsBodyLimit   = 2 << 20
 	bulkDeleteBodyLimit    = 64 << 10
+	restoreRowsBodyLimit   = 8 << 20
 	attachmentRowBodyLimit = 64 << 10
 	formSubmitBodyLimit    = 64 << 10
 )
@@ -118,12 +120,28 @@ func (api *authHTTP) createRows(w http.ResponseWriter, r *http.Request, user aut
 }
 
 func (api *authHTTP) patchRows(w http.ResponseWriter, r *http.Request, user auth.User) {
+	api.patchRowsWithLimit(w, r, user, bulkRowsBodyLimit, false)
+}
+
+func (api *authHTTP) patchGuardedRows(w http.ResponseWriter, r *http.Request, user auth.User) {
+	api.patchRowsWithLimit(w, r, user, guardedRowsBodyLimit, true)
+}
+
+func (api *authHTTP) patchRowsWithLimit(w http.ResponseWriter, r *http.Request, user auth.User, limit int64, guarded bool) {
 	var input struct {
 		Rows []structure.RowPatch `json:"rows"`
 	}
-	if err := decodeJSONLimit(w, r, &input, bulkRowsBodyLimit); err != nil {
+	if err := decodeJSONLimit(w, r, &input, limit); err != nil {
 		api.fail(w, r, err)
 		return
+	}
+	if guarded {
+		for _, row := range input.Rows {
+			if row.Expected == nil {
+				api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Expected values are required"))
+				return
+			}
+		}
 	}
 	rows, err := api.structure.PatchRows(r.Context(), actorOf(user), chi.URLParam(r, "id"), input.Rows)
 	if err != nil {
@@ -131,9 +149,10 @@ func (api *authHTTP) patchRows(w http.ResponseWriter, r *http.Request, user auth
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Rows    []structure.RowRecord `json:"rows"`
-		EventID string                `json:"eventId"`
-	}{rows, eventID(r)})
+		Rows     []structure.RowRecord `json:"rows"`
+		Previous []structure.RowPatch  `json:"previous"`
+		EventID  string                `json:"eventId"`
+	}{rows, previousRows(rows), eventID(r)})
 }
 
 func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -151,9 +170,18 @@ func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Row     structure.RowRecord `json:"row"`
-		EventID string              `json:"eventId"`
-	}{row, eventID(r)})
+		Row      structure.RowRecord        `json:"row"`
+		Previous map[string]json.RawMessage `json:"previous"`
+		EventID  string                     `json:"eventId"`
+	}{row, row.Previous, eventID(r)})
+}
+
+func previousRows(rows []structure.RowRecord) []structure.RowPatch {
+	result := make([]structure.RowPatch, len(rows))
+	for index, row := range rows {
+		result[index] = structure.RowPatch{ID: row.ID, Fields: row.Previous}
+	}
+	return result
 }
 
 func (api *authHTTP) changeLinks(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -174,9 +202,10 @@ func (api *authHTTP) changeLinks(w http.ResponseWriter, r *http.Request, user au
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Row     structure.RowRecord `json:"row"`
-		EventID string              `json:"eventId"`
-	}{row, eventID(r)})
+		Row     structure.RowRecord       `json:"row"`
+		Changes []structure.RelationDelta `json:"changes"`
+		EventID string                    `json:"eventId"`
+	}{row, row.LinkChanges, eventID(r)})
 }
 
 func (api *authHTTP) deleteRows(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -188,6 +217,25 @@ func (api *authHTTP) deleteRows(w http.ResponseWriter, r *http.Request, user aut
 		return
 	}
 	rows, err := api.structure.DeleteRows(r.Context(), actorOf(user), chi.URLParam(r, "id"), input.IDs)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Rows    []structure.RowRecord `json:"rows"`
+		EventID string                `json:"eventId"`
+	}{rows, eventID(r)})
+}
+
+func (api *authHTTP) restoreRows(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		Rows []structure.RowRecord `json:"rows"`
+	}
+	if err := decodeJSONLimit(w, r, &input, restoreRowsBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	rows, err := api.structure.RestoreRows(r.Context(), actorOf(user), chi.URLParam(r, "id"), input.Rows)
 	if err != nil {
 		api.fail(w, r, err)
 		return

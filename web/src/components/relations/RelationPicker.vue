@@ -13,6 +13,7 @@ import type {
 import { bindField } from '../../fields/registry'
 import { isWireValue, type FieldEnv } from '../../fields/types'
 import { useAuthStore } from '../../stores/auth'
+import { linkUndoSteps, useUndoStore } from '../../stores/undo'
 
 const props = defineProps<{
   open: boolean
@@ -28,6 +29,7 @@ const emit = defineEmits<{
 }>()
 const { t, locale } = useI18n()
 const auth = useAuthStore()
+const undo = useUndoStore()
 const dialog = ref<HTMLDialogElement>()
 const options = ref<RelationLink[]>([])
 const selected = ref<string[]>([])
@@ -204,6 +206,10 @@ async function save() {
     `${encodeURIComponent(props.rowId)}/links/${encodeURIComponent(props.field.id)}`
   try {
     const result = await request<LinkMutation>(path, 'POST', change)
+    if (!Array.isArray(result.changes))
+      throw new Error('Link mutation returned an unsupported response')
+    if (props.identity === auth.user?.id)
+      undo.record(linkUndoSteps(result.changes))
     emit('updated', result.row)
     finishClose()
   } catch (cause) {
@@ -239,6 +245,12 @@ async function save() {
             ...change,
             replace: true,
           })
+          if (!Array.isArray(result.changes))
+            throw new Error('Link mutation returned an unsupported response', {
+              cause,
+            })
+          if (props.identity === auth.user?.id)
+            undo.record(linkUndoSteps(result.changes))
           emit('updated', result.row)
           finishClose()
           return

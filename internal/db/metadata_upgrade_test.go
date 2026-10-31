@@ -92,8 +92,9 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		if afterRerun := migrationRecords(t, ctx, migrationDB); beforeRerun != afterRerun {
 			t.Fatal("repeated migration changed version records")
 		}
-		assertSQL(t, ctx, pool, `SELECT count(*) = 3 AND count(*) FILTER (WHERE version_id = 1 AND is_applied) = 1
-			AND count(*) FILTER (WHERE version_id = 2 AND is_applied) = 1 FROM public.goose_db_version`)
+		assertSQL(t, ctx, pool, `SELECT count(*) = 4 AND count(*) FILTER (WHERE version_id = 1 AND is_applied) = 1
+			AND count(*) FILTER (WHERE version_id = 2 AND is_applied) = 1
+			AND count(*) FILTER (WHERE version_id = 3 AND is_applied) = 1 FROM public.goose_db_version`)
 		var after string
 		if err := pool.QueryRow(ctx, snapshotSQL).Scan(&after); err != nil || before != after {
 			t.Fatalf("cycle %d upgrade changed 0001 values/record/extensions/unrelated object (error=%v)", cycle+1, err)
@@ -104,6 +105,15 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		if err := tx.Commit(ctx); err != nil {
 			t.Fatal(err)
 		}
+		assertSQL(t, ctx, pool, `SELECT count(*) = 1 AND bool_and(restore_system IS NULL) FROM meta.row_history`)
+		if _, err := provider.DownTo(ctx, 2); err != nil {
+			t.Fatalf("cycle %d rollback to 0002: %v", cycle+1, err)
+		}
+		assertSQL(t, ctx, pool, `SELECT count(*) = 1 FROM meta.row_history`)
+		if _, err := provider.Up(ctx); err != nil {
+			t.Fatalf("cycle %d reapply 0003: %v", cycle+1, err)
+		}
+		assertSQL(t, ctx, pool, `SELECT count(*) = 1 AND bool_and(restore_system IS NULL) FROM meta.row_history`)
 		if _, err := provider.DownTo(ctx, 1); err != nil {
 			t.Fatalf("cycle %d rollback to 0001: %v", cycle+1, err)
 		}

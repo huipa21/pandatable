@@ -30,7 +30,7 @@ Keep the prompt under about 6 KB and the final record under about 2 KB (D-158).
 
 ## Wrap-up
 
-- `progress.md`: one task-table row and one change-log line.
+- `progress.md`: one task-table row and one change-log line (newest first, directly below the change-log header row).
 - `acceptance-tests.md`: update only the affected AT-xxx evidence lines.
 - New non-trivial choices: one `D-xxx` row.
 - Append a record below (about 2 KB max): outcome, changed files, commands with

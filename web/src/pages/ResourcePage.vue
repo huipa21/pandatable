@@ -25,6 +25,7 @@ import { useAuthStore } from '../stores/auth'
 import { tablePath, useNavStore, type NavigationItem } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
 import { useRealtimeStore } from '../stores/realtime'
+import { useUndoStore, viewUndoStep } from '../stores/undo'
 import PresenceAvatars from '../components/presence/PresenceAvatars.vue'
 
 const { t } = useI18n()
@@ -34,6 +35,7 @@ const auth = useAuthStore()
 const nav = useNavStore()
 const sharing = useSharingStore()
 const realtime = useRealtimeStore()
+const undo = useUndoStore()
 const schema = shallowRef<TableSchema | null>(null)
 // Lazy so the field registry/editor stay out of the initial bundle (D-130).
 const FieldPanel = defineAsyncComponent(
@@ -436,6 +438,7 @@ async function createView() {
 async function saveForm(form: FormConfig) {
   if (!view.value || view.value.type !== 'form' || !canManageView(view.value))
     return
+  const before = view.value
   viewBusy.value = true
   viewError.value = ''
   try {
@@ -446,6 +449,8 @@ async function saveForm(form: FormConfig) {
       undefined,
       { ifMatch: view.value.version },
     )
+    if (schema.value)
+      undo.record([viewUndoStep(schema.value.table.id, before, result.view)])
     replaceView(result.view)
   } catch (cause) {
     viewRequestFailed(cause)

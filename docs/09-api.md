@@ -674,10 +674,11 @@ config members remain reserved until those view implementations.
 | POST | `/views/{id}/aggregates` | `{ filter?, search?, fieldIds?, aggregates? }` → `{ aggregates:[{fieldId,aggregate,value}], schemaVersion }`; conditions match the displayed rows, and omitted `aggregates` uses view config. Request overrides do not mutate view state. Exact numeric sum/avg/min/max and percent-checked values are JSON strings; count-style results are JSON numbers. |
 | GET | `/tables/{id}/rows/{rowId}` | T1.15: `{ id, fields }`, all live fields including read-only system values; row ID is a canonical bigint decimal string. |
 | POST | `/tables/{id}/rows` | T1.15: `{ rows: [{ fields: { fieldId: value } }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. Physical defaults apply to omitted values. |
-| PATCH | `/tables/{id}/rows` | T1.15 atomic bulk `{ rows: [{ id, fields }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. |
+| PATCH | `/tables/{id}/rows` | Atomic bulk `{ rows: [{ id, fields, expected? }] }`; ≤1,000 rows/5,000 cells, 512 KiB request. |
+| PATCH | `/tables/{id}/rows:guarded` | Atomic bulk `{ rows: [{ id, fields, expected }] }`; ≤1,000 rows/5,000 cells, 2 MiB request. |
 | PATCH | `/tables/{id}/rows/{rowId}` | T1.15: `{ fields: { fieldId: value } }`; 64 KiB request (D-167). |
-| DELETE | `/tables/{id}/rows` | T1.15 atomic `{ ids: [...] }`, ≤1,000 IDs/64 KiB; returns deleted row snapshots. |
-| POST | `/tables/{id}/rows:restore` | `{ rows: [snapshot] }` (undo of delete; same ids) |
+| DELETE | `/tables/{id}/rows` | Atomic `{ ids: [...] }`, ≤1,000 IDs/64 KiB; returns deleted row snapshots and restore versions. |
+| POST | `/tables/{id}/rows:restore` | Atomic `{ rows: [snapshot] }` or versioned references; ≤1,000 primary rows/10,000 total rows, 8 MiB request. |
 | POST | `/tables/{id}/rows/{rowId}/links/{fieldId}` | `{ add: [ids], remove: [ids] }` |
 | GET | `/tables/{id}/link-candidates/{fieldId}?q=&offset=` | rows of target table for picker |
 | POST | `/views/{id}/form-submit` | `{fields:{fieldId:value}}` → `{row,eventId}`; authenticated Form-view submission, 64 KiB body limit. |
@@ -686,7 +687,11 @@ T1.15 read requires effective table read and mutation requires effective table
 write/owner; admin role does not bypass data grants. Bulk writes are all-or-
 nothing. `created_by`/`updated_by` are UUIDs, not resolved user names.
 Bulk patch locks use ascending numeric row ID order while response order
-matches the request.
+matches the request. Patch responses include authoritative `previous` changed
+values. An `expected` map must cover exactly the patched fields; the write
+locks each row and returns 409 `ERR_UNDO_CONFLICT` if any current value differs.
+The guarded route requires `expected` for every row and has a larger body limit
+for undo, without changing ordinary bulk-patch limits.
 Form submission has the same write/owner requirement and no admin bypass;
 hidden resources and another user's personal views return 404, while visible
 read-only users receive 403. The server validates the saved form against live
@@ -703,12 +708,22 @@ endpoint or authorization rule is added for clipboard operations (D-139).
 NOT NULL and unique violations return sanitized `ERR_REQUIRED_FIELD` and
 `ERR_UNIQUE_CONFLICT`; schema lock/serialization outcomes are
 `ERR_DDL_LOCK_TIMEOUT` or `ERR_SCHEMA_CHANGED`. T2.6 implements transient query
-filters; T2.8 and T2.11 implement groups, search, and footer aggregates. Restore
-remains deferred.
+filters; T2.8 and T2.11 implement groups, search, and footer aggregates.
+
+T3.5 restores server-returned delete snapshots with their original IDs, stored
+and system values, links, attachment references, and retained comments.
+Clients may send compact `{id, restoreVersion, cascaded?}` references; the
+server reloads the snapshot from retained delete history. Full snapshots are
+also accepted only if they match that history. A stale, altered, purged, or
+pre-migration snapshot lacking private system metadata returns 409
+`ERR_UNDO_UNAVAILABLE`. Normal current write authorization is required for
+every restored or linked table, and validation, link conflicts, or missing
+targets roll back the entire restore.
 
 T1.18's row-expand deep link uses the existing GET full-row response and
 single-row PATCH `{fields:{fieldId:value}}`/`{row,eventId}` response, without
-any new route or row-version requirement. The frontend edits one field at a
+any row-version requirement. The response also includes `previous` changed
+values. The frontend edits one field at a
 time and rejects JSON bodies exceeding the 64 KiB UTF-8 limit (D-167); it never
 silently truncates values or falls back to the larger bulk route.
 The view in the URL must remain present in the caller's authorized table

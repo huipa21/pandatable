@@ -19,6 +19,7 @@ import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
+import { useUndoStore } from '../../stores/undo'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
 import CellPresence from '../presence/CellPresence.vue'
@@ -42,6 +43,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
 const realtime = useRealtimeStore()
+const undo = useUndoStore()
 const resolveUser = (id: string) =>
   userLabel(props.identity, props.schema.table.id, id)
 const options = ref<HTMLDialogElement>()
@@ -503,13 +505,18 @@ async function deleteSelected() {
   saving.value = true
   error.value = null
   try {
-    await request<RowMutation>(
+    const result = await request<RowMutation>(
       `/tables/${props.schema.table.id}/rows`,
       'DELETE',
       { ids },
       AbortSignal.any([mutation.signal, AbortSignal.timeout(10_000)]),
     )
     if (!current(token)) return
+    if (result.rows.length !== ids.length)
+      throw new Error('Row deletion returned an unsupported response')
+    undo.record([
+      { kind: 'restore', tableId: props.schema.table.id, rows: result.rows },
+    ])
     confirmation.value?.close()
     await refresh()
   } catch (cause) {

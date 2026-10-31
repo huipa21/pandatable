@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"pandatable/internal/acl"
+	"pandatable/internal/structure/structuresql"
 )
 
 type relationEdge struct {
@@ -151,6 +152,32 @@ func newDeleteHistoryState() *deleteHistoryState {
 	}
 }
 
+func (state *deleteHistoryState) cascadedSnapshots(primaryTable string, primaryIDs map[string]bool) []RowRestoreGroup {
+	tableIDs := make([]string, 0, len(state.snapshots))
+	for tableID := range state.snapshots {
+		tableIDs = append(tableIDs, tableID)
+	}
+	sort.Strings(tableIDs)
+	groups := make([]RowRestoreGroup, 0)
+	for _, tableID := range tableIDs {
+		records := make([]RowRecord, 0, len(state.snapshots[tableID]))
+		for id, record := range state.snapshots[tableID] {
+			if tableID != primaryTable || !primaryIDs[id] {
+				records = append(records, record)
+			}
+		}
+		sort.Slice(records, func(i, j int) bool {
+			left, _ := strconv.ParseInt(records[i].ID, 10, 64)
+			right, _ := strconv.ParseInt(records[j].ID, 10, 64)
+			return left < right
+		})
+		if len(records) > 0 {
+			groups = append(groups, RowRestoreGroup{TableID: tableID, Rows: records})
+		}
+	}
+	return groups
+}
+
 func (state *deleteHistoryState) remember(ctx context.Context, tx pgx.Tx, actor Actor, table rowTable, ids []int64) error {
 	query, args, err := sq.Select(table.selectColumnList(table.fields)...).
 		From(table.qualifiedName()).
@@ -256,7 +283,7 @@ func deletePhysicalRows(ctx context.Context, tx pgx.Tx, table rowTable, ids []in
 			return errors.New("deleted row history snapshot is missing")
 		}
 		for _, field := range table.fields {
-			if field.relation != nil {
+			if field.relation != nil || field.system {
 				record.Fields[field.id] = snapshot.Fields[field.id]
 			}
 		}
@@ -265,5 +292,28 @@ func deletePhysicalRows(ctx context.Context, tx pgx.Tx, table rowTable, ids []in
 	if err != nil {
 		return err
 	}
-	return insertHistory(ctx, tx, entries)
+	encoded, err := json.Marshal(entries)
+	if err != nil {
+		return fmt.Errorf("encode delete history: %w", err)
+	}
+	inserted, err := structuresql.New(tx).InsertDeleteHistoryBatch(ctx, encoded)
+	if err != nil {
+		return fmt.Errorf("insert delete history: %w", err)
+	}
+	if len(inserted) != len(records) {
+		return errors.New("delete history versions are missing")
+	}
+	for _, entry := range inserted {
+		if !entry.RowID.Valid {
+			return errors.New("delete history version has no row id")
+		}
+		id := strconv.FormatInt(entry.RowID.Int64, 10)
+		snapshot, found := state.snapshots[table.id.String()][id]
+		if !found {
+			return errors.New("delete history version has no snapshot")
+		}
+		snapshot.RestoreVersion = strconv.FormatInt(entry.ID, 10)
+		state.snapshots[table.id.String()][id] = snapshot
+	}
+	return nil
 }

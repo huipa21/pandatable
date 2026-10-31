@@ -208,14 +208,21 @@ VALUES (sqlc.arg(table_id)::uuid, sqlc.arg(user_id)::uuid, 'type_change',
         sqlc.arg(changes)::jsonb);
 
 -- name: InsertRowHistoryBatch :exec
-INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes)
+INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes, restore_system)
 SELECT (item->>'table_id')::uuid, (item->>'row_id')::bigint,
-       (item->>'user_id')::uuid, item->>'action', item->'changes'
+       (item->>'user_id')::uuid, item->>'action', item->'changes', item->'restore_system'
 FROM jsonb_array_elements(sqlc.arg(entries)::jsonb) AS item;
+
+-- name: InsertDeleteHistoryBatch :many
+INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes, restore_system)
+SELECT (item->>'table_id')::uuid, (item->>'row_id')::bigint,
+       (item->>'user_id')::uuid, item->>'action', item->'changes', item->'restore_system'
+FROM jsonb_array_elements(sqlc.arg(entries)::jsonb) AS item
+RETURNING id, row_id;
 
 -- name: ListRowHistory :many
 SELECT h.id, h.user_id, COALESCE(u.display_name, '')::text AS author_name,
-       h.action, h.changes, h.created_at
+       h.action, h.changes, h.created_at, h.restore_system
 FROM meta.row_history h
 LEFT JOIN meta.users u ON u.id = h.user_id
 WHERE h.table_id = sqlc.arg(table_id)::uuid AND h.row_id = sqlc.arg(row_id)::bigint

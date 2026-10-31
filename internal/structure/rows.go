@@ -53,6 +53,15 @@ type RowRecord struct {
 	CommentCount   int64                      `json:"commentCount,omitempty"`
 	HighlightRow   *string                    `json:"_hl_row,omitempty"`
 	HighlightCells map[string]string          `json:"_hl_cells,omitempty"`
+	Cascaded       []RowRestoreGroup          `json:"cascaded,omitempty"`
+	RestoreVersion string                     `json:"restoreVersion,omitempty"`
+	Previous       map[string]json.RawMessage `json:"-"`
+	LinkChanges    []RelationDelta            `json:"-"`
+}
+
+type RowRestoreGroup struct {
+	TableID string      `json:"tableId"`
+	Rows    []RowRecord `json:"rows"`
 }
 
 type RowQueryResult struct {
@@ -67,8 +76,9 @@ type RowInsert struct {
 }
 
 type RowPatch struct {
-	ID     string                     `json:"id"`
-	Fields map[string]json.RawMessage `json:"fields"`
+	ID       string                     `json:"id"`
+	Fields   map[string]json.RawMessage `json:"fields"`
+	Expected map[string]json.RawMessage `json:"expected,omitempty"`
 }
 
 type rowField struct {
@@ -1126,7 +1136,7 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 	}
 	var result RowRecord
 	err = s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
-		record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input)
+		record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input, nil)
 		if err != nil {
 			return err
 		}
@@ -1151,7 +1161,7 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 }
 
 func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
-	id int64, input map[string]json.RawMessage) (RowRecord, map[string]HistoryChange, error) {
+	id int64, input, expected map[string]json.RawMessage) (RowRecord, map[string]HistoryChange, error) {
 	if len(input) == 0 {
 		return RowRecord{}, nil, validation("At least one field value is required")
 	}
@@ -1167,6 +1177,41 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 		return RowRecord{}, nil, acl.ErrNotFound()
 	} else if err != nil {
 		return RowRecord{}, nil, fmt.Errorf("lock row for patch: %w", err)
+	}
+	if expected != nil {
+		if len(expected) != len(input) {
+			return RowRecord{}, nil, validation("Expected values must cover all patched fields")
+		}
+		for fieldID := range input {
+			if _, found := expected[fieldID]; !found {
+				return RowRecord{}, nil, validation("Expected values must cover all patched fields")
+			}
+		}
+		expectedFields, expectedValues, err := sortedFieldValues(ctx, queries, table, expected)
+		if err != nil {
+			return RowRecord{}, nil, err
+		}
+		check := sq.Select().From(table.qualifiedName()).PlaceholderFormat(sq.Dollar)
+		for index, field := range expectedFields {
+			check = check.Column(sq.Expr(field.sqlColumn()+" IS NOT DISTINCT FROM ?", expectedValues[index]))
+		}
+		query, args, err := check.Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): id}).ToSql()
+		if err != nil {
+			return RowRecord{}, nil, fmt.Errorf("build expected row values query: %w", err)
+		}
+		matches := make([]bool, len(expectedFields))
+		destinations := make([]any, len(matches))
+		for index := range matches {
+			destinations[index] = &matches[index]
+		}
+		if err := tx.QueryRow(ctx, query, args...).Scan(destinations...); err != nil {
+			return RowRecord{}, nil, fmt.Errorf("check expected row values: %w", err)
+		}
+		for _, match := range matches {
+			if !match {
+				return RowRecord{}, nil, apperr.New(409, "ERR_UNDO_CONFLICT", "The row changed; review and retry")
+			}
+		}
 	}
 	fields, values, err := sortedFieldValues(ctx, queries, table, input)
 	if err != nil {
@@ -1192,6 +1237,10 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 	record, changes, err := scanPatchedRow(queryUncachedRow(ctx, tx, query, args...), table, fields)
 	if err != nil {
 		return RowRecord{}, nil, fmt.Errorf("patch row: %w", err)
+	}
+	record.Previous = make(map[string]json.RawMessage, len(changes))
+	for fieldID, change := range changes {
+		record.Previous[fieldID] = change.Old
 	}
 	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
 		return RowRecord{}, nil, err
@@ -1238,7 +1287,7 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 		history := make([]historyWrite, 0, len(input))
 		for _, index := range order {
 			item := input[index]
-			record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields)
+			record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields, item.Expected)
 			if err != nil {
 				return err
 			}
@@ -1323,6 +1372,14 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 		if err := deletePhysicalRows(ctx, tx, table, sorted, actor, history); err != nil {
 			return err
 		}
+		for i := range records {
+			snapshot, found := history.snapshots[table.id.String()][records[i].ID]
+			if !found || snapshot.RestoreVersion == "" {
+				return errors.New("delete response is missing its history version")
+			}
+			records[i].RestoreVersion = snapshot.RestoreVersion
+		}
+		records[0].Cascaded = history.cascadedSnapshots(table.id.String(), seen)
 		result = records
 		return emitRows(ctx, tx, actor, table.id.String(), "row.deleted", records, nil)
 	})

@@ -115,6 +115,10 @@ func TestRowsRoundTripAllBatchOneKindsAndMaintainAuthorship(t *testing.T) {
 	if !rowTimeAfter(t, patched.Fields[updatedAt.ID], row.Fields[updatedAt.ID]) {
 		t.Fatal("updated_at did not advance after patch")
 	}
+	if got := string(patched.Previous[fieldsByType["text"].ID]); got != `"hello"` {
+		t.Fatalf("patch previous value = %s, want %s", got, `"hello"`)
+	}
+	patched.Previous = nil
 	read, err := f.service.GetRow(f.ctx, owner, ft.id(), row.ID)
 	if err != nil || !reflect.DeepEqual(read, patched) {
 		t.Fatalf("get row = %+v, %v; want %+v", read, err, patched)

@@ -100,6 +100,18 @@ Client-side per tab, last 50 actions. Each action stores an inverse operation:
 
 Schema changes (fields/tables) are **not** undoable (use Trash). If a cell was changed by someone else after our edit, undo of that cell asks for confirmation ("X changed it since; overwrite?") — detected by comparing current value with our post-edit value.
 
+T3.5 keeps at most 50 successful actions in memory per tab and clears redo
+after a new action. Mutations use authoritative prior values and actual link
+deltas; multi-part user actions remain one history entry. Guarded row patches
+compare expected values under lock. After confirmation they compare against the
+just-read value again, so a further race fails rather than overwriting silently;
+redo restores the value actually overwritten. Oversized guarded patches are
+split into bounded transactions, with compensation of completed steps on a
+known failure. An uncertain result clears the stack and is reported to the user.
+Delete inverses retain compact, versioned references to server-side snapshots;
+history retention, incompatible schema/link changes, or cascades above the
+restore limit can make a later undo unavailable.
+
 ## 6. Trash
 
 Soft-deleted workspace/book/table/field/view appear in the scope's Trash (owner only), restorable for 30 days (setting). Rows are not trashed (undo + history cover them).

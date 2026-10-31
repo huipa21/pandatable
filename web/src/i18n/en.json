@@ -52,6 +52,13 @@
     "uncertain": "The comment may not have been saved. Refresh before retrying.",
     "limit": "Comments must be at most 4096 UTF-8 bytes."
   },
+  "undo": {
+    "undo": "Undo",
+    "redo": "Redo",
+    "conflict": "{name} changed a cell since your edit. Overwrite their value?",
+    "unknownEditor": "Another user",
+    "partialFailure": "The action may be only partly applied. History was cleared; refresh and review the data."
+  },
   "history": {
     "tabs": "Row information",
     "details": "Details",
@@ -745,6 +752,8 @@
     "ERR_REQUIRED_FIELD": "A required field is missing.",
     "ERR_UNIQUE_CONFLICT": "A unique field already has this value.",
     "ERR_SCHEMA_CHANGED": "The table structure changed. Reload the table and try again.",
+    "ERR_UNDO_CONFLICT": "The row changed again. Review it and retry undo or redo.",
+    "ERR_UNDO_UNAVAILABLE": "This deleted-row snapshot is no longer available or no longer matches the table.",
     "ERR_UPLOAD_TOO_LARGE": "This file exceeds the per-file upload limit.",
     "ERR_ATTACHMENT_TYPE": "This file type is not allowed by the field.",
     "ERR_IMAGE_TOO_LARGE": "Image dimensions exceed the configured limit.",

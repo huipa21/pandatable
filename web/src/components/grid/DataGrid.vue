@@ -39,6 +39,7 @@ import type {
   HighlightColor,
   HighlightRule,
   RowMutation,
+  RowPatchMutation,
   RowQueryRequest,
   RowQueryResult,
   RowAggregate,
@@ -59,6 +60,13 @@ import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
+import {
+  patchUndoStep,
+  useUndoStore,
+  viewUndoStep,
+  type RowValues,
+  type UndoStep,
+} from '../../stores/undo'
 import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
 import FilterBuilder from '../filters/FilterBuilder.vue'
@@ -106,6 +114,7 @@ const auth = useAuthStore()
 const nav = useNavStore()
 const preferences = usePreferencesStore()
 const realtime = useRealtimeStore()
+const undo = useUndoStore()
 const host = ref<{ $el: HTMLElement & Components.RevoGrid }>()
 const ready = ref(false)
 const disposed = ref(false)
@@ -299,6 +308,8 @@ const columnState = useViewColumns({
     emit('viewUpdated', view)
     if (highlightsChanged) refreshHighlightedRows()
   },
+  recorded: (before, after) =>
+    undo.record([viewUndoStep(props.schema.table.id, before, after)]),
   message: (cause) =>
     t('grid.columnSaveFailed', { message: errorMessage(cause) }),
 })
@@ -1322,8 +1333,9 @@ function copy(event: CustomEvent<{ event: DataTransfer; data?: string[][] }>) {
 
 async function patchRows(
   patchRows: { id: string; index: number; fields: Record<string, RowValue> }[],
+  record = true,
 ) {
-  if (!patchRows.length) return true
+  if (!patchRows.length) return null
   const body = {
     rows: patchRows.map(({ id, fields }) => ({ id, fields })),
   }
@@ -1336,9 +1348,21 @@ async function patchRows(
     !requestBodyFits(body)
   ) {
     clipboardFailure(t('grid.pasteLimit'))
-    return false
+    return false as const
   }
   try {
+    const before: RowValues[] = patchRows.map((patch) => {
+      const current = rows.rowAt(patch.index)
+      if (!current || current.id !== patch.id)
+        throw new Error(t('grid.saveFailed'))
+      const fields: Record<string, RowValue> = {}
+      for (const id of Object.keys(patch.fields)) {
+        const value = current.fields[id]
+        if (value === undefined) throw new Error(t('grid.saveFailed'))
+        fields[id] = value
+      }
+      return { id: patch.id, fields }
+    })
     const result = await mutate<RowMutation>(
       `/tables/${props.schema.table.id}/rows`,
       'PATCH',
@@ -1350,6 +1374,12 @@ async function patchRows(
       result.rows.some((row, index) => row.id !== patchRows[index]?.id)
     )
       throw new Error(t('grid.saveFailed'))
+    const step = patchUndoStep(
+      props.schema.table.id,
+      result.previous ?? before,
+      result.rows,
+    )
+    if (record) undo.record([step])
     result.rows.forEach((row, index) => {
       const patch = patchRows[index]!
       rows.updateRow(patch.index, row)
@@ -1358,12 +1388,12 @@ async function patchRows(
     })
     if (columnState.config.value.highlight?.length)
       await refreshHighlightedRows()
-    return true
+    return step
   } catch (cause) {
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
     error.value = cause
-    return false
+    return false as const
   }
 }
 
@@ -1473,9 +1503,14 @@ async function savePaste(plan: PastePlan) {
   saving.value = true
   error.value = null
   try {
-    if (!(await patchRows(plan.patchRows))) return
+    const patch = await patchRows(plan.patchRows, false)
+    if (patch === false) return
+    const steps: (UndoStep | null)[] = [patch]
     if (plan.addedRows > 0) {
-      if (disposed.value || props.identity !== auth.user?.id) return
+      if (disposed.value || props.identity !== auth.user?.id) {
+        undo.record(steps)
+        return
+      }
       try {
         const inserted = await mutate<RowMutation>(
           `/tables/${props.schema.table.id}/rows`,
@@ -1484,6 +1519,11 @@ async function savePaste(plan: PastePlan) {
         )
         if (inserted.rows.length !== plan.insertRows.length)
           throw new Error(t('grid.saveFailed'))
+        steps.push({
+          kind: 'delete',
+          tableId: props.schema.table.id,
+          ids: inserted.rows.map((row) => row.id),
+        })
       } catch (cause) {
         if (
           cause instanceof RequestError &&
@@ -1491,12 +1531,14 @@ async function savePaste(plan: PastePlan) {
         )
           handleAccessFailure(cause)
         error.value = cause
+        undo.record(steps)
         if (plan.patchRows.length > 0) clipboardFailure(t('grid.partialPaste'))
         return
       }
+      undo.record(steps)
       if (disposed.value || props.identity !== auth.user?.id) return
       await initialize(plan.startRow, true)
-    }
+    } else undo.record(steps)
   } finally {
     if (!disposed.value) saving.value = false
   }
@@ -2070,12 +2112,22 @@ async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   saving.value = true
   error.value = null
   try {
-    const result = await mutate<{ row: DataRow }>(
+    const result = await mutate<RowPatchMutation>(
       `/tables/${props.schema.table.id}/rows/${row.id}`,
       'PATCH',
       { fields: { [item.field.id]: normalized.value } },
     )
     if (disposed.value || props.identity !== auth.user?.id) return
+    const before = result.previous ?? {
+      [item.field.id]: row.fields[item.field.id]!,
+    }
+    undo.record([
+      patchUndoStep(
+        props.schema.table.id,
+        [{ id: row.id, fields: before }],
+        [result.row],
+      ),
+    ])
     rows.updateRow(rowIndex, result.row)
     if (columnState.config.value.highlight?.length)
       await refreshHighlightedRows()
@@ -2108,9 +2160,21 @@ async function addRow() {
   error.value = null
   const anchor = rows.total
   try {
-    await mutate<RowMutation>(`/tables/${props.schema.table.id}/rows`, 'POST', {
-      rows: [{ fields: {} }],
-    })
+    const result = await mutate<RowMutation>(
+      `/tables/${props.schema.table.id}/rows`,
+      'POST',
+      {
+        rows: [{ fields: {} }],
+      },
+    )
+    if (result.rows.length !== 1) throw new Error(t('grid.saveFailed'))
+    undo.record([
+      {
+        kind: 'delete',
+        tableId: props.schema.table.id,
+        ids: [result.rows[0]!.id],
+      },
+    ])
     await initialize(anchor)
   } catch (cause) {
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
@@ -2251,11 +2315,15 @@ async function deleteSelected() {
     ),
   )
   try {
-    await mutate<RowMutation>(
+    const result = await mutate<RowMutation>(
       `/tables/${props.schema.table.id}/rows`,
       'DELETE',
       { ids },
     )
+    if (result.rows.length !== ids.length) throw new Error(t('grid.saveFailed'))
+    undo.record([
+      { kind: 'restore', tableId: props.schema.table.id, rows: result.rows },
+    ])
     selectedRows.value.clear()
     deleteDialog.value?.close()
     await initialize(anchor)

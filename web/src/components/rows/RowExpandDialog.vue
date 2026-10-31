@@ -20,6 +20,7 @@ import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
+import { patchUndoStep, useUndoStore } from '../../stores/undo'
 import FieldEditor from '../fields/FieldEditor.vue'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
@@ -48,6 +49,7 @@ const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
 const realtime = useRealtimeStore()
+const undo = useUndoStore()
 const resolveUser = (id: string) =>
   userLabel(props.identity, props.schema.table.id, id)
 const dialog = ref<HTMLDialogElement>()
@@ -245,6 +247,11 @@ async function save(value: WireValue) {
   }
   if (props.rowId === null) return
   const body = { fields: { [item.field.id]: value } }
+  const previous = row.value?.fields[item.field.id]
+  if (previous === undefined) {
+    error.value = new RequestError('ERR_SCHEMA_CHANGED', 409)
+    return
+  }
   saved.value = false
   if (
     new TextEncoder().encode(JSON.stringify(body)).length > rowPatchBodyLimit
@@ -263,6 +270,18 @@ async function save(value: WireValue) {
       signal,
     )
     if (!current(token)) return
+    undo.record([
+      patchUndoStep(
+        props.schema.table.id,
+        [
+          {
+            id: result.row.id,
+            fields: result.previous ?? { [item.field.id]: previous },
+          },
+        ],
+        [result.row],
+      ),
+    ])
     row.value = result.row
     preserveUploads.value = true
     await nextTick()
@@ -307,6 +326,9 @@ async function create() {
     const created = result.rows[0]
     if (result.rows.length !== 1 || !created || !/^[1-9]\d*$/.test(created.id))
       throw new Error('Row creation returned an unsupported response')
+    undo.record([
+      { kind: 'delete', tableId: props.schema.table.id, ids: [created.id] },
+    ])
     emit('created', created.id)
   } catch (cause) {
     if (current(token)) failure(cause)

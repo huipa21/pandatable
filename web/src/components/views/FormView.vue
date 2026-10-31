@@ -3,12 +3,18 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../../api/client'
-import type { FormConfig, TableSchema, TableView } from '../../api/types'
+import type {
+  FormConfig,
+  RowPatchMutation,
+  TableSchema,
+  TableView,
+} from '../../api/types'
 import { bindField } from '../../fields/registry'
 import type { FieldEnv, WireValue } from '../../fields/types'
 import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
+import { useUndoStore } from '../../stores/undo'
 import FieldEditor from '../fields/FieldEditor.vue'
 
 const props = defineProps<{
@@ -21,6 +27,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
+const undo = useUndoStore()
 const emptyForm = (): FormConfig => ({
   title: '',
   description: '',
@@ -153,12 +160,22 @@ async function submit() {
   error.value = ''
   submitted.value = false
   try {
-    await request(
+    const result = await request<RowPatchMutation>(
       `/views/${encodeURIComponent(props.view.id)}/form-submit`,
       'POST',
       body,
       AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
     )
+    if (!result.row?.id)
+      throw new Error('Form submission returned an unsupported response')
+    if (props.identity === auth.user?.id)
+      undo.record([
+        {
+          kind: 'delete',
+          tableId: props.schema.table.id,
+          ids: [result.row.id],
+        },
+      ])
     preserveUploads.value = true
     submitted.value = true
     if (form.value.afterSubmit === 'new') {

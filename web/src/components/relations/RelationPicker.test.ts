@@ -4,6 +4,7 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { i18n, loadLocale } from '../../i18n'
 import type { DataRow, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
+import { useUndoStore } from '../../stores/undo'
 import { navUser, tableSchema } from '../../test/navigation'
 import RelationPicker from './RelationPicker.vue'
 
@@ -119,7 +120,26 @@ it('confirms one-to-one replacement with both row labels and persists replacemen
       )
     }
     if (url.endsWith('/links/relation-field'))
-      return Response.json({ row: replacement, eventId: 'event' })
+      return Response.json({
+        row: replacement,
+        changes: [
+          {
+            tableId: 't',
+            rowId: '8',
+            fieldId: 'relation-field',
+            targetId: '20',
+            action: 'unlink',
+          },
+          {
+            tableId: 't',
+            rowId: '10',
+            fieldId: 'relation-field',
+            targetId: '20',
+            action: 'link',
+          },
+        ],
+        eventId: 'event',
+      })
     throw new Error(`Unexpected request: ${url}`)
   })
   const confirm = vi.fn(() => true)
@@ -169,4 +189,22 @@ it('confirms one-to-one replacement with both row labels and persists replacemen
     replace: true,
   })
   expect(wrapper.emitted('updated')?.[0]?.[0]).toEqual(replacement)
+  expect(useUndoStore().undoStack[0]?.steps).toEqual([
+    {
+      kind: 'link',
+      tableId: 't',
+      rowId: '10',
+      fieldId: 'relation-field',
+      add: [],
+      remove: ['20'],
+    },
+    {
+      kind: 'link',
+      tableId: 't',
+      rowId: '8',
+      fieldId: 'relation-field',
+      add: ['20'],
+      remove: [],
+    },
+  ])
 })

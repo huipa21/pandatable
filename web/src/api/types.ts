@@ -371,6 +371,8 @@ export interface DataRow {
   commentCount?: number
   _hl_row?: HighlightColor | null
   _hl_cells?: Record<string, HighlightColor>
+  cascaded?: { tableId: string; rows: DataRow[] }[]
+  restoreVersion?: string
 }
 
 export interface RowHistoryChange {
@@ -518,7 +520,11 @@ export interface RowInsertRequest {
 }
 
 export interface RowPatchRequest {
-  rows: { id: string; fields: Record<string, RowValue> }[]
+  rows: {
+    id: string
+    fields: Record<string, RowValue>
+    expected?: Record<string, RowValue>
+  }[]
 }
 
 export interface RowDeleteRequest {
@@ -527,10 +533,20 @@ export interface RowDeleteRequest {
 
 export interface RowMutation extends AuthMutation {
   rows: DataRow[]
+  previous?: { id: string; fields: Record<string, RowValue> }[]
+}
+
+export interface RelationDelta {
+  tableId: string
+  rowId: string
+  fieldId: string
+  targetId: string
+  action: 'link' | 'unlink'
 }
 
 export interface LinkMutation extends AuthMutation {
   row: DataRow
+  changes?: RelationDelta[]
 }
 
 export interface RelationMutation extends AuthMutation {
@@ -541,6 +557,7 @@ export interface RelationMutation extends AuthMutation {
 
 export interface RowPatchMutation extends AuthMutation {
   row: DataRow
+  previous?: Record<string, RowValue>
 }
 
 export interface SystemMetric<T> {

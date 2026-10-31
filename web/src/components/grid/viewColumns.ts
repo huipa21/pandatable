@@ -150,6 +150,7 @@ export function useViewColumns(options: {
   canWrite: () => boolean
   failure: (error: unknown) => void
   updated: (view: TableView) => void
+  recorded?: (before: TableView, after: TableView) => void
   message: (error: unknown) => string
 }) {
   const view = () =>
@@ -259,6 +260,7 @@ export function useViewColumns(options: {
       return
     clearTimeout(timer)
     const own = generation
+    const before = authoritative
     const batch = [...intents]
     const batchHighlights = pendingHighlights
     const batchAggregates = pendingAggregates
@@ -292,6 +294,7 @@ export function useViewColumns(options: {
         { ifMatch: authoritative.version },
       )
       if (!valid(own)) return
+      options.recorded?.(before, result.view)
       authoritative = result.view
       intents.splice(0, batch.length)
       if (pendingHighlights === batchHighlights) pendingHighlights = undefined

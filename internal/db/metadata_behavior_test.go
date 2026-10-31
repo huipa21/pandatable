@@ -146,6 +146,7 @@ func TestMetadataDefaultsPostgreSQL(t *testing.T) {
 		f.personalView, f.grant, f.comment, f.notification, f.attachment, f.backup} {
 		assertSQL(t, ctx, tx, `SELECT uuid_extract_version($1::uuid) = 7`, id)
 	}
+
 	assertSQL(t, ctx, tx, `SELECT description = '' AND created_at = now() FROM meta.groups WHERE id = $1`, f.group)
 	assertSQL(t, ctx, tx, `SELECT icon IS NULL AND color IS NULL AND deleted_at IS NULL AND created_at = now()
 		FROM meta.workspaces WHERE id = $1`, f.workspace)
@@ -171,6 +172,20 @@ func TestMetadataDefaultsPostgreSQL(t *testing.T) {
 	execSQL(t, ctx, tx, `INSERT INTO meta.fields (table_id, name, ui_type, position, default_json)
 		VALUES ($1, 'Computed', 'formula', 2, '42')`, f.table)
 	t.Log("actual UUIDv7/default/timestamp/identity values, multiple virtual columns and table-level type_change verified")
+}
+
+func TestRestoreSystemConstraintPostgreSQL(t *testing.T) {
+	pool := database.Open(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	tx := metadataTx(t, ctx, pool)
+	f := seedMetadata(t, ctx, tx)
+	expectSQLState(t, ctx, tx, "23514",
+		`UPDATE meta.row_history SET restore_system = '{}' WHERE table_id = $1`, f.table)
+	expectSQLState(t, ctx, tx, "23514",
+		`UPDATE meta.row_history SET action = 'delete', restore_system = '[]' WHERE table_id = $1`, f.table)
+	execSQL(t, ctx, tx,
+		`UPDATE meta.row_history SET action = 'delete', restore_system = '{}' WHERE table_id = $1`, f.table)
 }
 
 func TestMetadataConstraintsPostgreSQL(t *testing.T) {

@@ -143,6 +143,7 @@ var metadataColumns = map[string][]columnSpec{
 		{"action", "text", false, ""},
 		{"changes", "jsonb", false, ""},
 		{"created_at", "timestamp with time zone", false, "now()"},
+		{"restore_system", "jsonb", true, ""},
 	},
 	"attachments": {
 		{"id", "uuid", false, "uuidv7()"},

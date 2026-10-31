@@ -496,6 +496,39 @@ func (q *Queries) InsertDefaultGridView(ctx context.Context, arg InsertDefaultGr
 	return id, err
 }
 
+const insertDeleteHistoryBatch = `-- name: InsertDeleteHistoryBatch :many
+INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes, restore_system)
+SELECT (item->>'table_id')::uuid, (item->>'row_id')::bigint,
+       (item->>'user_id')::uuid, item->>'action', item->'changes', item->'restore_system'
+FROM jsonb_array_elements($1::jsonb) AS item
+RETURNING id, row_id
+`
+
+type InsertDeleteHistoryBatchRow struct {
+	ID    int64
+	RowID pgtype.Int8
+}
+
+func (q *Queries) InsertDeleteHistoryBatch(ctx context.Context, entries []byte) ([]InsertDeleteHistoryBatchRow, error) {
+	rows, err := q.db.Query(ctx, insertDeleteHistoryBatch, entries)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InsertDeleteHistoryBatchRow
+	for rows.Next() {
+		var i InsertDeleteHistoryBatchRow
+		if err := rows.Scan(&i.ID, &i.RowID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertField = `-- name: InsertField :one
 INSERT INTO meta.fields (table_id, name, ui_type, pg_column, pg_type, is_system, is_required, position)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -631,9 +664,9 @@ func (q *Queries) InsertRowComment(ctx context.Context, arg InsertRowCommentPara
 }
 
 const insertRowHistoryBatch = `-- name: InsertRowHistoryBatch :exec
-INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes)
+INSERT INTO meta.row_history (table_id, row_id, user_id, action, changes, restore_system)
 SELECT (item->>'table_id')::uuid, (item->>'row_id')::bigint,
-       (item->>'user_id')::uuid, item->>'action', item->'changes'
+       (item->>'user_id')::uuid, item->>'action', item->'changes', item->'restore_system'
 FROM jsonb_array_elements($1::jsonb) AS item
 `
 
@@ -1145,7 +1178,7 @@ func (q *Queries) ListRowFields(ctx context.Context, tableID pgtype.UUID) ([]Lis
 
 const listRowHistory = `-- name: ListRowHistory :many
 SELECT h.id, h.user_id, COALESCE(u.display_name, '')::text AS author_name,
-       h.action, h.changes, h.created_at
+       h.action, h.changes, h.created_at, h.restore_system
 FROM meta.row_history h
 LEFT JOIN meta.users u ON u.id = h.user_id
 WHERE h.table_id = $1::uuid AND h.row_id = $2::bigint
@@ -1161,12 +1194,13 @@ type ListRowHistoryParams struct {
 }
 
 type ListRowHistoryRow struct {
-	ID         int64
-	UserID     pgtype.UUID
-	AuthorName string
-	Action     string
-	Changes    []byte
-	CreatedAt  pgtype.Timestamptz
+	ID            int64
+	UserID        pgtype.UUID
+	AuthorName    string
+	Action        string
+	Changes       []byte
+	CreatedAt     pgtype.Timestamptz
+	RestoreSystem []byte
 }
 
 func (q *Queries) ListRowHistory(ctx context.Context, arg ListRowHistoryParams) ([]ListRowHistoryRow, error) {
@@ -1190,6 +1224,7 @@ func (q *Queries) ListRowHistory(ctx context.Context, arg ListRowHistoryParams) 
 			&i.Action,
 			&i.Changes,
 			&i.CreatedAt,
+			&i.RestoreSystem,
 		); err != nil {
 			return nil, err
 		}

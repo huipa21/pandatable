@@ -52,6 +52,13 @@
     "uncertain": "评论可能尚未保存，请刷新后再试。",
     "limit": "评论最多为 4096 个 UTF-8 字节。"
   },
+  "undo": {
+    "undo": "撤销",
+    "redo": "重做",
+    "conflict": "{name} 在你编辑后更改了单元格。要覆盖其值吗？",
+    "unknownEditor": "其他用户",
+    "partialFailure": "操作可能只执行了一部分。历史记录已清除，请刷新并检查数据。"
+  },
   "history": {
     "tabs": "行信息",
     "details": "详情",
@@ -745,6 +752,8 @@
     "ERR_REQUIRED_FIELD": "缺少必填字段。",
     "ERR_UNIQUE_CONFLICT": "唯一字段中已存在此值。",
     "ERR_SCHEMA_CHANGED": "表结构已更改，请重新加载后重试。",
+    "ERR_UNDO_CONFLICT": "该行再次发生更改。请检查后重试撤销或重做。",
+    "ERR_UNDO_UNAVAILABLE": "已删除行的快照不可用，或与当前表结构不再匹配。",
     "ERR_UPLOAD_TOO_LARGE": "此文件超过单文件上传限制。",
     "ERR_ATTACHMENT_TYPE": "此字段不允许上传该文件类型。",
     "ERR_IMAGE_TOO_LARGE": "图片尺寸超过已配置的上限。",

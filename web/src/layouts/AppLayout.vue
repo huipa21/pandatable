@@ -7,6 +7,7 @@ import { usePreferencesStore } from '../stores/preferences'
 import { useAuthStore } from '../stores/auth'
 import { errorMessage, RequestError } from '../api/client'
 import { useAppSettingsStore } from '../stores/appSettings'
+import { useUndoStore } from '../stores/undo'
 import NavSidebar from '../components/navigation/NavSidebar.vue'
 import NotificationBell from '../components/notifications/NotificationBell.vue'
 
@@ -14,6 +15,7 @@ const { t } = useI18n()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const appSettings = useAppSettingsStore()
+const undo = useUndoStore()
 const router = useRouter()
 const route = useRoute()
 const navigationVisible = computed(
@@ -105,6 +107,22 @@ async function logout() {
     <nav v-if="auth.user" class="session-nav" :aria-label="t('auth.account')">
       <template v-if="!auth.user.mustChangePassword">
         <RouterLink to="/home">{{ t('auth.homeTitle') }}</RouterLink>
+        <NButton
+          size="small"
+          :disabled="!undo.canUndo"
+          aria-keyshortcuts="Control+Z Meta+Z"
+          @click="undo.undo"
+        >
+          {{ t('undo.undo') }}
+        </NButton>
+        <NButton
+          size="small"
+          :disabled="!undo.canRedo"
+          aria-keyshortcuts="Control+Y Meta+Shift+Z"
+          @click="undo.redo"
+        >
+          {{ t('undo.redo') }}
+        </NButton>
         <NotificationBell />
         <RouterLink to="/profile">{{ t('profile.title') }}</RouterLink>
         <RouterLink v-if="auth.user.role === 'admin'" to="/admin/users">

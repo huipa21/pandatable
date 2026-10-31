@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch, watchEffect } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
@@ -17,6 +17,8 @@ import { useAppSettingsStore } from './stores/appSettings'
 import { useAuthStore } from './stores/auth'
 import { useNavStore } from './stores/nav'
 import { useRealtimeStore } from './stores/realtime'
+import { useUndoStore } from './stores/undo'
+import { errorMessage } from './api/client'
 import { NButton } from 'naive-ui'
 import AppLayout from './layouts/AppLayout.vue'
 
@@ -25,6 +27,7 @@ const appSettings = useAppSettingsStore()
 const auth = useAuthStore()
 const nav = useNavStore()
 const realtime = useRealtimeStore()
+const undo = useUndoStore()
 const router = useRouter()
 const { t } = useI18n()
 const uiLocale = computed(() => (preferences.locale === 'zh-CN' ? zhCN : enUS))
@@ -45,12 +48,43 @@ const removeRealtimeListener = realtime.onGlobal((event) => {
     void nav.refresh(true)
   }
 })
+
+function undoKeydown(event: KeyboardEvent) {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.altKey ||
+    !(event.ctrlKey || event.metaKey) ||
+    !auth.user ||
+    auth.user.mustChangePassword
+  )
+    return
+  const key = event.key.toLowerCase()
+  if (key !== 'z' && key !== 'y') return
+  if (
+    event
+      .composedPath()
+      .some(
+        (target) =>
+          target instanceof Element &&
+          target.matches('input, textarea, select, [contenteditable="true"]'),
+      )
+  )
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  if (key === 'y' || event.shiftKey) void undo.redo()
+  else void undo.undo()
+}
+
+onMounted(() => document.addEventListener('keydown', undoKeydown, true))
 watch(
   () => (auth.user?.mustChangePassword ? null : (auth.user?.id ?? null)),
   (id) => realtime.start(id),
   { immediate: true, flush: 'sync' },
 )
 onBeforeUnmount(() => {
+  document.removeEventListener('keydown', undoKeydown, true)
   removeRealtimeListener()
   realtime.stop()
 })
@@ -83,6 +117,12 @@ onBeforeUnmount(() => {
       </NAlert>
       <NAlert v-if="preferences.localeError" type="error" role="alert">
         {{ t('common.localeError') }}
+      </NAlert>
+      <NAlert v-if="undo.inconsistent" type="error" role="alert">
+        {{ t('undo.partialFailure') }}
+      </NAlert>
+      <NAlert v-else-if="undo.error" type="error" role="alert">
+        {{ errorMessage(undo.error) }}
       </NAlert>
       <RouterView />
     </AppLayout>

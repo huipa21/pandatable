@@ -51,6 +51,14 @@ type LinkChange struct {
 	Replace bool
 }
 
+type RelationDelta struct {
+	TableID  string `json:"tableId"`
+	RowID    string `json:"rowId"`
+	FieldID  string `json:"fieldId"`
+	TargetID string `json:"targetId"`
+	Action   string `json:"action"`
+}
+
 type relationRecord struct {
 	id, kind, onDelete string
 	bookID             pgtype.UUID
@@ -714,6 +722,14 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 		}
 		if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
 			return err
+		}
+		record.LinkChanges = make([]RelationDelta, 0, len(historyEdges))
+		for _, edge := range historyEdges {
+			record.LinkChanges = append(record.LinkChanges, RelationDelta{
+				TableID: relation.parentTable.String(), RowID: strconv.FormatInt(edge.parent, 10),
+				FieldID: relation.parentField.String(), TargetID: strconv.FormatInt(edge.child, 10),
+				Action: edge.action,
+			})
 		}
 		result = record
 		if err := emitRows(ctx, tx, actor, table.id.String(), "row.updated", []RowRecord{record}, []string{fieldID}); err != nil {

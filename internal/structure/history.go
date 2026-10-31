@@ -42,11 +42,12 @@ type HistoryListing struct {
 }
 
 type historyWrite struct {
-	TableID string                   `json:"table_id"`
-	RowID   int64                    `json:"row_id"`
-	UserID  string                   `json:"user_id"`
-	Action  string                   `json:"action"`
-	Changes map[string]HistoryChange `json:"changes"`
+	TableID       string                     `json:"table_id"`
+	RowID         int64                      `json:"row_id"`
+	UserID        string                     `json:"user_id"`
+	Action        string                     `json:"action"`
+	Changes       map[string]HistoryChange   `json:"changes"`
+	RestoreSystem map[string]json.RawMessage `json:"restore_system,omitempty"`
 }
 
 func insertHistory(ctx context.Context, tx pgx.Tx, entries []historyWrite) error {
@@ -69,21 +70,36 @@ func snapshotHistory(table rowTable, record RowRecord, actor Actor, action strin
 		return historyWrite{}, err
 	}
 	changes := make(map[string]HistoryChange)
+	var system map[string]json.RawMessage
+	if action == "delete" {
+		system = make(map[string]json.RawMessage)
+	}
 	for _, field := range table.fields {
-		if field.system || field.formula != nil || isComputedKind(string(field.kind)) {
+		if field.system {
+			if action == "delete" {
+				value, ok := record.Fields[field.id]
+				if !ok {
+					return historyWrite{}, errors.New("row history snapshot is missing a system field")
+				}
+				system[field.id] = value
+			}
+			continue
+		}
+		if field.formula != nil || isComputedKind(string(field.kind)) {
 			continue
 		}
 		value, ok := record.Fields[field.id]
 		if !ok {
 			return historyWrite{}, errors.New("row history snapshot is missing a stored field")
 		}
-		if action == "insert" {
+		if action == "insert" || action == "restore" {
 			changes[field.id] = HistoryChange{New: value}
 		} else {
 			changes[field.id] = HistoryChange{Old: value}
 		}
 	}
-	return historyWrite{TableID: table.id.String(), RowID: id, UserID: actor.ID, Action: action, Changes: changes}, nil
+	return historyWrite{TableID: table.id.String(), RowID: id, UserID: actor.ID, Action: action,
+		Changes: changes, RestoreSystem: system}, nil
 }
 
 func snapshotHistories(table rowTable, records []RowRecord, actor Actor, action string) ([]historyWrite, error) {
