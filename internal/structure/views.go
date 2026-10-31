@@ -35,6 +35,22 @@ type ViewColumns struct {
 	GroupBy    []string        `json:"groupBy,omitempty"`
 	Aggregates []ViewAggregate `json:"aggregates,omitempty"`
 	Highlight  []HighlightRule `json:"highlight,omitempty"`
+	Form       *FormConfig     `json:"form,omitempty"`
+	FormSet    bool            `json:"-"`
+}
+
+type FormConfig struct {
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+	Fields      []FormField `json:"fields"`
+	AfterSubmit string      `json:"afterSubmit"`
+}
+
+type FormField struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Help     string `json:"help"`
+	Required bool   `json:"required"`
 }
 
 type ViewSort struct {
@@ -65,6 +81,13 @@ func readViewColumns(raw []byte, fields []Field) (ViewColumns, error) {
 		return ViewColumns{}, fmt.Errorf("decode view columns: %w", err)
 	}
 	config.Highlight = normalizeHighlightRules(config.Highlight, fieldIDs(fields))
+	if config.Form != nil {
+		form, err := normalizeFormConfig(*config.Form, fieldIDs(fields))
+		if err != nil {
+			return ViewColumns{}, err
+		}
+		config.Form = &form
+	}
 	return normalizeViewColumns(config, fields)
 }
 
@@ -81,6 +104,7 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 		GroupBy:    append([]string(nil), config.GroupBy...),
 		Aggregates: append([]ViewAggregate(nil), config.Aggregates...),
 		Highlight:  append([]HighlightRule(nil), config.Highlight...),
+		Form:       config.Form,
 	}
 	sortable := make(map[string]bool, len(fields))
 	for _, field := range fields {
@@ -122,6 +146,25 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 		}
 	}
 	result.Frozen = max(0, min(config.Frozen, visible))
+	return result, nil
+}
+
+func normalizeFormConfig(config FormConfig, live map[string]bool) (FormConfig, error) {
+	if config.AfterSubmit != "message" && config.AfterSubmit != "new" {
+		return FormConfig{}, fmt.Errorf("stored form after-submit behavior is invalid")
+	}
+	result := FormConfig{
+		Title: config.Title, Description: config.Description,
+		Fields: make([]FormField, 0, len(config.Fields)), AfterSubmit: config.AfterSubmit,
+	}
+	seen := make(map[string]bool, len(config.Fields))
+	for _, field := range config.Fields {
+		if !live[field.ID] || seen[field.ID] {
+			continue
+		}
+		seen[field.ID] = true
+		result.Fields = append(result.Fields, field)
+	}
 	return result, nil
 }
 
@@ -171,6 +214,93 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 		return nil
 	})
 	return result, err
+}
+
+func (s *Service) UpdateViewForm(ctx context.Context, actor Actor, id string, version int32, input FormConfig) (View, error) {
+	uuid, ok := acl.ParseUUID(id)
+	if !ok {
+		return View{}, acl.ErrNotFound()
+	}
+	view, err := s.queries.GetViewForQuery(ctx, uuid)
+	if err != nil {
+		return View{}, notFoundIfNoRows(err, "read view for form save")
+	}
+	if view.Scope == "personal" && (!view.OwnerID.Valid || view.OwnerID.String() != actor.ID) {
+		return View{}, acl.ErrNotFound()
+	}
+	user, ok := acl.ParseUUID(actor.ID)
+	if !ok {
+		return View{}, acl.ErrValidation()
+	}
+	var result View
+	err = s.withViewTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+		q := structuresql.New(tx)
+		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{ID: uuid, TableID: table.id})
+		if err != nil {
+			return notFoundIfNoRows(err, "lock view form")
+		}
+		if err := authorizeViewMutation(ctx, s, tx, actor, user, table, stored.Scope, stored.OwnerID, stored.Locked, false); err != nil {
+			return err
+		}
+		if stored.Type != "form" || version < 1 {
+			return validation("A form view configuration is required")
+		}
+		if stored.Version != version {
+			return viewVersionConflict()
+		}
+		form, err := validateFormConfig(input, table)
+		if err != nil {
+			return err
+		}
+		var config map[string]json.RawMessage
+		if err := json.Unmarshal(stored.Config, &config); err != nil {
+			return fmt.Errorf("decode stored view config: %w", err)
+		}
+		if config == nil {
+			return fmt.Errorf("stored view config is not an object")
+		}
+		encoded, err := json.Marshal(form)
+		if err != nil {
+			return fmt.Errorf("encode form config: %w", err)
+		}
+		config["form"] = encoded
+		raw, err := json.Marshal(config)
+		if err != nil {
+			return fmt.Errorf("encode merged view config: %w", err)
+		}
+		if err := q.SaveManagedView(ctx, structuresql.SaveManagedViewParams{
+			ID: uuid, Name: stored.Name, Locked: stored.Locked, Config: raw,
+		}); err != nil {
+			return fmt.Errorf("save form config: %w", err)
+		}
+		result, err = managedView(stored.ID, stored.Name, stored.Type, stored.Scope,
+			stored.Locked, stored.Position, stored.Version+1, raw, table)
+		return err
+	})
+	return result, err
+}
+
+func validateFormConfig(config FormConfig, table rowTable) (FormConfig, error) {
+	if config.AfterSubmit != "message" && config.AfterSubmit != "new" {
+		return FormConfig{}, validation("Form after-submit behavior is invalid")
+	}
+	if config.Fields == nil || len(config.Fields) > len(table.fields) {
+		return FormConfig{}, validation("Form fields are invalid")
+	}
+	seen := make(map[string]bool, len(config.Fields))
+	for _, item := range config.Fields {
+		field, live := table.byID[item.ID]
+		parsed, valid := acl.ParseUUID(item.ID)
+		if !live || !valid || parsed.String() != item.ID || seen[item.ID] {
+			return FormConfig{}, validation("Form fields must reference unique live table fields")
+		}
+		if field.system || field.relation != nil || field.computed != nil || field.formula != nil ||
+			field.codec.ReadOnly() {
+			return FormConfig{}, validation("Form fields must be writable")
+		}
+		seen[item.ID] = true
+	}
+	return config, nil
 }
 
 func normalizeManagedViewConfig(ctx context.Context, tx pgx.Tx, actor Actor, table rowTable,

@@ -1,12 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"pandatable/internal/apperr"
 	"pandatable/internal/auth"
 	"pandatable/internal/structure"
 )
@@ -15,7 +17,36 @@ const (
 	bulkRowsBodyLimit      = 512 << 10
 	bulkDeleteBodyLimit    = 64 << 10
 	attachmentRowBodyLimit = 64 << 10
+	formSubmitBodyLimit    = 64 << 10
 )
+
+func (api *authHTTP) submitForm(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		Fields json.RawMessage `json:"fields"`
+	}
+	if err := decodeJSONLimit(w, r, &input, formSubmitBodyLimit); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	if len(input.Fields) == 0 || bytes.Equal(bytes.TrimSpace(input.Fields), []byte("null")) {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Form fields must be an object"))
+		return
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(input.Fields, &fields); err != nil || fields == nil {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Form fields must be an object"))
+		return
+	}
+	row, err := api.structure.SubmitForm(r.Context(), actorOf(user), chi.URLParam(r, "id"), fields)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, struct {
+		Row     structure.RowRecord `json:"row"`
+		EventID string              `json:"eventId"`
+	}{row, rand.Text()})
+}
 
 func (api *authHTTP) queryRows(w http.ResponseWriter, r *http.Request, user auth.User) {
 	var input structure.RowQueryRequest

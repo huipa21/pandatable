@@ -488,6 +488,11 @@ and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-20
 - Copy/paste and fill-down are desktop features; bulk select + delete available via long-press.
 - Form view works natively on mobile.
 
+T2.13's form builder and submission view use the same accessible field editors
+on desktop and mobile. The form remains a single-column layout at 390 px,
+supports keyboard/touch controls, and shows read access without an enabled
+submit action.
+
 ### T1.19 implemented mobile grid (D-141/D-142)
 
 The bullets above describe the eventual mobile product; T1.19 implements only

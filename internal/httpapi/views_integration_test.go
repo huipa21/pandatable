@@ -90,6 +90,95 @@ func TestViewColumnsHTTPPayloadVersionAndPermissions(t *testing.T) {
 	f.expectStatus(f.fieldCall(owner, "PATCH", path, body, "2"), 404, "ERR_NOT_FOUND")
 }
 
+func TestFormViewHTTPConfigurationSubmissionAndPermissions(t *testing.T) {
+	f := newACLFixture(t)
+	owner, writer, reader, stranger, admin := f.user("user", false), f.user("user", false),
+		f.user("user", false), f.user("user", false), f.user("admin", false)
+	workspace := f.newWorkspace(owner, "Forms")
+	book := f.newBook(owner, workspace.ID, "Book")
+	table := f.newTable(owner, book.ID, "Requests")
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", writer.id, acl.Write)
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", reader.id, acl.Read)
+	fieldID := *table.Table.DisplayFieldID
+	created := decode[viewResponse](f, f.api(owner, "POST", "/tables/"+table.Table.ID+"/views",
+		`{"name":"Intake","type":"form","scope":"shared"}`), 201)
+	viewID := created.View.ID
+	if created.View.Type != "form" || created.View.Config.Form == nil ||
+		created.View.Config.Form.AfterSubmit != "message" || len(created.View.Config.Form.Fields) != 0 {
+		t.Fatalf("new form view = %+v", created.View)
+	}
+
+	formBody := fmt.Sprintf(`{"config":{"form":{"title":"Intake","description":"Tell us what you need.","fields":[{"id":%q,"label":"Request title","help":"Use a short summary.","required":true}],"afterSubmit":"new"}}}`, fieldID)
+	saved := decode[viewResponse](f, f.fieldCall(owner, "PATCH", "/views/"+viewID, formBody, "1"), 200)
+	if saved.View.Version != 2 || saved.View.Config.Form == nil ||
+		saved.View.Config.Form.Title != "Intake" ||
+		saved.View.Config.Form.Fields[0].Label != "Request title" ||
+		saved.View.Config.Form.AfterSubmit != "new" || len(saved.View.Config.Fields) == 0 {
+		t.Fatalf("saved form config = %+v", saved.View)
+	}
+	schema := decode[structure.TableSchema](f, f.api(reader, "GET",
+		"/tables/"+table.Table.ID+"/schema", ""), 200)
+	var schemaForm *structure.FormConfig
+	for _, item := range schema.Views {
+		if item.ID == viewID {
+			schemaForm = item.Config.Form
+		}
+	}
+	if schemaForm == nil || schemaForm.Description != "Tell us what you need." {
+		t.Fatalf("form config did not persist in schema: %+v", schema.Views)
+	}
+
+	invalidForms := []string{
+		`{"config":{"form":null}}`,
+		fmt.Sprintf(`{"config":{"form":{"title":"","description":"","fields":[{"id":%q,"label":"A","help":"","required":false},{"id":%q,"label":"B","help":"","required":false}],"afterSubmit":"new"}}}`, fieldID, fieldID),
+		`{"config":{"form":{"title":"","description":"","fields":[{"id":"00000000-0000-0000-0000-000000000001","label":"A","help":"","required":false}],"afterSubmit":"new"}}}`,
+		fmt.Sprintf(`{"config":{"form":{"title":"","description":"","fields":[{"id":%q,"label":"A","help":"","required":false}],"afterSubmit":"invalid"}}}`, fieldID),
+	}
+	for _, body := range invalidForms {
+		f.expectStatus(f.fieldCall(owner, "PATCH", "/views/"+viewID, body, "2"), 400, "ERR_VALIDATION")
+	}
+	f.expectStatus(f.fieldCall(owner, "PATCH", "/views/"+viewID, formBody), 400, "ERR_VALIDATION")
+
+	submitPath := "/views/" + viewID + "/form-submit"
+	for user, status := range map[*aclUser]int{
+		reader: 403, stranger: 404, admin: 404,
+	} {
+		f.expectStatus(f.api(user, "POST", submitPath,
+			fmt.Sprintf(`{"fields":{%q:"Unauthorized"}}`, fieldID)),
+			status, map[int]string{403: "ERR_PERMISSION_DENIED", 404: "ERR_NOT_FOUND"}[status])
+	}
+	f.expectStatus(f.api(writer, "POST", submitPath, `{}`), 400, "ERR_VALIDATION")
+	f.expectStatus(f.api(writer, "POST", submitPath, `{"fields":null}`), 400, "ERR_VALIDATION")
+	f.expectStatus(f.api(writer, "POST", submitPath, `{"fields":{}}`), 400, "ERR_REQUIRED_FIELD")
+	f.expectStatus(f.api(writer, "POST", submitPath,
+		`{"fields":{"00000000-0000-0000-0000-000000000001":"Not configured"}}`),
+		400, "ERR_VALIDATION")
+	f.expectStatus(f.api(writer, "POST", submitPath,
+		fmt.Sprintf(`{"fields":{%q:123}}`, fieldID)), 400, "ERR_VALIDATION")
+	f.expectStatus(f.api(writer, "POST", "/views/"+table.Views[0].ID+"/form-submit",
+		fmt.Sprintf(`{"fields":{%q:"Not a form"}}`, fieldID)), 400, "ERR_VALIDATION")
+	f.exec(`UPDATE meta.views
+		SET config=jsonb_set(config, '{form,fields,0,id}', to_jsonb('00000000-0000-0000-0000-000000000001'::text))
+		WHERE id=$1`, viewID)
+	f.expectStatus(f.api(writer, "POST", submitPath,
+		fmt.Sprintf(`{"fields":{%q:"Stale form"}}`, fieldID)), 400, "ERR_VALIDATION")
+	f.exec(`UPDATE meta.views SET config=jsonb_set(config, '{form,fields,0,id}', to_jsonb($2::text))
+		WHERE id=$1`, viewID, fieldID)
+
+	type submitResponse struct {
+		Row structure.RowRecord `json:"row"`
+	}
+	submitted := decode[submitResponse](f, f.api(writer, "POST", submitPath,
+		fmt.Sprintf(`{"fields":{%q:"Approved request"}}`, fieldID)), 201)
+	if submitted.Row.ID == "" || string(submitted.Row.Fields[fieldID]) != `"Approved request"` {
+		t.Fatalf("submitted row = %+v", submitted.Row)
+	}
+	query := decode[structure.RowQueryResult](f, f.api(reader, "POST", "/views/"+viewID+"/query", `{}`), 200)
+	if len(query.Rows) != 1 || query.Rows[0].ID != submitted.Row.ID {
+		t.Fatalf("form submission created rows = %+v", query.Rows)
+	}
+}
+
 func TestViewManagementHTTPAT506AT507(t *testing.T) {
 	f := newACLFixture(t)
 	owner, writer, reader := f.user("user", false), f.user("user", false), f.user("user", false)

@@ -19,6 +19,10 @@ const props = withDefaults(
     field: BoundField
     value: WireValue
     env?: FieldEnv
+    label?: string
+    required?: boolean
+    autoFocus?: boolean
+    live?: boolean
     submitLabel?: string
     tableId?: string
     fieldId?: string
@@ -28,6 +32,10 @@ const props = withDefaults(
   }>(),
   {
     env: () => ({}),
+    label: undefined,
+    required: false,
+    autoFocus: true,
+    live: false,
     submitLabel: undefined,
     tableId: undefined,
     fieldId: undefined,
@@ -36,7 +44,12 @@ const props = withDefaults(
     resolveUser: undefined,
   },
 )
-const emit = defineEmits<{ commit: [value: WireValue]; cancel: [] }>()
+const emit = defineEmits<{
+  commit: [value: WireValue]
+  preview: [value: WireValue]
+  invalidValue: []
+  cancel: []
+}>()
 const { t } = useI18n()
 
 const input = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
@@ -114,7 +127,9 @@ const error = computed(() =>
   reason.value ? fieldErrorMessage(reason.value) : '',
 )
 
-onMounted(() => input.value?.focus())
+onMounted(() => {
+  if (props.autoFocus) input.value?.focus()
+})
 async function discardTemporaryAttachments() {
   if (!props.tableId || !props.fieldId) return
   const ids = props.preserveUploads
@@ -153,6 +168,18 @@ function finish(result: Result<WireValue>) {
 }
 
 const commitText = () => finish(props.field.parsePaste(draft.value, props.env))
+
+function previewText() {
+  if (!props.live) return
+  const result = props.field.parsePaste(draft.value, props.env)
+  if (!result.ok) {
+    reason.value = result.reason
+    emit('invalidValue')
+    return
+  }
+  reason.value = null
+  emit('preview', result.value)
+}
 
 function commitSelect() {
   finish(props.field.normalize(multiple.value ? selected.value : single.value))
@@ -321,7 +348,8 @@ function keydown(event: KeyboardEvent) {
       ref="input"
       type="checkbox"
       :checked="value === true"
-      :aria-label="t('field.editor.value')"
+      :aria-label="label ?? t('field.editor.value')"
+      :required="required"
       @change="commitCheckbox"
     />
     <select
@@ -330,8 +358,10 @@ function keydown(event: KeyboardEvent) {
       v-model="selected"
       multiple
       :size="Math.min(8, Math.max(2, choices.length))"
-      :aria-label="t('field.editor.value')"
+      :aria-label="label ?? t('field.editor.value')"
       :aria-invalid="reason !== null"
+      :required="required"
+      @change="live ? commitSelect() : undefined"
     >
       <option v-for="choice in choices" :key="choice.id" :value="choice.label">
         {{ choice.label }}
@@ -341,8 +371,9 @@ function keydown(event: KeyboardEvent) {
       v-else-if="field.presentation === 'select'"
       ref="input"
       v-model="single"
-      :aria-label="t('field.editor.value')"
+      :aria-label="label ?? t('field.editor.value')"
       :aria-invalid="reason !== null"
+      :required="required"
       @change="commitSelect"
     >
       <option value="">{{ t('field.editor.none') }}</option>
@@ -354,9 +385,11 @@ function keydown(event: KeyboardEvent) {
       v-else-if="field.presentation === 'multiline'"
       ref="input"
       v-model="draft"
-      :aria-label="t('field.editor.value')"
+      :aria-label="label ?? t('field.editor.value')"
       :aria-invalid="reason !== null"
       :placeholder="t('field.editor.multilineHint')"
+      :required="required"
+      @input="previewText"
     />
     <div v-else-if="field.presentation === 'user'" class="field-user-editor">
       <input
@@ -458,9 +491,11 @@ function keydown(event: KeyboardEvent) {
       v-model="draft"
       type="text"
       :inputmode="field.presentation === 'number' ? 'decimal' : undefined"
-      :aria-label="t('field.editor.value')"
+      :aria-label="label ?? t('field.editor.value')"
       :aria-invalid="reason !== null"
       :placeholder="placeholder"
+      :required="required"
+      @input="previewText"
     />
     <button v-if="showSubmitButton" type="button" @click="commit">
       {{ submitLabel ?? t('field.editor.apply') }}

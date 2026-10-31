@@ -40,6 +40,13 @@ All row reads go through `internal/query`, which compiles a **view config** (+ a
 
 The config is validated server-side against current fields; references to deleted fields are dropped silently on read and cleaned on next save. View config updates use optimistic concurrency (`version`); conflicts → client reloads and re-applies.
 
+Form views store an ordered `form.fields` list with each live writable field's
+ID, custom label, help text, and required flag. The title and description are
+optional, and `afterSubmit` is `message` or `new`. Form config saves merge only
+the `form` member, use the same view-version contract, and reject duplicate,
+stale, computed, system, or otherwise read-only fields. Submission accepts only
+configured fields and enforces form-required values server-side.
+
 T1.21 introduced the Grid column subset (D-148): ordered
 `fields:[{id,visible,width?}]` and `frozen`. T2.7–T2.9 add configured sort,
 grouping/aggregates, and highlights. Schema/view responses include the

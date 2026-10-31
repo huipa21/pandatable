@@ -247,6 +247,21 @@ export interface ViewColumns {
   groupBy?: string[]
   aggregates?: ViewAggregate[]
   highlight?: HighlightRule[]
+  form?: FormConfig
+}
+
+export interface FormConfig {
+  title: string
+  description: string
+  fields: FormFieldConfig[]
+  afterSubmit: 'message' | 'new'
+}
+
+export interface FormFieldConfig {
+  id: string
+  label: string
+  help: string
+  required: boolean
 }
 
 export interface ViewAggregate {

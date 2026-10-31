@@ -626,20 +626,23 @@ distinguishing hidden from removed resources.
 ### Views
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/tables/{id}/views` | `{ name, type, scope }` |
-| PATCH | `/views/{id}` | T1.21 column-only `{config:{fields:[{id,visible,width?}],frozen}}`, required `If-Match`; returns `{view,eventId}`. |
+| POST | `/tables/{id}/views` | `{ name, type?, scope }`; `type` is `grid` or `form` and defaults to `grid`. |
+| PATCH | `/views/{id}` | Versioned metadata or config update with required `If-Match`; accepts grid columns or form-only `{config:{form:{title,description,fields:[{id,label,help,required}],afterSubmit}}}`. Returns `{view,eventId}`. |
 | DELETE | `/views/{id}` | Deferred T2.10. |
 | POST | `/views/{id}/duplicate` | |
 
-T1.21/D-148 does **not** implement view management: create/delete/duplicate,
-name/scope/locked/position and every non-column config member remain T2.10/M2.
-PATCH rejects those members at either level, including filter, sort, group,
-highlight, aggregates, rowHeight, form, kanban and calendar. Both fields and
-frozen are required; `fields` is an ordered array (empty allowed), each entry
-requires an ID and boolean visible, width is optional but, when supplied,
-must be a non-null integer 60..1000. IDs must be unique current live fields
-of the same table. Omitted live user fields append visible in metadata order;
-system fields append hidden. Frozen is an integer 0..effective visible count.
+T1.21/D-148 initially implemented only column persistence. T2.10 adds view
+management and merged config writes; T2.13 adds Form views and form config.
+PATCH accepts either the grid column configuration or only `config.form`;
+mixing form and grid config members is invalid. Form config requires title,
+description, an ordered fields array (which may be empty), and
+`afterSubmit:"message"|"new"`. Every configured ID must be unique, live, and
+writable on the table. For a grid config, both fields and frozen are required;
+`fields` is an ordered array (empty allowed), each entry requires an ID and
+boolean visible, width is optional but, when supplied, must be a non-null
+integer 60..1000. IDs must be unique current live fields of the same table.
+Omitted live user fields append visible in metadata order; system fields append
+hidden. Frozen is an integer 0..effective visible count.
 
 The route retains the 4096-byte known-member/single-value JSON bound, exact
 Origin and CSRF, ten-second deadline, no-store, standard session/forced-change
@@ -654,10 +657,10 @@ Missing/hidden/trashed resources or someone else's personal view are 404;
 visible insufficient table access or a locked view is 403. No admin bypass.
 Three-second lock waits and serialization retain the existing safe mappings.
 
-Table schema `views[]` and the mutation's `view` include
-`config:{fields,frozen}` with cleaned live IDs and the same order/defaults.
-No physical names or future config members are exposed. Unimplemented views
-routes listed above are design-only, not available controls.
+Table schema `views[]` and the mutation's `view` include the sanitized
+supported config, including cleaned grid columns and Form-view settings.
+No physical names or future config members are exposed. Kanban and calendar
+config members remain reserved until those view implementations.
 
 ### Rows & queries
 | Method | Path | Notes |
@@ -673,13 +676,20 @@ routes listed above are design-only, not available controls.
 | POST | `/tables/{id}/rows:restore` | `{ rows: [snapshot] }` (undo of delete; same ids) |
 | POST | `/tables/{id}/rows/{rowId}/links/{fieldId}` | `{ add: [ids], remove: [ids] }` |
 | GET | `/tables/{id}/link-candidates/{fieldId}?q=&offset=` | rows of target table for picker |
-| POST | `/views/{id}/form-submit` | form view submission |
+| POST | `/views/{id}/form-submit` | `{fields:{fieldId:value}}` → `{row,eventId}`; authenticated Form-view submission, 64 KiB body limit. |
 
 T1.15 read requires effective table read and mutation requires effective table
 write/owner; admin role does not bypass data grants. Bulk writes are all-or-
 nothing. `created_by`/`updated_by` are UUIDs, not resolved user names.
 Bulk patch locks use ascending numeric row ID order while response order
 matches the request.
+Form submission has the same write/owner requirement and no admin bypass;
+hidden resources and another user's personal views return 404, while visible
+read-only users receive 403. The server validates the saved form against live
+writable fields, rejects unconfigured submitted IDs, enforces form-required
+values, then creates exactly one row through the normal codec/default/ACL path.
+`afterSubmit` controls only the authorized client's confirmation or new-form
+behavior.
 The production grid's T1.17 paste path sends valid edits to existing rows in a
 single bounded bulk PATCH; codec-invalid cells are reported and omitted from
 that request. After explicit confirmation, additional tail rows use the

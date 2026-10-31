@@ -14,6 +14,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../api/client'
 import type {
   FilterNode,
+  FormConfig,
   ResourceKind,
   TableSchema,
   TableView,
@@ -38,6 +39,12 @@ const FieldPanel = defineAsyncComponent(
 const FilterBuilder = defineAsyncComponent(
   () => import('../components/filters/FilterBuilder.vue'),
 )
+const FormBuilder = defineAsyncComponent(
+  () => import('../components/views/FormBuilder.vue'),
+)
+const FormView = defineAsyncComponent(
+  () => import('../components/views/FormView.vue'),
+)
 const DataGrid = defineAsyncComponent(
   () => import('../components/grid/DataGrid.vue'),
 )
@@ -60,6 +67,7 @@ const viewError = ref('')
 const viewBusy = ref(false)
 const newViewName = ref('')
 const newViewScope = ref<'shared' | 'personal'>('personal')
+const newViewType = ref<'grid' | 'form'>('grid')
 const viewNameDrafts = ref<Record<string, string>>({})
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
@@ -100,6 +108,11 @@ const displayField = computed(() =>
 )
 const view = computed(() =>
   schema.value?.views.find((item) => item.id === route.params.viewId),
+)
+const showRowDialog = computed(
+  () =>
+    view.value?.type === 'grid' &&
+    (typeof route.params.rowId === 'string' || newRow.value),
 )
 const canCreateSharedView = computed(
   () => schema.value?.myLevel === 'write' || schema.value?.myLevel === 'owner',
@@ -365,15 +378,41 @@ async function createView() {
     const result = await request<ViewMutation>(
       `/tables/${schema.value.table.id}/views`,
       'POST',
-      { name: newViewName.value, scope: newViewScope.value },
+      {
+        name: newViewName.value,
+        scope: newViewScope.value,
+        type: newViewType.value,
+      },
     )
     schema.value = {
       ...schema.value,
       views: [...schema.value.views, result.view],
     }
     newViewName.value = ''
+    newViewType.value = 'grid'
     void nav.refresh(true)
     await router.push(`/t/${schema.value.table.id}/v/${result.view.id}`)
+  } catch (cause) {
+    viewRequestFailed(cause)
+  } finally {
+    viewBusy.value = false
+  }
+}
+
+async function saveForm(form: FormConfig) {
+  if (!view.value || view.value.type !== 'form' || !canManageView(view.value))
+    return
+  viewBusy.value = true
+  viewError.value = ''
+  try {
+    const result = await request<ViewMutation>(
+      `/views/${view.value.id}`,
+      'PATCH',
+      { config: { form } },
+      undefined,
+      { ifMatch: view.value.version },
+    )
+    replaceView(result.view)
   } catch (cause) {
     viewRequestFailed(cause)
   } finally {
@@ -720,13 +759,20 @@ onBeforeUnmount(() => {
               </option>
             </select>
           </label>
+          <label>
+            {{ t('form.viewType') }}
+            <select v-model="newViewType" :disabled="viewBusy">
+              <option value="grid">{{ t('form.gridType') }}</option>
+              <option value="form">{{ t('form.formType') }}</option>
+            </select>
+          </label>
           <button type="submit" :disabled="viewBusy || !newViewName.trim()">
             {{ t('nav.createView') }}
           </button>
         </form>
         <p v-if="viewError" role="alert">{{ viewError }}</p>
         <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
-        <details v-if="view" class="view-filter">
+        <details v-if="view?.type === 'grid'" class="view-filter">
           <summary>{{ t('grid.filter') }}</summary>
           <FilterBuilder
             :key="`${schema.table.id}:${view.id}`"
@@ -745,6 +791,13 @@ onBeforeUnmount(() => {
         >
           {{ t('nav.saveAsPersonalView') }}
         </button>
+        <FormBuilder
+          v-if="view?.type === 'form' && canManageView(view)"
+          :schema="schema"
+          :view="view"
+          :busy="viewBusy"
+          @save="saveForm"
+        />
         <FieldPanel
           v-if="desktop"
           :key="schema.table.id"
@@ -753,7 +806,7 @@ onBeforeUnmount(() => {
           @reload="loadSchema(true)"
         />
         <DataGrid
-          v-if="view && desktop"
+          v-if="view?.type === 'grid' && desktop"
           ref="grid"
           :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
           :schema="schema"
@@ -780,7 +833,7 @@ onBeforeUnmount(() => {
           "
         />
         <MobileCardList
-          v-else-if="view"
+          v-else-if="view?.type === 'grid'"
           ref="grid"
           :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
           :schema="schema"
@@ -799,8 +852,16 @@ onBeforeUnmount(() => {
             @reload="loadSchema(true)"
           />
         </MobileCardList>
+        <FormView
+          v-else-if="view?.type === 'form'"
+          :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
+          :schema="schema"
+          :view="view"
+          :identity="auth.user?.id ?? ''"
+          @schema-changed="loadSchema(true)"
+        />
         <RowExpandDialog
-          v-if="view && (typeof route.params.rowId === 'string' || newRow)"
+          v-if="showRowDialog && view"
           :schema="schema"
           :view-id="view.id"
           :row-id="

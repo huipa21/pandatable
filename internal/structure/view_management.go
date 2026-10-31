@@ -15,8 +15,9 @@ import (
 )
 
 type ViewInput struct {
-	Name  string
-	Scope string
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Scope string `json:"scope"`
 }
 
 type ViewPatch struct {
@@ -100,6 +101,12 @@ func (s *Service) CreateView(ctx context.Context, actor Actor, tableID string, i
 	if input.Scope != "shared" && input.Scope != "personal" {
 		return View{}, validation("View scope must be shared or personal")
 	}
+	if input.Type == "" {
+		input.Type = "grid"
+	}
+	if input.Type != "grid" && input.Type != "form" {
+		return View{}, validation("View type is invalid")
+	}
 	user, ok := acl.ParseUUID(actor.ID)
 	if !ok {
 		return View{}, acl.ErrValidation()
@@ -124,7 +131,7 @@ func (s *Service) CreateView(ctx context.Context, actor Actor, tableID string, i
 			return fmt.Errorf("lock table views for creation: %w", err)
 		}
 		position := nextViewPosition(views)
-		config, err := defaultViewConfig(table)
+		config, err := defaultViewConfig(table, input.Type)
 		if err != nil {
 			return err
 		}
@@ -133,7 +140,7 @@ func (s *Service) CreateView(ctx context.Context, actor Actor, tableID string, i
 			owner = user
 		}
 		created, err := q.InsertManagedView(ctx, structuresql.InsertManagedViewParams{
-			TableID: table.id, Name: name, Type: "grid", Scope: input.Scope, OwnerID: owner,
+			TableID: table.id, Name: name, Type: input.Type, Scope: input.Scope, OwnerID: owner,
 			Position: position, Config: config, CreatedBy: user,
 		})
 		if err != nil {
@@ -404,10 +411,15 @@ func authorizeViewMutation(ctx context.Context, s *Service, tx pgx.Tx, actor Act
 	return s.authorizeRows(ctx, tx, user, acl.Resource{Type: acl.Table, ID: table.id}, level)
 }
 
-func defaultViewConfig(table rowTable) ([]byte, error) {
+func defaultViewConfig(table rowTable, viewType string) ([]byte, error) {
 	config := ViewColumns{Fields: make([]ViewColumn, 0, len(table.fields))}
 	for _, field := range table.fields {
 		config.Fields = append(config.Fields, ViewColumn{ID: field.id, Visible: !field.system})
+	}
+	if viewType == "form" {
+		config.Form = &FormConfig{
+			Fields: []FormField{}, AfterSubmit: "message",
+		}
 	}
 	return json.Marshal(config)
 }

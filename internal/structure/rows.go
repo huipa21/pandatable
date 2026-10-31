@@ -921,6 +921,97 @@ func (s *Service) CreateRows(ctx context.Context, actor Actor, tableID string, i
 	return result, err
 }
 
+func (s *Service) SubmitForm(ctx context.Context, actor Actor, viewID string, input map[string]json.RawMessage) (RowRecord, error) {
+	if input == nil {
+		return RowRecord{}, validation("Form fields must be an object")
+	}
+	uuid, ok := acl.ParseUUID(viewID)
+	if !ok {
+		return RowRecord{}, acl.ErrNotFound()
+	}
+	view, err := s.queries.GetViewForQuery(ctx, uuid)
+	if err != nil {
+		return RowRecord{}, notFoundIfNoRows(err, "read form view")
+	}
+	if view.Scope == "personal" && (!view.OwnerID.Valid || view.OwnerID.String() != actor.ID) {
+		return RowRecord{}, acl.ErrNotFound()
+	}
+	if len(input) > maxBulkCells {
+		return RowRecord{}, validation("Form submission contains too many fields")
+	}
+
+	var result RowRecord
+	err = s.withWritableTable(ctx, actor, view.TableID.String(), func(tx pgx.Tx, table rowTable) error {
+		q := structuresql.New(tx)
+		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{ID: uuid, TableID: table.id})
+		if err != nil {
+			return notFoundIfNoRows(err, "lock form view")
+		}
+		if stored.Scope == "personal" && (!stored.OwnerID.Valid || stored.OwnerID.String() != actor.ID) {
+			return acl.ErrNotFound()
+		}
+		if stored.Type != "form" {
+			return validation("Rows can only be submitted to a form view")
+		}
+		var config struct {
+			Form *FormConfig `json:"form"`
+		}
+		if err := json.Unmarshal(stored.Config, &config); err != nil {
+			return fmt.Errorf("decode stored form config: %w", err)
+		}
+		if config.Form == nil {
+			return validation("Form configuration is invalid")
+		}
+		form, err := validateFormConfig(*config.Form, table)
+		if err != nil {
+			return err
+		}
+		configured := make(map[string]FormField, len(form.Fields))
+		for _, field := range form.Fields {
+			configured[field.ID] = field
+		}
+		for id := range input {
+			if _, ok := configured[id]; !ok {
+				return validation("Submitted fields must belong to this form")
+			}
+		}
+		for _, field := range form.Fields {
+			if field.Required {
+				value, exists := input[field.ID]
+				if !exists || emptyFormValue(value) {
+					return apperr.New(400, "ERR_REQUIRED_FIELD", "A required form field is missing")
+				}
+			}
+		}
+		record, err := insertRow(ctx, tx, q, table, actor, input)
+		if err != nil {
+			return err
+		}
+		result = record
+		return nil
+	})
+	return result, err
+}
+
+func emptyFormValue(raw json.RawMessage) bool {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false
+	}
+	switch value := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(value) == ""
+	case []any:
+		return len(value) == 0
+	case map[string]any:
+		return len(value) == 0
+	default:
+		return false
+	}
+}
+
 func insertRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
 	input map[string]json.RawMessage) (RowRecord, error) {
 	fields, values, err := sortedFieldValues(ctx, queries, table, input)

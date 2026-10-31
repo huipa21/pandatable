@@ -98,6 +98,18 @@ func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user aut
 		api.fail(w, r, err)
 		return
 	}
+	if config.FormSet {
+		view, err := api.structure.UpdateViewForm(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, *config.Form)
+		if err != nil {
+			api.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			View    structure.View `json:"view"`
+			EventID string         `json:"eventId"`
+		}{view, rand.Text()})
+		return
+	}
 	view, err := api.structure.UpdateViewColumns(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, config)
 	if err != nil {
 		api.fail(w, r, err)
@@ -161,13 +173,55 @@ func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {
 		GroupBy    json.RawMessage `json:"groupBy"`
 		Aggregates json.RawMessage `json:"aggregates"`
 		Highlight  json.RawMessage `json:"highlight"`
+		Form       json.RawMessage `json:"form"`
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return structure.ViewColumns{}, invalid
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil || input.Fields == nil || input.Frozen == nil {
+	if err := decoder.Decode(&input); err != nil {
+		return structure.ViewColumns{}, invalid
+	}
+	if len(input.Form) > 0 {
+		var members map[string]json.RawMessage
+		if json.Unmarshal(raw, &members) != nil || len(members) != 1 ||
+			bytes.Equal(bytes.TrimSpace(input.Form), []byte("null")) {
+			return structure.ViewColumns{}, invalid
+		}
+		var formInput struct {
+			Title       *string `json:"title"`
+			Description *string `json:"description"`
+			Fields      *[]struct {
+				ID       *string `json:"id"`
+				Label    *string `json:"label"`
+				Help     *string `json:"help"`
+				Required *bool   `json:"required"`
+			} `json:"fields"`
+			AfterSubmit *string `json:"afterSubmit"`
+		}
+		nested := json.NewDecoder(bytes.NewReader(input.Form))
+		nested.DisallowUnknownFields()
+		if nested.Decode(&formInput) != nil || formInput.Title == nil ||
+			formInput.Description == nil || formInput.Fields == nil || formInput.AfterSubmit == nil {
+			return structure.ViewColumns{}, invalid
+		}
+		form := structure.FormConfig{
+			Title: *formInput.Title, Description: *formInput.Description,
+			Fields:      make([]structure.FormField, 0, len(*formInput.Fields)),
+			AfterSubmit: *formInput.AfterSubmit,
+		}
+		for _, item := range *formInput.Fields {
+			if item.ID == nil || item.Label == nil || item.Help == nil || item.Required == nil {
+				return structure.ViewColumns{}, invalid
+			}
+			form.Fields = append(form.Fields, structure.FormField{
+				ID: *item.ID, Label: *item.Label, Help: *item.Help, Required: *item.Required,
+			})
+		}
+		return structure.ViewColumns{Form: &form, FormSet: true}, nil
+	}
+	if input.Fields == nil || input.Frozen == nil {
 		return structure.ViewColumns{}, invalid
 	}
 	config := structure.ViewColumns{
