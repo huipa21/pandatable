@@ -53,8 +53,9 @@ async function setup(path: string) {
             '<div data-testid="mobile-cards"><button @click="$emit(\'add\')">+</button></div>',
         },
         RowExpandDialog: {
-          props: ['rowId'],
-          template: '<div data-testid="row-dialog">{{ rowId }}</div>',
+          props: ['rowId', 'focusComment'],
+          template:
+            '<div data-testid="row-dialog" :data-focus-comment="focusComment">{{ rowId }}</div>',
         },
       },
     },
@@ -123,6 +124,14 @@ it('opens row deep links without reloading schema or remounting the grid, and re
       '9007199254740993',
     )
     expect(wrapper.get('[data-testid="production-grid"]').element).toBe(grid)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    await router.push('/t/t/v/v/r/9007199254740993?comment=comment-id')
+    await flushPromises()
+    expect(
+      wrapper
+        .get('[data-testid="row-dialog"]')
+        .attributes('data-focus-comment'),
+    ).toBe('comment-id')
     expect(fetcher).toHaveBeenCalledTimes(1)
     await router.push('/t/t/v/hidden/r/1')
     await flushPromises()

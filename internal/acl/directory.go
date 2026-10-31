@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"pandatable/internal/acl/aclsql"
 )
 
 type DirectoryPrincipal struct {
@@ -74,13 +76,21 @@ func (service *Service) Directory(ctx context.Context, userID string, resource R
 	return result, nil
 }
 
-// TableUsers exposes the bounded active-user picker only to table writers.
-func (service *Service) TableUsers(ctx context.Context, userID, tableID, search string) (DirectoryListing, error) {
+func tableUserSearch(search string) (string, error) {
 	search = strings.TrimSpace(search)
 	length := utf8.RuneCountInString(search)
 	if !utf8.ValidString(search) || length < 2 || length > 100 ||
 		len(search) > 254 || strings.ContainsFunc(search, unicode.IsControl) {
-		return DirectoryListing{}, ErrValidation()
+		return "", ErrValidation()
+	}
+	return search, nil
+}
+
+// TableUsers exposes the bounded active-user picker only to table writers.
+func (service *Service) TableUsers(ctx context.Context, userID, tableID, search string) (DirectoryListing, error) {
+	search, err := tableUserSearch(search)
+	if err != nil {
+		return DirectoryListing{}, err
 	}
 	user, err := parseCaller(userID)
 	if err != nil {
@@ -108,6 +118,52 @@ func (service *Service) TableUsers(ctx context.Context, userID, tableID, search 
 		return DirectoryListing{}, fmt.Errorf("search table users: %w", err)
 	}
 	result := DirectoryListing{Items: []DirectoryPrincipal{}}
+	for _, row := range rows {
+		result.Items = append(result.Items, DirectoryPrincipal{
+			ID: row.ID.String(), Name: row.Name, Username: &row.Username,
+		})
+	}
+	result.HasMore = len(result.Items) > 20
+	if result.HasMore {
+		result.Items = result.Items[:20]
+	}
+	return result, nil
+}
+
+// MentionUsers exposes only active users who can read the same live table.
+func (service *Service) MentionUsers(ctx context.Context, userID, tableID, search string) (DirectoryListing, error) {
+	search, err := tableUserSearch(search)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	user, err := parseCaller(userID)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	resource, err := NewResource(string(Table), tableID)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	tx, err := service.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return DirectoryListing{}, fmt.Errorf("begin mention directory snapshot: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	queries := service.queries.WithTx(tx)
+	access, err := queryAccess(ctx, queries, user, resource)
+	if err != nil {
+		return DirectoryListing{}, err
+	}
+	if err := access.Check(Read); err != nil {
+		return DirectoryListing{}, err
+	}
+	rows, err := queries.SearchMentionUsers(ctx, aclsql.SearchMentionUsersParams{
+		TableID: resource.ID, Search: search,
+	})
+	if err != nil {
+		return DirectoryListing{}, fmt.Errorf("search mention users: %w", err)
+	}
+	result := DirectoryListing{Items: make([]DirectoryPrincipal, 0, len(rows))}
 	for _, row := range rows {
 		result.Items = append(result.Items, DirectoryPrincipal{
 			ID: row.ID.String(), Name: row.Name, Username: &row.Username,

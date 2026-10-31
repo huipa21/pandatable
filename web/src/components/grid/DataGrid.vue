@@ -836,6 +836,14 @@ function handleRealtime(event: RealtimeEvent) {
     rowSync.update(event.ids)
     void loadFooterAggregates()
   } else if (
+    ['comment.created', 'comment.updated', 'comment.deleted'].includes(
+      event.t,
+    ) &&
+    event.ids
+  ) {
+    if (!ready.value) requestRealtimeReload()
+    else rowSync.update(event.ids)
+  } else if (
     ['row.created', 'row.deleted', 'row.bulk', 'resync'].includes(event.t) ||
     (event.t === 'view.changed' && event.viewId === props.viewId)
   ) {
@@ -851,6 +859,7 @@ const removeRealtimeListener = realtime.subscribe(
 interface GridModel {
   __rowId?: string
   __groupId?: string
+  __commentCount?: number
   _hl_row?: HighlightColor
   _hl_cells?: Record<string, HighlightColor>
   [key: string]: RowValue | string | undefined
@@ -977,6 +986,19 @@ const columns = computed<ColumnRegular[]>(() => {
                   },
                   '\u2197',
                 ),
+                typeof model.__commentCount === 'number' &&
+                model.__commentCount > 0
+                  ? render(
+                      'span',
+                      {
+                        class: 'grid-comment-count',
+                        'aria-label': t('comments.count', {
+                          count: model.__commentCount,
+                        }),
+                      },
+                      String(model.__commentCount),
+                    )
+                  : null,
                 render('input', {
                   type: 'checkbox',
                   checked: selectedRows.value.has(String(model.__rowId)),
@@ -1155,6 +1177,7 @@ function modelFor(row: DataRow | null): GridModel {
   return {
     __rowId: row.id,
     __groupId: '',
+    __commentCount: row.commentCount,
     ...(row._hl_row ? { _hl_row: row._hl_row } : {}),
     ...(row._hl_cells ? { _hl_cells: row._hl_cells } : {}),
     ...row.fields,

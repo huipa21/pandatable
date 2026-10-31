@@ -7,6 +7,29 @@ WHERE status = 'active'
 ORDER BY username, id
 LIMIT 21;
 
+-- name: SearchMentionUsers :many
+SELECT u.id, u.display_name AS name, u.username
+FROM meta.users u
+JOIN meta.tables t ON t.id = sqlc.arg(table_id)::uuid AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+JOIN meta.workspaces w ON w.id = b.workspace_id AND w.deleted_at IS NULL
+WHERE u.status = 'active'
+  AND (strpos(lower(u.username), lower(sqlc.arg(search)::text)) > 0
+       OR strpos(lower(u.display_name), lower(sqlc.arg(search)::text)) > 0)
+  AND EXISTS (
+    SELECT 1 FROM meta.grants g
+    WHERE ((g.resource_type = 'workspace' AND g.resource_id = w.id)
+       OR (g.resource_type = 'book' AND g.resource_id = b.id)
+       OR (g.resource_type = 'table' AND g.resource_id = t.id))
+      AND ((g.principal_type = 'user' AND g.principal_id = u.id)
+        OR (g.principal_type = 'group' AND EXISTS (
+          SELECT 1 FROM meta.group_members gm
+          WHERE gm.group_id = g.principal_id AND gm.user_id = u.id
+        )))
+  )
+ORDER BY u.username, u.id
+LIMIT 21;
+
 -- name: ResolveTableUserLabels :many
 SELECT id, display_name AS name
 FROM meta.users

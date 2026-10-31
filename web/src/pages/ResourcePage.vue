@@ -910,6 +910,11 @@ onBeforeUnmount(() => {
             typeof route.params.rowId === 'string' ? route.params.rowId : null
           "
           :identity="auth.user?.id ?? ''"
+          :focus-comment="
+            typeof route.query.comment === 'string'
+              ? route.query.comment
+              : undefined
+          "
           @close="
             () => {
               newRow = false

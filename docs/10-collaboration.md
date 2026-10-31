@@ -46,9 +46,23 @@ handler tx ──► pg_notify('pt_events', '{"t":"row.updated","tableId":"…",
 
 ## 3. Comments & notifications (FR-C3)
 
-- Comments per row (plain text + @mentions, rendered with links). Mention autocomplete via `/directory/users`, limited to users with read access to the table (others are shown as not-notified).
-- Mention → `meta.notifications` row + `notification` WS event. Bell icon with unread count; clicking opens the row expand modal at the comment.
-- Comment edit/delete by author; owners of the table can delete any comment. Row cells show a comment count badge (optional column indicator).
+- Comments are plain text, at most 4,096 UTF-8 bytes and 50 distinct
+  `@username` mentions. Table readers may comment. Autocomplete uses the
+  read-authorized `/tables/{id}/directory/mentions`, which returns only active
+  users with effective read access; unmatched mentions are marked as not
+  notified. Resolved mentions link to the comment deep link.
+- Newly added eligible mentions other than the author create
+  `meta.notifications` rows and recipient-only `notification` WebSocket events
+  in the same transaction. The hub checks current access even if the recipient
+  is not subscribed to the table. Removing a mention or deleting a comment
+  removes its notifications; listings also hide revoked access and deleted
+  comments.
+- The bell shows the persisted unread count. Clicking resolves an accessible
+  grid, opens the row modal with the comment focused and marks the notification
+  read. Comment and notification lists load 50 at a time; a linked older
+  comment is pinned first. Missing accessible grids are reported explicitly.
+- Authors may edit or delete their comments; table owners may delete any
+  comment. Desktop row headers and mobile cards show nonzero comment counts.
 - Deleted rows: comments kept until the row's table is purged (restorable via undo).
 
 ## 4. Row history (FR-C4)

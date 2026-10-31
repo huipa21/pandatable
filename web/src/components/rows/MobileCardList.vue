@@ -439,6 +439,14 @@ function handleRealtime(event: RealtimeEvent) {
     if (initializing.value) requestRealtimeReload()
     else rowSync.update(event.ids)
   } else if (
+    ['comment.created', 'comment.updated', 'comment.deleted'].includes(
+      event.t,
+    ) &&
+    event.ids
+  ) {
+    if (initializing.value) requestRealtimeReload()
+    else rowSync.update(event.ids)
+  } else if (
     ['row.created', 'row.deleted', 'row.bulk', 'resync'].includes(event.t) ||
     (event.t === 'view.changed' && event.viewId === props.viewId)
   ) {
@@ -633,6 +641,15 @@ onBeforeUnmount(() => {
                   :field-id="display.id"
                   :identity="identity"
                 />
+              </span>
+              <span
+                v-if="entry.row.commentCount"
+                class="mobile-comment-count"
+                :aria-label="
+                  t('comments.count', { count: entry.row.commentCount })
+                "
+              >
+                {{ entry.row.commentCount }}
               </span>
               <span v-for="field in preview" :key="field.id" class="card-field">
                 <span class="card-label">{{ field.name }}</span>

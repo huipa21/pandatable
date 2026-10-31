@@ -206,6 +206,19 @@ func (h *Hub) deliver(event events.Event) {
 			c.recheckSubscriptions()
 			continue
 		}
+		if event.Type == "notification.changed" {
+			if event.Recipient != "" {
+				c.send(event, false)
+			}
+			continue
+		}
+		if event.Type == "notification" {
+			if event.Recipient == "" || event.TableID == "" || !h.canReceiveNotification(c, event.TableID) {
+				continue
+			}
+			c.send(event, false)
+			continue
+		}
 		if event.TableID == "" || !c.subscribed(event.TableID) {
 			continue
 		}
@@ -218,6 +231,25 @@ func (h *Hub) deliver(event events.Event) {
 		}
 		c.send(event, false)
 	}
+}
+
+func (h *Hub) canReceiveNotification(c *client, tableID string) bool {
+	resource, err := acl.NewResource("table", tableID)
+	user, valid := acl.ParseUUID(c.user.ID)
+	if err != nil || !valid {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, operationTimeout)
+	defer cancel()
+	access, err := acl.AccessUncached(ctx, h.pool, user, resource)
+	if err != nil {
+		if c.ctx.Err() == nil {
+			h.logger.Error("notification ACL check failed", "user_id", c.user.ID, "error", err)
+			c.cancel()
+		}
+		return false
+	}
+	return access.Check(acl.Read) == nil
 }
 
 func isUnauthenticated(err error) bool {

@@ -66,6 +66,44 @@ func (q *Queries) ConvertField(ctx context.Context, arg ConvertFieldParams) (int
 	return version, err
 }
 
+const countRowComments = `-- name: CountRowComments :many
+SELECT row_id, count(*)::bigint AS comment_count
+FROM meta.comments
+WHERE table_id = $1::uuid AND row_id = ANY($2::bigint[])
+  AND deleted_at IS NULL
+GROUP BY row_id
+`
+
+type CountRowCommentsParams struct {
+	TableID pgtype.UUID
+	RowIds  []int64
+}
+
+type CountRowCommentsRow struct {
+	RowID        int64
+	CommentCount int64
+}
+
+func (q *Queries) CountRowComments(ctx context.Context, arg CountRowCommentsParams) ([]CountRowCommentsRow, error) {
+	rows, err := q.db.Query(ctx, countRowComments, arg.TableID, arg.RowIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountRowCommentsRow
+	for rows.Next() {
+		var i CountRowCommentsRow
+		if err := rows.Scan(&i.RowID, &i.CommentCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteManagedView = `-- name: DeleteManagedView :exec
 UPDATE meta.views
 SET deleted_at = now(), version = version + 1, updated_at = now()
@@ -74,6 +112,32 @@ WHERE id = $1 AND deleted_at IS NULL
 
 func (q *Queries) DeleteManagedView(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteManagedView, id)
+	return err
+}
+
+const deleteMentionNotifications = `-- name: DeleteMentionNotifications :exec
+DELETE FROM meta.notifications
+WHERE kind = 'mention' AND user_id = ANY($1::uuid[])
+  AND payload->>'commentId' = $2::text
+`
+
+type DeleteMentionNotificationsParams struct {
+	UserIds   []pgtype.UUID
+	CommentID string
+}
+
+func (q *Queries) DeleteMentionNotifications(ctx context.Context, arg DeleteMentionNotificationsParams) error {
+	_, err := q.db.Exec(ctx, deleteMentionNotifications, arg.UserIds, arg.CommentID)
+	return err
+}
+
+const deleteRowComment = `-- name: DeleteRowComment :exec
+UPDATE meta.comments SET deleted_at = now()
+WHERE id = $1::uuid AND deleted_at IS NULL
+`
+
+func (q *Queries) DeleteRowComment(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, deleteRowComment, id)
 	return err
 }
 
@@ -92,6 +156,43 @@ func (q *Queries) FieldTable(ctx context.Context, id pgtype.UUID) (pgtype.UUID, 
 	var table_id pgtype.UUID
 	err := row.Scan(&table_id)
 	return table_id, err
+}
+
+const findRowComment = `-- name: FindRowComment :one
+SELECT c.id, c.table_id, c.row_id, c.user_id, COALESCE(u.display_name, '')::text AS author_name,
+       c.body, c.mentions, c.created_at, c.edited_at
+FROM meta.comments c
+LEFT JOIN meta.users u ON u.id = c.user_id
+WHERE c.id = $1::uuid AND c.deleted_at IS NULL
+`
+
+type FindRowCommentRow struct {
+	ID         pgtype.UUID
+	TableID    pgtype.UUID
+	RowID      int64
+	UserID     pgtype.UUID
+	AuthorName string
+	Body       string
+	Mentions   []pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+	EditedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) FindRowComment(ctx context.Context, id pgtype.UUID) (FindRowCommentRow, error) {
+	row := q.db.QueryRow(ctx, findRowComment, id)
+	var i FindRowCommentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TableID,
+		&i.RowID,
+		&i.UserID,
+		&i.AuthorName,
+		&i.Body,
+		&i.Mentions,
+		&i.CreatedAt,
+		&i.EditedAt,
+	)
+	return i, err
 }
 
 const getBook = `-- name: GetBook :one
@@ -170,6 +271,39 @@ func (q *Queries) GetField(ctx context.Context, arg GetFieldParams) (GetFieldRow
 		&i.Version,
 	)
 	return i, err
+}
+
+const getMentionUsers = `-- name: GetMentionUsers :many
+SELECT id, username, display_name AS name
+FROM meta.users
+WHERE id = ANY($1::uuid[])
+ORDER BY id
+`
+
+type GetMentionUsersRow struct {
+	ID       pgtype.UUID
+	Username string
+	Name     string
+}
+
+func (q *Queries) GetMentionUsers(ctx context.Context, ids []pgtype.UUID) ([]GetMentionUsersRow, error) {
+	rows, err := q.db.Query(ctx, getMentionUsers, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetMentionUsersRow
+	for rows.Next() {
+		var i GetMentionUsersRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getRowTable = `-- name: GetRowTable :one
@@ -448,6 +582,52 @@ func (q *Queries) InsertManagedView(ctx context.Context, arg InsertManagedViewPa
 		&i.Config,
 	)
 	return i, err
+}
+
+const insertMentionNotification = `-- name: InsertMentionNotification :one
+INSERT INTO meta.notifications (user_id, kind, payload)
+VALUES ($1::uuid, 'mention', jsonb_build_object('commentId', $2::uuid))
+RETURNING id
+`
+
+type InsertMentionNotificationParams struct {
+	UserID    pgtype.UUID
+	CommentID pgtype.UUID
+}
+
+func (q *Queries) InsertMentionNotification(ctx context.Context, arg InsertMentionNotificationParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, insertMentionNotification, arg.UserID, arg.CommentID)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertRowComment = `-- name: InsertRowComment :one
+INSERT INTO meta.comments (table_id, row_id, user_id, body, mentions)
+VALUES ($1::uuid, $2::bigint, $3::uuid,
+        $4::text, $5::uuid[])
+RETURNING id
+`
+
+type InsertRowCommentParams struct {
+	TableID  pgtype.UUID
+	RowID    int64
+	UserID   pgtype.UUID
+	Body     string
+	Mentions []pgtype.UUID
+}
+
+func (q *Queries) InsertRowComment(ctx context.Context, arg InsertRowCommentParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, insertRowComment,
+		arg.TableID,
+		arg.RowID,
+		arg.UserID,
+		arg.Body,
+		arg.Mentions,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const insertTable = `-- name: InsertTable :one
@@ -792,6 +972,124 @@ func (q *Queries) ListLiveUserFieldOrder(ctx context.Context, tableID pgtype.UUI
 	return items, nil
 }
 
+const listMentionNotifications = `-- name: ListMentionNotifications :one
+WITH visible AS (
+  SELECT n.id, n.created_at, n.read_at, c.id AS comment_id, c.row_id,
+         t.id AS table_id, t.name AS table_name, COALESCE(u.display_name, '')::text AS author_name
+  FROM meta.notifications n
+  JOIN meta.comments c ON c.id::text = n.payload->>'commentId' AND c.deleted_at IS NULL
+  JOIN meta.tables t ON t.id = c.table_id AND t.deleted_at IS NULL
+  JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+  JOIN meta.workspaces w ON w.id = b.workspace_id AND w.deleted_at IS NULL
+  JOIN meta.users viewer ON viewer.id = n.user_id AND viewer.status = 'active'
+  LEFT JOIN meta.users u ON u.id = c.user_id
+  WHERE n.user_id = $1::uuid AND n.kind = 'mention'
+    AND n.user_id = ANY(c.mentions)
+    AND EXISTS (
+      SELECT 1 FROM meta.grants g
+      WHERE ((g.resource_type = 'workspace' AND g.resource_id = w.id)
+         OR (g.resource_type = 'book' AND g.resource_id = b.id)
+         OR (g.resource_type = 'table' AND g.resource_id = t.id))
+        AND ((g.principal_type = 'user' AND g.principal_id = n.user_id)
+          OR (g.principal_type = 'group' AND EXISTS (
+            SELECT 1 FROM meta.group_members gm
+            WHERE gm.group_id = g.principal_id AND gm.user_id = n.user_id
+          )))
+    )
+), page AS (
+  SELECT id, created_at, read_at, comment_id, row_id, table_id, table_name, author_name FROM visible
+  ORDER BY created_at DESC, id DESC
+  LIMIT $3::int OFFSET $2::int
+)
+SELECT (SELECT count(*)::bigint FROM visible WHERE read_at IS NULL) AS unread_count,
+       COALESCE(jsonb_agg(jsonb_build_object(
+         'id', id, 'tableId', table_id, 'tableName', table_name, 'rowId', row_id::text,
+         'commentId', comment_id, 'authorName', author_name, 'createdAt', created_at, 'readAt', read_at
+       ) ORDER BY created_at DESC, id DESC), '[]'::jsonb)::text AS items
+FROM page
+`
+
+type ListMentionNotificationsParams struct {
+	UserID     pgtype.UUID
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListMentionNotificationsRow struct {
+	UnreadCount int64
+	Items       string
+}
+
+func (q *Queries) ListMentionNotifications(ctx context.Context, arg ListMentionNotificationsParams) (ListMentionNotificationsRow, error) {
+	row := q.db.QueryRow(ctx, listMentionNotifications, arg.UserID, arg.PageOffset, arg.PageLimit)
+	var i ListMentionNotificationsRow
+	err := row.Scan(&i.UnreadCount, &i.Items)
+	return i, err
+}
+
+const listRowComments = `-- name: ListRowComments :many
+SELECT c.id, c.user_id, COALESCE(u.display_name, '')::text AS author_name,
+       c.body, c.mentions, c.created_at, c.edited_at
+FROM meta.comments c
+LEFT JOIN meta.users u ON u.id = c.user_id
+WHERE c.table_id = $1::uuid AND c.row_id = $2::bigint
+  AND c.deleted_at IS NULL
+ORDER BY (c.id = $3::uuid) DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT $5::int OFFSET $4::int
+`
+
+type ListRowCommentsParams struct {
+	TableID    pgtype.UUID
+	RowID      int64
+	FocusID    pgtype.UUID
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListRowCommentsRow struct {
+	ID         pgtype.UUID
+	UserID     pgtype.UUID
+	AuthorName string
+	Body       string
+	Mentions   []pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+	EditedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) ListRowComments(ctx context.Context, arg ListRowCommentsParams) ([]ListRowCommentsRow, error) {
+	rows, err := q.db.Query(ctx, listRowComments,
+		arg.TableID,
+		arg.RowID,
+		arg.FocusID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRowCommentsRow
+	for rows.Next() {
+		var i ListRowCommentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.AuthorName,
+			&i.Body,
+			&i.Mentions,
+			&i.CreatedAt,
+			&i.EditedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRowFields = `-- name: ListRowFields :many
 SELECT id, ui_type, pg_column, options, is_system
 FROM meta.fields
@@ -1015,6 +1313,68 @@ func (q *Queries) LockFieldTable(ctx context.Context, id pgtype.UUID) (LockField
 	return i, err
 }
 
+const lockMentionUsers = `-- name: LockMentionUsers :many
+SELECT id, username, display_name AS name
+FROM meta.users
+WHERE username = ANY($1::text[]) AND status = 'active'
+ORDER BY id
+FOR SHARE
+`
+
+type LockMentionUsersRow struct {
+	ID       pgtype.UUID
+	Username string
+	Name     string
+}
+
+func (q *Queries) LockMentionUsers(ctx context.Context, usernames []string) ([]LockMentionUsersRow, error) {
+	rows, err := q.db.Query(ctx, lockMentionUsers, usernames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockMentionUsersRow
+	for rows.Next() {
+		var i LockMentionUsersRow
+		if err := rows.Scan(&i.ID, &i.Username, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockRowComment = `-- name: LockRowComment :one
+SELECT id, table_id, row_id, user_id, mentions
+FROM meta.comments
+WHERE id = $1::uuid AND deleted_at IS NULL
+FOR UPDATE
+`
+
+type LockRowCommentRow struct {
+	ID       pgtype.UUID
+	TableID  pgtype.UUID
+	RowID    int64
+	UserID   pgtype.UUID
+	Mentions []pgtype.UUID
+}
+
+func (q *Queries) LockRowComment(ctx context.Context, id pgtype.UUID) (LockRowCommentRow, error) {
+	row := q.db.QueryRow(ctx, lockRowComment, id)
+	var i LockRowCommentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TableID,
+		&i.RowID,
+		&i.UserID,
+		&i.Mentions,
+	)
+	return i, err
+}
+
 const lockRowTable = `-- name: LockRowTable :one
 SELECT t.id, t.pg_name, b.pg_schema, t.schema_version
 FROM meta.tables t
@@ -1176,6 +1536,25 @@ func (q *Queries) LockViewForQuery(ctx context.Context, id pgtype.UUID) (LockVie
 		&i.SchemaVersion,
 	)
 	return i, err
+}
+
+const markMentionNotificationRead = `-- name: MarkMentionNotificationRead :execrows
+UPDATE meta.notifications SET read_at = now()
+WHERE id = $1::uuid AND user_id = $2::uuid
+  AND kind = 'mention' AND read_at IS NULL
+`
+
+type MarkMentionNotificationReadParams struct {
+	ID     pgtype.UUID
+	UserID pgtype.UUID
+}
+
+func (q *Queries) MarkMentionNotificationRead(ctx context.Context, arg MarkMentionNotificationReadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markMentionNotificationRead, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const maxBookPosition = `-- name: MaxBookPosition :one
@@ -1903,6 +2282,22 @@ func (q *Queries) UpdateField(ctx context.Context, arg UpdateFieldParams) (int32
 	var version int32
 	err := row.Scan(&version)
 	return version, err
+}
+
+const updateRowComment = `-- name: UpdateRowComment :exec
+UPDATE meta.comments SET body = $1::text, mentions = $2::uuid[], edited_at = now()
+WHERE id = $3::uuid AND deleted_at IS NULL
+`
+
+type UpdateRowCommentParams struct {
+	Body     string
+	Mentions []pgtype.UUID
+	ID       pgtype.UUID
+}
+
+func (q *Queries) UpdateRowComment(ctx context.Context, arg UpdateRowCommentParams) error {
+	_, err := q.db.Exec(ctx, updateRowComment, arg.Body, arg.Mentions, arg.ID)
+	return err
 }
 
 const updateWorkspace = `-- name: UpdateWorkspace :one

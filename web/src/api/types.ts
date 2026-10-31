@@ -368,8 +368,51 @@ export interface DataRow {
   id: string
   /** Values keyed by field UUID; physical PostgreSQL names are never exposed. */
   fields: Record<string, RowValue>
+  commentCount?: number
   _hl_row?: HighlightColor | null
   _hl_cells?: Record<string, HighlightColor>
+}
+
+export interface MentionUser {
+  id: string
+  username: string
+  name: string
+}
+
+export interface RowComment {
+  id: string
+  authorId: string | null
+  authorName: string
+  body: string
+  mentions: MentionUser[]
+  createdAt: string
+  editedAt: string | null
+}
+
+export interface CommentListing {
+  items: RowComment[]
+  hasMore: boolean
+}
+
+export interface CommentMutation extends AuthMutation {
+  comment: RowComment
+}
+
+export interface MentionNotification {
+  id: string
+  tableId: string
+  tableName: string
+  rowId: string
+  commentId: string
+  authorName: string
+  createdAt: string
+  readAt: string | null
+}
+
+export interface NotificationListing {
+  items: MentionNotification[]
+  unreadCount: number
+  hasMore: boolean
 }
 
 export interface RowSort {

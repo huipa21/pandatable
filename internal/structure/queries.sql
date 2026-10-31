@@ -415,3 +415,111 @@ SELECT pg_advisory_unlock(hashtextextended('pandatable.dev.seed', 0))::boolean;
 SELECT current_database()::text AS database_name,
        current_setting('server_version_num')::integer AS server_version,
        NOT EXISTS (SELECT 1 FROM meta.workspaces) AS empty;
+
+-- name: ListRowComments :many
+SELECT c.id, c.user_id, COALESCE(u.display_name, '')::text AS author_name,
+       c.body, c.mentions, c.created_at, c.edited_at
+FROM meta.comments c
+LEFT JOIN meta.users u ON u.id = c.user_id
+WHERE c.table_id = sqlc.arg(table_id)::uuid AND c.row_id = sqlc.arg(row_id)::bigint
+  AND c.deleted_at IS NULL
+ORDER BY (c.id = sqlc.narg(focus_id)::uuid) DESC NULLS LAST, c.created_at DESC, c.id DESC
+LIMIT sqlc.arg(page_limit)::int OFFSET sqlc.arg(page_offset)::int;
+
+-- name: FindRowComment :one
+SELECT c.id, c.table_id, c.row_id, c.user_id, COALESCE(u.display_name, '')::text AS author_name,
+       c.body, c.mentions, c.created_at, c.edited_at
+FROM meta.comments c
+LEFT JOIN meta.users u ON u.id = c.user_id
+WHERE c.id = sqlc.arg(id)::uuid AND c.deleted_at IS NULL;
+
+-- name: LockRowComment :one
+SELECT id, table_id, row_id, user_id, mentions
+FROM meta.comments
+WHERE id = sqlc.arg(id)::uuid AND deleted_at IS NULL
+FOR UPDATE;
+
+-- name: InsertRowComment :one
+INSERT INTO meta.comments (table_id, row_id, user_id, body, mentions)
+VALUES (sqlc.arg(table_id)::uuid, sqlc.arg(row_id)::bigint, sqlc.arg(user_id)::uuid,
+        sqlc.arg(body)::text, sqlc.arg(mentions)::uuid[])
+RETURNING id;
+
+-- name: UpdateRowComment :exec
+UPDATE meta.comments SET body = sqlc.arg(body)::text, mentions = sqlc.arg(mentions)::uuid[], edited_at = now()
+WHERE id = sqlc.arg(id)::uuid AND deleted_at IS NULL;
+
+-- name: DeleteRowComment :exec
+UPDATE meta.comments SET deleted_at = now()
+WHERE id = sqlc.arg(id)::uuid AND deleted_at IS NULL;
+
+-- name: CountRowComments :many
+SELECT row_id, count(*)::bigint AS comment_count
+FROM meta.comments
+WHERE table_id = sqlc.arg(table_id)::uuid AND row_id = ANY(sqlc.arg(row_ids)::bigint[])
+  AND deleted_at IS NULL
+GROUP BY row_id;
+
+-- name: LockMentionUsers :many
+SELECT id, username, display_name AS name
+FROM meta.users
+WHERE username = ANY(sqlc.arg(usernames)::text[]) AND status = 'active'
+ORDER BY id
+FOR SHARE;
+
+-- name: GetMentionUsers :many
+SELECT id, username, display_name AS name
+FROM meta.users
+WHERE id = ANY(sqlc.arg(ids)::uuid[])
+ORDER BY id;
+
+-- name: InsertMentionNotification :one
+INSERT INTO meta.notifications (user_id, kind, payload)
+VALUES (sqlc.arg(user_id)::uuid, 'mention', jsonb_build_object('commentId', sqlc.arg(comment_id)::uuid))
+RETURNING id;
+
+-- name: DeleteMentionNotifications :exec
+DELETE FROM meta.notifications
+WHERE kind = 'mention' AND user_id = ANY(sqlc.arg(user_ids)::uuid[])
+  AND payload->>'commentId' = sqlc.arg(comment_id)::text;
+
+-- name: ListMentionNotifications :one
+WITH visible AS (
+  SELECT n.id, n.created_at, n.read_at, c.id AS comment_id, c.row_id,
+         t.id AS table_id, t.name AS table_name, COALESCE(u.display_name, '')::text AS author_name
+  FROM meta.notifications n
+  JOIN meta.comments c ON c.id::text = n.payload->>'commentId' AND c.deleted_at IS NULL
+  JOIN meta.tables t ON t.id = c.table_id AND t.deleted_at IS NULL
+  JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+  JOIN meta.workspaces w ON w.id = b.workspace_id AND w.deleted_at IS NULL
+  JOIN meta.users viewer ON viewer.id = n.user_id AND viewer.status = 'active'
+  LEFT JOIN meta.users u ON u.id = c.user_id
+  WHERE n.user_id = sqlc.arg(user_id)::uuid AND n.kind = 'mention'
+    AND n.user_id = ANY(c.mentions)
+    AND EXISTS (
+      SELECT 1 FROM meta.grants g
+      WHERE ((g.resource_type = 'workspace' AND g.resource_id = w.id)
+         OR (g.resource_type = 'book' AND g.resource_id = b.id)
+         OR (g.resource_type = 'table' AND g.resource_id = t.id))
+        AND ((g.principal_type = 'user' AND g.principal_id = n.user_id)
+          OR (g.principal_type = 'group' AND EXISTS (
+            SELECT 1 FROM meta.group_members gm
+            WHERE gm.group_id = g.principal_id AND gm.user_id = n.user_id
+          )))
+    )
+), page AS (
+  SELECT * FROM visible
+  ORDER BY created_at DESC, id DESC
+  LIMIT sqlc.arg(page_limit)::int OFFSET sqlc.arg(page_offset)::int
+)
+SELECT (SELECT count(*)::bigint FROM visible WHERE read_at IS NULL) AS unread_count,
+       COALESCE(jsonb_agg(jsonb_build_object(
+         'id', id, 'tableId', table_id, 'tableName', table_name, 'rowId', row_id::text,
+         'commentId', comment_id, 'authorName', author_name, 'createdAt', created_at, 'readAt', read_at
+       ) ORDER BY created_at DESC, id DESC), '[]'::jsonb)::text AS items
+FROM page;
+
+-- name: MarkMentionNotificationRead :execrows
+UPDATE meta.notifications SET read_at = now()
+WHERE id = sqlc.arg(id)::uuid AND user_id = sqlc.arg(user_id)::uuid
+  AND kind = 'mention' AND read_at IS NULL;

@@ -25,6 +25,7 @@ import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
 import CellPresence from '../presence/CellPresence.vue'
+import CommentPanel from './CommentPanel.vue'
 
 const rowPatchBodyLimit = 64 * 1024
 
@@ -33,6 +34,7 @@ const props = defineProps<{
   viewId: string
   rowId: string | null
   identity: string
+  focusComment?: string
 }>()
 const emit = defineEmits<{
   close: []
@@ -647,6 +649,17 @@ function leaveField(event: FocusEvent) {
         </template>
         <p v-else role="alert">{{ t('grid.unsupportedField') }}</p>
       </section>
+      <CommentPanel
+        v-if="row && rowId && !blocked"
+        :table-id="schema.table.id"
+        :view-id="viewId"
+        :row-id="rowId"
+        :identity="identity"
+        :level="schema.myLevel"
+        :focus-comment="focusComment"
+        @changed="emit('saved')"
+        @schema-changed="emit('schemaChanged')"
+      />
       <button
         v-if="creating"
         class="create-row"

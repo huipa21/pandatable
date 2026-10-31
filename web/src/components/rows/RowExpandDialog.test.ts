@@ -69,7 +69,7 @@ async function setup(
   await router.push(`/t/t/v/v/r/${id}`)
   wrapper = mount(RowExpandDialog, {
     props: { schema, viewId: 'v', rowId, identity: navUser.id },
-    global: { plugins: [pinia, i18n, router] },
+    global: { plugins: [pinia, i18n, router], stubs: { CommentPanel: true } },
     attachTo: document.body,
   })
   await flushPromises()

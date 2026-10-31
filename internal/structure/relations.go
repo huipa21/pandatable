@@ -685,6 +685,9 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 		if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
 			return err
 		}
+		if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
+			return err
+		}
 		result = record
 		if err := emitRows(ctx, tx, actor, table.id.String(), "row.updated", []RowRecord{record}, []string{fieldID}); err != nil {
 			return err

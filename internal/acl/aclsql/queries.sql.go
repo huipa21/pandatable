@@ -468,6 +468,61 @@ func (q *Queries) ResolveTableUserLabels(ctx context.Context, ids []pgtype.UUID)
 	return items, nil
 }
 
+const searchMentionUsers = `-- name: SearchMentionUsers :many
+SELECT u.id, u.display_name AS name, u.username
+FROM meta.users u
+JOIN meta.tables t ON t.id = $1::uuid AND t.deleted_at IS NULL
+JOIN meta.books b ON b.id = t.book_id AND b.deleted_at IS NULL
+JOIN meta.workspaces w ON w.id = b.workspace_id AND w.deleted_at IS NULL
+WHERE u.status = 'active'
+  AND (strpos(lower(u.username), lower($2::text)) > 0
+       OR strpos(lower(u.display_name), lower($2::text)) > 0)
+  AND EXISTS (
+    SELECT 1 FROM meta.grants g
+    WHERE ((g.resource_type = 'workspace' AND g.resource_id = w.id)
+       OR (g.resource_type = 'book' AND g.resource_id = b.id)
+       OR (g.resource_type = 'table' AND g.resource_id = t.id))
+      AND ((g.principal_type = 'user' AND g.principal_id = u.id)
+        OR (g.principal_type = 'group' AND EXISTS (
+          SELECT 1 FROM meta.group_members gm
+          WHERE gm.group_id = g.principal_id AND gm.user_id = u.id
+        )))
+  )
+ORDER BY u.username, u.id
+LIMIT 21
+`
+
+type SearchMentionUsersParams struct {
+	TableID pgtype.UUID
+	Search  string
+}
+
+type SearchMentionUsersRow struct {
+	ID       pgtype.UUID
+	Name     string
+	Username string
+}
+
+func (q *Queries) SearchMentionUsers(ctx context.Context, arg SearchMentionUsersParams) ([]SearchMentionUsersRow, error) {
+	rows, err := q.db.Query(ctx, searchMentionUsers, arg.TableID, arg.Search)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchMentionUsersRow
+	for rows.Next() {
+		var i SearchMentionUsersRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Username); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchShareGroups = `-- name: SearchShareGroups :many
 SELECT id, name
 FROM meta.groups

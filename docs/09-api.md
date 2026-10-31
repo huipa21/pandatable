@@ -728,10 +728,19 @@ uses only the successful authoritative response ID. No mobile-specific API,
 row version, validator, migration or relaxed authorization/body limit exists.
 
 ### Collaboration
-| GET/POST | `/tables/{id}/rows/{rowId}/comments` | |
-| PATCH/DELETE | `/comments/{id}` | author only (owner can delete) |
+| GET | `/tables/{id}/directory/mentions?q={text}` | Table read access; 2–100 characters; returns up to 20 active users with table read access and `hasMore`. |
+| GET/POST | `/tables/{id}/rows/{rowId}/comments` | Table read access; listing accepts `offset` and optional comment UUID `focus`, returning `{items,hasMore}`; POST accepts `{body}` and returns `{comment,eventId}`. |
+| PATCH/DELETE | `/comments/{id}` | Author may edit or delete; table owner may delete any comment. PATCH accepts `{body}` and returns `{comment,eventId}`; DELETE returns `{eventId}`. |
 | GET | `/tables/{id}/rows/{rowId}/history` | paged |
-| GET | `/notifications` · POST `/notifications/read` | |
+| GET | `/notifications?offset={n}` | Recipient's visible mentions, newest first, with `{items,unreadCount,hasMore}`. |
+| POST | `/notifications/read` | `{id}` marks the caller's notification read idempotently and returns `{eventId}`. |
+
+Comments and notifications page by 50; focused comment listings pin the
+requested comment before normal newest-first ordering. An absent focus returns
+`ERR_COMMENT_NOT_FOUND`. Comment bodies are nonempty plain text up to 4,096
+UTF-8 bytes with at most 50 distinct `@username` mentions. Email-like tokens are
+not mentions. Mutations resolve eligible active table readers inside the
+transaction, and row responses include `commentCount` when nonzero.
 
 ### Files
 | POST | `/tables/{id}/fields/{fieldId}/attachments` | Authenticated `multipart/form-data` with one `file` part; requires table write access; enforces the per-file admin MiB limit, sniffed MIME and field options. |
@@ -770,6 +779,9 @@ Server → client:
 | `view.changed` | `{ tableId, viewId, version, by, eventId }` |
 | `nav.changed` | `{ by, eventId }` — refresh the authorized sidebar; contains no resource IDs |
 | `presence` | `{ tableId, viewId?, users: [{ userId, name, cell? }] }` — current collaborators; `viewId` is the recipient's own view, and cell details appear only for that view |
+| `comment.created` / `comment.updated` / `comment.deleted` | `{ tableId, ids: [rowId], by, byName?, eventId }` — refresh the affected row's comments and count |
+| `notification` | `{ tableId, by, eventId }` — only the mentioned recipient, including without a subscription, after a fresh table-read check |
+| `notification.changed` | `{ by?, eventId }` — recipient-only notification-list invalidation without resource identifiers |
 | `pong` | |
 | `session.revoked` | user disabled / logged out elsewhere |
 | `error` | `{ code }` for unsupported client message types |

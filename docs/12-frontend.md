@@ -432,10 +432,24 @@ use existing login/password routes. Reads/writes have ten-second deadlines
 and generation/abort/identity guards, including implementations that ignore
 cancellation. Identical schema refreshes do not restart failed row reads.
 Locale/theme changes stay reactive; the dialog is viewport-bounded and native
-focus trapping/Escape work without a new dependency. Mobile card lists,
-full-screen row layout, FAB, comments and history are not implemented here.
-T1.19 adds cards/full-screen layout/FAB as described in section 5; comments
-and history remain deferred.
+focus trapping/Escape work without a new dependency. T1.19 adds cards,
+full-screen row layout and FAB as described in section 5; T3.3 adds comments as
+described below. Row history remains deferred.
+
+### T3.3 comments and notifications (D-185)
+
+The row dialog loads a paginated, plain-text comment panel for readers as well
+as writers. It offers access-filtered mention autocomplete and links resolved
+mentions to their comment; typed ineligible names are visibly not notified.
+Authors can edit/delete and table owners can delete any comment. Desktop row
+headers and mobile cards display counts and refresh on comment changes.
+
+The authenticated shell's bell loads persisted unread counts, updates on
+recipient-only realtime events even outside the table, and opens an accessible
+grid's row link with `?comment={id}`. The requested comment is pinned and
+focused, including when older than the first normal page. Errors, a missing
+grid, and failed saves are shown rather than silently discarded. Both
+desktop and mobile use the same localized components and server ACL.
 
 ### T0.8 feasibility lab (not the production grid)
 
@@ -529,8 +543,9 @@ preserved. The synthetic spike remains isolated.
   notice. Success opens the authoritative new row URL and refreshes the bounded
   list. Readers have no FAB/selection/write controls; server ACL remains final.
 
-No mobile comments/history, uploads, relations/formulas, search/filter/group/
-highlight builders, realtime, restore/purge or out-of-scope features are added.
+T1.19 itself did not add mobile comments/history, uploads, relations/formulas,
+search/filter/group/highlight builders, realtime, restore/purge or out-of-scope
+features; later tasks add the supported features described elsewhere.
 Locale/theme changes use static matching en/zh-CN keys and existing tokens.
 
 ## 6. i18n

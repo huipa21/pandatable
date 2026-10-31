@@ -50,6 +50,7 @@ type RowQueryRequest struct {
 type RowRecord struct {
 	ID             string                     `json:"id"`
 	Fields         map[string]json.RawMessage `json:"fields"`
+	CommentCount   int64                      `json:"commentCount,omitempty"`
 	HighlightRow   *string                    `json:"_hl_row,omitempty"`
 	HighlightCells map[string]string          `json:"_hl_cells,omitempty"`
 }
@@ -416,6 +417,10 @@ func (s *Service) withReadableTable(ctx context.Context, actor Actor, tableID st
 }
 
 func (s *Service) withWritableTable(ctx context.Context, actor Actor, tableID string, run func(pgx.Tx, rowTable) error) error {
+	return s.withTableMutation(ctx, actor, tableID, acl.Write, run)
+}
+
+func (s *Service) withTableMutation(ctx context.Context, actor Actor, tableID string, level acl.Level, run func(pgx.Tx, rowTable) error) error {
 	target, err := resourceOf(acl.Table, tableID)
 	if err != nil {
 		return err
@@ -424,7 +429,7 @@ func (s *Service) withWritableTable(ctx context.Context, actor Actor, tableID st
 	if !ok {
 		return acl.ErrValidation()
 	}
-	if err := s.authorizeRows(ctx, s.pool, user, target, acl.Write); err != nil {
+	if err := s.authorizeRows(ctx, s.pool, user, target, level); err != nil {
 		return err
 	}
 	err = s.pool.WithTx(ctx, func(tx pgx.Tx) error {
@@ -438,7 +443,7 @@ func (s *Service) withWritableTable(ctx context.Context, actor Actor, tableID st
 		if err := acl.LockActiveUser(ctx, tx, user); err != nil {
 			return err
 		}
-		if err := s.authorizeRows(ctx, tx, user, target, acl.Write); err != nil {
+		if err := s.authorizeRows(ctx, tx, user, target, level); err != nil {
 			return err
 		}
 		tableRow, err := structuresql.New(tx).LockRowTable(ctx, target.ID)
@@ -615,6 +620,9 @@ func (s *Service) GetRow(ctx context.Context, actor Actor, tableID, rowID string
 			return err
 		}
 		if err := enrichRowFormulas(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
+			return err
+		}
+		if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
 			return err
 		}
 		result = record
@@ -828,6 +836,9 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		return RowQueryResult{}, rowDatabaseError(err)
 	}
 	if err := enrichRowFormulas(ctx, tx, actor, table, fields, result.Rows); err != nil {
+		return RowQueryResult{}, rowDatabaseError(err)
+	}
+	if err := enrichCommentCounts(ctx, tx, table.id, result.Rows); err != nil {
 		return RowQueryResult{}, rowDatabaseError(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1094,6 +1105,9 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 		if err != nil {
 			return err
 		}
+		if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
+			return err
+		}
 		result = record
 		if err := emitRows(ctx, tx, actor, table.id.String(), "row.updated", []RowRecord{record},
 			changedFields([]RowPatch{{Fields: input}})); err != nil {
@@ -1197,6 +1211,9 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 			}
 			result[index] = record
 		}
+		if err := enrichCommentCounts(ctx, tx, table.id, result); err != nil {
+			return err
+		}
 		if err := emitPatches(ctx, tx, actor, table.id.String(), result, input); err != nil {
 			return err
 		}
@@ -1250,6 +1267,9 @@ func (s *Service) DeleteRows(ctx context.Context, actor Actor, tableID string, r
 			return err
 		}
 		if err := enrichRowFormulas(ctx, tx, actor, table, table.fields, records); err != nil {
+			return err
+		}
+		if err := enrichCommentCounts(ctx, tx, table.id, records); err != nil {
 			return err
 		}
 		if len(records) != len(ids) {
