@@ -753,7 +753,11 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 			result, err = s.fieldResult(ctx, c, table.ID, &field.ID)
 			return err
 		}
-		before, err := codec.Bind(codec.Kind(field.UiType), field.Options)
+		options, err := fieldOptionsForCodec(field.Options)
+		if err != nil {
+			return err
+		}
+		before, err := codec.Bind(codec.Kind(field.UiType), options)
 		if err != nil {
 			return fmt.Errorf("bind stored field options: %w", err)
 		}
@@ -804,8 +808,12 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 			columnState{required: required, unique: unique, stored: value.stored}, value, patch.FillEmpty, false); err != nil {
 			return err
 		}
+		options, err = mergeAutomaticIndexMetadata(after.Options(), field.Options)
+		if err != nil {
+			return err
+		}
 		if _, err := c.q.UpdateField(ctx, structuresql.UpdateFieldParams{ID: field.ID, Name: name, Description: description,
-			Options: after.Options(), IsRequired: required, IsUnique: unique, DefaultJson: value.stored}); err != nil {
+			Options: options, IsRequired: required, IsUnique: unique, DefaultJson: value.stored}); err != nil {
 			return fieldNameConflict(fmt.Errorf("update field: %w", err))
 		}
 		if patch.Index != nil {
@@ -924,7 +932,11 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 				return notFoundIfNoRows(err, "replace display field")
 			}
 		}
-		bound, err := codec.Bind(codec.Kind(field.UiType), field.Options)
+		options, err := fieldOptionsForCodec(field.Options)
+		if err != nil {
+			return err
+		}
+		bound, err := codec.Bind(codec.Kind(field.UiType), options)
 		if err != nil {
 			return fmt.Errorf("bind stored field options: %w", err)
 		}

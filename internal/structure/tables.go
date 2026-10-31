@@ -235,8 +235,12 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, tableID
 		SchemaVersion: table.SchemaVersion, MyLevel: level.String(),
 	}
 	for index, row := range fields {
+		options, err := fieldOptionsForResponse(row.Options)
+		if err != nil {
+			return TableSchema{}, err
+		}
 		schema.Fields[index] = Field{ID: row.ID.String(), Name: row.Name, Description: row.Description, UIType: row.UiType,
-			Options: json.RawMessage(row.Options), Filterable: true, FilterOps: []codec.Op{},
+			Options: json.RawMessage(options), Filterable: true, FilterOps: []codec.Op{},
 			IsSystem: row.IsSystem, IsRequired: row.IsRequired, IsUnique: row.IsUnique,
 			Default: json.RawMessage("null"), Position: row.Position, Version: row.Version}
 		if row.DefaultJson != nil {

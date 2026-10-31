@@ -426,7 +426,7 @@ CREATE TABLE b_k3j9x0a2mq.t_8fh2kd9s0p (
 
 - System fields map to `id, created_at, created_by, updated_at, updated_by` and exist in `meta.fields` with `is_system=true` (hidden by default in new views).
 - `updated_at/updated_by` set by the app in every UPDATE (no triggers — keeps writes explicit and cheap).
-- Indexes: PK; every FK column; auto-created for `is_unique`. Owners can't create arbitrary indexes in v1; the engine adds a btree index on a field when it's used in a shared view's sort/group *and* the table has > 10k rows (background, `CREATE INDEX CONCURRENTLY`). See D-020.
+- Indexes: PK; every FK column; auto-created for `is_unique`. Owners can't create arbitrary indexes in v1; on tables with > 10k rows, the background worker adds btree indexes for supported shared-view sort/group/filter uses and trigram GIN indexes for configured-visible physical text fields in shared-grid quick search. Successful index kinds are tracked in `fields.options.indexed`; creation uses `CREATE INDEX CONCURRENTLY`. See D-020.
 
 ### T1.15 row persistence (D-133..D-135)
 

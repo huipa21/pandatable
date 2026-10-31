@@ -55,7 +55,7 @@ func compileQuickSearch(
 			return "", nil, err
 		}
 		clauses = append(clauses,
-			"COALESCE(("+expression+")::text, '') ILIKE "+compiler.bind(pattern)+` ESCAPE '\'`)
+			"("+expression+")::text ILIKE "+compiler.bind(pattern)+` ESCAPE '\'`)
 	}
 	if len(clauses) == 0 {
 		return "FALSE", nil, nil

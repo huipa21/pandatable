@@ -198,8 +198,9 @@ is never written to view config. A non-empty term is matched using a
 parameterized, wildcard-escaped `ILIKE '%term%'` OR'ed across the effective
 visible text-like fields, with `::text` casts for numbers and dates. Hidden
 fields are not searched. Row, group, and footer-aggregate requests apply the
-same search condition alongside the active filter. Uses a `pg_trgm` GIN index
-if the table is large and search is used (auto-index policy, D-020).
+same search condition alongside the active filter. On large tables, configured-visible
+physical text fields in shared grid views are background trigram GIN candidates;
+transient search requests and personal views do not schedule indexes (D-020).
 
 ## 6. Footer aggregates
 

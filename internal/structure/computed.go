@@ -107,7 +107,11 @@ func computedTarget(ctx context.Context, tx pgx.Tx, table rowTable, kind string,
 		return nil, validation("Computed field target must be a stored value field")
 	}
 	targetKind := codec.Kind(uiType)
-	targetCodec, err := codec.Bind(targetKind, fieldOptions)
+	targetOptions, err := fieldOptionsForCodec(fieldOptions)
+	if err != nil {
+		return nil, err
+	}
+	targetCodec, err := codec.Bind(targetKind, targetOptions)
 	if err != nil {
 		return nil, fmt.Errorf("bind computed target field: %w", err)
 	}

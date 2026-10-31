@@ -59,7 +59,11 @@ func makeTypeChangePlan(ctx context.Context, c *txn, field structuresql.GetField
 		!typeChangeable(input.UIType) || field.UiType == input.UIType {
 		return typeChangePlan{}, reasonError(400, "ERR_VALIDATION", "This field type cannot be converted", "type_change_unsupported")
 	}
-	source, err := bindUserKind(field.UiType, field.Options)
+	sourceOptions, err := fieldOptionsForCodec(field.Options)
+	if err != nil {
+		return typeChangePlan{}, err
+	}
+	source, err := bindUserKind(field.UiType, sourceOptions)
 	if err != nil {
 		return typeChangePlan{}, err
 	}

@@ -230,7 +230,11 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 			table.byID[field.id] = field
 			continue
 		}
-		bound, err := codec.Bind(kind, row.Options)
+		options, err := fieldOptionsForCodec(row.Options)
+		if err != nil {
+			return rowTable{}, err
+		}
+		bound, err := codec.Bind(kind, options)
 		if err != nil {
 			return rowTable{}, fmt.Errorf("bind stored row field: %w", err)
 		}
