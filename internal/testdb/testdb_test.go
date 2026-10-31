@@ -69,9 +69,24 @@ func TestSuiteIsolationPostgreSQL(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if err := first.CheckPoolOwnership(ctx, secondPool); err == nil ||
+		!strings.Contains(err.Error(), "not owned") {
+		t.Fatalf("accepted a different Suite's database: %v", err)
+	}
+	if err := first.CheckPoolOwnership(ctx, firstPool); err != nil {
+		t.Fatalf("rejected the Suite's own database: %v", err)
+	}
+	var unopened Suite
+	if err := unopened.CheckPoolOwnership(ctx, firstPool); err == nil {
+		t.Fatal("accepted an uninitialized Suite")
+	}
+	if err := first.CheckPoolOwnership(ctx, nil); err == nil {
+		t.Fatal("accepted a nil pool")
+	}
 	if _, err := firstPool.Exec(ctx, `INSERT INTO meta.settings (key, value) VALUES ('testdb_isolation', 'true')`); err != nil {
 		t.Fatal(err)
 	}
+
 	var count int
 	if err := secondPool.QueryRow(ctx, `SELECT count(*) FROM meta.settings WHERE key = 'testdb_isolation'`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("cross-suite data leakage: count=%d, err=%v", count, err)

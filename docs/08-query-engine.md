@@ -191,6 +191,10 @@ that acceptance still requires T1.16's production grid and browser scenario.
 3. Empty values form a `(empty)` group. Multi-select groups by the full array value (sorted) — v1 simplification.
 4. Client renders a virtual flattened list: group header rows + data rows; collapsed state stored per user in localStorage.
 
+For stored scalar text fields, bucket keys, group paths and empty/unique
+aggregates use the equivalent scalar JSON key expression from D-182. Arrays,
+JSON and computed fields retain the array-aware canonicalization.
+
 ## 5. Quick search
 
 The query accepts a transient `search` string (≤256 Unicode code points); it

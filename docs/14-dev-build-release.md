@@ -175,6 +175,35 @@ compact `dot` reporter (failures in full) and writes per-test durations to
 Per-task focused gate commands for M0–M1 are archived in
 [archive/dev-checks-m0-m1.md](archive/dev-checks-m0-m1.md).
 
+### T2.15 linked-query performance (D-182)
+
+With an explicitly configured PG18 test database administrator URL, run:
+
+```powershell
+$env:PT_TEST_DATABASE_URL = '<explicit PG18 test administrator URL>'
+$env:PT_TEST_DATABASE_REQUIRED = '1'
+$env:PT_RUN_QUERY_PERF = '1'
+go test .\internal\httpapi -run '^TestLinkedQueryHTTPPerformance200k$' -count=1 -v
+go test .\internal\structure -run '^(TestTracedQueryBoundArgs|TestQueryPerformance200k)$' -bench '^BenchmarkQueryPerformance200k$' -benchtime=1x -count=1 -v
+Remove-Item Env:\PT_RUN_QUERY_PERF
+```
+
+The Suite creates and drops its own isolated database. Real structure and
+relation services create metadata/FKs, deterministic SQL seeds 200,000 tasks
+and 1,000 projects, and the shared-view index scan creates applicable indexes
+before measurement. Run the two commands sequentially to avoid competing
+loads. The HTTP test measures first and repeated authenticated loopback
+requests through the complete response-body read, including server
+serialization; the service test and Go benchmark measure the underlying
+calls separately. Both tests validate counts, ordering, group sums and visible
+links, strictly compare individual samples to <1 s, and print actual data,
+count and link statements, bound arguments and `EXPLAIN (ANALYZE, BUFFERS)`.
+The Go benchmark also validates results, reports allocations and excludes
+setup. Seeding, index creation and `ANALYZE` warm caches; no cold-cache result
+is claimed. Loopback measurements exclude TLS, reverse proxy and browser
+overhead and are not AT-312/`e2e --perf`; target-host acceptance requires the
+documented 2-vCPU/4-GB host.
+
 
 ### T1.20 safe seed and production-browser baseline (D-143/D-144)
 

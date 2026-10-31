@@ -11,7 +11,7 @@ import (
 	"pandatable/internal/ddl"
 )
 
-func mustUUID(t *testing.T, value string) pgtype.UUID {
+func mustUUID(t testing.TB, value string) pgtype.UUID {
 	t.Helper()
 	uuid, ok := acl.ParseUUID(value)
 	if !ok {

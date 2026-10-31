@@ -51,7 +51,7 @@ func (suite *Suite) Run(m *testing.M) int {
 	return code
 }
 
-func (suite *Suite) URL(t *testing.T) string {
+func (suite *Suite) URL(t testing.TB) string {
 	t.Helper()
 	suite.once.Do(func() {
 		suite.err = suite.open(os.Getenv("PT_TEST_DATABASE_URL"))
@@ -66,7 +66,7 @@ func (suite *Suite) URL(t *testing.T) string {
 	return suite.databaseURL
 }
 
-func (suite *Suite) Open(t *testing.T) *db.Pool {
+func (suite *Suite) Open(t testing.TB) *db.Pool {
 	t.Helper()
 	databaseURL := suite.URL(t)
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
@@ -77,6 +77,24 @@ func (suite *Suite) Open(t *testing.T) *db.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+// CheckPoolOwnership ensures that a pool connects to this suite's disposable database.
+func (suite *Suite) CheckPoolOwnership(ctx context.Context, pool *db.Pool) error {
+	if suite == nil || suite.name == "" {
+		return errors.New("testdb: an initialized Suite-owned database is required")
+	}
+	if pool == nil {
+		return errors.New("testdb: a database pool is required")
+	}
+	var name string
+	if err := pool.QueryRow(ctx, "SELECT current_database()").Scan(&name); err != nil {
+		return operationError("identify database", err)
+	}
+	if name != suite.name {
+		return errors.New("testdb: database is not owned by this Suite")
+	}
+	return nil
 }
 
 func (suite *Suite) open(databaseURL string) (result error) {

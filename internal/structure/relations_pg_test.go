@@ -8,7 +8,7 @@ import (
 	"pandatable/internal/codec"
 )
 
-func relationTable(t *testing.T, f *fixture, owner Actor, book string, name string) (TableSchema, Field) {
+func relationTable(t testing.TB, f *fixture, owner Actor, book string, name string) (TableSchema, Field) {
 	t.Helper()
 	table, err := f.service.CreateTable(f.ctx, owner, book, name)
 	if err != nil {

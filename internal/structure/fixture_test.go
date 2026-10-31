@@ -20,7 +20,7 @@ var database testdb.Suite
 func TestMain(m *testing.M) { os.Exit(database.Run(m)) }
 
 type fixture struct {
-	t        *testing.T
+	t        testing.TB
 	pool     *db.Pool
 	ctx      context.Context
 	resolver *acl.Resolver
@@ -30,7 +30,7 @@ type fixture struct {
 	groups   []string
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t testing.TB) *fixture {
 	t.Helper()
 	pool := database.Open(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)

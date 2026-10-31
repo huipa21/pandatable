@@ -40,8 +40,12 @@ type RowGroupResult struct {
 	SchemaVersion int32            `json:"schemaVersion"`
 }
 
-func canonicalGroupKey(expression string) string {
+func canonicalGroupKey(field rowField, expression string) string {
 	raw := "to_jsonb(" + expression + ")"
+	if field.kind == codec.Text && field.codec != nil &&
+		field.computed == nil && field.formula == nil && field.relation == nil {
+		return "COALESCE(" + raw + ", 'null'::jsonb)"
+	}
 	return `(CASE
 		WHEN ` + raw + ` IS NULL OR ` + raw + ` = 'null'::jsonb OR ` + raw + ` = '[]'::jsonb
 			THEN 'null'::jsonb
@@ -78,7 +82,7 @@ func compileGroupPath(
 			return "", nil, err
 		}
 		key := compiler.bind(string(value))
-		conditions = append(conditions, canonicalGroupKey(expression)+" IS NOT DISTINCT FROM "+key+"::jsonb")
+		conditions = append(conditions, canonicalGroupKey(field, expression)+" IS NOT DISTINCT FROM "+key+"::jsonb")
 	}
 	return strings.Join(conditions, " AND "), compiler.args, nil
 }
@@ -92,7 +96,7 @@ func groupAggregateExpression(
 	if err != nil {
 		return "", err
 	}
-	key := canonicalGroupKey(expression)
+	key := canonicalGroupKey(field, expression)
 	switch aggregate {
 	case codec.AggCount:
 		return "count(*)", nil
@@ -234,7 +238,7 @@ func (s *Service) QueryGroups(
 	if err != nil {
 		return RowGroupResult{}, err
 	}
-	groupExpression = canonicalGroupKey(groupExpression)
+	groupExpression = canonicalGroupKey(field, groupExpression)
 	aggregateFields := make([]rowField, len(config.Aggregates))
 	aggregateExpressions := make([]string, len(config.Aggregates))
 	for index, aggregate := range config.Aggregates {
