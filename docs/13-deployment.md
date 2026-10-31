@@ -122,8 +122,9 @@ exposes only app name/default language, so every user's header/title follows
 after reload without exposing privileged settings. Existing explicit user/local
 preferences stay unchanged; NULL user timezones follow the new default.
 Upload limit is **MiB** (default 20, range 1..100); history/trash retention
-defaults are 90/30 days (range 1..3650). Values persist now, but upload enforcement
-uses this per-file limit (T2.2); retention jobs await their planned features.
+defaults are 90/30 days (range 1..3650). Upload enforcement uses this per-file
+limit (T2.2). Both retention jobs run at startup and daily; Trash purge commits
+database changes before retryable attachment-file cleanup and logs failures.
 The image decode cap is `imageMaxMegapixels` (default 16, range 1..16). Settings
 reads perform no filesystem walk and do not invalidate the dashboard's hourly
 directory caches.

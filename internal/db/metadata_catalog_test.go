@@ -76,6 +76,7 @@ var metadataColumns = map[string][]columnSpec{
 		{"version", "integer", false, "1"},
 		{"created_at", "timestamp with time zone", false, "now()"},
 		{"deleted_at", "timestamp with time zone", true, ""},
+		{"trash_required", "boolean", true, ""},
 	},
 	"relations": {
 		{"id", "uuid", false, "uuidv7()"},
@@ -157,6 +158,11 @@ var metadataColumns = map[string][]columnSpec{
 		{"has_thumb", "boolean", false, "false"},
 		{"uploaded_by", "uuid", true, ""},
 		{"created_at", "timestamp with time zone", false, "now()"},
+	},
+	"attachment_purge_queue": {
+		{"id", "uuid", false, ""},
+		{"storage_path", "text", false, ""},
+		{"has_thumb", "boolean", false, ""},
 	},
 	"backups": {
 		{"id", "uuid", false, "uuidv7()"},

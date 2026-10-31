@@ -156,6 +156,24 @@ export interface WorkspaceListing {
 }
 
 export type ResourceKind = 'workspace' | 'book' | 'table'
+export type TrashKind = ResourceKind | 'field' | 'view'
+
+export interface TrashItem {
+  kind: TrashKind
+  id: string
+  name: string
+  workspaceId: string
+  workspaceName: string
+  parentId: string
+  parentName: string
+  deletedAt: string
+  expiresAt: string
+}
+
+export interface TrashListing {
+  items: TrashItem[]
+}
+
 export type AccessLevel = 'none' | 'read' | 'write' | 'owner'
 export type GrantLevel = Exclude<AccessLevel, 'none'>
 export type PrincipalType = 'user' | 'group'

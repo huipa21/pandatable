@@ -92,9 +92,10 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		if afterRerun := migrationRecords(t, ctx, migrationDB); beforeRerun != afterRerun {
 			t.Fatal("repeated migration changed version records")
 		}
-		assertSQL(t, ctx, pool, `SELECT count(*) = 4 AND count(*) FILTER (WHERE version_id = 1 AND is_applied) = 1
+		assertSQL(t, ctx, pool, `SELECT count(*) = 5 AND count(*) FILTER (WHERE version_id = 1 AND is_applied) = 1
 			AND count(*) FILTER (WHERE version_id = 2 AND is_applied) = 1
-			AND count(*) FILTER (WHERE version_id = 3 AND is_applied) = 1 FROM public.goose_db_version`)
+			AND count(*) FILTER (WHERE version_id = 3 AND is_applied) = 1
+			AND count(*) FILTER (WHERE version_id = 4 AND is_applied) = 1 FROM public.goose_db_version`)
 		var after string
 		if err := pool.QueryRow(ctx, snapshotSQL).Scan(&after); err != nil || before != after {
 			t.Fatalf("cycle %d upgrade changed 0001 values/record/extensions/unrelated object (error=%v)", cycle+1, err)

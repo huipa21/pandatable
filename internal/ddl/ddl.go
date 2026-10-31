@@ -81,6 +81,13 @@ func CreateSchema(ctx context.Context, tx pgx.Tx, name string) error {
 	return execute(ctx, tx, "create schema", "CREATE SCHEMA "+pgx.Identifier{name}.Sanitize(), true)
 }
 
+func DropSchema(ctx context.Context, tx pgx.Tx, name string) error {
+	if err := ValidateIdentifier(Book, name); err != nil {
+		return err
+	}
+	return execute(ctx, tx, "drop schema", "DROP SCHEMA "+pgx.Identifier{name}.Sanitize(), false)
+}
+
 func CreateTable(ctx context.Context, tx pgx.Tx, table TableName) error {
 	name, err := table.sql()
 	if err != nil {
@@ -93,6 +100,14 @@ func CreateTable(ctx context.Context, tx pgx.Tx, table TableName) error {
 		"updated_at" pg_catalog.timestamptz NOT NULL DEFAULT pg_catalog.now(),
 		"updated_by" pg_catalog.uuid
 	)`, true)
+}
+
+func DropTable(ctx context.Context, tx pgx.Tx, table TableName) error {
+	name, err := table.sql()
+	if err != nil {
+		return err
+	}
+	return execute(ctx, tx, "drop table", "DROP TABLE "+name, false)
 }
 
 func AddColumn(ctx context.Context, tx pgx.Tx, table TableName, column ColumnSpec) error {
@@ -267,6 +282,33 @@ func sequenceForColumn(column string) (string, error) {
 		return "", err
 	}
 	return "s_" + column[2:], nil
+}
+
+// RestoreAutoNumberColumn fills rows inserted while the field was hidden,
+// reinstates the existing sequence default, and preserves all earlier values.
+func RestoreAutoNumberColumn(ctx context.Context, tx pgx.Tx, table TableName, column string) error {
+	name, err := columnTarget(table, column)
+	if err != nil {
+		return err
+	}
+	sequence, err := sequenceForColumn(column)
+	if err != nil {
+		return err
+	}
+	quotedColumn := pgx.Identifier{column}.Sanitize()
+	nextValue := "pg_catalog.nextval('" + table.Schema + "." + sequence + "'::pg_catalog.regclass)"
+	backfill := "WITH numbered AS MATERIALIZED (SELECT \"id\", " + nextValue +
+		" AS value FROM " + name + " WHERE " + quotedColumn +
+		" IS NULL ORDER BY \"id\") UPDATE " + name + " AS target SET " + quotedColumn +
+		" = numbered.value FROM numbered WHERE target.\"id\" = numbered.\"id\""
+	if err := execute(ctx, tx, "backfill restored autonumber", backfill, false); err != nil {
+		return err
+	}
+	if err := execute(ctx, tx, "restore autonumber default",
+		"ALTER TABLE "+name+" ALTER COLUMN "+quotedColumn+" SET DEFAULT "+nextValue, false); err != nil {
+		return err
+	}
+	return SetNotNull(ctx, tx, table, column, true)
 }
 
 func DropColumn(ctx context.Context, tx pgx.Tx, table TableName, column string) error {

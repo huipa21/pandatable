@@ -295,18 +295,24 @@ func TestRelationSameBookSelfAndACL(t *testing.T) {
 	}
 }
 
-func TestRelationFieldDeletionRemovesCounterpartAndPhysicalStorage(t *testing.T) {
+func TestRelationFieldDeletionRetainsCounterpartAndPhysicalStorageForRestore(t *testing.T) {
 	f := newFixture(t)
 	owner := f.user("user", "active", "en")
 	workspace := f.workspace(owner)
 	book := f.book(owner, workspace.ID)
-	parent, _ := relationTable(t, f, owner, book.ID, "Projects")
-	child, _ := relationTable(t, f, owner, book.ID, "Tasks")
+	parent, parentLabel := relationTable(t, f, owner, book.ID, "Projects")
+	child, childLabel := relationTable(t, f, owner, book.ID, "Tasks")
 	created, err := f.service.CreateRelation(f.ctx, owner, child.Table.ID, RelationInput{
 		Name: "Project", ReverseName: "Tasks", TargetTableID: parent.Table.ID,
 		Kind: "one_many", SourceSide: "child",
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	parentID := relationRow(t, f, owner, parent.Table.ID, parentLabel.ID, "Project A")
+	childID := relationRow(t, f, owner, child.Table.ID, childLabel.ID, "Task A")
+	if _, err := f.service.ChangeLinks(f.ctx, owner, child.Table.ID, childID,
+		created.Relation.ChildFieldID, LinkChange{Add: []string{parentID}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -345,8 +351,19 @@ func TestRelationFieldDeletionRemovesCounterpartAndPhysicalStorage(t *testing.T)
 		schemaName, tableName, fkColumn).Scan(&remaining); err != nil {
 		t.Fatal(err)
 	}
-	if remaining != 0 {
-		t.Fatalf("relation FK column remains after delete: %s.%s.%s", schemaName, tableName, fkColumn)
+	if remaining != 1 {
+		t.Fatalf("relation FK column was lost after delete: %s.%s.%s", schemaName, tableName, fkColumn)
+	}
+	if err := f.service.RestoreTrash(f.ctx, owner, "field", created.Field.ID, TrashRestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := f.service.GetRow(f.ctx, owner, child.Table.ID, childID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	links := relationValues(t, row, created.Relation.ChildFieldID)
+	if len(links) != 1 || links[0].ID != parentID {
+		t.Fatalf("restored links = %+v", links)
 	}
 }
 

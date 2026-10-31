@@ -551,6 +551,16 @@ func (s *Service) fieldScope(ctx context.Context, id string) (pgtype.UUID, acl.R
 	if err != nil {
 		return pgtype.UUID{}, acl.Resource{}, notFoundIfNoRows(err, "read field table")
 	}
+	visible, err := s.queries.IsFieldVisible(ctx, fieldID)
+	if err != nil {
+		return pgtype.UUID{}, acl.Resource{}, notFoundIfNoRows(err, "check field visibility")
+	}
+	if !visible.Valid {
+		return pgtype.UUID{}, acl.Resource{}, errors.New("field visibility is null")
+	}
+	if !visible.Bool {
+		return pgtype.UUID{}, acl.Resource{}, acl.ErrNotFound()
+	}
 	return fieldID, acl.Resource{Type: acl.Table, ID: tableID}, nil
 }
 
@@ -843,6 +853,16 @@ func moveField(ctx context.Context, c *txn, tableID, fieldID pgtype.UUID, index 
 	})
 }
 
+func trashField(ctx context.Context, c *txn, fieldID pgtype.UUID) error {
+	if err := c.q.SaveTrashFieldRequired(ctx, fieldID); err != nil {
+		return fmt.Errorf("save trashed field constraints: %w", err)
+	}
+	if err := c.q.TrashField(ctx, fieldID); err != nil {
+		return fmt.Errorf("trash field: %w", err)
+	}
+	return nil
+}
+
 // DeleteField soft-deletes a user field: metadata is hidden, the column and its
 // data stay, NOT NULL is relaxed and a deleted display field is replaced (D-129).
 func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, version int32) (FieldResult, error) {
@@ -899,14 +919,14 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 			return err
 		}
 		if isComputedKind(field.UiType) {
-			if err := c.q.TrashField(ctx, field.ID); err != nil {
+			if err := trashField(ctx, c, field.ID); err != nil {
 				return fmt.Errorf("trash computed field: %w", err)
 			}
 			result, err = s.fieldResult(ctx, c, table.ID, nil)
 			return err
 		}
 		if field.UiType == "formula" {
-			if err := c.q.TrashField(ctx, field.ID); err != nil {
+			if err := trashField(ctx, c, field.ID); err != nil {
 				return fmt.Errorf("trash formula field: %w", err)
 			}
 			result, err = s.fieldResult(ctx, c, table.ID, nil)
@@ -955,15 +975,13 @@ func (s *Service) DeleteField(ctx context.Context, actor Actor, id string, versi
 				return err
 			}
 		}
-		if field.IsRequired {
-			if !bound.Column().NotNull {
-				if err := ddl.SetNotNull(ctx, c.tx, table.physical, field.PgColumn.String, false); err != nil {
-					return err
-				}
+		if bound.Column().AutoNumber || field.IsRequired && !bound.Column().NotNull {
+			if err := ddl.SetNotNull(ctx, c.tx, table.physical, field.PgColumn.String, false); err != nil {
+				return err
 			}
 		}
-		if err := c.q.TrashField(ctx, field.ID); err != nil {
-			return fmt.Errorf("trash field: %w", err)
+		if err := trashField(ctx, c, field.ID); err != nil {
+			return err
 		}
 		result, err = s.fieldResult(ctx, c, table.ID, nil)
 		return err

@@ -134,7 +134,7 @@ async function changeSettings(
     page.getByRole('heading', { name: zh.settings.title, exact: true }),
   ).toBeVisible()
   await expect(
-    page.getByText(zh.settings.deferredNotice, { exact: true }),
+    page.getByText(zh.settings.trashJobNotice, { exact: true }),
   ).toBeVisible()
   expect(
     await page.evaluate(

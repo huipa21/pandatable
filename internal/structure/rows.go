@@ -171,9 +171,18 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 		id: id, schema: schema, name: name, schemaVersion: version,
 		fields: make([]rowField, 0, len(rows)), byID: make(map[string]rowField, len(rows)),
 	}
-	relations, err := relationRows(ctx, tx, id)
+	allRelations, err := relationRows(ctx, tx, id)
 	if err != nil {
 		return rowTable{}, err
+	}
+	relations, err := liveRelationRows(ctx, tx, id)
+	if err != nil {
+		return rowTable{}, err
+	}
+	knownRelationFields := make(map[string]bool, len(allRelations)*2)
+	for _, relation := range allRelations {
+		knownRelationFields[relation.parentField.String()] = true
+		knownRelationFields[relation.childField.String()] = true
 	}
 	relationFields := make(map[string]struct {
 		relation relationRecord
@@ -197,8 +206,11 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 		kind := codec.Kind(row.UiType)
 		if row.UiType == "link" {
 			info, ok := relationFields[row.ID.String()]
-			if !ok || row.PgColumn.Valid {
+			if row.PgColumn.Valid || !ok && !knownRelationFields[row.ID.String()] {
 				return rowTable{}, errors.New("invalid relation field metadata")
+			}
+			if !ok {
+				continue
 			}
 			relation := info.relation
 			field := rowField{id: row.ID.String(), name: fieldName, relation: &relation, relationSide: info.side}
@@ -228,8 +240,14 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 				continue
 			}
 			info, ok := relationFields[options.RelationFieldID]
-			if !ok || row.PgColumn.Valid || row.IsSystem {
+			if row.PgColumn.Valid || row.IsSystem || !ok && !knownRelationFields[options.RelationFieldID] {
 				return rowTable{}, errors.New("invalid computed field metadata")
+			}
+			if !ok {
+				field := rowField{id: row.ID.String(), name: fieldName, kind: kind, error: "dependency_missing"}
+				table.fields = append(table.fields, field)
+				table.byID[field.id] = field
+				continue
 			}
 			relation := info.relation
 			relationField := rowField{id: options.RelationFieldID, relation: &relation, relationSide: info.side}
@@ -273,6 +291,23 @@ func loadRowTable(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, id pg
 		table.fields = append(table.fields, field)
 		table.byID[field.id] = field
 	}
+	for changed := true; changed; {
+		changed = false
+		for index, field := range table.fields {
+			if field.formula != nil && field.error == "" {
+				for _, dependency := range field.formula.options.FieldIDs {
+					referenced, ok := table.byID[dependency]
+					if !ok || referenced.error != "" {
+						field.error = "dependency_missing"
+						table.fields[index] = field
+						table.byID[field.id] = field
+						changed = true
+						break
+					}
+				}
+			}
+		}
+	}
 	return table, nil
 }
 
@@ -302,7 +337,7 @@ func (table rowTable) selectColumnListAlias(fields []rowField, alias string) []s
 	columns := make([]string, 0, len(fields)+1)
 	columns = append(columns, columnName("id"))
 	for _, field := range fields {
-		if field.relation != nil || field.computed != nil || field.formula != nil {
+		if field.relation != nil || field.computed != nil || field.formula != nil || field.error != "" {
 			continue
 		}
 		column := columnName(field.column)
@@ -361,7 +396,7 @@ func scanRow(row pgx.Row, table rowTable, fields []rowField) (RowRecord, error) 
 func physicalRowFields(fields []rowField) []rowField {
 	result := make([]rowField, 0, len(fields))
 	for _, field := range fields {
-		if field.relation == nil && field.computed == nil && field.formula == nil {
+		if field.relation == nil && field.computed == nil && field.formula == nil && field.error == "" {
 			result = append(result, field)
 		}
 	}

@@ -109,10 +109,16 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		defer close(historyDone)
 		structureService.RunHistoryRetentionWorker(autoIndexCtx, logger)
 	}()
+	trashDone := make(chan struct{})
+	go func() {
+		defer close(trashDone)
+		structureService.RunTrashRetentionWorker(autoIndexCtx, logger, attachmentService)
+	}()
 	defer func() {
 		stopAutoIndex()
 		<-autoIndexDone
 		<-historyDone
+		<-trashDone
 	}()
 	return httpapi.Run(ctx, listener, handler, logger)
 }

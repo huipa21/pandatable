@@ -62,8 +62,8 @@ function drop(target: NavigationItem) {
         @move="move"
       />
     </ul>
-    <button class="trash-placeholder" disabled>
-      {{ t('nav.trashUnavailable') }}
-    </button>
+    <RouterLink class="trash-link" to="/trash" @click="emit('navigate')">
+      {{ t('trash.title') }}
+    </RouterLink>
   </nav>
 </template>

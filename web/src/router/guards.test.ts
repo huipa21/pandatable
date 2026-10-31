@@ -33,6 +33,7 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
     '/w/workspace/b/book',
     '/t/table/v/view',
     '/t/table',
+    '/trash',
     '/profile',
     '/admin/dashboard',
     '/admin/settings',

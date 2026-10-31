@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"pandatable/internal/events"
+	"pandatable/internal/structure/structuresql"
 )
 
 func emitRows(ctx context.Context, tx pgx.Tx, actor Actor, tableID, kind string, rows []RowRecord, fields []string) error {
@@ -48,6 +49,23 @@ func emitRelatedRowInvalidation(ctx context.Context, tx pgx.Tx, tableID, sourceI
 	return events.Emit(ctx, tx, events.Event{
 		Type: "row.bulk", TableID: tableID.String(), SourceTableID: sourceID.String(),
 	})
+}
+
+func notifyRelatedSchemaChanges(ctx context.Context, tx pgx.Tx, actor Actor, tableID pgtype.UUID) error {
+	queries := structuresql.New(tx)
+	related, err := queries.ListRelatedLiveSchemas(ctx, tableID)
+	if err != nil {
+		return fmt.Errorf("list related schemas: %w", err)
+	}
+	for _, id := range related {
+		if err := queries.BumpDependencySchemaVersion(ctx, id); err != nil {
+			return fmt.Errorf("bump related schema version: %w", err)
+		}
+		if err := emitSchema(ctx, tx, actor, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func emitRelatedRowInvalidations(ctx context.Context, tx pgx.Tx, tableID pgtype.UUID) error {

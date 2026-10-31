@@ -314,6 +314,13 @@ func (service *Service) Open(ctx context.Context, userID, attachmentID string, t
 	if err != nil {
 		return nil, fmt.Errorf("recheck attachment metadata: %w", err)
 	}
+	if _, err := service.queries.WithTx(tx).FieldForUpload(ctx, attachmentssql.FieldForUploadParams{
+		ID: metadata.FieldID, TableID: target.ID,
+	}); errors.Is(err, pgx.ErrNoRows) {
+		return nil, acl.ErrNotFound()
+	} else if err != nil {
+		return nil, fmt.Errorf("recheck attachment field: %w", err)
+	}
 	parts := strings.Split(metadata.StoragePath, "/")
 	if len(parts) != 4 || parts[0] != "files" || len(parts[1]) != 4 || len(parts[2]) != 2 || parts[3] != attachmentID {
 		return nil, errors.New("invalid attachment storage path")
@@ -378,6 +385,43 @@ func (service *Service) storageDirectory(year, month string) (string, error) {
 		}
 	}
 	return current, nil
+}
+
+// RemovePurgedFile is idempotent so a durable purge queue can retry partial
+// filesystem removals after failures or process termination.
+func (service *Service) RemovePurgedFile(ctx context.Context, id, storedPath string, hasThumb bool) error {
+	uuid, ok := acl.ParseUUID(id)
+	parts := strings.Split(storedPath, "/")
+	if !ok || uuid.String() != id || len(parts) != 4 || parts[0] != "files" || parts[3] != id {
+		return errors.New("invalid purged attachment storage path")
+	}
+	directory, err := service.storageDirectory(parts[1], parts[2])
+	if err != nil {
+		return err
+	}
+	paths := []string{filepath.Join(directory, id)}
+	if hasThumb {
+		paths = append(paths, filepath.Join(directory, id+".thumb.png"))
+	}
+	for _, path := range paths {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("inspect purged attachment: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("purged attachment path is not a regular file")
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove purged attachment: %w", err)
+		}
+	}
+	return nil
 }
 
 func newUUID() (pgtype.UUID, string, error) {

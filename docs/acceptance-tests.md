@@ -217,6 +217,7 @@ membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
 - **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`.
 - **AT-202 — Rename is metadata only** · M1 *(API)* · Renaming T/field to Chinese names with spaces works; physical names unchanged.
 - **AT-203 — Delete goes to trash** · M1/M3 · alice deletes T → disappears from sidebar; (M3) appears in W's Trash and can be restored with data intact.
+  T3.6: **Pass** — fast desktop/mobile browser deletion removes the sidebar node and schema access; Trash restores the table and retained row. PG18 also checks owner filtering, nested restoration and retained attachments. [Record](task-prompts/T3.6.md#record-2026-11-01).
 - **AT-204 — Workspace grant read** · M1 · alice grants bob `read` on W → bob sees W, B, T; can view rows; cannot edit cells (editors disabled), cannot add rows, cannot see field/schema menus; API write → 403.
 - **AT-205 — Write level** · M1 · bob with `write` on B can add/edit/delete rows in T and create a shared view, but cannot add/delete fields or tables (403).
 - **AT-206 — Raise-only inheritance** · M1 · bob `read` on W + `write` on T → bob can edit T only; other tables read-only. Setting bob `read` on T when he has `write` on W shows warning "inherited level higher" and bob still writes.
@@ -517,6 +518,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-323 — Type change dry-run** · M2 · Text field with values ["1","2","x"] → convert to integer: dry-run shows 1 failing with sample "x"; "Abort" changes nothing; "Convert, set to NULL" results in [1,2,NULL]. Evidence: PG18/API/FieldPanel tests and production-browser E2E; `ptdev check` passes and field acceptance is 5/5.
 - **AT-324 — Select choice rename** · M2 · Renaming choice "Open"→"Active" updates all cells and filters using it. Evidence: PG18 verifies cells, defaults, and shared/personal filters/highlights; production-browser E2E verifies the active saved filter; field acceptance is 5/5.
 - **AT-325 — Field soft delete** · M2/M3 · Deleting a field hides it everywhere; restoring from Trash brings values back.
+  T3.6: **Pass** — desktop/mobile browser deletion hides the field and restores its original value after explicit optional confirmation; PG18 verifies retained configuration, defaults, required-state conflicts and relation storage. [Record](task-prompts/T3.6.md#record-2026-11-01).
 - **AT-326 — Currency default** · M2 · New currency field defaults to CNY (¥ formatting); owner switches it to USD and values display as $; admin changes default currency to EUR → new currency fields default to EUR, existing fields unchanged.
 
 ## AT-4xx Relations & Computed (M2)
@@ -560,6 +562,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-608 — Undo/redo** · M3 · Edit cell, paste range, fill-down, delete 3 rows, link change → Ctrl+Z undoes each in reverse order (deleted rows return with same ids, links, comments); Ctrl+Y redoes. **Evidence: PASS** — Fast `undo.spec.ts` verifies the complete reverse/redo sequence plus row insertion and view config; PG18 tests verify exact IDs, system fields, links, comments, attachment references, cascades and authorization. Store tests cover 50-action bounds, grouped actions, redo invalidation and bounded replay.
 - **AT-609 — Undo conflict prompt** · M3 · alice edits cell, bob changes it, alice presses Ctrl+Z → confirm dialog "changed by bob since". **Evidence: PASS** — Fast `undo.spec.ts` verifies Bob's named prompt, cancellation, confirmation and redo on desktop/mobile; PG18 and store tests verify locked comparisons, intervening races and compensation. `ptdev check` passes.
 - **AT-610 — Trash** · M3 · Deleted table/view/field/book restorable by owner within retention; purge job removes physical objects after retention *(API, time-travel)*.
+  T3.6: **Pass** — browser restores each resource kind; required PG18 time-travel tests cover strict cutoff, nested protection, physical schema/table/column removal, attachment cleanup and failure retry. [Record](task-prompts/T3.6.md#record-2026-11-01).
 
 ## AT-7xx Import / Export / Backup (M3)
 

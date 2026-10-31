@@ -60,9 +60,7 @@ it('loads catalogs, sends only changed fields and shows persisted values/notices
     expect(wrapper.text()).toContain('Loading settings')
     release(Response.json(settings))
     await flushPromises()
-    expect(wrapper.text()).toContain(
-      'The Trash retention job is not active yet.',
-    )
+    expect(wrapper.text()).toContain('Expired Trash is purged daily.')
     await wrapper
       .get('input[aria-label="Application name"]')
       .setValue('Renamed')
@@ -88,7 +86,7 @@ it('loads catalogs, sends only changed fields and shows persisted values/notices
     i18n.global.locale.value = 'zh-CN'
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('设置')
-    expect(wrapper.text()).toContain('回收站保留任务尚未启用')
+    expect(wrapper.text()).toContain('已过期的回收站项目每天清理')
   } finally {
     wrapper.unmount()
     i18n.global.locale.value = 'en'

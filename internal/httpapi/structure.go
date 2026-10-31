@@ -17,6 +17,8 @@ func actorOf(user auth.User) structure.Actor {
 
 func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Get("/nav", api.authenticated(api.nav))
+	router.Get("/trash", api.authenticated(api.listTrash))
+	router.Post("/trash/{kind}/{id}/restore", api.authenticated(api.restoreTrash))
 	router.Post("/workspaces", api.authenticated(api.createWorkspace))
 	router.Patch("/workspaces/{id}", api.authenticated(api.updateWorkspace))
 	router.Delete("/workspaces/{id}", api.authenticated(api.deleteWorkspace))

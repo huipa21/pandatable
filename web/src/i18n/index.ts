@@ -1,5 +1,5 @@
 import { createI18n } from 'vue-i18n'
-import type { AccessLevel, ResourceKind } from '../api/types'
+import type { AccessLevel, ResourceKind, TrashKind } from '../api/types'
 
 export type Locale = 'en' | 'zh-CN'
 
@@ -42,5 +42,21 @@ export function accessLevelLabel(level: AccessLevel) {
       return t('nav.level.write')
     case 'owner':
       return t('nav.level.owner')
+  }
+}
+
+export function trashKindLabel(kind: TrashKind) {
+  const { t } = i18n.global
+  switch (kind) {
+    case 'workspace':
+      return t('trash.kind.workspace')
+    case 'book':
+      return t('trash.kind.book')
+    case 'table':
+      return t('trash.kind.table')
+    case 'field':
+      return t('trash.kind.field')
+    case 'view':
+      return t('trash.kind.view')
   }
 }

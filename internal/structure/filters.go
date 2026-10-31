@@ -162,7 +162,7 @@ func containsFilterOp(ops []codec.Op, want codec.Op) bool {
 }
 
 func filterFieldReadable(ctx context.Context, tx pgx.Tx, user pgtype.UUID, table rowTable, field rowField, visiting map[string]bool) (bool, error) {
-	if visiting[field.id] {
+	if visiting[field.id] || field.error != "" {
 		return false, nil
 	}
 	if field.computed != nil {

@@ -158,6 +158,10 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_FIELD_NAME_CONFLICT')
     case 'ERR_FIELD_IN_USE':
       return t('errors.ERR_FIELD_IN_USE')
+    case 'ERR_TRASH_DEPENDENCY':
+      return t('errors.ERR_TRASH_DEPENDENCY')
+    case 'ERR_TRASH_REQUIRED_UNKNOWN':
+      return t('errors.ERR_TRASH_REQUIRED_UNKNOWN')
     case 'ERR_VERSION_CONFLICT':
       return t('errors.ERR_VERSION_CONFLICT')
     case 'ERR_REQUIRED_HAS_EMPTY':

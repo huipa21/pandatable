@@ -70,6 +70,13 @@ type relationRecord struct {
 	junction           pgtype.Text
 }
 
+func relationFromMetadata(row structuresql.MetaRelation) relationRecord {
+	return relationRecord{id: row.ID.String(), bookID: row.BookID, kind: row.Kind,
+		parentTable: row.ParentTableID, childTable: row.ChildTableID,
+		parentField: row.ParentFieldID, childField: row.ChildFieldID,
+		fkColumn: row.FkColumn, junction: row.JunctionTable, onDelete: row.OnDelete}
+}
+
 func relationDTO(row relationRecord) Relation {
 	return Relation{
 		ID: row.id, Kind: row.kind, ParentTableID: row.parentTable.String(),
@@ -79,42 +86,46 @@ func relationDTO(row relationRecord) Relation {
 }
 
 func relationRows(ctx context.Context, tx pgx.Tx, tableID pgtype.UUID) ([]relationRecord, error) {
-	rows, err := tx.Query(ctx, `SELECT id::text, book_id, kind, parent_table_id, child_table_id,
-		parent_field_id, child_field_id, fk_column, junction_table, on_delete
-		FROM meta.relations WHERE parent_table_id=$1 OR child_table_id=$1 ORDER BY id`, tableID)
+	return listRelations(ctx, tx, tableID, false)
+}
+
+func liveRelationRows(ctx context.Context, tx pgx.Tx, tableID pgtype.UUID) ([]relationRecord, error) {
+	return listRelations(ctx, tx, tableID, true)
+}
+
+func listRelations(ctx context.Context, tx pgx.Tx, tableID pgtype.UUID, live bool) ([]relationRecord, error) {
+	rows, err := structuresql.New(tx).ListTableRelations(ctx, structuresql.ListTableRelationsParams{
+		TableID: tableID, LiveOnly: live,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list table relations: %w", err)
 	}
-	defer rows.Close()
-	result := make([]relationRecord, 0)
-	for rows.Next() {
-		var row relationRecord
-		if err := rows.Scan(&row.id, &row.bookID, &row.kind, &row.parentTable, &row.childTable,
-			&row.parentField, &row.childField, &row.fkColumn, &row.junction, &row.onDelete); err != nil {
-			return nil, fmt.Errorf("scan table relation: %w", err)
-		}
-		result = append(result, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate table relations: %w", err)
+	result := make([]relationRecord, 0, len(rows))
+	for _, row := range rows {
+		result = append(result, relationFromMetadata(row))
 	}
 	return result, nil
 }
 
 func relationForField(ctx context.Context, tx pgx.Tx, fieldID pgtype.UUID) (relationRecord, error) {
-	var row relationRecord
-	err := tx.QueryRow(ctx, `SELECT id::text, book_id, kind, parent_table_id, child_table_id,
-		parent_field_id, child_field_id, fk_column, junction_table, on_delete
-		FROM meta.relations WHERE parent_field_id=$1 OR child_field_id=$1`, fieldID).
-		Scan(&row.id, &row.bookID, &row.kind, &row.parentTable, &row.childTable,
-			&row.parentField, &row.childField, &row.fkColumn, &row.junction, &row.onDelete)
+	return findRelationForField(ctx, tx, fieldID, true)
+}
+
+func relationForAnyField(ctx context.Context, tx pgx.Tx, fieldID pgtype.UUID) (relationRecord, error) {
+	return findRelationForField(ctx, tx, fieldID, false)
+}
+
+func findRelationForField(ctx context.Context, tx pgx.Tx, fieldID pgtype.UUID, live bool) (relationRecord, error) {
+	row, err := structuresql.New(tx).FindFieldRelation(ctx, structuresql.FindFieldRelationParams{
+		FieldID: fieldID, LiveOnly: live,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return relationRecord{}, pgx.ErrNoRows
 	}
 	if err != nil {
 		return relationRecord{}, fmt.Errorf("read field relation: %w", err)
 	}
-	return row, nil
+	return relationFromMetadata(row), nil
 }
 
 func cleanRelationInput(input RelationInput) (string, string, string, error) {
@@ -382,10 +393,8 @@ func (s *Service) deleteRelationField(ctx context.Context, c *txn, source locked
 	if relation.parentTable == source.ID {
 		otherID = relation.childTable
 	}
-	other := source
 	if otherID != source.ID {
-		other, err = lockTable(ctx, c, otherID)
-		if err != nil {
+		if _, err = lockTable(ctx, c, otherID); err != nil {
 			return FieldResult{}, err
 		}
 		target := acl.Resource{Type: acl.Table, ID: otherID}
@@ -403,28 +412,13 @@ func (s *Service) deleteRelationField(ctx context.Context, c *txn, source locked
 			return FieldResult{}, err
 		}
 	}
-	parentTable, childTable := source, other
-	if relation.parentTable != source.ID {
-		parentTable, childTable = other, source
-	}
-	if relation.fkColumn.Valid {
-		if err := ddl.DropColumn(ctx, c.tx, childTable.physical, relation.fkColumn.String); err != nil {
-			return FieldResult{}, err
-		}
-	} else if relation.junction.Valid {
-		if err := ddl.DropJunction(ctx, c.tx, parentTable.physical.Schema, relation.junction.String); err != nil {
-			return FieldResult{}, err
-		}
-	} else {
+	if !relation.fkColumn.Valid && !relation.junction.Valid {
 		return FieldResult{}, errors.New("relation metadata has no physical storage")
 	}
 	for _, fieldID := range []pgtype.UUID{relation.parentField, relation.childField} {
-		if err := c.q.TrashField(ctx, fieldID); err != nil {
-			return FieldResult{}, fmt.Errorf("trash relation field: %w", err)
+		if err := trashField(ctx, c, fieldID); err != nil {
+			return FieldResult{}, err
 		}
-	}
-	if _, err := c.tx.Exec(ctx, "DELETE FROM meta.relations WHERE id=$1::uuid", relation.id); err != nil {
-		return FieldResult{}, fmt.Errorf("delete relation metadata: %w", err)
 	}
 	if _, err := c.tx.Exec(ctx, "UPDATE meta.tables SET schema_version=schema_version+1 WHERE id=$1 OR id=$2",
 		relation.parentTable, relation.childTable); err != nil {

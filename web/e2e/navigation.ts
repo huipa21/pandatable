@@ -642,9 +642,7 @@ export async function verifyNavigation(
         `[data-nav-id="${wid}"] [data-nav-id="${bid}"] [data-nav-id="${tid}"]`,
       ),
     ).toBeVisible()
-    await expect(
-      nav.getByRole('button', { name: en.nav.trashUnavailable }),
-    ).toBeDisabled()
+    await expect(nav.getByRole('link', { name: en.trash.title })).toBeVisible()
     if (alice.viewportSize()!.width < 768) {
       await alice.keyboard.press('Escape')
       await expect(alice.locator('.nav-drawer')).not.toBeVisible()

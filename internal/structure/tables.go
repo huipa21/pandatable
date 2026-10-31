@@ -182,7 +182,7 @@ func (s *Service) DeleteTable(ctx context.Context, actor Actor, id string) error
 		if _, err := c.q.TrashTable(ctx, structuresql.TrashTableParams{ID: target.ID, DeletedBy: c.user}); err != nil {
 			return notFoundIfNoRows(err, "trash table")
 		}
-		return nil
+		return notifyRelatedSchemaChanges(ctx, c.tx, actor, target.ID)
 	})
 }
 
@@ -225,10 +225,25 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, tableID
 	if err != nil {
 		return TableSchema{}, fmt.Errorf("list table views: %w", err)
 	}
-	relations, err := relationRows(ctx, tx, tableID)
+	relations, err := liveRelationRows(ctx, tx, tableID)
 	if err != nil {
 		return TableSchema{}, err
 	}
+	rowMetadata, err := q.GetRowTable(ctx, tableID)
+	if err != nil {
+		return TableSchema{}, fmt.Errorf("read filterability table metadata: %w", err)
+	}
+	filterTable, err := loadRowTable(ctx, q, tx, tableID, rowMetadata.PgSchema, rowMetadata.PgName, rowMetadata.SchemaVersion)
+	if err != nil {
+		return TableSchema{}, err
+	}
+	visibleFields := fields[:0]
+	for _, field := range fields {
+		if _, ok := filterTable.byID[field.ID.String()]; ok {
+			visibleFields = append(visibleFields, field)
+		}
+	}
+	fields = visibleFields
 	schema := TableSchema{
 		Table:  tableDTO(table.ID, table.BookID, table.DisplayFieldID, table.Name, table.Position, table.SchemaVersion, table.CreatedAt),
 		Fields: make([]Field, len(fields)), Relations: make([]Relation, len(relations)), Views: make([]View, len(views)),
@@ -250,14 +265,6 @@ func loadSchema(ctx context.Context, q *structuresql.Queries, tx pgx.Tx, tableID
 			}
 			schema.Fields[index].Default = json.RawMessage(compact.Bytes())
 		}
-	}
-	rowMetadata, err := q.GetRowTable(ctx, tableID)
-	if err != nil {
-		return TableSchema{}, fmt.Errorf("read filterability table metadata: %w", err)
-	}
-	filterTable, err := loadRowTable(ctx, q, tx, tableID, rowMetadata.PgSchema, rowMetadata.PgName, rowMetadata.SchemaVersion)
-	if err != nil {
-		return TableSchema{}, err
 	}
 	filterCompiler := filterCompiler{ctx: ctx, tx: tx, actor: Actor{ID: user.String()}, table: filterTable}
 	for index := range schema.Fields {

@@ -58,6 +58,10 @@ it('renders nested links and exposes same-parent drag plus keyboard/touch reorde
   const reorder = vi.spyOn(nav, 'reorder').mockResolvedValue()
   const wrapper = mount(NavContents, { global })
   try {
+    const trash = wrapper.get('a[href="/trash"]')
+    expect(trash.text()).toBe('Trash')
+    await trash.trigger('click')
+    expect(wrapper.emitted('navigate')).toHaveLength(1)
     expect(wrapper.findAll('[data-nav-id]')).toHaveLength(4)
     expect(
       wrapper.get('[data-nav-id="w"] > .nav-row').attributes('draggable'),

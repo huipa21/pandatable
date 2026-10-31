@@ -485,9 +485,23 @@ identity fields are exposed.
 | POST | `/fields/{id}/convert:dry-run` | `{ uiType, pgType?, options }` |
 | POST | `/fields/{id}/convert` | `{ …, onFail: "abort"\|"null" }` |
 | POST | `/formula:check` | `{ tableId, expr }` → type / error position |
-| GET | `/trash?scope=workspace:{id}` | |
-| POST | `/trash/{type}/{id}/restore` | |
-| DELETE | `/trash/{type}/{id}` | purge now |
+| GET | `/trash` | authorized retained items; no query parameters |
+| POST | `/trash/{kind}/{id}/restore` | `{}` or `{ allowOptional: true }` for a field; returns `{ eventId }` |
+
+#### T3.6 Trash contract (D-188)
+
+`GET /trash` returns `{items:[{kind,id,name,workspaceId,workspaceName,
+parentId,parentName,deletedAt,expiresAt}]}` for independently deleted
+workspaces, books, tables, fields and views whose parents are live. Owners are
+filtered by the existing mutation scope; personal views are visible only to
+their creator with table read access. Hidden, expired or unauthorized restores
+are 404; relation fields additionally require owner access to both endpoints.
+Restore rechecks authorization, names and dependencies transactionally.
+Required fields with new empty rows return 409 `ERR_REQUIRED_HAS_EMPTY`; a
+field trashed before migration 0004 with unknown configurable required state returns 409
+`ERR_TRASH_REQUIRED_UNKNOWN`. The client may explicitly retry either as
+optional. `ERR_TRASH_DEPENDENCY` indicates an unavailable dependency. Permanent
+purge is a retention job, not an immediate-purge API.
 
 #### T1.10 structure contract (D-097..D-103)
 

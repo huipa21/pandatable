@@ -139,6 +139,7 @@ CREATE TABLE meta.fields (
   is_required  boolean NOT NULL DEFAULT false,
   is_unique    boolean NOT NULL DEFAULT false,
   default_json jsonb,                     -- default value (typed via codec)
+  trash_required boolean,                 -- required state saved at soft delete
   position     double precision NOT NULL,
   version      integer NOT NULL DEFAULT 1 CHECK (version > 0), -- API If-Match
   created_at   timestamptz NOT NULL DEFAULT now(),
@@ -263,6 +264,13 @@ CREATE TABLE meta.attachments (
   FOREIGN KEY (table_id, field_id) REFERENCES meta.fields(table_id, id) ON DELETE CASCADE
 );
 
+-- Committed with metadata purge; retried until the files are removed.
+CREATE TABLE meta.attachment_purge_queue (
+  id           uuid PRIMARY KEY,
+  storage_path text NOT NULL,
+  has_thumb    boolean NOT NULL
+);
+
 -- ── Admin ──────────────────────────────────────────────────────
 CREATE TABLE meta.settings (
   key    text PRIMARY KEY,
@@ -300,7 +308,7 @@ Corrupt stored types/values fail explicitly; absent rows use defaults.
 | default_locale | string / en | en or zh-CN; new admin-created users and non-explicit browser fallback |
 | upload_max_mb | integer / 20 | 1..100 MiB; enforcement deferred T2.2 |
 | history_retention_days | integer / 90 | 1..3650; T3.4 daily history retention job |
-| trash_retention_days | integer / 30 | 1..3650; consumer deferred T3.6 |
+| trash_retention_days | integer / 30 | 1..3650; T3.6 daily Trash retention job |
 
 Setup's marker remains private/unpatchable. Existing user preferences are not
 rewritten; NULL timezone keeps following the current default. Settings are not
@@ -477,8 +485,19 @@ For M:N, `on_delete` = `cascade` deletes the linked rows on the other side (app-
 ## 4. Trash & purge
 
 - Soft-deleted objects: workspace, book, table, field, view (`deleted_at`).
-- Soft-deleted field: column stays physically; excluded from queries; name freed.
-- Purge job (daily): objects older than `trash_retention_days` (default 30) → DROP SCHEMA / DROP TABLE / ALTER TABLE DROP COLUMN, delete attachments files, delete meta rows.
+- Trash lists independently deleted objects whose parents are live. Owners can
+  restore them while retained; a personal view remains private to its creator
+  with table read access. A deleted parent must be restored before its children.
+- Soft-deleted fields retain their columns, values, defaults and required state;
+  names are freed and relation fields retain both endpoints and physical
+  storage. A required field with new empty rows needs explicit confirmation to
+  restore as optional. For field types with configurable required state, a
+  pre-0004 NULL `trash_required` means that state is unknown and requires
+  explicit optional restoration.
+- The worker runs at startup and daily, purging only objects strictly older than
+  `trash_retention_days` (default 30). Newer independently deleted descendants
+  protect their parent. DDL and metadata changes commit together; attachment
+  removals are queued transactionally and retried on filesystem failure.
 - Rows are hard-deleted (undo within session re-inserts using the same id — see 10-collaboration.md).
 
 ## 5. Transactions & DDL

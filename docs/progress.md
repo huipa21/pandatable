@@ -69,7 +69,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.3 | Comments & notifications | ✅ | 2026-10-31 | D-185; AT-606 and task gates pass. [Record](task-prompts/T3.3.md#record-2026-10-31). |
 | T3.4 | Row history | ✅ | 2026-10-31 | D-186; AT-607 and task gates pass. [Record](task-prompts/T3.4.md#record-2026-10-31). |
 | T3.5 | Undo/redo | ✅ | 2026-11-01 | D-187; AT-608/609 and both task gates pass. [Record](task-prompts/T3.5.md#record-2026-11-01). |
-| T3.6 | Trash & purge | ⬜ | | |
+| T3.6 | Trash & purge | ✅ | 2026-11-01 | D-188; AT-203/325/610 and both task gates pass. [Record](task-prompts/T3.6.md#record-2026-11-01). |
 | T3.7 | Export | ⬜ | | |
 | T3.8 | Import | ⬜ | | |
 | T3.9 | Backups | ⬜ | | |
@@ -113,6 +113,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-01 | T3.6 Done: authorized Trash, reversible restoration and retryable retention purge pass AT-203/325/610 and task gates. |
 | 2026-11-01 | T3.5 Done: per-tab undo/redo, guarded conflicts and exact-ID restoration pass AT-608/609 and task gates. |
 | 2026-10-31 | T3.4 Done: transactional row/link history, localized timeline and retention pass AT-607 and task gates. |
 | 2026-10-31 | T3.3 Done: comments, access-filtered mentions and live notifications pass AT-606 and task gates. |

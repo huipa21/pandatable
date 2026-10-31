@@ -25,7 +25,9 @@ sql:
     schema:
       - migrations
       - internal/structure/catalog.sql
-    queries: internal/structure/queries.sql
+    queries:
+      - internal/structure/queries.sql
+      - internal/structure/trash.sql
     gen:
       go:
         package: structuresql

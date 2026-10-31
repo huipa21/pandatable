@@ -3,3 +3,27 @@
 //   sqlc v1.31.1
 
 package structuresql
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type MetaAttachmentPurgeQueue struct {
+	ID          pgtype.UUID
+	StoragePath string
+	HasThumb    bool
+}
+
+type MetaRelation struct {
+	ID            pgtype.UUID
+	BookID        pgtype.UUID
+	Kind          string
+	ParentTableID pgtype.UUID
+	ChildTableID  pgtype.UUID
+	ParentFieldID pgtype.UUID
+	ChildFieldID  pgtype.UUID
+	FkColumn      pgtype.Text
+	JunctionTable pgtype.Text
+	OnDelete      string
+	CreatedAt     pgtype.Timestamptz
+}
