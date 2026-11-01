@@ -1,11 +1,17 @@
 import { ESLint } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { checkParity, messageKeys } from '../../scripts/check-i18n.mjs'
 // Raw JSON is required here: Vite precompiles normal locale imports for CSP.
 import en from './en.json?raw'
 import zh from './zh-CN.json?raw'
 
 describe('AT-802 i18n local gate', () => {
+  const eslint = new ESLint()
+
+  beforeAll(async () => {
+    await eslint.calculateConfigForFile('src/I18nProbe.vue')
+  })
+
   it('requires identical, non-empty message keys', () => {
     expect(checkParity(JSON.parse(en), JSON.parse(zh))).toBeGreaterThan(0)
     expect(() => checkParity({ a: 'A' }, { b: 'B' })).toThrow(
@@ -17,7 +23,6 @@ describe('AT-802 i18n local gate', () => {
   })
 
   it('rejects hard-coded template text and visible attributes, but accepts translations', async () => {
-    const eslint = new ESLint()
     for (const template of [
       '<p>Untranslated text</p>',
       '<input placeholder="Untranslated hint">',
