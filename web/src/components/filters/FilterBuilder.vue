@@ -28,9 +28,10 @@ const orderedFields = computed(() =>
     )
     .sort((left, right) => left.position - right.position),
 )
-const group = computed<Group>(() =>
-  isGroup(props.modelValue) ? props.modelValue : { op: 'and', items: [] },
-)
+const group = computed<Group>(() => {
+  if (isGroup(props.modelValue)) return props.modelValue
+  return { op: 'and', items: props.modelValue ? [props.modelValue] : [] }
+})
 const operatorLabels = computed<Record<Op, string>>(() => ({
   is: t('filter.operators.is'),
   is_not: t('filter.operators.is_not'),
@@ -222,11 +223,24 @@ function fieldFor(item: FilterNode) {
   return orderedFields.value.find((field) => field.id === selectedField(item))
 }
 
+function unavailableFieldName(item: FilterNode) {
+  const id = selectedField(item)
+  if (orderedFields.value.some((field) => field.id === id)) return undefined
+  return props.schema.fields.find((field) => field.id === id)?.name
+}
+
 function operatorLabel(fieldId: string, operator: Op) {
   const field = orderedFields.value.find((item) => item.id === fieldId)
   return field?.uiType === 'link'
     ? (linkCountLabels.value[operator] ?? operatorLabels.value[operator])
     : operatorLabels.value[operator]
+}
+
+function unavailableOperatorLabel(item: FilterNode) {
+  const field = selectedField(item)
+  const operator = selectedOperator(item)
+  if (!operator || fieldOptions(field).includes(operator)) return undefined
+  return operatorLabel(field, operator)
 }
 
 function choices(fieldId: string) {
@@ -352,6 +366,13 @@ function displayValue(value: RowValue | undefined) {
             "
           >
             <option
+              v-if="unavailableFieldName(item)"
+              :value="selectedField(item)"
+              disabled
+            >
+              {{ unavailableFieldName(item) }}
+            </option>
+            <option
               v-for="field in orderedFields"
               :key="field.id"
               :value="field.id"
@@ -371,6 +392,13 @@ function displayValue(value: RowValue | undefined) {
               )
             "
           >
+            <option
+              v-if="unavailableOperatorLabel(item)"
+              :value="selectedOperator(item)"
+              disabled
+            >
+              {{ unavailableOperatorLabel(item) }}
+            </option>
             <option
               v-for="operator in fieldOptions(selectedField(item))"
               :key="operator"

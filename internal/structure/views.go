@@ -295,7 +295,7 @@ func validateFormConfig(config FormConfig, table rowTable) (FormConfig, error) {
 			return FormConfig{}, validation("Form fields must reference unique live table fields")
 		}
 		if field.system || field.relation != nil || field.computed != nil || field.formula != nil ||
-			field.codec.ReadOnly() {
+			field.codec == nil || field.codec.ReadOnly() {
 			return FormConfig{}, validation("Form fields must be writable")
 		}
 		seen[item.ID] = true

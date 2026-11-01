@@ -222,7 +222,12 @@ func (compiler *filterCompiler) fieldExpression(field rowField) (string, codec.K
 		expression, kind, err := compiler.formulaExpression(field)
 		return expression, kind, err
 	}
-	if err := ddl.ValidateIdentifier(ddl.Column, field.column); err != nil {
+	if field.system {
+		column, ok := systemColumn(field.kind)
+		if !ok || field.column != column {
+			return "", "", validation("Invalid system field")
+		}
+	} else if err := ddl.ValidateIdentifier(ddl.Column, field.column); err != nil {
 		return "", "", err
 	}
 	return pgx.Identifier{"source", field.column}.Sanitize(), field.kind, nil

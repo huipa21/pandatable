@@ -36,44 +36,16 @@ type FormulaCheckResult struct {
 }
 
 func cleanFormulaOptions(raw json.RawMessage, table rowTable, replacingID string, tx pgx.Tx, ctx context.Context) (json.RawMessage, formulaOptions, error) {
-	var input struct {
-		Expression string `json:"expr"`
-	}
-	if len(raw) == 0 || isJSONNull(raw) || json.Unmarshal(raw, &input) != nil || strings.TrimSpace(input.Expression) == "" {
-		return nil, formulaOptions{}, validation("Formula expression is required")
-	}
-	ast, err := formula.Parse(input.Expression)
+	expression, ast, _, err := bindFormulaExpression(raw, table, false)
 	if err != nil {
-		return nil, formulaOptions{}, formulaValidation(err)
-	}
-	byName := make(map[string]rowField, len(table.fields))
-	for _, field := range table.fields {
-		if field.name != "" {
-			byName[field.name] = field
-		}
-	}
-	if err := formula.BindFields(ast, func(name string) (string, formula.Type, error) {
-		field, ok := byName[name]
-		if !ok {
-			return "", formula.Null, fmt.Errorf("Unknown field %q", name)
-		}
-		if field.relation != nil {
-			return "", formula.Null, errors.New("Relation fields cannot be referenced directly")
-		}
-		typeOf := formulaFieldType(field)
-		if typeOf == formula.Null && field.formula == nil {
-			return "", formula.Null, errors.New("This field type is not supported in formulas")
-		}
-		return field.id, typeOf, nil
-	}); err != nil {
-		return nil, formulaOptions{}, formulaValidation(err)
+		return nil, formulaOptions{}, err
 	}
 	resultType, err := inferFormulaType(ast, table, replacingID, nil)
 	if err != nil {
 		return nil, formulaOptions{}, formulaValidation(err)
 	}
 	options := formulaOptions{
-		Expression: input.Expression, AST: ast, FieldIDs: formula.FieldIDs(ast), ResultType: resultType,
+		Expression: expression, AST: ast, FieldIDs: formula.FieldIDs(ast), ResultType: resultType,
 	}
 	if err := validateFormulaGraph(ctx, tx, table, replacingID, ast); err != nil {
 		return nil, formulaOptions{}, err
@@ -83,6 +55,47 @@ func cleanFormulaOptions(raw json.RawMessage, table rowTable, replacingID string
 		return nil, formulaOptions{}, fmt.Errorf("encode formula options: %w", err)
 	}
 	return encoded, options, nil
+}
+
+func bindFormulaExpression(raw json.RawMessage, table rowTable, allowMissing bool) (string, *formula.Node, bool, error) {
+	var input struct {
+		Expression string `json:"expr"`
+	}
+	if len(raw) == 0 || isJSONNull(raw) || json.Unmarshal(raw, &input) != nil || strings.TrimSpace(input.Expression) == "" {
+		return "", nil, false, validation("Formula expression is required")
+	}
+	ast, err := formula.Parse(input.Expression)
+	if err != nil {
+		return "", nil, false, formulaValidation(err)
+	}
+	byName := make(map[string]rowField, len(table.fields))
+	for _, field := range table.fields {
+		if field.name != "" {
+			byName[field.name] = field
+		}
+	}
+	missing := false
+	if err := formula.BindFields(ast, func(name string) (string, formula.Type, error) {
+		field, ok := byName[name]
+		if !ok {
+			return "", formula.Null, fmt.Errorf("Unknown field %q", name)
+		}
+		if field.relation != nil {
+			return "", formula.Null, errors.New("Relation fields cannot be referenced directly")
+		}
+		if allowMissing && field.error == "dependency_missing" {
+			missing = true
+			return field.id, formula.Null, nil
+		}
+		typeOf := formulaFieldType(field)
+		if typeOf == formula.Null && field.formula == nil {
+			return "", formula.Null, errors.New("This field type is not supported in formulas")
+		}
+		return field.id, typeOf, nil
+	}); err != nil {
+		return "", nil, false, formulaValidation(err)
+	}
+	return input.Expression, ast, missing, nil
 }
 
 func formulaValidation(err error) error {

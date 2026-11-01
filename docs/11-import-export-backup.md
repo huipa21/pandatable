@@ -57,6 +57,7 @@ Flow: upload → `imports:analyze` → wizard → `imports` job → progress →
 
 ### PandaTable package (manifest detected)
 - **New table:** recreate fields with exact types/options/constraints and views; insert rows. Computed fields recreated after data. Link fields: if a table with the manifest's `targetTable` name exists in the target book, user may choose to re-link by matching display values; otherwise converted to text fields (user informed).
+- When links become text, dependent lookup, rollup and formula fields retain their definitions but display `#ERROR` until repaired. Source formulas are checked against possible missing types within a bounded search; an inconclusive check fails the import explicitly. Views using unavailable fields retain their saved settings, and the result names views to review; filters, highlights, sorting or grouping may need repair before use (D-192).
 - **Append to existing table:** mapping auto-filled by field name + type compatibility.
 - Import is one transaction for new tables (all-or-nothing); for appends, batches commit progressively with result report.
 - Attachment names in the existing package format cannot recover file identities or contents; names mapped to attachment fields are reported invalid and stored as NULL. Exact timestamp round-trips are subject to Excel serial precision. The manifest omits shared-view locks, so restored views are unlocked. See D-190.

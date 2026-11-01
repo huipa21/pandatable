@@ -47,6 +47,31 @@ func TestFilterCompilerEscapesTextAndRejectsUnsupportedTree(t *testing.T) {
 	}
 }
 
+func TestFilterCompilerValidatesSystemColumns(t *testing.T) {
+	bound, err := codec.Bind(codec.RowID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := rowField{id: "row-id", kind: codec.RowID, column: "id", system: true, codec: bound}
+	table := rowTable{fields: []rowField{field}, byID: map[string]rowField{field.id: field}}
+	node := &FilterNode{Field: field.id, Cmp: codec.OpGte, Value: json.RawMessage(`"42"`)}
+	sql, args, err := compileRowFilter(context.Background(), nil, Actor{}, table, node)
+	if err != nil || sql != `"source"."id" >= $1` || len(args) != 1 || args[0] != int64(42) {
+		t.Fatalf("system filter = %q, %#v, %#v", sql, args, err)
+	}
+	field.column = "c_aaaaaaaaaa"
+	table.byID[field.id] = field
+	if _, _, err := compileRowFilter(context.Background(), nil, Actor{}, table, node); err == nil {
+		t.Fatal("mismatched system column was accepted")
+	}
+	field.system = false
+	field.column = "id"
+	table.byID[field.id] = field
+	if _, _, err := compileRowFilter(context.Background(), nil, Actor{}, table, node); err == nil {
+		t.Fatal("unvalidated user column was accepted")
+	}
+}
+
 func TestJSONFilterOperatorsBindKeysAndPaths(t *testing.T) {
 	bound, err := codec.Bind(codec.JSON, json.RawMessage(`{}`))
 	if err != nil {

@@ -559,7 +559,7 @@ func inferCall(node *Node, args []Type) (Type, error) {
 		}
 		return Text, nil
 	case "MID", "REPLACE":
-		if len(args) != 3 && !(node.Value == "REPLACE" && len(args) == 4) {
+		if node.Value == "MID" && len(args) != 3 || node.Value == "REPLACE" && len(args) != 4 {
 			return fail(node.Value + " has the wrong number of arguments")
 		}
 		if (args[0] != Text && args[0] != Null) || args[1] != Number || args[2] != Number {

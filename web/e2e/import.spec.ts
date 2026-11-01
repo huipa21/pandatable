@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { Browser, Page } from '@playwright/test'
+import type { Browser, Locator, Page } from '@playwright/test'
 import {
+  allowHTTPFailure,
   expect,
   expectBrowserClean,
   observeBrowser,
@@ -16,6 +17,7 @@ import type {
   ImportJob,
   TableField,
   TableSchema,
+  ViewMutation,
 } from '../src/api/types'
 
 const headers = () => ({
@@ -110,6 +112,22 @@ async function openBookImport(page: Page, workspaceId: string, bookId: string) {
     .getByRole('button', { name: en.import.newTable, exact: true })
     .click()
   return page.locator('dialog.import-dialog')
+}
+
+async function closeImport(page: Page, dialog: Locator) {
+  const discarded = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname
+    return (
+      response.request().method() === 'DELETE' &&
+      /^\/api\/v1\/imports\/[^/]+$/.test(path)
+    )
+  })
+  await dialog
+    .getByRole('button', { name: en.import.close, exact: true })
+    .click()
+  const response = await discarded
+  expect(response.status(), await response.text()).toBe(200)
+  await expect(dialog).toBeHidden()
 }
 
 async function participant(
@@ -220,10 +238,47 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     sourceSide: 'child',
     onDelete: 'set_null',
   })
+  const projectCount = await makeField(page, source.table.id, {
+    name: 'Project count',
+    uiType: 'rollup',
+    options: {
+      relationFieldId: relation.relation.childFieldId,
+      targetFieldId: projects.table.displayFieldId,
+      aggregate: 'count',
+    },
+  })
+  const doubledCount = await makeField(page, source.table.id, {
+    name: 'Doubled count',
+    uiType: 'formula',
+    options: { expr: '{Project count} * 2' },
+  })
   await create(page, `/api/v1/tables/${source.table.id}/views`, {
     name: 'Second grid',
     scope: 'shared',
   })
+  const computedView = (
+    await create<ViewMutation>(
+      page,
+      `/api/v1/tables/${source.table.id}/views`,
+      {
+        name: 'Computed filter',
+        scope: 'shared',
+      },
+    )
+  ).view
+  const configuredView = await page.request.patch(
+    `/api/v1/views/${computedView.id}`,
+    {
+      headers: { ...headers(), 'If-Match': String(computedView.version) },
+      data: {
+        config: {
+          ...computedView.config,
+          filter: { field: projectCount.id, cmp: 'gte', value: 1 },
+        },
+      },
+    },
+  )
+  expect(configuredView.status()).toBe(200)
   const projectRow = (
     await makeRows(page, projects.table.id, [
       { [projects.table.displayFieldId!]: '项目, A' },
@@ -276,6 +331,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   await dialog
     .getByLabel(en.import.relink.replace('{table}', 'Projects'))
     .check()
+  await expect(dialog.getByText(en.import.linkDependencyWarning)).toBeHidden()
   const packageFinished = doneJob(page)
   await dialog.getByRole('button', { name: en.import.start }).click()
   const packageResult = (await (await packageFinished).json()) as ImportJob
@@ -323,9 +379,112 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   expect(restoredRow.fields[importedLink.id]).toEqual(
     originalRow.fields[relation.relation.childFieldId],
   )
-  await dialog
-    .getByRole('button', { name: en.import.close, exact: true })
+  for (const field of [projectCount, doubledCount]) {
+    const imported = restored.fields.find((item) => item.name === field.name)!
+    expect(restoredRow.fields[imported.id]).toEqual(
+      originalRow.fields[field.id],
+    )
+  }
+  await closeImport(page, dialog)
+
+  const textFallback = await openBookImport(page, workspaceId, bookId)
+  await textFallback.locator('input[type=file]').setInputFiles({
+    name: 'package.xlsx',
+    mimeType:
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: packageBytes,
+  })
+  await textFallback.getByRole('button', { name: en.import.analyze }).click()
+  await expect(
+    textFallback.getByText(en.import.linkDependencyWarning),
+  ).toBeVisible()
+  await textFallback.getByLabel(en.import.tableName).fill('Text fallback tasks')
+  const fallbackFinished = doneJob(page)
+  await textFallback.getByRole('button', { name: en.import.start }).click()
+  const fallbackResult = (await (await fallbackFinished).json()) as ImportJob
+  expect(fallbackResult).toMatchObject({
+    status: 'done',
+    result: {
+      rows: 1,
+      convertedLinks: ['Project'],
+      unavailableViews: ['Computed filter'],
+    },
+  })
+  await expect(
+    textFallback.getByText(
+      en.import.unavailableViews.replace('{views}', 'Computed filter'),
+    ),
+  ).toBeVisible()
+  const fallbackId = fallbackResult.result.tableId!
+  const fallbackSchema = (await (
+    await page.request.get(`/api/v1/tables/${fallbackId}/schema`)
+  ).json()) as TableSchema
+  const fallbackRow = (await (
+    await page.request.get(`/api/v1/tables/${fallbackId}/rows/${sourceRow.id}`)
+  ).json()) as DataRow
+  for (const field of [projectCount, doubledCount]) {
+    const imported = fallbackSchema.fields.find(
+      (item) => item.name === field.name,
+    )!
+    expect(imported).toMatchObject({
+      options: { error: 'dependency_missing' },
+    })
+    expect(fallbackRow.fields[imported.id]).toBe('#ERROR')
+  }
+  const fallbackView = fallbackSchema.views.find(
+    (view) => view.name === 'Computed filter',
+  )!
+  const fallbackCount = fallbackSchema.fields.find(
+    (field) => field.name === 'Project count',
+  )!
+  expect(fallbackView.config.filter).toEqual({
+    field: fallbackCount.id,
+    cmp: 'gte',
+    value: 1,
+  })
+  const unavailableQuery = await page.request.post(
+    `/api/v1/views/${fallbackView.id}/query`,
+    { headers: headers(), data: { filter: fallbackView.config.filter } },
+  )
+  expect(unavailableQuery.status()).toBe(400)
+  await closeImport(page, textFallback)
+  const queryPath = `/api/v1/views/${fallbackView.id}/query`
+  allowHTTPFailure(page, 'POST', queryPath, 400)
+  const failedViewQuery = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === queryPath &&
+      response.request().method() === 'POST' &&
+      response.status() === 400,
+  )
+  await page.goto(`/t/${fallbackId}/v/${fallbackView.id}`)
+  await failedViewQuery
+  await page.getByText(en.grid.filter, { exact: true }).click()
+  const filter = page.locator('.filter-group').first()
+  await expect(filter.locator('.filter-item')).toContainText('Project count')
+  await filter
+    .getByRole('button', { name: en.filter.clear, exact: true })
     .click()
+  const locallyRepairedQuery = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === queryPath &&
+      response.request().method() === 'POST' &&
+      response.status() === 200,
+  )
+  await page.getByRole('button', { name: en.filter.apply, exact: true }).click()
+  await locallyRepairedQuery
+  const repairedView = await page.request.patch(
+    `/api/v1/views/${fallbackView.id}`,
+    {
+      headers: { ...headers(), 'If-Match': String(fallbackView.version) },
+      data: { config: { ...fallbackView.config, filter: null } },
+    },
+  )
+  expect(repairedView.status()).toBe(200)
+  const repairedQuery = await page.request.post(
+    `/api/v1/views/${fallbackView.id}/query`,
+    { headers: headers(), data: {} },
+  )
+  expect(repairedQuery.status()).toBe(200)
 
   await page.goto(`/t/${restoredId}/v/${packageResult.result.viewId!}`)
   await page.getByRole('button', { name: en.import.append }).click()
@@ -346,9 +505,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   await expect(
     packageAppend.getByLabel(en.import.targetField.replace('{name}', 'Amount')),
   ).toHaveValue(restored.fields.find((field) => field.name === 'Amount')!.id)
-  await packageAppend
-    .getByRole('button', { name: en.import.close, exact: true })
-    .click()
+  await closeImport(page, packageAppend)
 
   const gbk = await openBookImport(page, workspaceId, bookId)
   await gbk.locator('input[type=file]').setInputFiles({
@@ -392,7 +549,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   expect((await readFile((await report.path())!)).toString('utf8')).toContain(
     '4323,Number,bad-number',
   )
-  await gbk.getByRole('button', { name: en.import.close, exact: true }).click()
+  await closeImport(page, gbk)
 
   const destination = await makeTable(page, bookId, 'Append destination')
   const amountField = await makeField(page, destination.table.id, {
@@ -482,9 +639,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     await expect(
       append.getByRole('link', { name: en.import.downloadReport }),
     ).toBeVisible()
-    await append
-      .getByRole('button', { name: en.import.close, exact: true })
-      .click()
+    await closeImport(collaborator.page, append)
     expectBrowserClean(collaborator.page, collaborator.diagnostics)
   } finally {
     await collaborator.context.close()
@@ -515,7 +670,7 @@ function appHighWaterRSS(project: string): number {
   return Number(match![1]) * 1024
 }
 
-test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MiB', async ({
+test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MB', async ({
   page,
 }, testInfo) => {
   test.skip(
@@ -527,6 +682,7 @@ test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MiB', as
   const { workspaceId, bookId } = await makeBook(page, `large-${Date.now()}`)
   const project = process.env.COMPOSE_PROJECT_NAME
   expect(project).toBeTruthy()
+  const limitBytes = 300_000_000
   const before = appHighWaterRSS(project!)
   const lines = ['Name,Amount']
   for (let index = 0; index < 200_000; index++)
@@ -552,13 +708,12 @@ test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MiB', as
       rows: result.result.rows,
       beforeBytes: before,
       peakBytes: peak,
+      limitBytes,
     }),
     contentType: 'application/json',
   })
   expect(peak, 'app process peak RSS throughout its lifetime').toBeLessThan(
-    300 * 1024 * 1024,
+    limitBytes,
   )
-  await dialog
-    .getByRole('button', { name: en.import.close, exact: true })
-    .click()
+  await closeImport(page, dialog)
 })

@@ -278,7 +278,11 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
   }
   const fetcher = fetchImport(analysis, {
     ...done,
-    result: { ...done.result, convertedLinks: ['Other'] },
+    result: {
+      ...done.result,
+      convertedLinks: ['Other'],
+      unavailableViews: ['Computed filter', 'Summary'],
+    },
   })
   vi.stubGlobal('fetch', fetcher)
   const wrapper = mount(ImportDialog, {
@@ -291,9 +295,15 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
       'Attachment file names mapped to attachment fields cannot be restored and are reported as invalid; Excel timestamps may lose precision.',
     )
     expect(wrapper.text()).toContain('Restored shared views are unlocked.')
+    expect(wrapper.text()).toContain(
+      'Links imported as text cause dependent lookup, rollup, and formula fields to show errors until repaired.',
+    )
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
     expect(wrapper.text()).toContain('还原后的共享视图处于未锁定状态。')
+    expect(wrapper.text()).toContain(
+      '关联字段转为文本后，依赖它们的查找、汇总和公式字段会显示错误，直到修复。',
+    )
     expect(wrapper.text()).toContain(
       '映射到附件字段的文件名无法恢复，将报告为无效；Excel 时间戳可能损失精度。',
     )
@@ -316,6 +326,49 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
       { index: 2, relink: false, skip: false },
     ])
     expect(wrapper.text()).toContain('Imported as text: Other.')
+    expect(wrapper.text()).toContain(
+      'Views to review: Computed filter, Summary.',
+    )
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(wrapper.text()).toContain(
+      '需要检查的视图：Computed filter, Summary。',
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('removes the dependency warning when every package link is re-linked', async () => {
+  const analysis: ImportAnalysis = {
+    format: 'package',
+    tableName: 'Package',
+    hasHeader: true,
+    sampledRows: 1,
+    columns: [
+      {
+        index: 1,
+        name: 'Project',
+        uiType: 'link',
+        options: {},
+        linkTarget: 'Projects',
+        relinkTargetId: 'target',
+      },
+    ],
+  }
+  vi.stubGlobal('fetch', fetchImport(analysis, done))
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'book', targetId: 'b' },
+    global: { plugins: [i18n] },
+  })
+  try {
+    await upload(wrapper)
+    const warning = 'Links imported as text cause dependent lookup'
+    expect(wrapper.text()).toContain(warning)
+    await wrapper.find('.import-column input[type=checkbox]').setValue(true)
+    expect(wrapper.text()).not.toContain(warning)
+    await wrapper.find('.import-column input[type=checkbox]').setValue(false)
+    expect(wrapper.text()).toContain(warning)
   } finally {
     wrapper.unmount()
   }

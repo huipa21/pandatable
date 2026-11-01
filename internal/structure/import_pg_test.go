@@ -177,6 +177,10 @@ func TestImportPackageRoundTrip(t *testing.T) {
 	rollup := computedFieldFor(t, f, owner, source.Table.ID, "Project count", "rollup", computedOptions{
 		RelationFieldID: relation.Field.ID, TargetFieldID: targetOwner.Field.ID, Aggregate: "count",
 	})
+	rollupFormula := addField(FieldInput{Name: "Doubled count", UIType: "formula",
+		Options: json.RawMessage(`{"expr":"{Project count} * 2"}`)})
+	chainedFormula := addField(FieldInput{Name: "Next count", UIType: "formula",
+		Options: json.RawMessage(`{"expr":"{Doubled count} + 1"}`)})
 	sourceSchema, err := f.service.Schema(f.ctx, owner, source.Table.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -223,6 +227,43 @@ func TestImportPackageRoundTrip(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("configure package form view: %v", err)
+	}
+	filtered, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Computed filter", Type: "grid", Scope: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	filtered.Config.Filter = json.RawMessage(fmt.Sprintf(
+		`{"op":"and","items":[{"field":%q,"cmp":"gte","value":1},{"field":%q,"cmp":"gte","value":10}]}`,
+		rollup.ID, amount.ID))
+	filtered.Config.FilterSet = true
+	if _, err := f.service.UpdateViewColumns(f.ctx, owner, filtered.ID, filtered.Version, filtered.Config); err != nil {
+		t.Fatalf("configure computed filter: %v", err)
+	}
+	highlighted, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Computed highlights", Type: "grid", Scope: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	highlighted.Config.Highlight = []HighlightRule{{
+		ID: "computed", When: &FilterNode{Field: rollup.ID, Cmp: "gte", Value: json.RawMessage(`1`)},
+		Target: HighlightTarget{Type: "cells", Fields: []string{amount.ID}}, Color: "amber-3",
+	}}
+	highlighted.Config.Sort = []ViewSort{{Field: rollup.ID, Dir: "asc"}}
+	highlighted.Config.GroupBy = []string{rollup.ID}
+	if _, err := f.service.UpdateViewColumns(f.ctx, owner, highlighted.ID, highlighted.Version, highlighted.Config); err != nil {
+		t.Fatalf("configure computed highlights: %v", err)
+	}
+	linkedView, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Linked filter", Type: "grid", Scope: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkedView.Config.Filter = json.RawMessage(fmt.Sprintf(
+		`{"field":%q,"cmp":"has_any_of","value":[%q]}`, relation.Field.ID, project[0].ID))
+	linkedView.Config.FilterSet = true
+	if _, err := f.service.UpdateViewColumns(f.ctx, owner, linkedView.ID, linkedView.Version, linkedView.Config); err != nil {
+		t.Fatalf("configure linked filter: %v", err)
 	}
 	if _, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
 		ViewInput{Name: "Private view", Type: "grid", Scope: "personal"}); err != nil {
@@ -300,13 +341,17 @@ func TestImportPackageRoundTrip(t *testing.T) {
 			}
 			result, err := f.service.RunImport(f.ctx, owner, targetBook, file, request, nil)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("run package import: %#v", err)
 			}
 			if result.Rows != 1 || result.InvalidCells != 0 || result.ViewID == "" {
 				t.Fatalf("result = %+v", result)
 			}
 			if relink && len(result.ConvertedLinks) != 0 || !relink && !reflect.DeepEqual(result.ConvertedLinks, []string{"Project"}) {
 				t.Fatalf("converted links = %v", result.ConvertedLinks)
+			}
+			wantViews := []string{"Computed filter", "Computed highlights", "Linked filter"}
+			if relink && len(result.UnavailableViews) != 0 || !relink && !reflect.DeepEqual(result.UnavailableViews, wantViews) {
+				t.Fatalf("views requiring repair = %v", result.UnavailableViews)
 			}
 			schema, err := f.service.Schema(f.ctx, owner, result.TableID)
 			if err != nil {
@@ -390,6 +435,33 @@ func TestImportPackageRoundTrip(t *testing.T) {
 			if len(schema.Views) != sharedCount {
 				t.Errorf("restored views = %d, shared source views = %d", len(schema.Views), sharedCount)
 			}
+			if !relink {
+				for _, name := range wantViews {
+					view := importedViews[name]
+					var filter *FilterNode
+					if len(view.Config.Filter) > 0 && string(view.Config.Filter) != "null" {
+						filter = &FilterNode{}
+						if err := json.Unmarshal(view.Config.Filter, filter); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if _, err := f.service.QueryRows(f.ctx, owner, view.ID, RowQueryRequest{Filter: filter}); err == nil {
+						t.Errorf("unrepaired view %s unexpectedly queried", name)
+					}
+					view.Config.Filter = json.RawMessage(`null`)
+					view.Config.FilterSet = true
+					view.Config.Highlight = []HighlightRule{}
+					view.Config.Sort = []ViewSort{}
+					view.Config.GroupBy = []string{}
+					repaired, err := f.service.UpdateViewColumns(f.ctx, owner, view.ID, view.Version, view.Config)
+					if err != nil {
+						t.Fatalf("repair view %s: %#v", name, err)
+					}
+					if _, err := f.service.QueryRows(f.ctx, owner, repaired.ID, RowQueryRequest{}); err != nil {
+						t.Fatalf("query repaired view %s: %#v", name, err)
+					}
+				}
+			}
 			inserted, err := f.service.CreateRows(f.ctx, owner, result.TableID, []RowInsert{{
 				Fields: map[string]json.RawMessage{byName["UUID"].ID: asJSON("00000000-0000-0000-0000-000000000002")},
 			}})
@@ -426,6 +498,47 @@ func TestImportPackageRoundTrip(t *testing.T) {
 				}
 				if !relink && options.Error != "dependency_missing" {
 					t.Errorf("unlinked computed options = %+v", options)
+				}
+			}
+			for _, test := range []struct {
+				field      Field
+				dependency string
+				expression string
+			}{
+				{rollupFormula, "Project count", "{Project count} * 2"},
+				{chainedFormula, "Doubled count", "{Doubled count} + 1"},
+			} {
+				imported := byName[test.field.Name]
+				var options formulaOptions
+				if imported.UIType != "formula" || json.Unmarshal(imported.Options, &options) != nil ||
+					options.Expression != test.expression || !reflect.DeepEqual(options.FieldIDs, []string{byName[test.dependency].ID}) {
+					t.Errorf("dependent formula metadata = %+v", imported)
+				}
+				if relink {
+					if options.Error != "" || !jsonEqual(row.Fields[imported.ID], original.Fields[test.field.ID]) {
+						t.Errorf("relinked formula %s = %s, original %s", test.field.Name, row.Fields[imported.ID], original.Fields[test.field.ID])
+					}
+				} else if options.Error != "dependency_missing" || string(row.Fields[imported.ID]) != `"#ERROR"` {
+					t.Errorf("unlinked formula %s = %s, options %+v", test.field.Name, row.Fields[imported.ID], options)
+				}
+			}
+			if !relink {
+				for _, test := range []struct {
+					name       string
+					expression string
+				}{
+					{"Doubled count", "{Amount} * 2"},
+					{"Next count", "{Doubled count} + 1"},
+				} {
+					field := byName[test.name]
+					if _, err := f.service.UpdateField(f.ctx, owner, field.ID,
+						FieldPatch{Version: field.Version, Options: asJSON(map[string]string{"expr": test.expression})}); err != nil {
+						t.Fatalf("repair formula %s: %v", test.name, err)
+					}
+				}
+				repaired, err := f.service.GetRow(f.ctx, owner, result.TableID, created[0].ID)
+				if err != nil || !jsonEqual(repaired.Fields[byName["Next count"].ID], asJSON(26)) {
+					t.Fatalf("repaired formula = %s, %v", repaired.Fields[byName["Next count"].ID], err)
 				}
 			}
 		})
@@ -515,7 +628,7 @@ func TestImportPackageRoundTrip(t *testing.T) {
 		result, err := f.service.RunImport(f.ctx, owner, ImportTarget{Kind: "book", ID: book.ID}, file, request, nil)
 		if err != nil || result.Rows != 1 || result.InvalidCells != 1 || len(result.Issues) != 1 ||
 			result.Issues[0] != (ImportIssue{Row: 2, Column: "Files", Value: "report.pdf"}) {
-			t.Fatalf("attachment result = %+v, %v", result, err)
+			t.Fatalf("attachment result = %+v, %#v", result, err)
 		}
 		schema, err := f.service.Schema(f.ctx, owner, result.TableID)
 		if err != nil {

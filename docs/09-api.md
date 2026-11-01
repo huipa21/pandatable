@@ -792,6 +792,8 @@ readable with table access; an unknown row ID returns an empty page. Table-level
 | POST | `/imports` | `{ uploadId, target: {newTable: {bookId,name}} \| {tableId}, mapping }` → job |
 | GET | `/imports/{jobId}` | progress / result |
 
+Completed package-import results may include `convertedLinks` and `unavailableViews` arrays naming links converted to text and views needing review (D-192).
+
 ## 3. WebSocket `/api/v1/ws`
 
 T3.1 uses one authenticated, same-origin connection per tab. The session cookie

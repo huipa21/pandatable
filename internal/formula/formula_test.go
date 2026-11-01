@@ -81,6 +81,7 @@ func TestParseAndTypeErrorsHavePositions(t *testing.T) {
 		{`{Missing} + 1`, func(string) (Type, error) { return Null, nil }},
 		{`"text" * 2`, func(string) (Type, error) { return Null, nil }},
 		{`UNKNOWN(1)`, func(string) (Type, error) { return Null, nil }},
+		{`REPLACE("text", 1, 2)`, func(string) (Type, error) { return Null, nil }},
 	} {
 		node, err := Parse(test.expression)
 		if err == nil {

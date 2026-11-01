@@ -56,13 +56,14 @@ type ImportIssue struct {
 }
 
 type ImportResult struct {
-	TableID        string        `json:"tableId,omitempty"`
-	ViewID         string        `json:"viewId,omitempty"`
-	Rows           int           `json:"rows"`
-	InvalidCells   int           `json:"invalidCells"`
-	ConvertedLinks []string      `json:"convertedLinks,omitempty"`
-	Issues         []ImportIssue `json:"-"`
-	issueColumns   []int
+	TableID          string        `json:"tableId,omitempty"`
+	ViewID           string        `json:"viewId,omitempty"`
+	Rows             int           `json:"rows"`
+	InvalidCells     int           `json:"invalidCells"`
+	ConvertedLinks   []string      `json:"convertedLinks,omitempty"`
+	UnavailableViews []string      `json:"unavailableViews,omitempty"`
+	Issues           []ImportIssue `json:"-"`
+	issueColumns     []int
 }
 
 func (result *ImportResult) issue(row, columnIndex int, column, value string) {

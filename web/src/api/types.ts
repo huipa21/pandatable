@@ -504,6 +504,7 @@ export interface ImportResult {
   rows: number
   invalidCells: number
   convertedLinks?: string[]
+  unavailableViews?: string[]
 }
 
 export interface ImportJob {

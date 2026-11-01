@@ -130,6 +130,21 @@ it('does not offer groups beyond the supported depth', async () => {
   ).not.toContain('Add nested group')
 })
 
+it('shows and clears a saved root condition whose field is unavailable', async () => {
+  const { wrapper } = await setup()
+  await wrapper.setProps({
+    modelValue: { field: 'secret', cmp: 'gte', value: 1 },
+  })
+  expect(wrapper.find('.filter-item').exists()).toBe(true)
+  expect(wrapper.text()).toContain('Hidden computed')
+  expect(wrapper.text()).toContain('Greater than or equal')
+  await wrapper
+    .findAll('button')
+    .find((button) => button.text() === 'Clear filters')!
+    .trigger('click')
+  expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([null])
+})
+
 it('edits JSON paths and labels relation count operators', async () => {
   const { wrapper, schema } = await setup()
   schema.fields.push(

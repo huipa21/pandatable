@@ -16,6 +16,7 @@ import (
 	"pandatable/internal/acl"
 	"pandatable/internal/codec"
 	"pandatable/internal/ddl"
+	"pandatable/internal/formula"
 	"pandatable/internal/structure/structuresql"
 )
 
@@ -226,7 +227,7 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 			if err != nil {
 				return err
 			}
-			viewID, err := restorePackageViews(ctx, c, table, file.manifest, keys)
+			viewID, err := restorePackageViews(ctx, c, table, file.manifest, keys, &result)
 			if err != nil {
 				return err
 			}
@@ -236,6 +237,7 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 	})
 	if err != nil {
 		result.TableID, result.ViewID, result.Rows = "", "", 0
+		result.UnavailableViews = nil
 	}
 	return result, rowDatabaseError(err)
 }
@@ -424,13 +426,17 @@ func restorePackagePositions(ctx context.Context, tx pgx.Tx, manifest *tablePack
 }
 
 func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *tablePackageManifest,
-	keys map[string]string,
+	keys map[string]string, result *ImportResult,
 ) (string, error) {
 	first := ""
+	unavailable := packageUnavailableViewFields(table, manifest, keys)
 	for index, source := range manifest.Views {
 		name, err := cleanName(source.Name)
 		if err != nil || source.Type != "grid" && source.Type != "form" {
 			return "", validation("The package view metadata is invalid")
+		}
+		if err := validatePackageViewFilter(source.Config.Filter); err != nil {
+			return "", err
 		}
 		config, err := packageViewConfig(source.Config, keys)
 		if err != nil {
@@ -444,18 +450,33 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 			}
 			config.Form = &form
 		}
-		raw, _, err := normalizeManagedViewConfig(ctx, c.tx, c.actor, table, []byte(`{}`), config)
+		validationConfig, affected, err := packageViewValidationConfig(config, table, unavailable)
 		if err != nil {
 			return "", err
 		}
-		if config.Form != nil {
+		raw, _, err := normalizeManagedViewConfig(ctx, c.tx, c.actor, table, []byte(`{}`), validationConfig)
+		if err != nil {
+			return "", err
+		}
+		if config.Form != nil || affected {
 			var stored map[string]json.RawMessage
 			if err := json.Unmarshal(raw, &stored); err != nil {
 				return "", fmt.Errorf("decode restored view: %w", err)
 			}
-			stored["form"], err = json.Marshal(config.Form)
-			if err != nil {
-				return "", fmt.Errorf("encode restored form: %w", err)
+			if config.Form != nil {
+				stored["form"], err = json.Marshal(config.Form)
+				if err != nil {
+					return "", fmt.Errorf("encode restored form: %w", err)
+				}
+			}
+			if affected {
+				if len(config.Filter) > 0 {
+					stored["filter"] = append(json.RawMessage(nil), config.Filter...)
+				}
+				stored["highlight"], err = json.Marshal(config.Highlight)
+				if err != nil {
+					return "", fmt.Errorf("encode restored highlights: %w", err)
+				}
 			}
 			raw, err = json.Marshal(stored)
 			if err != nil {
@@ -471,6 +492,9 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 		}
 		if first == "" {
 			first = created.ID.String()
+		}
+		if affected {
+			result.UnavailableViews = append(result.UnavailableViews, name)
 		}
 	}
 	return first, nil
@@ -549,9 +573,12 @@ func (s *Service) createPackageFormulas(ctx context.Context, c *txn, tableID pgt
 	physical ddl.TableName, file *ImportFile, keys map[string]string,
 ) error {
 	pending := make([]packageField, 0)
+	sourceLinks := make(map[string]bool)
 	for _, field := range file.manifest.Fields {
 		if field.UIType == "formula" {
 			pending = append(pending, field)
+		} else if field.UIType == "link" {
+			sourceLinks[keys[field.Key]] = true
 		}
 	}
 	for len(pending) > 0 {
@@ -562,7 +589,7 @@ func (s *Service) createPackageFormulas(ctx context.Context, c *txn, tableID pgt
 			if err != nil {
 				return err
 			}
-			options, _, err := cleanFormulaOptions(field.Options, table, "", c.tx, ctx)
+			options, err := packageFormulaOptions(ctx, c.tx, field.Options, table, sourceLinks)
 			if err != nil {
 				if firstError == nil {
 					firstError = err
@@ -582,6 +609,150 @@ func (s *Service) createPackageFormulas(ctx context.Context, c *txn, tableID pgt
 		pending = remaining
 	}
 	return nil
+}
+
+func packageFormulaOptions(ctx context.Context, tx pgx.Tx, raw json.RawMessage, table rowTable,
+	sourceLinks map[string]bool,
+) (json.RawMessage, error) {
+	encoded, options, err := cleanFormulaOptions(raw, table, "", tx, ctx)
+	if err == nil {
+		if err := validatePackageFormulaReferences(options.FieldIDs, sourceLinks); err != nil {
+			return nil, err
+		}
+		return encoded, nil
+	}
+	expression, ast, missing, bindErr := bindFormulaExpression(raw, table, true)
+	if bindErr != nil {
+		return nil, bindErr
+	}
+	if !missing {
+		return nil, err
+	}
+	if err := validatePackageFormulaReferences(formula.FieldIDs(ast), sourceLinks); err != nil {
+		return nil, err
+	}
+	if err := validateFormulaGraph(ctx, tx, table, "", ast); err != nil {
+		return nil, err
+	}
+	if err := validatePackageFormulaTypes(ctx, ast, table); err != nil {
+		return nil, err
+	}
+	encoded, err = json.Marshal(formulaOptions{
+		Expression: expression, AST: ast, FieldIDs: formula.FieldIDs(ast),
+		ResultType: formula.Null, Error: "dependency_missing",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode package formula options: %w", err)
+	}
+	return encoded, nil
+}
+
+func validatePackageFormulaReferences(ids []string, sourceLinks map[string]bool) error {
+	for _, id := range ids {
+		if sourceLinks[id] {
+			return validation("A package formula cannot reference a link directly")
+		}
+	}
+	return nil
+}
+
+func validatePackageFormulaTypes(ctx context.Context, ast *formula.Node, table rowTable) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	var missing []string
+	for _, id := range formula.FieldIDs(ast) {
+		if table.byID[id].error == "dependency_missing" {
+			missing = append(missing, id)
+		}
+	}
+	candidates := []formula.Type{
+		formula.Number, formula.Text, formula.Boolean, formula.Date, formula.DateTime,
+		formula.Duration, formula.Array, formula.Null,
+	}
+	assigned := make(map[string]formula.Type, len(missing))
+	infer := func() error {
+		_, err := formula.Infer(ast, func(id string) (formula.Type, error) {
+			if candidate, ok := assigned[id]; ok {
+				return candidate, nil
+			}
+			field, ok := table.byID[id]
+			if !ok {
+				return formula.Null, errors.New("Referenced field is unavailable")
+			}
+			return formulaFieldType(field), nil
+		})
+		return err
+	}
+	var firstError error
+	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for _, id := range missing {
+			assigned[id] = candidate
+		}
+		if err := infer(); err == nil {
+			return nil
+		} else if firstError == nil {
+			firstError = err
+		}
+	}
+	// Legacy manifests omit result types; try common mixed types before the bounded search.
+	if len(missing) > 4 {
+		const maxSparseAttempts = 1024
+		attempts := 0
+	sparse:
+		for _, baseline := range candidates {
+			for _, id := range missing {
+				assigned[id] = baseline
+			}
+			for _, id := range missing {
+				for _, candidate := range candidates {
+					if candidate == baseline {
+						continue
+					}
+					if err := ctx.Err(); err != nil {
+						return err
+					}
+					assigned[id] = candidate
+					if err := infer(); err == nil {
+						return nil
+					}
+					attempts++
+					if attempts >= maxSparseAttempts {
+						break sparse
+					}
+				}
+				assigned[id] = baseline
+			}
+		}
+	}
+	const maxAttempts = 4096
+	indices := make([]int, len(missing))
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		for index, id := range missing {
+			assigned[id] = candidates[indices[index]]
+		}
+		if err := infer(); err == nil {
+			return nil
+		}
+		index := 0
+		for ; index < len(indices); index++ {
+			indices[index]++
+			if indices[index] < len(candidates) {
+				break
+			}
+			indices[index] = 0
+		}
+		if index == len(indices) {
+			return formulaValidation(firstError)
+		}
+	}
+	return validation("The package formula cannot be type-checked with unavailable dependencies")
 }
 
 func insertPackageComputedField(ctx context.Context, c *txn, tableID pgtype.UUID,

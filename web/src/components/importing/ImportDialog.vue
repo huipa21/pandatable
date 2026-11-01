@@ -49,6 +49,15 @@ let disposed = false
 let completed = false
 
 const packageFile = computed(() => analysis.value?.format === 'package')
+const hasUnlinkedPackageFields = computed(
+  () =>
+    props.targetKind === 'book' &&
+    packageFile.value &&
+    analysis.value?.columns.some(
+      (column, index) =>
+        column.uiType === 'link' && !mappings.value[index]?.relink,
+    ),
+)
 const active = computed(() => job.value?.status === 'running')
 const kinds = USER_KINDS.filter(
   (kind) => kind !== 'autonumber' && kind !== 'attachment',
@@ -386,6 +395,9 @@ async function close() {
         {{ t('import.header') }}
       </label>
       <h3>{{ t('import.mapping') }}</h3>
+      <p v-if="hasUnlinkedPackageFields">
+        {{ t('import.linkDependencyWarning') }}
+      </p>
       <div class="import-columns">
         <section
           v-for="(column, position) in analysis.columns"
@@ -495,6 +507,13 @@ async function close() {
           {{
             t('import.convertedLinks', {
               fields: job.result.convertedLinks.join(', '),
+            })
+          }}
+        </p>
+        <p v-if="job.result.unavailableViews?.length" role="alert">
+          {{
+            t('import.unavailableViews', {
+              views: job.result.unavailableViews.join(', '),
             })
           }}
         </p>
