@@ -21,6 +21,7 @@
 | — | [Progress](progress.md) | Status tracking |
 | — | [Acceptance Tests](acceptance-tests.md) | Testable acceptance criteria (AT-xxx) |
 | — | [Glossary](glossary.md) | Terms used across docs |
+| — | [User guide](user-guide.md) | Shipped workflows for users and administrators (English and 简体中文) |
 | — | [Task prompts](task-prompts/) | Ready-to-use prompts for starting each task in a fresh agent session ([template](task-prompts/TEMPLATE.md)) |
 | — | [Archive](archive/) | Historical M0–M1 verification evidence; search by task/AT ID, never read at task start |
 

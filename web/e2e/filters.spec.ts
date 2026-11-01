@@ -2,13 +2,27 @@ import { expect, paceLogin, test } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type { FilterNode, TableSchema } from '../src/api/types'
+import type { Page } from '@playwright/test'
 
 const headers = () => ({
   Origin: process.env.PT_E2E_BASE_URL!,
   'X-PT-CSRF': '1',
 })
 
-async function signIn(page: import('@playwright/test').Page) {
+const originalTimezones = new WeakMap<Page, string | null>()
+
+test.afterEach(async ({ page }) => {
+  const timezone = originalTimezones.get(page)
+  if (timezone === undefined) return
+  const response = await page.request.patch('/api/v1/auth/me', {
+    headers: headers(),
+    data: { timezone },
+  })
+  expect(response.status()).toBe(200)
+  originalTimezones.delete(page)
+})
+
+async function signIn(page: Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
@@ -83,9 +97,14 @@ test('AT-501/502 nested filters use the actor timezone and stay transient', asyn
   })
   const due = await createField('Due', 'date')
   const owner = await createField('Owner', 'user')
-  const me = (await (await page.request.get('/api/v1/auth/me')).json()) as {
+  const meResponse = await page.request.get('/api/v1/auth/me')
+  expect(meResponse.status()).toBe(200)
+  const me = (await meResponse.json()) as {
     id: string
+    timezone: string | null
   }
+  expect(me.timezone === null || typeof me.timezone === 'string').toBe(true)
+  originalTimezones.set(page, me.timezone)
 
   const utcToday = new Date().toISOString().slice(0, 10)
   const timeZone = ['Pacific/Kiritimati', 'Pacific/Pago_Pago'].find(

@@ -371,9 +371,9 @@ made before their real persisted-grid scenarios.
 | Test | Status | Evidence / remaining boundary |
 |---|---|---|
 | AT-302 | Pass for specified invalid integer/email grid behavior | Production-grid browser scenario shows both localized cell errors; invalid values are not persisted. Full AT-301 kind coverage remains pending. |
-| AT-306 | Pass | Real production-image desktop scenario pastes a 3x4 TSV containing quoted multiline and Chinese text. It observes exactly one bulk PATCH containing 3 rows/10 valid cells; invalid integer/email cells are reported and absent from saved values. |
-| AT-307 | Pass | Pasting 10 rows at the table tail asks for confirmation, then the confirmed bulk insert produces the expected nine additional rows and total row count 12. |
-| AT-308 | Pass | Grid clipboard readback matches `2026-10-27<TAB>Todo` for date and select fields. This verifies browser clipboard interoperability, not a separately installed Excel/Sheets application. |
+| AT-306 | Pass | The original production-image scenario verifies invalid-cell reporting and a 10-valid-cell bulk PATCH. T3.12 additionally copies a real Excel 3x4 range with Chinese and quoted multiline text: one PATCH contains 12 valid cells and all values persist; a second paste reports two invalid cells. |
+| AT-307 | Fail | The prior nine-row prompt starts at the last existing row. In the literal T3.12 second-to-last-row scenario, the application offers eight rows rather than the specified nine. |
+| AT-308 | Pass | T3.12 copies a date and select label from the grid into real Excel and verifies both resulting cells. |
 | AT-309 | Pass | Ctrl+D fills the selected six-row vertical range; dragging the fill handle down extends persisted values to the target rows. Horizontal fill is not supported. |
 | Mobile, locale/theme | Pass for T1.17 scope | Production-image mobile scenario confirms no grid is mounted and the localized fallback is visible. Desktop scenario exercises English/Chinese and light/dark. |
 | AT-301/303/304/312 | Pending / partial preserved | The 12-kind create/type-catalog, populated required/unique/default, all system-field display and 200k target-host browser performance criteria are not claimed here. The VM is 8 CPU/2 GiB rather than the 2-vCPU/4-GB target. |
@@ -507,8 +507,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-304 — System fields** · M1 · New views hide id/created/updated fields; "Fields" menu can show them; values correct (updated_by = last editor).
 - **AT-305 — Keyboard navigation** · M1 · Arrows/Tab/Enter/Esc/F2/Delete/Ctrl+Home/End behave per 12-frontend.md §4.
 - **AT-306 — Copy/paste from Excel** · M1 · Copying a 3×4 range from Excel/Google Sheets (incl. a quoted multi-line cell and Chinese text) and pasting at a cell updates 12 cells in one request; invalid cells reported, others saved.
+  - **T3.12 evidence: Pass.** A headed Chrome/real Excel check saves 12 valid cells in one PATCH, including quoted multiline and Chinese text; a second paste reports invalid cells. The earlier production-image scenario verifies that valid cells still save alongside invalid cells.
 - **AT-307 — Paste beyond end adds rows** · M1 · Pasting 10 rows at the second-to-last row prompts "Add 9 rows?"; confirming creates them.
+  - **T3.12 evidence: Fail.** The literal second-to-last-row scenario offers eight additional rows, not nine. The older nine-row result started at the last row; the criterion has not been changed.
 - **AT-308 — Copy to Excel** · M1 · Copying a range from the grid and pasting into Excel produces the same cells (select labels, dates formatted).
+  - **T3.12 evidence: Pass.** A headed Chrome check pastes a grid date and select label into real Excel and verifies the resulting cell values.
 - **AT-309 — Fill-down** · M1 · Select cell + 5 below, Ctrl+D → all 6 equal top value; drag fill handle down 3 rows → same.
 - **AT-310 — Row expand** · M1 · Space or expand icon opens modal with all fields editable; deep link URL `/t/:id/v/:id/r/:rowId` opens it directly.
 - **AT-311 — Column ops** · M1 · Resize, reorder, hide column, freeze first 2 columns → persisted in view for all users (write) / local only (read).
@@ -545,7 +548,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-504 — Group 3 levels** · M2 · Group by Project › Status › Owner shows nested headers with counts and sum aggregates; collapse/expand works; `(empty)` group present. **Evidence: PASS** — PG18 `TestGroupedRowsHTTPAPIUsesFilteredBucketsAndGroupPaths` covers filtered buckets, nested counts/sums, empty and sorted multi-select keys, and group-path rows; `grouping.spec.ts` verifies the three-level production grid, collapse/expand, and sticky mobile headers (3/3 fast E2E tests). `ptdev check` passes.
 - **AT-505 — Highlight** · M2 · Rule 1 (row red if Overdue), rule 2 (cell amber on Due if within 3 days) → colors correct; reordering rules changes outcome per first-match; colors readable in dark mode. **Evidence: PASS** — PG18 `TestQueryRowsReturnsOrderedRowAndCellHighlights`, `viewColumns.test.ts`, and production-browser `highlight.spec.ts` verify persisted rule editing, independent row/cell first-match ordering, keyboard reorder, and ≥4.5:1 active amber text contrast in light/dark themes (2 fast E2E passed, 1 intentional mobile skip); `ptdev check` passes.
 - **AT-506 — Shared vs personal views** · M2 · bob (write) creates personal view → alice can't see it; bob creates shared view → alice sees it; read-only carol can create personal views but not shared. **Evidence: PASS** — PG18 `TestViewManagementHTTPAT506AT507` and fast production-browser `views.spec.ts` (2 passed, 1 intentional mobile skip) verify private views, reader personal creation, shared visibility/denial, duplication, rename, reorder, and delete.
-- **AT-507 — Locked view** · M2 · Owner locks shared view → bob (write) can't save changes (may apply temporary overrides with "save as personal view" prompt). **Evidence: PASS** — PG18 `TestViewManagementHTTPAT506AT507` and production-browser `views.spec.ts` verify owner lock/unlock, denied writer changes, and a reader's temporary filter saved as a private view without changing the shared view.
+- **AT-507 — Locked view** · M2 · Owner locks shared view → bob (write) can't save changes (may apply temporary overrides with "save as personal view" prompt). **Evidence: PASS** — PG18 `TestViewManagementHTTPAT506AT507` and production-browser `views.spec.ts` verify locking and denied changes. T3.12 additionally verifies that a writer saves a temporary filter as a private view without changing the locked shared view.
 - **AT-508 — Concurrent view edit** · M2 · Two users edit the same view config → second save gets conflict, reloads, and re-applies change. **Evidence: PASS** — PG18 `TestViewManagementHTTPAT508ConcurrentSaves` and production-browser `views.spec.ts` verify one 200/one 409 for same-version edits, then reload/reapply and confirm the second edit is retained.
 - **AT-509 — Quick search** · M2 · Searching "acme" finds rows matching in any visible text field, incl. Chinese text search "项目". **Evidence: PASS** — PG18 `TestQuickSearchAndFooterAggregatesUseVisibleFilteredRows` and production-browser `search-aggregates.spec.ts` verify visible-field English/Chinese search, hidden-field exclusion, and transient filtering (2 passed, 1 intentional mobile skip); `ptdev check` passes.
 - **AT-510 — Footer aggregates** · M2 · Sum/avg/count/empty/unique values correct and respect filters. **Evidence: PASS** — PG18 `TestQuickSearchAndFooterAggregatesUseVisibleFilteredRows` and production-browser `search-aggregates.spec.ts` verify filtered and search-scoped sum/avg/count/empty/unique values, empty averages, and UI configuration (2 passed, 1 intentional mobile skip); `ptdev check` passes.
@@ -595,8 +598,10 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
   - **T3.11 evidence (2026-11-01): Pass rechecked.** Real HTTP/PG18 tests cover failed CSRF, malformed/unsupported login requests and untrusted forwarding, plus sniffed uploads, metadata mismatch and sandbox headers; browser and router tests cover the stricter SPA CSP. Existing D-073 cookie/Origin evidence remains valid.
 - **AT-804 — SQL injection** · M1/M2 *(API)* · Field/table names and filter values containing `"; DROP TABLE` etc. are stored/handled as data.
   - **T3.11 evidence (2026-11-01): Partial, unchanged.** The new read-only doctor checks metadata/catalog drift, not injection scenarios; the remaining table/field-name and filter-value API evidence is still required.
+  - **T3.12 evidence: Pass.** Required PG18 HTTP test `TestSQLInjectionStringsRemainDataThroughHTTPAT804` stores injection-shaped table and field names, filters literal values with equality and containment, and verifies the users table and session remain intact.
 - **AT-805 — Browser matrix** · M3 *(manual)* · Smoke test on Chrome, Edge, Firefox, Safari desktop, iOS Safari, Android Chrome.
   - **T3.11 evidence (2026-11-01): Pending.** No manual six-browser/device matrix was performed. Chromium desktop/mobile emulation is not a substitute.
+  - **T3.12 evidence: Partial.** Installed Chrome and Edge pass the desktop smoke; Playwright Firefox and WebKit engines also pass, but do not certify stock Firefox/Safari or physical iOS/Android devices.
 - **AT-806 — Responsive** · M3 · All main pages usable at 390 px width (no horizontal page scroll except grid area).
   - **T3.11 evidence (2026-11-01): Partial automated coverage.** Desktop and mobile Chromium navigate 16 main routes at 390 px in both languages, check headings and page overflow, and verify the mobile row list is visible. This does not exhaustively exercise every page's controls.
 
@@ -628,14 +633,14 @@ Exact commands, root-cause analysis and cleanup:
 
 ## T1.21 completed column/keyboard evidence (2026-10-28)
 
-This supersedes only the earlier AT-305/AT-311 "not implemented" verdict.
-Prior evidence and limitations above remain; **T1.21 and T1.16 are Done**.
+This superseded the earlier AT-305/AT-311 "not implemented" verdict at the
+time. See the T3.12 release audit below for the reopened task status.
 
 | Test | Status | Evidence / remaining boundary |
 |---|---|---|
 | AT-305 | Pass | Real production Grid: all four arrows, Tab/Shift+Tab, Enter edit/commit+down, Esc/F2, Delete/Backspace codec clear, Ctrl+C/V/X/D/A, all four Shift+arrow directions, Space checkbox/row, Home/End, Ctrl+Home/End and exact viewport PageUp/Down. Paired en/light and zh-CN/dark run every key; earlier focused four-combination evidence is retained. A 401-row fixture forces uncached first/last jumps, exact row IDs and bounded source/cache; no viewport index is treated as row identity. Read-only/system clears are skipped. |
 | AT-311 | Pass | Real pointer header resize/drag plus accessible width/order/hide/show/freeze controls; first two data columns frozen (utility column excluded), persisted config/readback/reload for owner and another user promoted to write. Reader changes width/order/visibility/freeze locally with zero column PATCHes and no server version/config change, then reload restores the shared config. A real stale If-Match produces the pre-registered 409, authoritative reload and intent rebase preserving another writer's width. Both locales and light/dark are exercised; locked/personal/hidden/permission/concurrent-save cases also pass required PG18 and focused component tests. |
-| AT-302 / AT-306..309 | Pass preserved | Unfiltered production suite: original validation, exact TSV/invalid-cell atomic patch/tail insert/readback/fill-handle assertions pass **14.7 s desktop / 3.0 s mobile cards smoke**. Fixtures explicitly select an unfrozen viewport through the public API; no original assertion or budget was removed. |
+| AT-302 / AT-306..309 | Browser assertions preserved | Unfiltered production suite: original validation, exact TSV/invalid-cell atomic patch/tail insert/readback/fill-handle assertions pass **14.7 s desktop / 3.0 s mobile cards smoke**. Fixtures explicitly select an unfrozen viewport through the public API; no original assertion or budget was removed. See the T3.12 audit for real Excel checks and the AT-307 mismatch. |
 | AT-310 / AT-313 | Pass preserved | Complete original modal/card, exact codecs/defaults/deep links/ACL/stale-response scenarios pass **47.1 s / 2.6 s** and **15.4 s / 16.7 s**, respectively. The mobile helper drains its own downgrade-triggered queries before another revocation, without ignoring 404s or loosening diagnostics. |
 | Full gates | Pass | Default-parallel `ptdev check`: **504 frontend tests / 27 files**, required Go/PG18, lint/typecheck/**553** locale keys and build; **2m0.738 s**. Unfiltered production `ptdev e2e`: **19 passed / 0 failed / 2 intentional spike skips in 5.6m**, unchanged 150 s scenario/360 s global/5 s assertion budgets, one worker and zero retries. Initial shell **191255 bytes gzip** with no grid/registry import. |
 | Remaining acceptance | Unchanged | T1.22 owns AT-102/116/M1 AT-117, T1.23 full AT-301..304; uploads AT-111/322 T2.2, full AT-804 T2.6, restore AT-203 M3. AT-312/NFR-1/2 remain uncertified without the authorized 2-vCPU/4-GB host; no target performance claim. |
@@ -694,3 +699,32 @@ Exact commands, failed attempts, cleanup and handoff are in the
 | AT-404 | Pass (desktop) | Employee self-relation links a report to its manager; the reverse Reports field returns the subordinate. |
 | AT-405 | Pass | PG18 verifies set_null, cascade, and restrict. Browser coverage verifies set_null and cascade results and the translated restrict error through the grid. |
 | AT-406 | Pass (desktop) | Relation target selector includes same-book tables and the current table, and excludes tables from another book. |
+
+## T3.12 release audit (2026-11-01)
+
+The complete production-image milestone gate failed with 25 passed, 4 failed
+and 53 not run at the unchanged 600-second global timeout. It is not replaced
+by focused fast runs; the affected tasks are reopened. These verdicts supersede
+conflicting historical summaries above.
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-004 | Pass | The milestone image is linux/amd64, 171,849,346 bytes, UID/GID 10001:10001, with an executable healthcheck and PostgreSQL 18 `pg_dump`. |
+| AT-110 | Reopened | The production dashboard scenario expected migration 2 but observed 5. Its test now derives the latest migration from the actual files; focused dashboard assertions passed before later sharing failures. |
+| AT-102/116 | Pass (focused) | The profile browser scenario verifies username/email login, translated errors, logout/back navigation, display-name changes and password replacement. It passed in the fast runtime image; the milestone run timed out before it. |
+| AT-117 | Pass (focused) | The profile browser scenario verifies Shanghai/London datetime display and default-timezone changes. Required PG18 HTTP evidence verifies `is today` for users on different calendar dates. The milestone profile scenario did not run. |
+| AT-209 / sharing | Reopened | Focused admin scenarios failed on a missing-principal alert and an expected revocation 404. Subsequent browser failures prevented a conclusive retest; the existing sharing test is unchanged. |
+| AT-305/311 | Reopened | The production stale-version scenario did not observe its expected 409. A test-route experiment failed and was removed; the original conflict scenario remains unresolved. |
+| AT-306/308 | Pass | A headed Chrome/real Excel check verifies both directions, including the 12-cell single request, invalid-cell reporting, date and select label. |
+| AT-307 | Fail | Pasting ten rows at the second-to-last row offers eight additional rows, not the nine required by the literal criterion. |
+| AT-409 | Reopened | The production formula scenario failed after another scenario changed the shared user timezone. Test cleanup and actor-timezone assertions were corrected; both focused formula projects pass, but the milestone gate remains failed. |
+| AT-507 | Pass | A writer's temporary override of a locked shared view saves privately without changing that shared view. |
+| AT-804 | Pass | The required PG18 HTTP injection test verifies literal table/field names and filter values and confirms the users table and session remain intact. |
+| AT-805/806 | Partial | Chrome and Edge desktop smoke and Playwright Firefox/WebKit engines pass; stock Firefox/Safari, physical iOS/Android, and exhaustive responsive controls remain unverified. |
+| AT-001/005/006, AT-312/512/801, AT-707 | Partial | Linux/Docker, authorized Ubuntu/Caddy deployment, target-host performance and fresh-host restore checks remain unavailable. |
+| AT-702 | Partial | Package round-trip fidelity remains blocked by attachment identity/content, possible timestamp collisions and missing view locks. |
+
+The production grid scenario also reported an unexpected browser-console 409;
+both focused grid projects passed, but its original cause was not established.
+See the [T3.12 record](task-prompts/T3.12.md#record-2026-11-01) for focused
+reruns, gate results and release blockers.

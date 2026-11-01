@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { writeFile } from 'node:fs/promises'
+import { readdir, writeFile } from 'node:fs/promises'
 import { test, expect, expectHTTPFailure } from './fixtures'
 import type { SystemSnapshot } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
@@ -44,7 +44,14 @@ export async function verifyDashboard(page: Page) {
   expect(first.container.value!.currentBytes).toBeGreaterThan(0)
   expect(first.container.value!.limitBytes).toBe(512 * 1024 * 1024)
   expect(first.versions.postgres.value).toMatch(/^18\.6/)
-  expect(first.versions.migration.value).toBe(2)
+  const migrationVersions = (
+    await readdir(new URL('../../migrations/', import.meta.url))
+  ).flatMap((name) => {
+    const match = /^(\d+)_.*\.sql$/.exec(name)
+    return match ? [Number(match[1])] : []
+  })
+  expect(migrationVersions.length).toBeGreaterThan(0)
+  expect(first.versions.migration.value).toBe(Math.max(...migrationVersions))
   expect(first.versions.go).toBe('go1.27.0')
   expect(first.uptimeSeconds).toBeGreaterThan(0)
   expect(JSON.stringify(first)).not.toMatch(

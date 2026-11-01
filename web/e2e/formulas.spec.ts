@@ -1,5 +1,5 @@
 import { expect, paceLogin, test } from './fixtures'
-import type { DataRow, TableSchema } from '../src/api/types'
+import type { AuthUser, DataRow, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type { Page } from '@playwright/test'
@@ -175,12 +175,17 @@ test('AT-409 formula editor, query-time expressions and stable field references'
     .getByRole('button', { name: en.field.panel.cancel, exact: true })
     .click()
 
-  const today = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Shanghai',
+  const meResponse = await page.request.get('/api/v1/auth/me')
+  expect(meResponse.status()).toBe(200)
+  const me = (await meResponse.json()) as AuthUser
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: me.effectiveTimezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date())
+  })
+  const todayInActorZone = () => formatter.format(new Date())
+  const today = todayInActorZone()
   const rowResponse = await page.request.post(
     `/api/v1/tables/${tableId}/rows`,
     {
@@ -211,10 +216,20 @@ test('AT-409 formula editor, query-time expressions and stable field references'
     const rows = await queryRows(page, populatedSchema.views[0]!.id)
     return rows[0]!.fields
   }
+  const beforeQuery = todayInActorZone()
   let values = await readValues()
+  const afterQuery = todayInActorZone()
+  const dayDifference = (date: string) =>
+    (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) /
+    86_400_000
+  const observedDays = values[days.field.id]
+  if (typeof observedDays !== 'number')
+    throw new Error('DATETIME_DIFF did not return a number')
   expect(values[total.field.id]).toBe(50)
   expect(values[completed.field.id]).toBe('✓')
-  expect(values[days.field.id]).toBe(0)
+  expect([dayDifference(beforeQuery), dayDifference(afterQuery)]).toContain(
+    observedDays,
+  )
   expect(values[fullName.id]).toBe('Ada Lovelace')
 
   const rename = await page.request.patch(`/api/v1/fields/${price.field.id}`, {
