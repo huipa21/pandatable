@@ -188,14 +188,24 @@ export function summarize(durationMs, elapsedMs, clients, samples) {
 }
 
 /** @param {Page} page @param {number} index @param {string} [rowId] */
-async function scrollToLoaded(page, index, rowId) {
-  await page.locator('revo-grid').evaluate(async (grid, target) => {
-    const component = /** @type {Grid} */ (grid)
-    await component.scrollToRow(target)
-  }, index)
+export async function scrollToLoaded(page, index, rowId) {
+  const grid = page.locator('revo-grid')
   const deadline = performance.now() + 20_000
+  let scrolled = false
   while (performance.now() < deadline) {
-    const loaded = await page.locator('revo-grid').evaluate(
+    if (!scrolled) {
+      scrolled = await grid.evaluate(async (element, target) => {
+        const component = /** @type {Grid} */ (element)
+        if ((await component.getSource()).length <= target) return false
+        await component.scrollToRow(target)
+        return true
+      }, index)
+      if (!scrolled) {
+        await sleep(50)
+        continue
+      }
+    }
+    const loaded = await grid.evaluate(
       async (grid, { target, expected, rowLabel }) => {
         const component = /** @type {Grid} */ (grid)
         const row = (await component.getSource())[target]

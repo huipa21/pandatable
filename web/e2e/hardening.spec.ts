@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import {
   exerciseOnce,
   readMemorySample,
+  scrollToLoaded,
   trackPage,
   validateGridView,
   waitForSubscription,
@@ -102,17 +103,63 @@ async function noPageOverflow(page: Page, path: string) {
     .toBe(true)
 }
 
+async function reachableControls(page: Page, path: string) {
+  const viewport = page.viewportSize()
+  if (!viewport) throw new Error('Responsive test requires a fixed viewport')
+  const controls = page.locator(
+    ':is(header button, header a[href], main button, main a[href], ' +
+      'main input:not([type="hidden"]), main select, main textarea):visible',
+  )
+  const visible = await controls.evaluateAll((elements) =>
+    elements.map((element, index) => {
+      element.scrollIntoView({ block: 'center', inline: 'nearest' })
+      const scrolled = element.getBoundingClientRect()
+      return {
+        index,
+        x: scrolled.x,
+        width: scrolled.width,
+        enabled:
+          !element.matches(':disabled') &&
+          !element.closest('[aria-disabled="true"]'),
+      }
+    }),
+  )
+  let enabled = 0
+  for (const control of visible) {
+    expect(
+      control.x,
+      `${path}: control ${control.index + 1} left edge`,
+    ).toBeGreaterThanOrEqual(0)
+    expect(
+      control.x + control.width,
+      `${path}: control ${control.index + 1} right edge`,
+    ).toBeLessThanOrEqual(viewport.width)
+    if (control.enabled) {
+      enabled++
+      await controls.nth(control.index).click({ trial: true, timeout: 5_000 })
+    }
+  }
+  expect(visible.length, `${path}: visible controls`).toBeGreaterThan(0)
+  expect(enabled, `${path}: enabled controls`).toBeGreaterThan(0)
+}
+
 test('AT-806 main pages remain usable at 390px in both languages', async ({
   page,
 }, testInfo) => {
   test.setTimeout(150_000)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await page
+      .getByRole('button', { name: zh.common.languages.en, exact: true })
+      .click()
   await expect(
     page.getByRole('heading', { name: en.login.title }),
   ).toBeVisible()
   await expect(page.getByLabel(en.auth.login, { exact: true })).toBeVisible()
+  await page.waitForLoadState('networkidle')
   await noPageOverflow(page, '/login')
+  await reachableControls(page, '/login')
 
   await login(page)
   const data = await fixture(page, `${testInfo.project.name}-${Date.now()}`, 1)
@@ -170,25 +217,91 @@ test('AT-806 main pages remain usable at 390px in both languages', async ({
       zh: zh.nav.notFoundTitle,
     },
   ]
-  for (const locale of ['en', 'zh'] as const) {
-    if (locale === 'zh')
-      await page
-        .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-        .click()
-    for (const route of routes) {
-      await page.goto(route.path)
-      await expect(page.locator('main h1')).toHaveText(route[locale])
-      await noPageOverflow(page, route.path)
-      if (route.path.startsWith('/t/')) {
-        await expect(
-          page.getByRole('region', {
-            name: locale === 'en' ? en.mobileRows.title : zh.mobileRows.title,
-            exact: true,
-          }),
-        ).toBeVisible()
+  try {
+    for (const locale of ['en', 'zh'] as const) {
+      if (locale === 'zh')
+        await page
+          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+          .click()
+      for (const route of routes) {
+        await page.goto(route.path)
+        await expect(page.locator('main h1')).toHaveText(route[locale])
+        await page.waitForLoadState('networkidle')
+        await noPageOverflow(page, route.path)
+        if (route.path.startsWith('/t/')) {
+          await expect(
+            page.getByRole('region', {
+              name: locale === 'en' ? en.mobileRows.title : zh.mobileRows.title,
+              exact: true,
+            }),
+          ).toBeVisible()
+        }
+        await reachableControls(page, route.path)
+        await noPageOverflow(page, route.path)
       }
     }
+  } finally {
+    if (
+      !page.isClosed() &&
+      (await page.locator('html').getAttribute('lang')) === 'zh-CN'
+    ) {
+      await page
+        .getByRole('button', { name: zh.common.languages.en, exact: true })
+        .click()
+      await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+    }
   }
+})
+
+test('load harness waits for the grid source before scrolling', async ({
+  page,
+}) => {
+  await page.setContent(
+    '<revo-grid style="display:block;width:100%;height:300px">' +
+      '<revogr-data col-type="colPinStart"><button></button></revogr-data>' +
+      '</revo-grid>',
+  )
+  const grid = page.locator('revo-grid')
+  await grid.evaluate(
+    (element, rowLabel) => {
+      const source = () =>
+        element.hasAttribute('data-test-source-ready')
+          ? Array.from({ length: 301 }, (_, index) =>
+              index === 300 ? { __rowId: 'test-row' } : {},
+            )
+          : []
+      const button = element.querySelector('button')
+      if (!button) throw new Error('Missing test row button')
+      button.setAttribute('aria-label', rowLabel)
+      Object.assign(element, {
+        async getSource() {
+          element.setAttribute('data-test-source-read', 'true')
+          return source()
+        },
+        async scrollToRow(target: number) {
+          element.setAttribute('data-test-source-read', 'true')
+          const rowCount = source().length
+          if (rowCount <= target)
+            throw new Error('Load harness scrolled before grid initialization')
+          element.setAttribute('data-test-scroll-count', String(rowCount))
+        },
+      })
+    },
+    en.rowExpand.open.replace('{id}', 'test-row'),
+  )
+  const result = scrollToLoaded(page, 300, 'test-row').then(
+    () => null,
+    (error: unknown) => error,
+  )
+  try {
+    await expect(grid).toHaveAttribute('data-test-source-read', 'true')
+  } finally {
+    await grid.evaluate((element) =>
+      element.setAttribute('data-test-source-ready', 'true'),
+    )
+  }
+  expect(await result).toBeNull()
+  await expect(grid).toHaveAttribute('data-test-scroll-count', '301')
 })
 
 test('load harness scrolls, edits, receives peer events, and reads both metrics', async ({

@@ -50,6 +50,19 @@ export function allowHTTPFailure(
   optionalHTTPFailures.set(page, failures)
 }
 
+type PendingHTTPFailure = { status: number; url: string }
+
+export function expectedConsoleFailureIndex(
+  failures: readonly PendingHTTPFailure[],
+  text: string,
+  url: string,
+) {
+  return failures.findIndex(
+    (failure) =>
+      failure.url === url && text.includes(`status of ${failure.status} `),
+  )
+}
+
 const paceFile = path.resolve(
   process.env.PT_E2E_RESULTS_DIR ?? './test-results',
   'login-pace.json',
@@ -85,7 +98,7 @@ export async function paceLogin(page?: Page) {
 
 export async function observeBrowser(page: Page) {
   const errors: string[] = []
-  const pendingFailures: number[] = []
+  const pendingFailures: PendingHTTPFailure[] = []
   page.on('response', (response) => {
     const path = new URL(response.url()).pathname
     const expected = expectedHTTPFailures.get(page) ?? []
@@ -97,7 +110,7 @@ export async function observeBrowser(page: Page) {
     )
     if (index >= 0) {
       expected.splice(index, 1)
-      pendingFailures.push(response.status())
+      pendingFailures.push({ status: response.status(), url: response.url() })
       return
     }
     // Setup negative cases are asserted by AT-101; an absent/revoked session
@@ -112,18 +125,29 @@ export async function observeBrowser(page: Page) {
           failure.status === response.status(),
       )
     )
-      pendingFailures.push(response.status())
+      pendingFailures.push({ status: response.status(), url: response.url() })
   })
   page.on('console', (message) => {
     if (['warning', 'error'].includes(message.type())) {
-      const expected = pendingFailures.findIndex((status) =>
-        message.text().includes(`status of ${status} `),
+      const location = message.location().url
+      const expected = expectedConsoleFailureIndex(
+        pendingFailures,
+        message.text(),
+        location,
       )
       if (message.type() === 'error' && expected >= 0) {
         pendingFailures.splice(expected, 1)
         return
       }
-      errors.push(`console.${message.type()}: ${message.text()}`)
+      const sourcePath =
+        location.startsWith('http://') || location.startsWith('https://')
+          ? new URL(location).pathname.replace(
+              /^\/api\/v1\/exports\/[^/]+$/,
+              '/api/v1/exports/[REDACTED]',
+            )
+          : ''
+      const source = sourcePath ? ` (${sourcePath})` : ''
+      errors.push(`console.${message.type()}: ${message.text()}${source}`)
     }
   })
   page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
@@ -132,7 +156,12 @@ export async function observeBrowser(page: Page) {
       console.error(`CSP: ${event.violatedDirective} ${event.blockedURI}`)
     })
   })
-  return { errors, pendingFailures }
+  return {
+    errors,
+    get pendingFailures() {
+      return pendingFailures.map((failure) => failure.status)
+    },
+  }
 }
 
 export function expectBrowserClean(
@@ -161,23 +190,24 @@ export const test = base.extend<{
   },
   browserDiagnostics: [
     async ({ page }, use, testInfo) => {
-      const { errors, pendingFailures } = await observeBrowser(page)
+      const diagnostics = await observeBrowser(page)
       await use()
       expect(
         expectedHTTPFailures.get(page) ?? [],
         'every explicit HTTP failure occurred',
       ).toEqual([])
       expect(
-        pendingFailures,
+        diagnostics.pendingFailures,
         'only matched expected setup/identity HTTP console diagnostics',
       ).toEqual([])
       await testInfo.attach('browser-diagnostics', {
-        body: JSON.stringify(errors, null, 2),
+        body: JSON.stringify(diagnostics.errors, null, 2),
         contentType: 'application/json',
       })
-      expect(errors, 'no browser warnings, errors or CSP violations').toEqual(
-        [],
-      )
+      expect(
+        diagnostics.errors,
+        'no browser warnings, errors or CSP violations',
+      ).toEqual([])
     },
     { auto: true },
   ],

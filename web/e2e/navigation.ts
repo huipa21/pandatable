@@ -8,7 +8,12 @@ import {
   allowHTTPFailure,
   expectBrowserClean,
 } from './fixtures'
-import type { Navigation, RowQueryResult, TableSchema } from '../src/api/types'
+import type {
+  Navigation,
+  RowQueryResult,
+  TableSchema,
+  ViewMutation,
+} from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
@@ -306,8 +311,29 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
   expect(result.fieldIds).toContain(updatedBy.id)
   expect(result.rows[0]?.fields[updatedBy.id]).toBe(me.id)
 
+  await expect
+    .poll(async () => {
+      const response = await owner.request.get(`/api/v1/tables/${tid}/schema`)
+      expect(response.status()).toBe(200)
+      const current = (await response.json()) as TableSchema
+      return current.views
+        .find((view) => view.id === viewId)
+        ?.config.fields.find((field) => field.id === updatedBy.id)?.visible
+    })
+    .toBe(true)
   await owner.reload()
   await expect(owner.getByRole('region', { name: en.grid.title })).toBeVisible()
+  await expect
+    .poll(() =>
+      gridElement.evaluate(
+        async (element, id) =>
+          (
+            await (element as HTMLElement & Components.RevoGrid).getColumns()
+          ).some((column) => column.prop === id),
+        updatedBy.id,
+      ),
+    )
+    .toBe(true)
   await expect
     .poll(async () => (await query()).rows[0]?.fields[name.id])
     .toBe('Persisted from the grid')
@@ -358,15 +384,39 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
   const finalSchema = (await (
     await owner.request.get(`/api/v1/tables/${tid}/schema`)
   ).json()) as TableSchema
-  const clipboardView = finalSchema.views.find((view) => view.id === viewId)!
+  const clipboardView = finalSchema.views.find((view) => view.id === viewId)
+  const note = finalSchema.fields.find((field) => field.name === 'Note')
+  if (!clipboardView || !note) throw new Error('Clipboard schema is incomplete')
+  const clipboardIds = [name.id, qty.id, email.id, note.id]
+  const clipboardIdSet = new Set(clipboardIds)
+  const columnsById = new Map(
+    clipboardView.config.fields.map((column) => [column.id, column]),
+  )
+  const clipboardColumns = clipboardIds.map((id) => {
+    const column = columnsById.get(id)
+    return column ? { ...column, visible: true } : { id, visible: true }
+  })
+  const clipboardUpdate = await owner.request.patch(`/api/v1/views/${viewId}`, {
+    headers: { ...h, 'If-Match': String(clipboardView.version) },
+    data: {
+      config: {
+        ...clipboardView.config,
+        fields: [
+          ...clipboardColumns,
+          ...clipboardView.config.fields.filter(
+            (column) => !clipboardIdSet.has(column.id),
+          ),
+        ],
+        frozen: 0,
+      },
+    },
+  })
+  expect(clipboardUpdate.status()).toBe(200)
   expect(
-    (
-      await owner.request.patch(`/api/v1/views/${viewId}`, {
-        headers: { ...h, 'If-Match': String(clipboardView.version) },
-        data: { config: { ...clipboardView.config, frozen: 0 } },
-      })
-    ).status(),
-  ).toBe(200)
+    ((await clipboardUpdate.json()) as ViewMutation).view.config.fields
+      .slice(0, clipboardIds.length)
+      .map((column) => column.id),
+  ).toEqual(clipboardIds)
   const date = finalSchema.fields.find((field) => field.name === 'Date')!
   const stage = finalSchema.fields.find((field) => field.name === 'Stage')!
   result = await query()
@@ -439,7 +489,6 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
       pasteRequestBodies.push(request.postDataJSON())
   }
   owner.on('request', clipboardPatch)
-  const note = finalSchema.fields.find((field) => field.name === 'Note')!
   const pasteX = await focusCell(name.id, 0)
   expect(
     await Promise.all([name.id, qty.id, email.id, note.id].map(columnIndex)),
