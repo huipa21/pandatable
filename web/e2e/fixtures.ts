@@ -52,6 +52,13 @@ export function allowHTTPFailure(
 
 type PendingHTTPFailure = { status: number; url: string }
 
+function diagnosticPath(path: string) {
+  return path.replace(
+    /^\/api\/v1\/exports\/[^/]+$/,
+    '/api/v1/exports/[REDACTED]',
+  )
+}
+
 export function expectedConsoleFailureIndex(
   failures: readonly PendingHTTPFailure[],
   text: string,
@@ -99,6 +106,8 @@ export async function paceLogin(page?: Page) {
 export async function observeBrowser(page: Page) {
   const errors: string[] = []
   const pendingFailures: PendingHTTPFailure[] = []
+  const reportResponses =
+    page.context().browser()?.browserType().name() === 'firefox'
   page.on('response', (response) => {
     const path = new URL(response.url()).pathname
     const expected = expectedHTTPFailures.get(page) ?? []
@@ -108,14 +117,11 @@ export async function observeBrowser(page: Page) {
         failure.method === response.request().method() &&
         failure.status === response.status(),
     )
-    if (index >= 0) {
-      expected.splice(index, 1)
-      pendingFailures.push({ status: response.status(), url: response.url() })
-      return
-    }
+    if (index >= 0) expected.splice(index, 1)
     // Setup negative cases are asserted by AT-101; an absent/revoked session
     // is the normal identity-probe result on public routes.
     if (
+      index >= 0 ||
       (path === '/api/v1/setup' && [401, 410].includes(response.status())) ||
       (path === '/api/v1/auth/me' && response.status() === 401) ||
       (optionalHTTPFailures.get(page) ?? []).some(
@@ -124,8 +130,14 @@ export async function observeBrowser(page: Page) {
           failure.method === response.request().method() &&
           failure.status === response.status(),
       )
-    )
-      pendingFailures.push({ status: response.status(), url: response.url() })
+    ) {
+      if (!reportResponses)
+        pendingFailures.push({ status: response.status(), url: response.url() })
+    } else if (reportResponses && response.status() >= 400) {
+      errors.push(
+        `HTTP ${response.request().method()} ${response.status()}: ${diagnosticPath(path)}`,
+      )
+    }
   })
   page.on('console', (message) => {
     if (['warning', 'error'].includes(message.type())) {
@@ -141,10 +153,7 @@ export async function observeBrowser(page: Page) {
       }
       const sourcePath =
         location.startsWith('http://') || location.startsWith('https://')
-          ? new URL(location).pathname.replace(
-              /^\/api\/v1\/exports\/[^/]+$/,
-              '/api/v1/exports/[REDACTED]',
-            )
+          ? diagnosticPath(new URL(location).pathname)
           : ''
       const source = sourcePath ? ` (${sourcePath})` : ''
       errors.push(`console.${message.type()}: ${message.text()}${source}`)

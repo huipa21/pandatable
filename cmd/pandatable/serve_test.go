@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"pandatable/internal/config"
+	"pandatable/internal/db"
 	"pandatable/internal/testdb"
 )
 
@@ -116,36 +118,42 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		previousSetupToken = setupToken
 		stop()
 
-		verification, err := pgx.ConnectConfig(ctx, appConfig)
-		if err != nil {
-			t.Fatal("connect to disposable database for verification failed")
-		}
-		var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount int
-		err = verification.QueryRow(ctx, `SELECT count(*),
-			count(*) FILTER (WHERE version_id = 1 AND is_applied),
-			count(*) FILTER (WHERE version_id = 2 AND is_applied),
-			count(*) FILTER (WHERE version_id = 3 AND is_applied),
-			count(*) FILTER (WHERE version_id = 4 AND is_applied),
-			count(*) FILTER (WHERE version_id = 5 AND is_applied)
-			FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount)
-		closeErr := verification.Close(ctx)
-		if err != nil || closeErr != nil {
-			t.Fatalf("read/close migration verification: %v, %v", err, closeErr)
-		}
-		if count != 6 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 {
-			t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d; want 6/1/1/1/1/1",
-				iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount)
-		}
-		if migrationRecords() != beforeRestarts {
-			t.Fatal("restart changed migration records")
-		}
-		var connections int
-		if err := pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`).Scan(&connections); err != nil {
-			t.Fatal(err)
-		}
-		if connections != 0 {
-			t.Fatalf("startup %d: %d database connections remain after shutdown", iteration, connections)
-		}
+		func() {
+			verification, err := pgx.ConnectConfig(ctx, appConfig)
+			if err != nil {
+				t.Fatal("connect to disposable database for verification failed")
+			}
+			defer func() {
+				if err := verification.Close(ctx); err != nil {
+					t.Errorf("close migration verification: %v", err)
+				}
+			}()
+			var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount int
+			err = verification.QueryRow(ctx, `SELECT count(*),
+				count(*) FILTER (WHERE version_id = 1 AND is_applied),
+				count(*) FILTER (WHERE version_id = 2 AND is_applied),
+				count(*) FILTER (WHERE version_id = 3 AND is_applied),
+				count(*) FILTER (WHERE version_id = 4 AND is_applied),
+				count(*) FILTER (WHERE version_id = 5 AND is_applied)
+				FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount)
+			if err != nil {
+				t.Fatalf("read migration verification: %v", err)
+			}
+			if count != 6 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 {
+				t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d; want 6/1/1/1/1/1",
+					iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount)
+			}
+			if migrationRecords() != beforeRestarts {
+				t.Fatal("restart changed migration records")
+			}
+			connections, err := otherDatabaseConnections(ctx, pool, verification.PgConn().PID())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(connections) != 0 {
+				t.Fatalf("startup %d: %d database connections remain after shutdown", iteration, len(connections))
+			}
+		}()
 		for line := range bytes.SplitSeq(bytes.TrimSpace(output.Bytes()), []byte("\n")) {
 			var event struct {
 				Level string `json:"level"`
@@ -172,6 +180,59 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 	logger := newJSONLogger(io.Discard, slog.LevelInfo)
 	if err := serve(ctx, cfg, logger); err == nil || !strings.Contains(err.Error(), "listen for HTTP") {
 		t.Fatalf("occupied port error=%v, want explicit startup failure", err)
+	}
+}
+
+func otherDatabaseConnections(ctx context.Context, pool *db.Pool, verificationPID uint32) ([]int32, error) {
+	rows, err := pool.Query(ctx, `SELECT pid FROM pg_stat_activity
+		WHERE datname = current_database() AND pid <> pg_backend_pid() AND pid <> $1`,
+		verificationPID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pids []int32
+	for rows.Next() {
+		var pid int32
+		if err := rows.Scan(&pid); err != nil {
+			return nil, err
+		}
+		pids = append(pids, pid)
+	}
+	return pids, rows.Err()
+}
+
+func TestOtherDatabaseConnections(t *testing.T) {
+	databaseURL := database.URL(t)
+	pool := database.Open(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	verification, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal("connect verification session failed")
+	}
+	defer func() {
+		if err := verification.Close(ctx); err != nil {
+			t.Errorf("close verification session: %v", err)
+		}
+	}()
+	connections, err := otherDatabaseConnections(ctx, pool, verification.PgConn().PID())
+	if err != nil || slices.Contains(connections, int32(verification.PgConn().PID())) {
+		t.Fatalf("verification session was not excluded: pids=%v, error=%v", connections, err)
+	}
+	other, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		t.Fatal("connect additional session failed")
+	}
+	defer func() {
+		if err := other.Close(ctx); err != nil {
+			t.Errorf("close additional session: %v", err)
+		}
+	}()
+	connections, err = otherDatabaseConnections(ctx, pool, verification.PgConn().PID())
+	if err != nil || slices.Contains(connections, int32(verification.PgConn().PID())) ||
+		!slices.Contains(connections, int32(other.PgConn().PID())) {
+		t.Fatalf("additional session was not detected: pids=%v, error=%v", connections, err)
 	}
 }
 

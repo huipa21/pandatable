@@ -139,7 +139,6 @@ async function reachableControls(page: Page, path: string, scope?: Locator) {
       }
     }),
   )
-  let enabled = 0
   for (const control of visible) {
     expect(
       control.x,
@@ -149,13 +148,60 @@ async function reachableControls(page: Page, path: string, scope?: Locator) {
       control.x + control.width,
       `${path}: control ${control.index + 1} right edge`,
     ).toBeLessThanOrEqual(viewport.width)
-    if (control.enabled) {
-      enabled++
+  }
+  const enabled = visible.filter((control) => control.enabled)
+  expect(visible.length, `${path}: visible controls`).toBeGreaterThan(0)
+  expect(enabled.length, `${path}: enabled controls`).toBeGreaterThan(0)
+  if (scope) {
+    for (const control of enabled)
       await controls.nth(control.index).click({ trial: true, timeout: 5_000 })
+    return
+  }
+  const pending = new Set(enabled.map((control) => control.index))
+  while (pending.size) {
+    const together = await controls.evaluateAll((elements, indexes) => {
+      return indexes.filter((index) => {
+        const element = elements[index]
+        if (!element) return false
+        const rect = element.getBoundingClientRect()
+        if (
+          rect.left < 0 ||
+          rect.right > innerWidth ||
+          rect.top < 0 ||
+          rect.bottom > innerHeight
+        )
+          return false
+        for (
+          let parent = element.parentElement;
+          parent && parent !== document.documentElement;
+          parent = parent.parentElement
+        ) {
+          const style = getComputedStyle(parent)
+          const bounds = parent.getBoundingClientRect()
+          if (
+            (/(auto|scroll|hidden|clip)/.test(style.overflowX) &&
+              (rect.left < bounds.left || rect.right > bounds.right)) ||
+            (/(auto|scroll|hidden|clip)/.test(style.overflowY) &&
+              (rect.top < bounds.top || rect.bottom > bounds.bottom))
+          )
+            return false
+        }
+        return true
+      })
+    }, Array.from(pending))
+    // Only batch controls already visible without competing scrolls.
+    const first = pending.values().next().value
+    if (first === undefined) throw new Error('Responsive control is missing')
+    const batch = together.length ? together.slice(0, 10) : [first]
+    await Promise.all(
+      batch.map((index) =>
+        controls.nth(index).click({ trial: true, timeout: 5_000 }),
+      ),
+    )
+    for (const index of batch) {
+      pending.delete(index)
     }
   }
-  expect(visible.length, `${path}: visible controls`).toBeGreaterThan(0)
-  expect(enabled, `${path}: enabled controls`).toBeGreaterThan(0)
 }
 
 async function english(page: Page) {
@@ -294,6 +340,26 @@ async function inspectImport(
     .click()
   await expect(importing).not.toBeVisible()
 }
+
+test('responsive control checks reject blocked controls when batching', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.setContent(`
+    <header><button>First</button><button>Second</button></header>
+    <main>
+      <button>Top</button>
+      <div style="height: 1200px"></div>
+      <button>Bottom</button>
+    </main>
+    <div id="cover" style="position: fixed; inset: 0 0 auto 0; height: 60px; z-index: 1"></div>
+  `)
+  await expect(reachableControls(page, 'blocked')).rejects.toThrow(
+    /intercepts pointer events/,
+  )
+  await page.locator('#cover').evaluate((element) => element.remove())
+  await reachableControls(page, 'unblocked')
+})
 
 test('AT-806 main pages remain usable at 390px in both languages', async ({
   page,

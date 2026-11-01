@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -100,39 +100,47 @@ async function setup(fetcher = provider(), schema = schemaOf()) {
   return { wrapper, router, fetcher }
 }
 
-it('renders hidden display values plus four visible fields, exact IDs and no grid, with bounded pages', async () => {
-  const { wrapper, fetcher } = await setup()
-  expect(wrapper.findAll('.mobile-card')).toHaveLength(100)
-  expect(wrapper.get('.card-title').text()).toBe('Title 0')
-  expect(
-    wrapper.findAll('.mobile-card')[0]!.findAll('.card-field'),
-  ).toHaveLength(4)
-  expect(wrapper.findAll('.mobile-card')[0]!.text()).not.toContain('extra4')
-  expect(wrapper.find('revo-grid').exists()).toBe(false)
-  await wrapper.get('.mobile-card').trigger('click')
-  expect(wrapper.emitted('expand')).toEqual([['9007199254740993']])
-  for (let index = 0; index < 5; index++) {
-    await wrapper.findAll('.mobile-paging button')[1]!.trigger('click')
-    await flushPromises()
-    expect(
-      Number(wrapper.get('.mobile-rows').attributes('data-cached-rows')),
-    ).toBeLessThanOrEqual(300)
+describe('bounded mobile pages', () => {
+  let mounted: Awaited<ReturnType<typeof setup>>
+
+  beforeEach(async () => {
+    mounted = await setup()
+  })
+
+  it('renders hidden display values plus four visible fields, exact IDs and no grid, with bounded pages', async () => {
+    const { wrapper, fetcher } = mounted
     expect(wrapper.findAll('.mobile-card')).toHaveLength(100)
-  }
-  expect(wrapper.get('.card-title').text()).toBe('Title 500')
-  expect(
-    fetcher.mock.calls.every(
-      ([, init]) => JSON.parse(String(init?.body)).limit === 100,
-    ),
-  ).toBe(true)
-  await wrapper.findAll('.mobile-paging button')[0]!.trigger('click')
-  await flushPromises()
-  expect(wrapper.get('.card-title').text()).toBe('Title 400')
-  await wrapper.get('.mobile-add').trigger('click')
-  expect(wrapper.emitted('add')).toHaveLength(1)
-  i18n.global.locale.value = 'zh-CN'
-  await flushPromises()
-  expect(wrapper.get('.mobile-toolbar h2').text()).toBe('数据行')
+    expect(wrapper.get('.card-title').text()).toBe('Title 0')
+    expect(
+      wrapper.findAll('.mobile-card')[0]!.findAll('.card-field'),
+    ).toHaveLength(4)
+    expect(wrapper.findAll('.mobile-card')[0]!.text()).not.toContain('extra4')
+    expect(wrapper.find('revo-grid').exists()).toBe(false)
+    await wrapper.get('.mobile-card').trigger('click')
+    expect(wrapper.emitted('expand')).toEqual([['9007199254740993']])
+    for (let index = 0; index < 5; index++) {
+      await wrapper.findAll('.mobile-paging button')[1]!.trigger('click')
+      await flushPromises()
+      expect(
+        Number(wrapper.get('.mobile-rows').attributes('data-cached-rows')),
+      ).toBeLessThanOrEqual(300)
+      expect(wrapper.findAll('.mobile-card')).toHaveLength(100)
+    }
+    expect(wrapper.get('.card-title').text()).toBe('Title 500')
+    expect(
+      fetcher.mock.calls.every(
+        ([, init]) => JSON.parse(String(init?.body)).limit === 100,
+      ),
+    ).toBe(true)
+    await wrapper.findAll('.mobile-paging button')[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('.card-title').text()).toBe('Title 400')
+    await wrapper.get('.mobile-add').trigger('click')
+    expect(wrapper.emitted('add')).toHaveLength(1)
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(wrapper.get('.mobile-toolbar h2').text()).toBe('数据行')
+  })
 })
 
 it('offers native bounded options for real field visibility without filter/group/highlight controls', async () => {

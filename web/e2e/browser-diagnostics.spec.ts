@@ -1,6 +1,7 @@
 import {
   allowHTTPFailure,
   expect,
+  expectBrowserClean,
   expectedConsoleFailureIndex,
   expectHTTPFailure,
   observeBrowser,
@@ -67,9 +68,21 @@ test('browser diagnostics preserve unexpected failures beside expected failures'
     await expect.poll(() => diagnostics.errors.length).toBe(2)
     expect(diagnostics.errors[0]).toContain('/api/v1/diagnostic/unexpected')
     expect(diagnostics.errors[1]).toContain('/api/v1/exports/[REDACTED]')
+    expect(diagnostics.errors.every((error) => error.includes('409'))).toBe(
+      true,
+    )
     expect(diagnostics.errors.join('\n')).not.toContain('private-ticket')
     expect(diagnostics.errors.join('\n')).not.toContain('private-query')
     expect(diagnostics.pendingFailures).toEqual([])
+    await probe.evaluate(() => {
+      console.warn('intentional diagnostic warning')
+      console.error('intentional diagnostic error')
+    })
+    await expect.poll(() => diagnostics.errors.length).toBe(4)
+    expect(diagnostics.errors[2]).toContain('intentional diagnostic warning')
+    expect(diagnostics.errors[3]).toContain('intentional diagnostic error')
+    diagnostics.errors.splice(0)
+    expectBrowserClean(probe, diagnostics)
   } finally {
     await probe.close()
   }

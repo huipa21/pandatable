@@ -722,14 +722,15 @@ conflicting historical summaries above.
 | AT-409 | Reopened | The production formula scenario failed after another scenario changed the shared user timezone. Test cleanup and actor-timezone assertions were corrected; both focused formula projects pass, but the milestone gate remains failed. |
 | AT-507 | Pass | A writer's temporary override of a locked shared view saves privately without changing that shared view. |
 | AT-804 | Pass | The required PG18 HTTP injection test verifies literal table/field names and filter values and confirms the users table and session remain intact. |
-| AT-805 | Partial | Scripted Chrome, Edge and stock Firefox desktop smoke and Playwright Firefox/WebKit engines pass; stock Safari and physical iOS/Android remain unverified. |
-| AT-806 | Partial | Desktop/mobile Chromium checks selected menus, dialogs, administrator, profile and settings workflows at 390 px in both languages, plus notification bounds at 14 widths; the complete UI is not exhaustively verified. |
+| AT-805 | Partial | Scripted Chrome, Edge and stock Firefox desktop smoke and selected Playwright Firefox/WebKit workflows pass; stock Safari and physical iOS/Android remain unverified. |
+| AT-806 | Partial | Desktop/mobile Chromium checks selected menus, dialogs, administrator, profile and settings workflows at 390 px in both languages, plus notification bounds at 14 widths. Firefox and emulated mobile WebKit also pass main-page, notification and profile/settings checks; the complete UI is not exhaustively verified. |
 | AT-001/005/006, AT-312/512/801, AT-707 | Partial | Linux/Docker, authorized Ubuntu/Caddy deployment, target-host performance and fresh-host restore checks remain unavailable. |
 | AT-702 | Partial | Package round-trip fidelity remains blocked by attachment identity/content, possible timestamp collisions and missing view locks. |
 
 The production grid scenario also reported an unexpected browser-console 409;
 both focused grid projects passed, but its original cause was not established.
-The browser diagnostic fixture now correlates expected failures by URL and
-status and redacts export tickets from reported failure paths.
+Browser diagnostics correlate expected failures by URL and status on Chromium
+and WebKit; Firefox reports unexpected HTTP responses directly. Export tickets
+are redacted from reported failure paths.
 See the [T3.12 record](task-prompts/T3.12.md#record-2026-11-01) for focused
 reruns, gate results and release blockers.
