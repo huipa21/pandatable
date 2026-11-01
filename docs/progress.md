@@ -74,7 +74,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.8 | Import | ⏸ | 2026-11-01 | D-190–193; task gates and AT-703–705 pass; AT-702 remains blocked by package fidelity. [Record](task-prompts/T3.8.md#record-2026-11-01). |
 | T3.9 | Backups | 🟨 | 2026-11-01 | D-194; task gates and AT-706/708 pass; fresh-host manual AT-707 remains pending. [Record](task-prompts/T3.9.md#record-2026-11-01). |
 | T3.10 | User lifecycle admin | ✅ | 2026-11-01 | D-195; AT-113–115 and both task gates pass. [Record](task-prompts/T3.10.md#record-2026-11-01). |
-| T3.11 | Hardening | 🟨 | 2026-11-01 | D-196–198; load-driver regressions and AT-804 HTTP/PG18 checks pass; selected responsive workflows and the notification clipping fix are verified. Target-host AT-801, full browser matrix AT-805 and complete AT-806 remain open. [Record](task-prompts/T3.11.md#record-2026-11-01). |
+| T3.11 | Hardening | 🟨 | 2026-11-01 | D-196–198; load-driver regressions and AT-804 HTTP/PG18 checks pass; selected responsive workflows, including account/settings forms, and the notification clipping fix are verified. Target-host AT-801, full browser matrix AT-805 and complete AT-806 remain open. [Record](task-prompts/T3.11.md#record-2026-11-01). |
 | T3.12 | Release v1.0 | ⏸ | 2026-11-01 | Guide, audit and responsive/grid/load follow-ups recorded; production gate, remaining acceptance and an authorized target block tagging and deployment. [Record](task-prompts/T3.12.md#record-2026-11-01). |
 | T4.1 | Kanban view | ⬜ | | |
 | T4.2 | Gallery view | ⬜ | | |
@@ -114,7 +114,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
-| 2026-11-01 | T3.12 blocked: audit, guide and responsive/load follow-ups recorded; production gate, acceptance and authorized deployment remain open. |
+| 2026-11-01 | T3.12 blocked: audit, guide and responsive/account/load follow-ups recorded; production gate, acceptance and authorized deployment remain open. |
 | 2026-11-01 | T3.11 implemented and task gates pass; target-host load, remaining injection evidence, browser matrix and complete responsive usability remain open. |
 | 2026-11-01 | T3.10 Done: ownership transfer, orphan rescue and hard-delete lifecycle pass AT-113–115 and task gates. |
 | 2026-11-01 | T3.9 implemented and automated gates pass; fresh-host restore acceptance remains pending. |

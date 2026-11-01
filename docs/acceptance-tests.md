@@ -605,7 +605,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
   - **T3.12 evidence: Partial.** Scripted desktop smoke passes on installed Chrome, Edge and headed stock Firefox. Firefox also establishes an authenticated WebSocket and rejects stale access after logout; its expected post-logout WebSocket rejection appears in the browser log. Playwright Firefox and WebKit engines also pass, but do not certify stock Safari or physical iOS/Android devices.
 - **AT-806 — Responsive** · M3 · All main pages usable at 390 px width (no horizontal page scroll except grid area).
   - **T3.11 evidence (2026-11-01): Partial automated coverage.** Desktop and mobile Chromium navigate 16 main routes at 390 px in both languages, check headings and page overflow, and verify the mobile row list is visible. This does not exhaustively exercise every page's controls.
-  - **T3.12 evidence: Partial.** Desktop and mobile Chromium check selected controls, menus, dialogs and administrator forms at 390 px in both languages, edit a row, and create and submit a form. Notification panel bounds are checked at 14 widths from 320 to 1440 px. Other menus and workflows are not exhaustively exercised.
+  - **T3.12 evidence: Partial.** Desktop and mobile Chromium check selected controls, menus and dialogs at 390 px in both languages; they exercise administrator, profile and settings forms, edit a row, and create and submit a form. Notification panel bounds are checked at 14 widths from 320 to 1440 px. Other menus and workflows are not exhaustively exercised.
 
 ## AT-9xx Post-v1 (M4, M5)
 
@@ -723,7 +723,7 @@ conflicting historical summaries above.
 | AT-507 | Pass | A writer's temporary override of a locked shared view saves privately without changing that shared view. |
 | AT-804 | Pass | The required PG18 HTTP injection test verifies literal table/field names and filter values and confirms the users table and session remain intact. |
 | AT-805 | Partial | Scripted Chrome, Edge and stock Firefox desktop smoke and Playwright Firefox/WebKit engines pass; stock Safari and physical iOS/Android remain unverified. |
-| AT-806 | Partial | Desktop/mobile Chromium checks selected menus, dialogs and administrator workflows at 390 px in both languages, plus notification bounds at 14 widths; the complete UI is not exhaustively verified. |
+| AT-806 | Partial | Desktop/mobile Chromium checks selected menus, dialogs, administrator, profile and settings workflows at 390 px in both languages, plus notification bounds at 14 widths; the complete UI is not exhaustively verified. |
 | AT-001/005/006, AT-312/512/801, AT-707 | Partial | Linux/Docker, authorized Ubuntu/Caddy deployment, target-host performance and fresh-host restore checks remain unavailable. |
 | AT-702 | Partial | Package round-trip fidelity remains blocked by attachment identity/content, possible timestamp collisions and missing view locks. |
 

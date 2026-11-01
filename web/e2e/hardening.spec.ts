@@ -8,11 +8,14 @@ import {
   waitForSubscription,
 } from '../scripts/load-test.mjs'
 import type {
+  AdminSettings,
   AdminUserMutation,
+  AuthUser,
   AuthUserMutation,
   DataRow,
   GroupMutation,
   RowPatchMutation,
+  SettingsMutation,
   TableSchema,
   ViewMutation,
 } from '../src/api/types'
@@ -981,6 +984,141 @@ test('AT-806 administrator forms and confirmations work at 390px in both languag
       await expect(deleteUser).toHaveCount(0)
     }
   } finally {
+    await closeDialogsAndRestoreEnglish(page)
+  }
+})
+
+test('AT-806 profile and settings forms save and reload at 390px in both languages', async ({
+  page,
+}) => {
+  test.setTimeout(150_000)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/login')
+  await english(page)
+  await login(page)
+  const userResponse = await page.request.get('/api/v1/auth/me')
+  expect(userResponse.status()).toBe(200)
+  const originalUser = (await userResponse.json()) as AuthUser
+  const settingsResponse = await page.request.get('/api/v1/admin/settings')
+  expect(settingsResponse.status()).toBe(200)
+  const originalSettings = (await settingsResponse.json()) as AdminSettings
+
+  try {
+    for (const locale of [en, zh]) {
+      const language = locale === en ? 'en' : 'zh-CN'
+      const displayName =
+        locale === en ? 'Responsive profile' : '响应式个人资料'
+      const timezone = locale === en ? 'Asia/Shanghai' : 'Europe/London'
+      const appName = locale === en ? 'Responsive settings' : '响应式设置'
+      if (locale === zh)
+        await page
+          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+          .click()
+
+      await page.goto('/profile')
+      const profile = page.locator('.profile-form')
+      const profileName = profile.getByLabel(locale.profile.displayName, {
+        exact: true,
+      })
+      await profileName.fill(displayName)
+      await profile
+        .getByLabel(locale.profile.language, { exact: true })
+        .selectOption(language)
+      await profile
+        .getByLabel(locale.profile.timezone, { exact: true })
+        .selectOption(timezone)
+      await reachableControls(page, 'profile form', profile)
+      await noPageOverflow(page, 'profile form')
+      const [profileSave] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === 'PATCH' &&
+            new URL(response.url()).pathname === '/api/v1/auth/me',
+        ),
+        profile
+          .getByRole('button', { name: locale.profile.save, exact: true })
+          .click(),
+      ])
+      expect(profileSave.status()).toBe(200)
+      expect(
+        ((await profileSave.json()) as AuthUserMutation).user,
+      ).toMatchObject({
+        displayName,
+        locale: language,
+        timezone,
+      })
+      await expect(
+        page.getByRole('status').filter({ hasText: locale.profile.saved }),
+      ).toBeVisible()
+      await noPageOverflow(page, 'saved profile')
+      await profileName.fill('Discarded profile draft')
+      await profile
+        .getByRole('button', { name: locale.profile.reload, exact: true })
+        .click()
+      await expect(profileName).toHaveValue(displayName)
+      await expect(
+        profile.getByLabel(locale.profile.timezone, { exact: true }),
+      ).toHaveValue(timezone)
+
+      await page.goto('/admin/settings')
+      const settings = page.locator('.settings-form')
+      const settingsName = settings.getByLabel(locale.settings.appName, {
+        exact: true,
+      })
+      await settingsName.fill(appName)
+      await reachableControls(page, 'settings form', settings)
+      await noPageOverflow(page, 'settings form')
+      const [settingsSave] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === 'PATCH' &&
+            new URL(response.url()).pathname === '/api/v1/admin/settings',
+        ),
+        settings
+          .getByRole('button', { name: locale.settings.save, exact: true })
+          .click(),
+      ])
+      expect(settingsSave.status()).toBe(200)
+      expect(
+        ((await settingsSave.json()) as SettingsMutation).settings.appName,
+      ).toBe(appName)
+      await expect(
+        page.getByRole('alert').filter({ hasText: locale.settings.saved }),
+      ).toBeVisible()
+      await noPageOverflow(page, 'saved settings')
+      await settingsName.fill('Discarded settings draft')
+      await settings
+        .getByRole('button', { name: locale.settings.reload, exact: true })
+        .click()
+      await expect(settingsName).toHaveValue(appName)
+    }
+  } finally {
+    const [restoredSettings, restoredUser] = await Promise.all([
+      page.request.patch('/api/v1/admin/settings', {
+        headers: headers(),
+        data: { appName: originalSettings.appName },
+      }),
+      page.request.patch('/api/v1/auth/me', {
+        headers: headers(),
+        data: {
+          displayName: originalUser.displayName,
+          locale: originalUser.locale,
+          timezone: originalUser.timezone,
+        },
+      }),
+    ])
+    expect(restoredSettings.status()).toBe(200)
+    expect(restoredUser.status()).toBe(200)
+    expect(
+      ((await restoredSettings.json()) as SettingsMutation).settings.appName,
+    ).toBe(originalSettings.appName)
+    expect(
+      ((await restoredUser.json()) as AuthUserMutation).user,
+    ).toMatchObject({
+      displayName: originalUser.displayName,
+      locale: originalUser.locale,
+      timezone: originalUser.timezone,
+    })
     await closeDialogsAndRestoreEnglish(page)
   }
 })
