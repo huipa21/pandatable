@@ -8,8 +8,10 @@ import {
   waitForSubscription,
 } from '../scripts/load-test.mjs'
 import type {
+  AdminUserMutation,
   AuthUserMutation,
   DataRow,
+  GroupMutation,
   RowPatchMutation,
   TableSchema,
   ViewMutation,
@@ -702,6 +704,281 @@ test('AT-806 form views work at 390px in both languages', async ({
         ((await submitted.json()) as RowPatchMutation).row.fields[data.fieldId],
       ).toBe(title)
       await expect(form.getByRole('status')).toHaveText(locale.form.submitted)
+    }
+  } finally {
+    await closeDialogsAndRestoreEnglish(page)
+  }
+})
+
+test('AT-806 notification panel stays within the viewport in both languages', async ({
+  page,
+}) => {
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/login')
+  await english(page)
+  await login(page)
+  await page.goto('/home')
+  const problems: {
+    locale: string
+    width: number
+    left: number
+    right: number
+    bellRight: number
+    panelTop: number
+    bellBottom: number
+    pageOverflow: boolean
+    panelOverflow: boolean
+  }[] = []
+  try {
+    for (const locale of [en, zh]) {
+      if (locale === zh)
+        await page
+          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+          .click()
+      for (const width of [
+        320, 390, 480, 600, 768, 1024, 1100, 1150, 1199, 1200, 1201, 1240, 1280,
+        1440,
+      ]) {
+        await page.setViewportSize({ width, height: 844 })
+        const bell = page.locator('button[aria-controls="notification-list"]')
+        await bell.click()
+        const panel = page.getByRole('region', {
+          name: locale.notifications.title,
+          exact: true,
+        })
+        await expect(panel).toBeVisible()
+        const box = await panel.boundingBox()
+        const anchor = await bell.boundingBox()
+        if (!box || !anchor) throw new Error('Notification bounds are missing')
+        const overflow = await panel.evaluate((element) => ({
+          page: document.documentElement.scrollWidth > innerWidth,
+          panel: element.scrollWidth > element.clientWidth,
+        }))
+        const sample = {
+          locale: locale === en ? 'en' : 'zh-CN',
+          width,
+          left: box.x,
+          right: box.x + box.width,
+          bellRight: anchor.x + anchor.width,
+          panelTop: box.y,
+          bellBottom: anchor.y + anchor.height,
+          pageOverflow: overflow.page,
+          panelOverflow: overflow.panel,
+        }
+        if (
+          sample.left < 0 ||
+          sample.right > width ||
+          Math.abs(sample.panelTop - sample.bellBottom) > 1 ||
+          (width >= 1280 && Math.abs(sample.right - sample.bellRight) > 1) ||
+          sample.pageOverflow ||
+          sample.panelOverflow
+        )
+          problems.push(sample)
+        await bell.click()
+        await expect(panel).toHaveCount(0)
+      }
+    }
+    expect(problems, 'notification viewport bounds and alignment').toEqual([])
+  } finally {
+    await closeDialogsAndRestoreEnglish(page)
+  }
+})
+
+test('AT-806 administrator forms and confirmations work at 390px in both languages', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(150_000)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/login')
+  await english(page)
+  await login(page)
+  const suffix = `${Date.now()}-${testInfo.project.name.startsWith('mobile') ? 'm' : 'd'}`
+  const users = []
+  for (const prefix of ['responsive', 'disabled']) {
+    const response = await page.request.post('/api/v1/admin/users', {
+      headers: headers(),
+      data: {
+        username: `${prefix}-${suffix}`,
+        displayName: `${prefix} user`,
+        role: 'user',
+        password: 'Temporary-password-123',
+      },
+    })
+    expect(response.status()).toBe(201)
+    users.push(((await response.json()) as AdminUserMutation).user)
+  }
+  const [user, disabledUser] = users
+  if (!user || !disabledUser) throw new Error('Responsive users are missing')
+  const disabled = await page.request.patch(
+    `/api/v1/admin/users/${disabledUser.id}`,
+    { headers: headers(), data: { status: 'disabled' } },
+  )
+  expect(disabled.status()).toBe(200)
+  const groupResponse = await page.request.post('/api/v1/admin/groups', {
+    headers: headers(),
+    data: { name: `Responsive group ${suffix}`, description: 'Initial' },
+  })
+  expect(groupResponse.status()).toBe(201)
+  const group = ((await groupResponse.json()) as GroupMutation).group
+  const checkPanel = async (panel: Locator, name: string) => {
+    await expect(panel).toBeVisible()
+    await reachableControls(page, name, panel)
+    await noPageOverflow(page, name)
+  }
+  try {
+    for (const locale of [en, zh]) {
+      if (locale === zh)
+        await page
+          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
+          .click()
+
+      await page.goto('/admin/users')
+      await page
+        .getByRole('button', { name: locale.admin.create, exact: true })
+        .click()
+      const editor = page.locator('.admin-editor')
+      await editor
+        .getByLabel(locale.admin.username, { exact: true })
+        .fill(`draft-${suffix}`)
+      await editor
+        .getByLabel(locale.admin.displayName, { exact: true })
+        .fill('Responsive draft')
+      await editor
+        .getByLabel(locale.admin.temporaryPassword, { exact: true })
+        .fill('Temporary-password-123')
+      await checkPanel(editor, 'create user form')
+      await editor
+        .getByRole('button', { name: locale.admin.cancel, exact: true })
+        .click()
+
+      await page
+        .getByLabel(locale.admin.searchHint, { exact: true })
+        .fill(user.username)
+      await page
+        .getByRole('button', { name: locale.admin.search, exact: true })
+        .click()
+      const card = page.locator(`[data-user="${user.username}"]`)
+      await expect(card).toBeVisible()
+      await card
+        .getByRole('button', { name: locale.admin.edit, exact: true })
+        .click()
+      const displayName =
+        locale === en ? 'Responsive English' : 'Responsive 中文'
+      await editor
+        .getByLabel(locale.admin.displayName, { exact: true })
+        .fill(displayName)
+      await checkPanel(editor, 'edit user form')
+      const [updatedUser] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === 'PATCH' &&
+            new URL(response.url()).pathname ===
+              `/api/v1/admin/users/${user.id}`,
+        ),
+        editor
+          .getByRole('button', { name: locale.admin.confirm, exact: true })
+          .click(),
+      ])
+      expect(updatedUser.status()).toBe(200)
+      expect(
+        ((await updatedUser.json()) as AdminUserMutation).user.displayName,
+      ).toBe(displayName)
+      await expect(card).toContainText(displayName)
+      for (const action of [locale.admin.reset, locale.admin.disable]) {
+        await card.getByRole('button', { name: action, exact: true }).click()
+        if (action === locale.admin.reset)
+          await editor
+            .getByLabel(locale.admin.temporaryPassword, { exact: true })
+            .fill('Reset-password-123')
+        await checkPanel(editor, action)
+        await editor
+          .getByRole('button', { name: locale.admin.cancel, exact: true })
+          .click()
+      }
+
+      await page.goto('/admin/groups')
+      await page
+        .getByRole('button', { name: locale.groups.create, exact: true })
+        .click()
+      const groupEditor = page.locator('.group-editor')
+      await groupEditor
+        .getByLabel(locale.groups.name, { exact: true })
+        .fill('Responsive draft')
+      await checkPanel(groupEditor, 'create group form')
+      await groupEditor
+        .getByRole('button', { name: locale.admin.cancel, exact: true })
+        .click()
+
+      await page.goto(`/admin/groups/${group.id}`)
+      await page
+        .getByRole('button', { name: locale.groups.edit, exact: true })
+        .click()
+      const description =
+        locale === en ? 'Responsive group' : 'Responsive group 中文'
+      await groupEditor
+        .getByLabel(locale.groups.description, { exact: true })
+        .fill(description)
+      await checkPanel(groupEditor, 'edit group form')
+      const [updatedGroup] = await Promise.all([
+        page.waitForResponse(
+          (response) =>
+            response.request().method() === 'PATCH' &&
+            new URL(response.url()).pathname ===
+              `/api/v1/admin/groups/${group.id}`,
+        ),
+        groupEditor
+          .getByRole('button', { name: locale.admin.confirm, exact: true })
+          .click(),
+      ])
+      expect(updatedGroup.status()).toBe(200)
+      expect(
+        ((await updatedGroup.json()) as GroupMutation).group.description,
+      ).toBe(description)
+      await expect(page.getByText(description, { exact: true })).toBeVisible()
+
+      const picker = page.locator('.member-picker')
+      await picker
+        .getByLabel(locale.groups.selectUser, { exact: true })
+        .selectOption(user.id)
+      await checkPanel(picker, 'group membership picker')
+      await picker
+        .getByRole('button', { name: locale.groups.add, exact: true })
+        .click()
+      const member = page.locator(`[data-member="${user.username}"]`)
+      await checkPanel(member, 'group member')
+      await member
+        .getByRole('button', { name: locale.groups.remove, exact: true })
+        .click()
+      await expect(member).toHaveCount(0)
+      await page
+        .getByRole('button', { name: locale.groups.delete, exact: true })
+        .click()
+      const groupDelete = page.getByRole('alert').filter({
+        hasText: locale.groups.deleteNotice.replace('{name}', group.name),
+      })
+      await checkPanel(groupDelete, 'delete group confirmation')
+      await groupDelete
+        .getByRole('button', { name: locale.admin.cancel, exact: true })
+        .click()
+
+      await page.goto(`/admin/users/${disabledUser.id}`)
+      const lifecycle = page.getByRole('region', {
+        name: locale.lifecycle.ownerships,
+        exact: true,
+      })
+      await lifecycle
+        .getByRole('button', { name: locale.lifecycle.delete, exact: true })
+        .click()
+      const deleteUser = lifecycle.locator('form')
+      await deleteUser
+        .getByLabel(locale.lifecycle.confirmUsername, { exact: true })
+        .fill(disabledUser.username)
+      await checkPanel(deleteUser, 'delete user confirmation')
+      await deleteUser
+        .getByRole('button', { name: locale.admin.cancel, exact: true })
+        .click()
+      await expect(deleteUser).toHaveCount(0)
     }
   } finally {
     await closeDialogsAndRestoreEnglish(page)

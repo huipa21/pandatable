@@ -297,4 +297,14 @@ onBeforeUnmount(() => {
   width: 100%;
   text-align: left;
 }
+
+@media (max-width: 1200px) {
+  .notification-bell {
+    position: static;
+  }
+  .notification-list {
+    right: auto;
+    left: 12px;
+  }
+}
 </style>
