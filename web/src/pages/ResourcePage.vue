@@ -17,6 +17,7 @@ import type {
   FilterNode,
   FormConfig,
   ImportResult,
+  KanbanConfig,
   ResourceKind,
   TableSchema,
   TableView,
@@ -52,6 +53,12 @@ const FormBuilder = defineAsyncComponent(
 const FormView = defineAsyncComponent(
   () => import('../components/views/FormView.vue'),
 )
+const KanbanBuilder = defineAsyncComponent(
+  () => import('../components/views/KanbanBuilder.vue'),
+)
+const KanbanView = defineAsyncComponent(
+  () => import('../components/views/KanbanView.vue'),
+)
 const DataGrid = defineAsyncComponent(
   () => import('../components/grid/DataGrid.vue'),
 )
@@ -68,6 +75,13 @@ const grid = ref<{
   refresh: () => Promise<void>
   exportQuery: () => ExportViewQuery
 }>()
+const kanban = ref<{ refresh: () => Promise<void> }>()
+
+function refreshVisibleRows() {
+  void grid.value?.refresh()
+  void kanban.value?.refresh()
+}
+
 const media = window.matchMedia('(min-width: 768px)')
 const desktop = ref(media.matches)
 const newRow = ref(false)
@@ -85,7 +99,7 @@ let exportController: AbortController | undefined
 let exportGeneration = 0
 const newViewName = ref('')
 const newViewScope = ref<'shared' | 'personal'>('personal')
-const newViewType = ref<'grid' | 'form'>('grid')
+const newViewType = ref<'grid' | 'form' | 'kanban'>('grid')
 const viewNameDrafts = ref<Record<string, string>>({})
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
@@ -129,7 +143,7 @@ const view = computed(() =>
 )
 const showRowDialog = computed(
   () =>
-    view.value?.type === 'grid' &&
+    (view.value?.type === 'grid' || view.value?.type === 'kanban') &&
     (typeof route.params.rowId === 'string' || newRow.value),
 )
 const canCreateSharedView = computed(
@@ -401,7 +415,10 @@ watch(
 
 async function imported() {
   await nav.refresh(true)
-  if (kind.value === 'table') await grid.value?.refresh()
+  if (kind.value === 'table') {
+    await grid.value?.refresh()
+    await kanban.value?.refresh()
+  }
 }
 
 async function openImportedTable(result: ImportResult) {
@@ -541,6 +558,54 @@ async function saveForm(form: FormConfig) {
     replaceView(result.view)
   } catch (cause) {
     viewRequestFailed(cause)
+  } finally {
+    viewBusy.value = false
+  }
+}
+
+async function saveKanban(config: KanbanConfig) {
+  if (
+    !view.value ||
+    view.value.type !== 'kanban' ||
+    !schema.value ||
+    !canManageView(view.value) ||
+    viewBusy.value
+  )
+    return
+  const before = view.value
+  const tableId = schema.value.table.id
+  const identity = auth.user?.id
+  viewBusy.value = true
+  viewError.value = ''
+  try {
+    const result = await request<ViewMutation>(
+      `/views/${encodeURIComponent(before.id)}`,
+      'PATCH',
+      { config: { kanban: config } },
+      AbortSignal.timeout(10_000),
+      { ifMatch: before.version },
+    )
+    if (
+      schema.value?.table.id !== tableId ||
+      view.value?.id !== before.id ||
+      auth.user?.id !== identity
+    )
+      return
+    undo.record([viewUndoStep(tableId, before, result.view)])
+    replaceView(result.view)
+  } catch (cause) {
+    if (
+      schema.value?.table.id === tableId &&
+      view.value?.id === before.id &&
+      auth.user?.id === identity
+    ) {
+      viewRequestFailed(cause)
+      if (
+        cause instanceof RequestError &&
+        cause.code === 'ERR_VERSION_CONFLICT'
+      )
+        await loadSchema(true)
+    }
   } finally {
     viewBusy.value = false
   }
@@ -935,6 +1000,7 @@ onBeforeUnmount(() => {
             <select v-model="newViewType" :disabled="viewBusy">
               <option value="grid">{{ t('form.gridType') }}</option>
               <option value="form">{{ t('form.formType') }}</option>
+              <option value="kanban">{{ t('kanban.viewType') }}</option>
             </select>
           </label>
           <button type="submit" :disabled="viewBusy || !newViewName.trim()">
@@ -968,6 +1034,13 @@ onBeforeUnmount(() => {
           :view="view"
           :busy="viewBusy"
           @save="saveForm"
+        />
+        <KanbanBuilder
+          v-if="view?.type === 'kanban' && canManageView(view)"
+          :schema="schema"
+          :view="view"
+          :busy="viewBusy"
+          @save="saveKanban"
         />
         <FieldPanel
           v-if="desktop"
@@ -1031,6 +1104,18 @@ onBeforeUnmount(() => {
           :identity="auth.user?.id ?? ''"
           @schema-changed="loadSchema(true)"
         />
+        <KanbanView
+          v-else-if="view?.type === 'kanban'"
+          ref="kanban"
+          :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
+          :schema="schema"
+          :view="view"
+          :identity="auth.user?.id ?? ''"
+          @schema-changed="loadSchema(true)"
+          @expand="
+            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+          "
+        />
         <RowExpandDialog
           v-if="showRowDialog && view"
           :schema="schema"
@@ -1050,11 +1135,11 @@ onBeforeUnmount(() => {
               router.replace(`/t/${schema!.table.id}/v/${view!.id}`)
             }
           "
-          @saved="grid?.refresh()"
+          @saved="refreshVisibleRows"
           @created="
             (id) => {
               newRow = false
-              grid?.refresh()
+              refreshVisibleRows()
               router.replace(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
             }
           "

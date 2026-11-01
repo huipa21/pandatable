@@ -40,6 +40,20 @@ type RowGroupResult struct {
 	SchemaVersion int32            `json:"schemaVersion"`
 }
 
+func viewGroupFields(viewType string, config rowViewConfig, table rowTable) []string {
+	if viewType != "kanban" {
+		return config.GroupBy
+	}
+	if config.Kanban == nil || config.Kanban.GroupField == nil {
+		return nil
+	}
+	field, ok := table.byID[*config.Kanban.GroupField]
+	if !ok || (field.kind != codec.SingleSelect && field.kind != codec.User) {
+		return nil
+	}
+	return []string{field.id}
+}
+
 func canonicalGroupKey(field rowField, expression string) string {
 	raw := "to_jsonb(" + expression + ")"
 	if field.kind == codec.Text && field.codec != nil &&
@@ -187,14 +201,15 @@ func (s *Service) QueryGroups(
 	if err := json.Unmarshal(lockedView.Config, &config); err != nil {
 		return RowGroupResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
-	viewConfig := ViewColumns{GroupBy: config.GroupBy, Aggregates: config.Aggregates}
+	groupBy := viewGroupFields(lockedView.Type, config, table)
+	viewConfig := ViewColumns{GroupBy: groupBy, Aggregates: config.Aggregates}
 	if err := validateGroupConfig(viewConfig, table); err != nil {
 		return RowGroupResult{}, err
 	}
-	if len(request.Path) > len(config.GroupBy) || len(request.Path) > 3 {
+	if len(request.Path) > len(groupBy) || len(request.Path) > 3 {
 		return RowGroupResult{}, validation("Group path exceeds the configured grouping levels")
 	}
-	if len(config.GroupBy) == 0 || len(request.Path) == len(config.GroupBy) {
+	if len(groupBy) == 0 || len(request.Path) == len(groupBy) {
 		return RowGroupResult{
 			Groups: []RowGroupBucket{}, SchemaVersion: table.schemaVersion,
 		}, nil
@@ -217,7 +232,7 @@ func (s *Service) QueryGroups(
 		return RowGroupResult{}, err
 	}
 	conditionSQL, conditionArgs := combineQueryConditions(filterSQL, filter.args, searchSQL, searchArgs)
-	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, config.GroupBy, request.Path)
+	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, groupBy, request.Path)
 	if err != nil {
 		return RowGroupResult{}, err
 	}
@@ -229,7 +244,7 @@ func (s *Service) QueryGroups(
 		where += "(" + shiftSQLArguments(groupSQL, len(conditionArgs)) + ")"
 	}
 
-	field, ok := table.byID[config.GroupBy[len(request.Path)]]
+	field, ok := table.byID[groupBy[len(request.Path)]]
 	if !ok || field.relation != nil {
 		return RowGroupResult{}, validation("Grouping field is unavailable")
 	}

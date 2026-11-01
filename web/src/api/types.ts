@@ -301,6 +301,12 @@ export interface ViewColumns {
   aggregates?: ViewAggregate[]
   highlight?: HighlightRule[]
   form?: FormConfig
+  kanban?: KanbanConfig
+}
+
+export interface KanbanConfig {
+  groupField: string | null
+  fields: string[]
 }
 
 export interface FormConfig {

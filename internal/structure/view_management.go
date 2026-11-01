@@ -105,7 +105,7 @@ func (s *Service) CreateView(ctx context.Context, actor Actor, tableID string, i
 	if input.Type == "" {
 		input.Type = "grid"
 	}
-	if input.Type != "grid" && input.Type != "form" {
+	if input.Type != "grid" && input.Type != "form" && input.Type != "kanban" {
 		return View{}, validation("View type is invalid")
 	}
 	user, ok := acl.ParseUUID(actor.ID)
@@ -437,6 +437,14 @@ func defaultViewConfig(table rowTable, viewType string) ([]byte, error) {
 			Fields: []FormField{}, AfterSubmit: "message",
 		}
 	}
+	if viewType == "kanban" {
+		config.Kanban = &KanbanConfig{Fields: make([]string, 0, len(table.fields))}
+		for _, field := range table.fields {
+			if !field.system {
+				config.Kanban.Fields = append(config.Kanban.Fields, field.id)
+			}
+		}
+	}
 	return json.Marshal(config)
 }
 
@@ -467,7 +475,7 @@ func managedView(id pgtype.UUID, name, viewType, scope string, locked bool, posi
 ) (View, error) {
 	fields := make([]Field, len(table.fields))
 	for i, field := range table.fields {
-		fields[i] = Field{ID: field.id, IsSystem: field.system}
+		fields[i] = Field{ID: field.id, UIType: string(field.kind), IsSystem: field.system}
 	}
 	config, err := readViewColumns(raw, fields)
 	if err != nil {

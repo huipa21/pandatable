@@ -610,6 +610,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 ## AT-9xx Post-v1 (M4, M5)
 
 - **AT-901 — Kanban** · M4 · Kanban by single select; drag card between columns updates field; realtime.
+  - **T4.1 evidence (2026-11-02): Pass.** Fast Playwright desktop Chromium drags a card, verifies the persisted single-select value and a second client's realtime update; mobile Chromium uses the accessible move control. Both also exercise user grouping and persisted assignments.
 - **AT-902 — Gallery** · M4 · Gallery cards with cover attachment and selected fields.
 - **AT-903 — Calendar** · M5 · Calendar by date/datetime field (month/week), drag to reschedule.
 - **AT-904 — SMTP** · M5 · Admin configures SMTP and sends test email; user self-service password reset by email; mention emails (opt-in).

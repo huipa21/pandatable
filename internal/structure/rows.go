@@ -113,6 +113,7 @@ type rowViewConfig struct {
 	GroupBy    []string        `json:"groupBy"`
 	Aggregates []ViewAggregate `json:"aggregates"`
 	Highlight  []HighlightRule `json:"highlight"`
+	Kanban     *KanbanConfig   `json:"kanban"`
 }
 
 // Physical row projections change result OIDs after ALTER TYPE, so keep them out of pgx's statement cache.
@@ -742,8 +743,9 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err := json.Unmarshal(lockedView.Config, &config); err != nil {
 		return RowQueryResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
+	groupBy := viewGroupFields(lockedView.Type, config, table)
 	if err := validateGroupConfig(ViewColumns{
-		GroupBy: config.GroupBy, Aggregates: config.Aggregates,
+		GroupBy: groupBy, Aggregates: config.Aggregates,
 	}, table); err != nil {
 		return RowQueryResult{}, err
 	}
@@ -811,7 +813,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 		conditionSQL += fmt.Sprintf(`"source"."id" = ANY($%d::bigint[])`, len(conditionArgs)+1)
 		conditionArgs = append(conditionArgs, ids)
 	}
-	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, config.GroupBy, request.GroupPath)
+	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, groupBy, request.GroupPath)
 	if err != nil {
 		return RowQueryResult{}, err
 	}

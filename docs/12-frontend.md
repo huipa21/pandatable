@@ -493,6 +493,19 @@ not inside Excel/Sheets or every OS/browser. Tablet touch is emulated, not
 physical-device certification. See the [exact results](archive/progress-m0-m1.md#t08-verification-evidence-2026-10-24)
 and [T0.8 completion/handoff](task-prompts/T0.8.md#implementation-and-handoff-2026-10-24).
 
+### T4.1 Kanban view (D-203)
+
+The board groups cards by an active single-select or user field and renders the
+display field plus selected card fields. It keeps unassigned rows and existing
+unavailable choices visible, includes empty single-select choices, and lets
+users search for additional user destinations within the table directory.
+The board loads group metadata, then displays up to eight columns with 20 cards
+per column at a time; paging is explicit.
+Writers can drag cards or use the keyboard/touch-accessible move form. Readers
+can inspect cards but not move them. Realtime notifications refresh the board;
+row edits and configuration changes use the existing permission, error, and
+undo paths.
+
 ## 5. Mobile (< 768 px) — D-016
 
 - Sidebar becomes drawer; toolbar collapses into a "View options" bottom sheet (filter/sort/group/highlight builders are the same components in drawers).

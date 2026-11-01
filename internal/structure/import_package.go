@@ -432,7 +432,7 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 	unavailable := packageUnavailableViewFields(table, manifest, keys)
 	for index, source := range manifest.Views {
 		name, err := cleanName(source.Name)
-		if err != nil || source.Type != "grid" && source.Type != "form" {
+		if err != nil || source.Type != "grid" && source.Type != "form" && source.Type != "kanban" {
 			return "", validation("The package view metadata is invalid")
 		}
 		if err := validatePackageViewFilter(source.Config.Filter); err != nil {
@@ -450,6 +450,16 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 			}
 			config.Form = &form
 		}
+		if source.Type == "kanban" {
+			if config.Kanban == nil {
+				return "", validation("The package Kanban configuration is missing")
+			}
+			kanban, err := validateKanbanConfig(*config.Kanban, table)
+			if err != nil {
+				return "", err
+			}
+			config.Kanban = &kanban
+		}
 		validationConfig, affected, err := packageViewValidationConfig(config, table, unavailable)
 		if err != nil {
 			return "", err
@@ -458,7 +468,7 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 		if err != nil {
 			return "", err
 		}
-		if config.Form != nil || affected {
+		if config.Form != nil || config.Kanban != nil || affected {
 			var stored map[string]json.RawMessage
 			if err := json.Unmarshal(raw, &stored); err != nil {
 				return "", fmt.Errorf("decode restored view: %w", err)
@@ -467,6 +477,12 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 				stored["form"], err = json.Marshal(config.Form)
 				if err != nil {
 					return "", fmt.Errorf("encode restored form: %w", err)
+				}
+			}
+			if config.Kanban != nil {
+				stored["kanban"], err = json.Marshal(config.Kanban)
+				if err != nil {
+					return "", fmt.Errorf("encode restored Kanban: %w", err)
 				}
 			}
 			if affected {

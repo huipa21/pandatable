@@ -49,7 +49,7 @@ export type UndoStep =
       kind: 'view'
       tableId: string
       viewId: string
-      viewType: 'grid' | 'form'
+      viewType: 'grid' | 'form' | 'kanban'
       config: ViewColumns
       expected: ViewColumns
     }
@@ -147,10 +147,14 @@ export function viewUndoStep(
   before: TableView,
   after: TableView,
 ): UndoStep | null {
-  if (before.type !== 'grid' && before.type !== 'form')
+  if (
+    before.type !== 'grid' &&
+    before.type !== 'form' &&
+    before.type !== 'kanban'
+  )
     throw new Error('Unsupported view type in undo history')
-  const previous = before.type === 'form' ? before.config.form : before.config
-  const current = before.type === 'form' ? after.config.form : after.config
+  const previous = viewConfigMember(before.type, before.config)
+  const current = viewConfigMember(before.type, after.config)
   if (sameValue(previous, current)) return null
   return {
     kind: 'view',
@@ -160,6 +164,15 @@ export function viewUndoStep(
     config: before.config,
     expected: after.config,
   }
+}
+
+function viewConfigMember(
+  type: 'grid' | 'form' | 'kanban',
+  config: ViewColumns,
+) {
+  if (type === 'form') return config.form
+  if (type === 'kanban') return config.kanban
+  return config
 }
 
 function pathForRows(tableId: string) {
@@ -461,13 +474,18 @@ export const useUndoStore = defineStore('undo', () => {
     )
     const view = schema.views.find((item) => item.id === step.viewId)
     if (!view) throw new RequestError('ERR_NOT_FOUND', 404)
-    const current = step.viewType === 'form' ? view.config.form : view.config
-    const expected =
-      step.viewType === 'form' ? step.expected.form : step.expected
+    if (view.type !== step.viewType)
+      throw new RequestError('ERR_VERSION_CONFLICT', 409)
+    const current = viewConfigMember(step.viewType, view.config)
+    const expected = viewConfigMember(step.viewType, step.expected)
     if (!sameValue(current, expected))
       throw new RequestError('ERR_VERSION_CONFLICT', 409)
     const config =
-      step.viewType === 'form' ? { form: step.config.form } : step.config
+      step.viewType === 'form'
+        ? { form: step.config.form }
+        : step.viewType === 'kanban'
+          ? { kanban: step.config.kanban }
+          : step.config
     const result = await request<ViewMutation>(
       `/views/${encodeURIComponent(step.viewId)}`,
       'PATCH',

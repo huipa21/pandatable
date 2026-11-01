@@ -109,6 +109,18 @@ func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user aut
 		}{view, eventID(r)})
 		return
 	}
+	if config.KanbanSet {
+		view, err := api.structure.UpdateViewKanban(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, *config.Kanban)
+		if err != nil {
+			api.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			View    structure.View `json:"view"`
+			EventID string         `json:"eventId"`
+		}{view, eventID(r)})
+		return
+	}
 	view, err := api.structure.UpdateViewColumns(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, config)
 	if err != nil {
 		api.fail(w, r, err)
@@ -173,6 +185,7 @@ func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {
 		Aggregates json.RawMessage `json:"aggregates"`
 		Highlight  json.RawMessage `json:"highlight"`
 		Form       json.RawMessage `json:"form"`
+		Kanban     json.RawMessage `json:"kanban"`
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return structure.ViewColumns{}, invalid
@@ -219,6 +232,31 @@ func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {
 			})
 		}
 		return structure.ViewColumns{Form: &form, FormSet: true}, nil
+	}
+	if len(input.Kanban) > 0 {
+		var members map[string]json.RawMessage
+		if json.Unmarshal(raw, &members) != nil || len(members) != 1 ||
+			bytes.Equal(bytes.TrimSpace(input.Kanban), []byte("null")) {
+			return structure.ViewColumns{}, invalid
+		}
+		var kanbanInput struct {
+			GroupField json.RawMessage `json:"groupField"`
+			Fields     *[]string       `json:"fields"`
+		}
+		nested := json.NewDecoder(bytes.NewReader(input.Kanban))
+		nested.DisallowUnknownFields()
+		if nested.Decode(&kanbanInput) != nil || len(kanbanInput.GroupField) == 0 || kanbanInput.Fields == nil {
+			return structure.ViewColumns{}, invalid
+		}
+		kanban := structure.KanbanConfig{Fields: *kanbanInput.Fields}
+		if !bytes.Equal(bytes.TrimSpace(kanbanInput.GroupField), []byte("null")) {
+			var id string
+			if json.Unmarshal(kanbanInput.GroupField, &id) != nil {
+				return structure.ViewColumns{}, invalid
+			}
+			kanban.GroupField = &id
+		}
+		return structure.ViewColumns{Kanban: &kanban, KanbanSet: true}, nil
 	}
 	if input.Fields == nil || input.Frozen == nil {
 		return structure.ViewColumns{}, invalid

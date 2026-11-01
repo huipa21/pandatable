@@ -265,6 +265,18 @@ func packageViewConfig(source ViewColumns, keys map[string]string) (ViewColumns,
 			}
 		}
 	}
+	if config.Kanban != nil {
+		if config.Kanban.GroupField != nil {
+			if err := key(config.Kanban.GroupField); err != nil {
+				return ViewColumns{}, err
+			}
+		}
+		for index := range config.Kanban.Fields {
+			if err := key(&config.Kanban.Fields[index]); err != nil {
+				return ViewColumns{}, err
+			}
+		}
+	}
 	return config, nil
 }
 

@@ -47,6 +47,16 @@ the `form` member, use the same view-version contract, and reject duplicate,
 stale, computed, system, or otherwise read-only fields. Submission accepts only
 configured fields and enforces form-required values server-side.
 
+Kanban views store `kanban: { groupField: fieldId | null, fields: fieldId[] }`
+(D-203). The group field is an active single-select or
+user field; card fields refer to active fields. Configuration writes are
+checked against the view version, and stale references are omitted from reads.
+Existing grouped row queries supply bucket counts and per-group pages; moves
+use ordinary row updates and their validation, permissions, history, and
+realtime events. Package export/import remaps Kanban field IDs with the other
+view configuration. The existing 1,000-bucket group-query limit remains an
+explicit error rather than silently dropping groups.
+
 T1.21 introduced the Grid column subset (D-148): ordered
 `fields:[{id,visible,width?}]` and `frozen`. T2.7–T2.9 add configured sort,
 grouping/aggregates, and highlights. Schema/view responses include the

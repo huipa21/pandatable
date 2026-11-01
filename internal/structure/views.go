@@ -37,6 +37,13 @@ type ViewColumns struct {
 	Highlight  []HighlightRule `json:"highlight,omitempty"`
 	Form       *FormConfig     `json:"form,omitempty"`
 	FormSet    bool            `json:"-"`
+	Kanban     *KanbanConfig   `json:"kanban,omitempty"`
+	KanbanSet  bool            `json:"-"`
+}
+
+type KanbanConfig struct {
+	GroupField *string  `json:"groupField"`
+	Fields     []string `json:"fields"`
 }
 
 type FormConfig struct {
@@ -88,6 +95,10 @@ func readViewColumns(raw []byte, fields []Field) (ViewColumns, error) {
 		}
 		config.Form = &form
 	}
+	if config.Kanban != nil {
+		kanban := normalizeKanbanConfig(*config.Kanban, fields)
+		config.Kanban = &kanban
+	}
 	return normalizeViewColumns(config, fields)
 }
 
@@ -105,6 +116,7 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 		Aggregates: append([]ViewAggregate(nil), config.Aggregates...),
 		Highlight:  append([]HighlightRule(nil), config.Highlight...),
 		Form:       config.Form,
+		Kanban:     config.Kanban,
 	}
 	sortable := make(map[string]bool, len(fields))
 	for _, field := range fields {
@@ -147,6 +159,29 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 	}
 	result.Frozen = max(0, min(config.Frozen, visible))
 	return result, nil
+}
+
+func normalizeKanbanConfig(config KanbanConfig, fields []Field) KanbanConfig {
+	live := make(map[string]Field, len(fields))
+	for _, field := range fields {
+		live[field.ID] = field
+	}
+	result := KanbanConfig{Fields: make([]string, 0, len(config.Fields))}
+	if config.GroupField != nil {
+		field, ok := live[*config.GroupField]
+		if ok && (field.UIType == string(codec.SingleSelect) || field.UIType == string(codec.User)) {
+			result.GroupField = config.GroupField
+		}
+	}
+	seen := make(map[string]bool, len(config.Fields))
+	for _, id := range config.Fields {
+		if _, ok := live[id]; !ok || seen[id] {
+			continue
+		}
+		seen[id] = true
+		result.Fields = append(result.Fields, id)
+	}
+	return result
 }
 
 func normalizeFormConfig(config FormConfig, live map[string]bool) (FormConfig, error) {
@@ -217,13 +252,27 @@ func (s *Service) UpdateViewColumns(ctx context.Context, actor Actor, id string,
 }
 
 func (s *Service) UpdateViewForm(ctx context.Context, actor Actor, id string, version int32, input FormConfig) (View, error) {
+	return s.updateViewComponent(ctx, actor, id, version, "form", func(table rowTable) (any, error) {
+		return validateFormConfig(input, table)
+	})
+}
+
+func (s *Service) UpdateViewKanban(ctx context.Context, actor Actor, id string, version int32, input KanbanConfig) (View, error) {
+	return s.updateViewComponent(ctx, actor, id, version, "kanban", func(table rowTable) (any, error) {
+		return validateKanbanConfig(input, table)
+	})
+}
+
+func (s *Service) updateViewComponent(ctx context.Context, actor Actor, id string, version int32, kind string,
+	validate func(rowTable) (any, error),
+) (View, error) {
 	uuid, ok := acl.ParseUUID(id)
 	if !ok {
 		return View{}, acl.ErrNotFound()
 	}
 	view, err := s.queries.GetViewForQuery(ctx, uuid)
 	if err != nil {
-		return View{}, notFoundIfNoRows(err, "read view for form save")
+		return View{}, notFoundIfNoRows(err, "read view for config save")
 	}
 	if view.Scope == "personal" && (!view.OwnerID.Valid || view.OwnerID.String() != actor.ID) {
 		return View{}, acl.ErrNotFound()
@@ -237,18 +286,18 @@ func (s *Service) UpdateViewForm(ctx context.Context, actor Actor, id string, ve
 		q := structuresql.New(tx)
 		stored, err := q.LockViewColumns(ctx, structuresql.LockViewColumnsParams{ID: uuid, TableID: table.id})
 		if err != nil {
-			return notFoundIfNoRows(err, "lock view form")
+			return notFoundIfNoRows(err, "lock view config")
 		}
 		if err := authorizeViewMutation(ctx, s, tx, actor, user, table, stored.Scope, stored.OwnerID, stored.Locked, false); err != nil {
 			return err
 		}
-		if stored.Type != "form" || version < 1 {
-			return validation("A form view configuration is required")
+		if stored.Type != kind || version < 1 {
+			return validation("A matching view configuration is required")
 		}
 		if stored.Version != version {
 			return viewVersionConflict()
 		}
-		form, err := validateFormConfig(input, table)
+		component, err := validate(table)
 		if err != nil {
 			return err
 		}
@@ -259,11 +308,11 @@ func (s *Service) UpdateViewForm(ctx context.Context, actor Actor, id string, ve
 		if config == nil {
 			return fmt.Errorf("stored view config is not an object")
 		}
-		encoded, err := json.Marshal(form)
+		encoded, err := json.Marshal(component)
 		if err != nil {
-			return fmt.Errorf("encode form config: %w", err)
+			return fmt.Errorf("encode %s config: %w", kind, err)
 		}
-		config["form"] = encoded
+		config[kind] = encoded
 		raw, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("encode merged view config: %w", err)
@@ -271,13 +320,37 @@ func (s *Service) UpdateViewForm(ctx context.Context, actor Actor, id string, ve
 		if err := q.SaveManagedView(ctx, structuresql.SaveManagedViewParams{
 			ID: uuid, Name: stored.Name, Locked: stored.Locked, Config: raw,
 		}); err != nil {
-			return fmt.Errorf("save form config: %w", err)
+			return fmt.Errorf("save %s config: %w", kind, err)
 		}
 		result, err = managedView(stored.ID, stored.Name, stored.Type, stored.Scope,
 			stored.Locked, stored.Position, stored.Version+1, raw, table)
 		return err
 	})
 	return result, err
+}
+
+func validateKanbanConfig(config KanbanConfig, table rowTable) (KanbanConfig, error) {
+	if config.GroupField != nil {
+		field, ok := table.byID[*config.GroupField]
+		id, valid := acl.ParseUUID(*config.GroupField)
+		if !ok || !valid || id.String() != *config.GroupField ||
+			(field.kind != codec.SingleSelect && field.kind != codec.User) {
+			return KanbanConfig{}, validation("Kanban grouping requires a live single select or user field")
+		}
+	}
+	if config.Fields == nil || len(config.Fields) > len(table.fields) {
+		return KanbanConfig{}, validation("Kanban card fields are invalid")
+	}
+	seen := make(map[string]bool, len(config.Fields))
+	for _, fieldID := range config.Fields {
+		_, live := table.byID[fieldID]
+		id, valid := acl.ParseUUID(fieldID)
+		if !live || !valid || id.String() != fieldID || seen[fieldID] {
+			return KanbanConfig{}, validation("Kanban card fields must reference unique live table fields")
+		}
+		seen[fieldID] = true
+	}
+	return config, nil
 }
 
 func validateFormConfig(config FormConfig, table rowTable) (FormConfig, error) {

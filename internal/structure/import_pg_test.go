@@ -228,6 +228,16 @@ func TestImportPackageRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("configure package form view: %v", err)
 	}
+	kanban, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Task board", Type: "kanban", Scope: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.UpdateViewKanban(f.ctx, owner, kanban.ID, kanban.Version, KanbanConfig{
+		GroupField: &status.ID, Fields: []string{source.Fields[0].ID, amount.ID},
+	}); err != nil {
+		t.Fatalf("configure package Kanban view: %v", err)
+	}
 	filtered, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
 		ViewInput{Name: "Computed filter", Type: "grid", Scope: "shared"})
 	if err != nil {

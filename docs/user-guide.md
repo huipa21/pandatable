@@ -44,15 +44,22 @@ the row editor or use the add-row control to create a row.
 ### 4. Use views and forms
 
 Select an existing view or enter a view name, choose **Personal** or **Shared**
-and a **Grid** or **Form** type, then choose **Create view**. Readers can create
-personal views; shared views require write access. Owners can lock shared views.
-If you cannot save changes to a shared view, you can apply temporary changes and
-use **Save current changes as a personal view**.
+and a **Grid**, **Form**, or **Kanban** type, then choose **Create view**.
+Readers can create personal views; shared views require write access. Owners can
+lock shared views. If you cannot save changes to a shared view, you can apply
+temporary changes and use **Save current changes as a personal view**.
 
 Grid controls include **Filter rows**, **Sort rows**, search across visible
 fields, grouping, highlighting, and footer aggregates. In a form view, an owner
 can configure the fields and labels; users with write access can submit new
 rows, while readers cannot submit.
+
+In Kanban settings, choose a single-select or user field for the columns and
+select the card fields. Unassigned rows have their own column; for user
+grouping, search for a table user to add an empty destination column. Use the
+column and card page controls to see more items. Writers can drag a card or
+choose its **Move card** control and a destination; readers can open cards without
+moving them. Other participants' changes refresh the board.
 
 ### 5. Collaborate
 
@@ -121,14 +128,19 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 
 ### 4. 使用视图和表单
 
-选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**或**表单**
-类型，然后选择**创建视图**。读取者可以创建个人视图；共享视图需要写入权限。
-所有者可以锁定共享视图。如果无法保存共享视图的更改，可以临时调整并选择
+选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**、**表单**或
+**看板**类型，然后选择**创建视图**。读取者可以创建个人视图；共享视图需要写入
+权限。所有者可以锁定共享视图。如果无法保存共享视图的更改，可以临时调整并选择
 **将当前更改保存为个人视图**。
 
 网格控件包括**筛选行**、**排序行**、搜索可见字段、分组、高亮和底部汇总。在
 表单视图中，所有者可以配置字段和标签；有写入权限的用户可以提交新行，读取者
 不能提交。
+
+在看板设置中，选择单选或用户字段作为列，并选择卡片字段。未分配的行有单独的列；
+按用户分组时，可以搜索数据表用户来添加空的目标列。使用列和卡片的翻页控件查看更多
+项目。有写入权限的用户可以拖动卡片，或选择卡片的**移动卡片**控件和目标；读取者可以
+打开卡片，但不能移动。其他参与者的更改会刷新看板。
 
 ### 5. 协作
 
