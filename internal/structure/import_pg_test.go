@@ -131,7 +131,7 @@ func TestImportPackageRoundTrip(t *testing.T) {
 		{FieldInput{Name: "Percent", UIType: "percent"}, "0.2500"},
 		{FieldInput{Name: "Rating", UIType: "rating"}, 4},
 		{FieldInput{Name: "Phone", UIType: "phone"}, "+1 (212) 555-0100 x5"},
-		{FieldInput{Name: "UUID", UIType: "uuid"}, "00000000-0000-0000-0000-000000000001"},
+		{FieldInput{Name: "UUID", UIType: "uuid", IsUnique: true}, "00000000-0000-0000-0000-000000000001"},
 		{FieldInput{Name: "JSON", UIType: "json"}, map[string]any{"owner": "Panda", "items": []any{true, 2}}},
 		{FieldInput{Name: "IP", UIType: "inet"}, "2001:db8::1"},
 		{FieldInput{Name: "Network", UIType: "cidr"}, "192.0.2.0/24"},
@@ -177,6 +177,61 @@ func TestImportPackageRoundTrip(t *testing.T) {
 	rollup := computedFieldFor(t, f, owner, source.Table.ID, "Project count", "rollup", computedOptions{
 		RelationFieldID: relation.Field.ID, TargetFieldID: targetOwner.Field.ID, Aggregate: "count",
 	})
+	sourceSchema, err := f.service.Schema(f.ctx, owner, source.Table.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	width := 305
+	status := extraFields["Status"]
+	grid, err := f.service.UpdateViewColumns(f.ctx, owner, sourceSchema.Views[0].ID, sourceSchema.Views[0].Version, ViewColumns{
+		Fields: []ViewColumn{
+			{ID: source.Fields[0].ID, Visible: true},
+			{ID: amount.ID, Visible: true, Width: &width},
+			{ID: status.ID, Visible: true},
+			{ID: list.ID, Visible: false},
+		},
+		Frozen: 1, RowHeight: "tall",
+		Sort:       []ViewSort{{Field: amount.ID, Dir: "desc"}},
+		GroupBy:    []string{status.ID},
+		Aggregates: []ViewAggregate{{FieldID: amount.ID, Aggregate: "sum"}},
+		Filter:     json.RawMessage(fmt.Sprintf(`{"field":%q,"cmp":"gte","value":10}`, amount.ID)),
+		FilterSet:  true,
+		Highlight: []HighlightRule{{
+			ID: "priority", When: &FilterNode{Field: status.ID, Cmp: "is", Value: json.RawMessage(`"Open"`)},
+			Target: HighlightTarget{Type: "cells", Fields: []string{amount.ID}}, Color: "amber-3",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("configure package grid view: %v", err)
+	}
+	locked := true
+	lockedGrid, err := f.service.UpdateViewMetadata(f.ctx, owner, grid.ID, grid.Version, ViewPatch{Locked: &locked})
+	if err != nil || !lockedGrid.Locked {
+		t.Fatalf("lock package grid view = %+v, %v", lockedGrid, err)
+	}
+	form, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Details form", Type: "form", Scope: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.service.UpdateViewForm(f.ctx, owner, form.ID, form.Version, FormConfig{
+		Title: "Task form", Description: "Describe the task", AfterSubmit: "new",
+		Fields: []FormField{
+			{ID: source.Fields[0].ID, Label: "Title", Help: "Task title", Required: true},
+			{ID: amount.ID, Label: "Amount", Help: "Estimated amount", Required: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("configure package form view: %v", err)
+	}
+	if _, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Private view", Type: "grid", Scope: "personal"}); err != nil {
+		t.Fatal(err)
+	}
+	sourceSchema, err = f.service.Schema(f.ctx, owner, source.Table.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	original, err := f.service.GetRow(f.ctx, owner, source.Table.ID, created[0].ID)
 	if err != nil {
 		t.Fatal(err)
@@ -267,6 +322,7 @@ func TestImportPackageRoundTrip(t *testing.T) {
 			}
 			sourceFields := map[string]Field{
 				"Amount": amount, "Tags": tags, "List": list, "When": when, "Number": auto, "Double": formulaField,
+				source.Fields[0].Name: source.Fields[0],
 			}
 			for name, field := range extraFields {
 				sourceFields[name] = field
@@ -281,13 +337,75 @@ func TestImportPackageRoundTrip(t *testing.T) {
 						reflect.DeepEqual(formula.FieldIDs, []string{byName["Amount"].ID})
 				}
 				if field.UIType != sourceField.UIType || field.IsRequired != sourceField.IsRequired ||
-					field.IsUnique != sourceField.IsUnique || !optionsMatch {
+					field.IsUnique != sourceField.IsUnique || !optionsMatch || !jsonEqual(field.Default, sourceField.Default) {
 					t.Errorf("%s metadata = %+v, original %+v", name, field, sourceField)
 				}
 				if !jsonEqual(row.Fields[field.ID], original.Fields[sourceField.ID]) {
 					t.Errorf("%s value = %s, original %s", name, row.Fields[field.ID], original.Fields[sourceField.ID])
 				}
 			}
+			sourceKeys, importedKeys := make(map[string]string), make(map[string]string)
+			for _, field := range sourceSchema.Fields {
+				sourceKeys[field.ID] = field.Name
+				if field.IsSystem {
+					imported := byName[field.Name]
+					if imported.UIType != field.UIType || !jsonEqual(row.Fields[imported.ID], original.Fields[field.ID]) {
+						t.Errorf("system field %s = %s, original %s", field.Name, row.Fields[imported.ID], original.Fields[field.ID])
+					}
+				}
+			}
+			for _, field := range schema.Fields {
+				importedKeys[field.ID] = field.Name
+			}
+			importedViews := make(map[string]View)
+			for _, view := range schema.Views {
+				importedViews[view.Name] = view
+			}
+			sharedCount := 0
+			for _, sourceView := range sourceSchema.Views {
+				if sourceView.Scope != "shared" {
+					continue
+				}
+				sharedCount++
+				imported, ok := importedViews[sourceView.Name]
+				if !ok || imported.Type != sourceView.Type || imported.Scope != sourceView.Scope {
+					t.Errorf("view %s = %+v, original %+v", sourceView.Name, imported, sourceView)
+					continue
+				}
+				if imported.Locked {
+					t.Errorf("legacy package unexpectedly restored a lock on view %s", sourceView.Name)
+				}
+				expected, err := packageViewConfig(sourceView.Config, sourceKeys)
+				if err != nil {
+					t.Fatal(err)
+				}
+				actual, err := packageViewConfig(imported.Config, importedKeys)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !jsonEqual(asJSON(actual), asJSON(expected)) {
+					t.Errorf("view %s config = %+v, original %+v", sourceView.Name, actual, expected)
+				}
+			}
+			if len(schema.Views) != sharedCount {
+				t.Errorf("restored views = %d, shared source views = %d", len(schema.Views), sharedCount)
+			}
+			inserted, err := f.service.CreateRows(f.ctx, owner, result.TableID, []RowInsert{{
+				Fields: map[string]json.RawMessage{byName["UUID"].ID: asJSON("00000000-0000-0000-0000-000000000002")},
+			}})
+			if err != nil || len(inserted) != 1 {
+				t.Fatalf("insert into restored table = %+v, %v", inserted, err)
+			}
+			if !jsonEqual(inserted[0].Fields[byName["Amount"].ID], byName["Amount"].Default) {
+				t.Errorf("restored default = %s, expected %s", inserted[0].Fields[byName["Amount"].ID], byName["Amount"].Default)
+			}
+			if string(inserted[0].Fields[byName["Number"].ID]) != `"2"` {
+				t.Errorf("restored sequence = %s", inserted[0].Fields[byName["Number"].ID])
+			}
+			_, err = f.service.CreateRows(f.ctx, owner, result.TableID, []RowInsert{{
+				Fields: map[string]json.RawMessage{byName["UUID"].ID: original.Fields[extraFields["UUID"].ID]},
+			}})
+			expectError(t, err, 409, "ERR_UNIQUE_CONFLICT")
 			if relink {
 				if !jsonEqual(row.Fields[byName["Project"].ID], original.Fields[relation.Field.ID]) {
 					t.Errorf("link = %s, original %s", row.Fields[byName["Project"].ID], original.Fields[relation.Field.ID])
@@ -312,6 +430,77 @@ func TestImportPackageRoundTrip(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("package append pre-maps compatible fields without restoring views", func(t *testing.T) {
+		destination, err := f.service.CreateTable(f.ctx, owner, book.ID, "Append package")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mappedFields := make(map[string]Field)
+		for _, input := range []FieldInput{
+			{Name: "Amount", UIType: "decimal", Options: json.RawMessage(`{"precision":12,"scale":2}`)},
+			{Name: "When", UIType: "datetime"},
+			{Name: "Tags", UIType: "multi_select",
+				Options: json.RawMessage(`{"choices":[{"id":"a","label":"甲"},{"id":"b","label":"乙"}]}`)},
+		} {
+			created, err := f.service.CreateField(f.ctx, owner, destination.Table.ID, input)
+			if err != nil || created.Field == nil {
+				t.Fatalf("create append field %s: %v", input.Name, err)
+			}
+			mappedFields[input.Name] = *created.Field
+		}
+		before, err := f.service.Schema(f.ctx, owner, destination.Table.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		file, err := AnalyzeImportFile(f.ctx, path, "package.xlsx", owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		appendTarget := ImportTarget{Kind: "table", ID: destination.Table.ID}
+		if err := f.service.PrepareImport(f.ctx, owner, appendTarget, file); err != nil {
+			t.Fatal(err)
+		}
+		request := ImportRequest{HasHeader: true}
+		for _, column := range file.Analysis.Columns {
+			field, mapped := mappedFields[column.Name]
+			mapping := ImportMapping{Index: column.Index, Skip: !mapped}
+			if mapped {
+				if column.TargetFieldID != field.ID {
+					t.Fatalf("append suggestion for %s = %q, want %q", column.Name, column.TargetFieldID, field.ID)
+				}
+				mapping.TargetFieldID = column.TargetFieldID
+			}
+			request.Columns = append(request.Columns, mapping)
+		}
+		reader := f.user("user", "active", "en")
+		f.grant(acl.Table, destination.Table.ID, "user", reader.ID, acl.Read)
+		if _, err := f.service.RunImport(f.ctx, reader, appendTarget, file, request, nil); err == nil {
+			t.Fatal("read-only user appended a package")
+		} else {
+			expectError(t, err, 403, "ERR_PERMISSION_DENIED")
+		}
+		result, err := f.service.RunImport(f.ctx, owner, appendTarget, file, request, nil)
+		if err != nil || result.Rows != 1 || result.InvalidCells != 0 {
+			t.Fatalf("package append result = %+v, %v", result, err)
+		}
+		after, err := f.service.Schema(f.ctx, owner, destination.Table.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(before.Views, after.Views) || len(before.Fields) != len(after.Fields) {
+			t.Fatal("appending the package changed destination fields or views")
+		}
+		row, err := f.service.GetRow(f.ctx, owner, destination.Table.ID, "1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, sourceField := range map[string]Field{"Amount": amount, "When": when, "Tags": tags} {
+			if !jsonEqual(row.Fields[mappedFields[name].ID], original.Fields[sourceField.ID]) {
+				t.Errorf("appended %s = %s, original %s", name, row.Fields[mappedFields[name].ID], original.Fields[sourceField.ID])
+			}
+		}
+	})
 
 	t.Run("attachment names are reported instead of guessing file identities", func(t *testing.T) {
 		modifiedPath := replacePackageCell(t, "Files", "report.pdf")

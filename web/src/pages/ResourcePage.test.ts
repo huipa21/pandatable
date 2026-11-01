@@ -100,6 +100,9 @@ it('downloads the active desktop view and full-table package using native links'
     })
   const { wrapper } = await setup('/t/t/v/v')
   try {
+    expect(wrapper.get('.view-export p').text()).toContain(
+      'View locks are not included.',
+    )
     await wrapper.findAll('.view-export button')[0]!.trigger('click')
     await flushPromises()
     const csvRequest = fetcher.mock.calls.find(([path]) =>
@@ -125,6 +128,9 @@ it('downloads the active desktop view and full-table package using native links'
     await flushPromises()
     expect(wrapper.get('.view-export summary').text()).toBe(
       i18n.global.t('export.title'),
+    )
+    expect(wrapper.get('.view-export p').text()).toContain(
+      '不包含视图锁定状态。',
     )
   } finally {
     wrapper.unmount()

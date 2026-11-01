@@ -367,7 +367,16 @@ async function close() {
       <p v-if="analysis.encoding">
         {{ t('import.encoding', { encoding: analysis.encoding }) }}
       </p>
-      <p v-if="packageFile">{{ t('import.packageNotice') }}</p>
+      <template v-if="packageFile">
+        <p>
+          {{
+            targetKind === 'book'
+              ? t('import.packageNotice')
+              : t('import.packageAppendNotice')
+          }}
+        </p>
+        <p>{{ t('import.packageDataWarning') }}</p>
+      </template>
       <label v-if="targetKind === 'book'" class="import-field">
         <span>{{ t('import.tableName') }}</span>
         <input v-model="name" maxlength="100" />

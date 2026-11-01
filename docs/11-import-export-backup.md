@@ -42,7 +42,7 @@ Manifest:
 Notes:
 - The package contains **all fields and all rows of the table** (not only the view), plus all shared views; the CSV respects the view. The export control offers *CSV (current view)* and *XLSX PandaTable package (full table + views + types)*. A data-only current-view XLSX is not part of T3.7.
 - List-valued `multi_select`, `text_array`, `int_array`, and `multi_user` cells contain JSON arrays of their canonical string values. Link cells contain JSON arrays of target display values; the manifest keeps the relation definition. Package import must decode these arrays rather than splitting on commas. Formulas are stored as expressions (values also written for readability).
-- Attachments: file names only (files are not embedded; backups cover files).
+- Attachments: file names only (files are not embedded; backups cover files). Shared-view locks are not included.
 - User fields in packages contain UUIDs rather than display names, allowing identity resolution on import. Datetimes are UTC Excel date cells, displayed to milliseconds for Excel compatibility; imports must read the raw serial before any formatted-cell access and account for Excel's floating-point precision. Dates before 1900 are ISO text. Numbers with more than 15 significant digits and padded autonumbers are text to avoid truncation.
 - XLSX's row, column and cell limits apply. Each uncompressed ZIP entry is limited to less than 4 GiB; an oversized or failed stream is aborted rather than returned as a successful partial file.
 
@@ -59,7 +59,7 @@ Flow: upload → `imports:analyze` → wizard → `imports` job → progress →
 - **New table:** recreate fields with exact types/options/constraints and views; insert rows. Computed fields recreated after data. Link fields: if a table with the manifest's `targetTable` name exists in the target book, user may choose to re-link by matching display values; otherwise converted to text fields (user informed).
 - **Append to existing table:** mapping auto-filled by field name + type compatibility.
 - Import is one transaction for new tables (all-or-nothing); for appends, batches commit progressively with result report.
-- Attachment names in the existing package format cannot recover file identities or contents; nonempty attachment cells are reported invalid and stored as NULL. Exact timestamp round-trips are also subject to Excel serial precision. See D-190.
+- Attachment names in the existing package format cannot recover file identities or contents; names mapped to attachment fields are reported invalid and stored as NULL. Exact timestamp round-trips are subject to Excel serial precision. The manifest omits shared-view locks, so restored views are unlocked. See D-190.
 
 Limits: file ≤ the configured upload limit (maximum 100 MB), ≤ 500k rows. Import jobs and their status are process-local. Graceful shutdown cancels jobs and removes tracked temporary files; abrupt termination, a timeout or cleanup failure can leave files behind (D-191).
 

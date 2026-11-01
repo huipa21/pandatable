@@ -327,6 +327,29 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     .getByRole('button', { name: en.import.close, exact: true })
     .click()
 
+  await page.goto(`/t/${restoredId}/v/${packageResult.result.viewId!}`)
+  await page.getByRole('button', { name: en.import.append }).click()
+  const packageAppend = page.locator('dialog.import-dialog')
+  await packageAppend.locator('input[type=file]').setInputFiles({
+    name: 'package.xlsx',
+    mimeType:
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    buffer: packageBytes,
+  })
+  await packageAppend.getByRole('button', { name: en.import.analyze }).click()
+  await expect(
+    packageAppend.getByText(en.import.packageAppendNotice),
+  ).toBeVisible()
+  await expect(
+    packageAppend.getByText(en.import.packageDataWarning),
+  ).toBeVisible()
+  await expect(
+    packageAppend.getByLabel(en.import.targetField.replace('{name}', 'Amount')),
+  ).toHaveValue(restored.fields.find((field) => field.name === 'Amount')!.id)
+  await packageAppend
+    .getByRole('button', { name: en.import.close, exact: true })
+    .click()
+
   const gbk = await openBookImport(page, workspaceId, bookId)
   await gbk.locator('input[type=file]').setInputFiles({
     name: 'gbk.csv',

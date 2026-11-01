@@ -178,6 +178,37 @@ it('prefills append mappings and reports partially committed failures', async ()
   }
 })
 
+it('explains that package append does not restore fields or views', async () => {
+  const analysis: ImportAnalysis = {
+    ...plain,
+    format: 'package',
+    columns: [{ ...plain.columns[0]!, index: 1, targetFieldId: 'name' }],
+  }
+  vi.stubGlobal('fetch', fetchImport(analysis, done))
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'table', targetId: 't', schema: tableSchema() },
+    global: { plugins: [i18n] },
+  })
+  try {
+    await upload(wrapper)
+    expect(wrapper.text()).toContain(
+      'Rows are appended; package fields and shared views are not restored.',
+    )
+    expect(wrapper.text()).not.toContain('Restored shared views are unlocked.')
+    expect(wrapper.text()).toContain(
+      'Attachment file names mapped to attachment fields cannot be restored',
+    )
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(wrapper.text()).toContain(
+      '将追加数据行；不会还原数据包中的字段和共享视图。',
+    )
+    expect(wrapper.text()).toContain('Excel 时间戳可能损失精度。')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it.each([
   ['finished', done, 'Import complete: 3 rows.'],
   [
@@ -257,12 +288,14 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
   try {
     await upload(wrapper)
     expect(wrapper.text()).toContain(
-      'Attachment cells with file names cannot be restored and will be reported as invalid; Excel timestamps may lose precision.',
+      'Attachment file names mapped to attachment fields cannot be restored and are reported as invalid; Excel timestamps may lose precision.',
     )
+    expect(wrapper.text()).toContain('Restored shared views are unlocked.')
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
+    expect(wrapper.text()).toContain('还原后的共享视图处于未锁定状态。')
     expect(wrapper.text()).toContain(
-      '仅包含文件名的附件单元格无法恢复，将报告为无效；Excel 时间戳可能损失精度。',
+      '映射到附件字段的文件名无法恢复，将报告为无效；Excel 时间戳可能损失精度。',
     )
     i18n.global.locale.value = 'en'
     await flushPromises()
