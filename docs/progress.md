@@ -73,7 +73,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.7 | Export | 🟨 | 2026-11-01 | AT-701 and task gates pass; AT-702 is blocked by package fidelity. [Record](task-prompts/T3.7.md#record-2026-11-01). |
 | T3.8 | Import | ⏸ | 2026-11-01 | D-190–193; task gates and AT-703–705 pass; AT-702 remains blocked by package fidelity. [Record](task-prompts/T3.8.md#record-2026-11-01). |
 | T3.9 | Backups | 🟨 | 2026-11-01 | D-194; task gates and AT-706/708 pass; fresh-host manual AT-707 remains pending. [Record](task-prompts/T3.9.md#record-2026-11-01). |
-| T3.10 | User lifecycle admin | ⬜ | | |
+| T3.10 | User lifecycle admin | ✅ | 2026-11-01 | D-195; AT-113–115 and both task gates pass. [Record](task-prompts/T3.10.md#record-2026-11-01). |
 | T3.11 | Hardening | ⬜ | | |
 | T3.12 | Release v1.0 | ⬜ | | |
 | T4.1 | Kanban view | ⬜ | | |
@@ -113,6 +113,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-01 | T3.10 Done: ownership transfer, orphan rescue and hard-delete lifecycle pass AT-113–115 and task gates. |
 | 2026-11-01 | T3.9 implemented and automated gates pass; fresh-host restore acceptance remains pending. |
 | 2026-11-01 | T3.8 follow-up: stabilize the i18n check fixture; both task gates pass, while AT-702 remains blocked. |
 | 2026-11-01 | T3.8 follow-up: preserve dependent formulas and views; the browser gate passes, but AT-702 and the latest check remain blocked. |

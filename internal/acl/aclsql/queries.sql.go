@@ -437,15 +437,18 @@ func (q *Queries) LockWorkspace(ctx context.Context, id pgtype.UUID) (pgtype.UUI
 }
 
 const resolveTableUserLabels = `-- name: ResolveTableUserLabels :many
-SELECT id, display_name AS name
-FROM meta.users
-WHERE id = ANY($1::uuid[])
+SELECT id, display_name AS name, false AS deleted
+FROM meta.users WHERE id = ANY($1::uuid[])
+UNION ALL
+SELECT id, ''::text AS name, true AS deleted
+FROM meta.deleted_users WHERE id = ANY($1::uuid[])
 ORDER BY id
 `
 
 type ResolveTableUserLabelsRow struct {
-	ID   pgtype.UUID
-	Name string
+	ID      pgtype.UUID
+	Name    string
+	Deleted bool
 }
 
 func (q *Queries) ResolveTableUserLabels(ctx context.Context, ids []pgtype.UUID) ([]ResolveTableUserLabelsRow, error) {
@@ -457,7 +460,7 @@ func (q *Queries) ResolveTableUserLabels(ctx context.Context, ids []pgtype.UUID)
 	var items []ResolveTableUserLabelsRow
 	for rows.Next() {
 		var i ResolveTableUserLabelsRow
-		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+		if err := rows.Scan(&i.ID, &i.Name, &i.Deleted); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

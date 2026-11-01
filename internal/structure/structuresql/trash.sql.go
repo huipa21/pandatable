@@ -71,6 +71,17 @@ func (q *Queries) CountRestorableRelationFields(ctx context.Context, arg CountRe
 	return count, err
 }
 
+const countUserDeletionAttachmentRemovals = `-- name: CountUserDeletionAttachmentRemovals :one
+SELECT count(*) FROM meta.attachment_purge_queue WHERE cleanup_user_id IS NOT NULL
+`
+
+func (q *Queries) CountUserDeletionAttachmentRemovals(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserDeletionAttachmentRemovals)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deletePurgedBook = `-- name: DeletePurgedBook :exec
 DELETE FROM meta.books WHERE id=$1
 `
@@ -378,7 +389,7 @@ func (q *Queries) ListPurgeTables(ctx context.Context, arg ListPurgeTablesParams
 }
 
 const listQueuedAttachmentRemovals = `-- name: ListQueuedAttachmentRemovals :many
-SELECT id, storage_path, has_thumb FROM meta.attachment_purge_queue ORDER BY id
+SELECT id, storage_path, has_thumb, cleanup_user_id FROM meta.attachment_purge_queue ORDER BY id
 `
 
 func (q *Queries) ListQueuedAttachmentRemovals(ctx context.Context) ([]MetaAttachmentPurgeQueue, error) {
@@ -390,7 +401,12 @@ func (q *Queries) ListQueuedAttachmentRemovals(ctx context.Context) ([]MetaAttac
 	var items []MetaAttachmentPurgeQueue
 	for rows.Next() {
 		var i MetaAttachmentPurgeQueue
-		if err := rows.Scan(&i.ID, &i.StoragePath, &i.HasThumb); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoragePath,
+			&i.HasThumb,
+			&i.CleanupUserID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -592,6 +608,38 @@ func (q *Queries) ListTrashItems(ctx context.Context, arg ListTrashItemsParams) 
 	return items, nil
 }
 
+const listUserDeletionAttachmentRemovals = `-- name: ListUserDeletionAttachmentRemovals :many
+SELECT id, storage_path, has_thumb, cleanup_user_id FROM meta.attachment_purge_queue
+WHERE cleanup_user_id IS NOT NULL
+  AND ($1::uuid IS NULL OR cleanup_user_id=$1)
+ORDER BY id
+`
+
+func (q *Queries) ListUserDeletionAttachmentRemovals(ctx context.Context, userID pgtype.UUID) ([]MetaAttachmentPurgeQueue, error) {
+	rows, err := q.db.Query(ctx, listUserDeletionAttachmentRemovals, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MetaAttachmentPurgeQueue
+	for rows.Next() {
+		var i MetaAttachmentPurgeQueue
+		if err := rows.Scan(
+			&i.ID,
+			&i.StoragePath,
+			&i.HasThumb,
+			&i.CleanupUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockPurgeFieldDeletionTime = `-- name: LockPurgeFieldDeletionTime :one
 SELECT deleted_at FROM meta.fields WHERE id=$1 FOR UPDATE
 `
@@ -722,12 +770,18 @@ func (q *Queries) QueuePurgedFieldAttachments(ctx context.Context, ids []pgtype.
 }
 
 const queuePurgedTableAttachments = `-- name: QueuePurgedTableAttachments :exec
-INSERT INTO meta.attachment_purge_queue (id,storage_path,has_thumb)
-SELECT id,storage_path,has_thumb FROM meta.attachments WHERE table_id=ANY($1::uuid[])
+INSERT INTO meta.attachment_purge_queue (id,storage_path,has_thumb,cleanup_user_id)
+SELECT id,storage_path,has_thumb,$1::uuid
+FROM meta.attachments WHERE table_id=ANY($2::uuid[])
 `
 
-func (q *Queries) QueuePurgedTableAttachments(ctx context.Context, ids []pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, queuePurgedTableAttachments, ids)
+type QueuePurgedTableAttachmentsParams struct {
+	CleanupUserID pgtype.UUID
+	Ids           []pgtype.UUID
+}
+
+func (q *Queries) QueuePurgedTableAttachments(ctx context.Context, arg QueuePurgedTableAttachmentsParams) error {
+	_, err := q.db.Exec(ctx, queuePurgedTableAttachments, arg.CleanupUserID, arg.Ids)
 	return err
 }
 

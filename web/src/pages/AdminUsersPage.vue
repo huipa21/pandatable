@@ -21,6 +21,12 @@ const loading = ref(false)
 const busy = ref(false)
 const error = ref<unknown>(null)
 const saved = ref(false)
+const pendingCleanup = ref(0)
+const cleanupError = ref<{
+  cause: unknown
+  phase: 'status' | 'retry'
+} | null>(null)
+const cleanupDone = ref(false)
 const mode = ref<'create' | 'edit' | 'reset' | 'status' | null>(null)
 const target = ref<AdminUser | null>(null)
 const formTitle = ref<HTMLElement>()
@@ -47,15 +53,22 @@ const title = computed(() => {
 })
 let controller: AbortController | undefined
 let listGeneration = 0
+let cleanupController: AbortController | undefined
+let cleanupGeneration = 0
+let disposed = false
 
 onBeforeUnmount(() => {
+  disposed = true
   listGeneration++
   controller?.abort()
+  cleanupGeneration++
+  cleanupController?.abort()
   form.password = ''
 })
 
-async function failed(cause: unknown) {
-  error.value = cause
+async function failed(cause: unknown, cleanupPhase?: 'status' | 'retry') {
+  if (cleanupPhase) cleanupError.value = { cause, phase: cleanupPhase }
+  else error.value = cause
   if (!(cause instanceof RequestError)) return
   if (cause.code === 'ERR_UNAUTHENTICATED') {
     auth.setUser(null)
@@ -64,6 +77,52 @@ async function failed(cause: unknown) {
     await router.replace('/change-password')
   } else if (cause.code === 'ERR_PERMISSION_DENIED') {
     await router.replace('/home')
+  }
+}
+
+async function loadCleanup() {
+  cleanupController?.abort()
+  cleanupController = new AbortController()
+  const own = cleanupController
+  const current = ++cleanupGeneration
+  cleanupError.value = null
+  try {
+    const result = await request<{ pending: number }>(
+      '/admin/user-deletions/cleanup',
+      'GET',
+      undefined,
+      AbortSignal.any([own.signal, AbortSignal.timeout(10_000)]),
+    )
+    if (current === cleanupGeneration) pendingCleanup.value = result.pending
+  } catch (cause) {
+    if (!own.signal.aborted && current === cleanupGeneration) {
+      await failed(cause, 'status')
+    }
+  }
+}
+
+async function retryCleanup() {
+  if (busy.value) return
+  cleanupController?.abort()
+  cleanupGeneration++
+  busy.value = true
+  cleanupDone.value = false
+  cleanupError.value = null
+  try {
+    await request(
+      '/admin/user-deletions/cleanup',
+      'POST',
+      undefined,
+      AbortSignal.timeout(125_000),
+    )
+    if (disposed) return
+    await loadCleanup()
+    if (!disposed && !cleanupError.value && pendingCleanup.value === 0)
+      cleanupDone.value = true
+  } catch (cause) {
+    if (!disposed) await failed(cause, 'retry')
+  } finally {
+    if (!disposed) busy.value = false
   }
 }
 
@@ -102,6 +161,7 @@ function search() {
   appliedQ.value = q.value
   saved.value = false
   void load()
+  void loadCleanup()
 }
 
 function page(delta: number) {
@@ -180,6 +240,7 @@ async function submit() {
 }
 
 void load()
+void loadCleanup()
 </script>
 
 <template>
@@ -195,6 +256,33 @@ void load()
     </NAlert>
     <NAlert v-if="saved" type="success" role="status">
       {{ t('admin.saved') }}
+    </NAlert>
+    <NAlert v-if="cleanupError" type="error" role="alert">
+      {{
+        cleanupError.phase === 'status'
+          ? t('lifecycle.cleanupStatusFailed')
+          : t('lifecycle.cleanupRetryFailed')
+      }}
+      {{ errorMessage(cleanupError.cause) }}
+      <NButton
+        v-if="cleanupError.phase === 'status'"
+        :disabled="busy"
+        @click="loadCleanup"
+      >
+        {{ t('auth.retry') }}
+      </NButton>
+      <NButton v-else :disabled="busy" @click="retryCleanup">
+        {{ t('lifecycle.cleanupRetry') }}
+      </NButton>
+    </NAlert>
+    <NAlert v-else-if="pendingCleanup > 0" type="warning" role="alert">
+      {{ t('lifecycle.cleanupPending', { total: pendingCleanup }) }}
+      <NButton :disabled="busy" :loading="busy" @click="retryCleanup">
+        {{ t('lifecycle.cleanupRetry') }}
+      </NButton>
+    </NAlert>
+    <NAlert v-if="cleanupDone" type="success" role="status">
+      {{ t('lifecycle.cleanupDone') }}
     </NAlert>
     <NCard v-if="mode" class="admin-editor">
       <h2 ref="formTitle" tabindex="-1">{{ title }}</h2>

@@ -155,6 +155,20 @@ export interface WorkspaceListing {
   total: number
 }
 
+export interface AdminOwnership {
+  resourceType: 'workspace' | 'book' | 'table'
+  resourceId: string
+  name: string
+  workspaceId: string
+  workspaceName: string
+  trashed: boolean
+}
+
+export interface OwnershipListing {
+  items: AdminOwnership[]
+  total: number
+}
+
 export interface BackupRecord {
   id: string
   fileName: string

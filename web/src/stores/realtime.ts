@@ -1,6 +1,7 @@
 import { onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { isOwnEvent } from '../api/eventIds'
+import { invalidateUserLabels } from '../fields/userDirectory'
 
 export interface PresenceCell {
   rowId: string
@@ -231,6 +232,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
   }
 
   function dispatch(event: RealtimeEvent) {
+    if (event.t === 'nav.changed') invalidateUserLabels()
     if (event.by === identity && isOwnEvent(event.eventId)) return
     if (event.t === 'subscribed' && event.tableId) {
       if (!listeners.has(event.tableId)) return
@@ -290,6 +292,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
       status.value = 'connected'
       error.value = null
       delay = 1000
+      invalidateUserLabels()
       for (const tableId of listeners.keys()) send('sub', tableId)
     }
     next.onmessage = (message) => {

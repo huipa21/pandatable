@@ -12,6 +12,7 @@ import type {
   UserListing,
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
+import UserLifecyclePanel from '../components/admin/UserLifecyclePanel.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -329,6 +330,13 @@ watch(
         {{ user.status === 'active' ? t('admin.active') : t('admin.disabled') }}
       </p>
     </div>
+    <UserLifecyclePanel
+      v-if="user?.status === 'disabled'"
+      :key="user.id"
+      :user="user"
+      @failure="failed"
+      @deleted="router.push('/admin/users')"
+    />
     <form v-if="editing" class="group-editor" @submit.prevent="save">
       <h2>{{ groupId ? t('groups.edit') : t('groups.create') }}</h2>
       <NFormItem :label="t('groups.name')">

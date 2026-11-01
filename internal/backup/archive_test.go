@@ -207,13 +207,20 @@ func TestRestoreVersionCompatibility(t *testing.T) {
 			t.Errorf("compatibleAppVersion(%q, %q) = %v", test.source, test.target, err)
 		}
 	}
-	metadata := Metadata{AppVersion: "1.2.0", SchemaMigration: 4,
+	latest, err := latestMigration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := Metadata{AppVersion: "1.2.0", SchemaMigration: latest,
 		CreatedAt: time.Now().UTC(), PgVersion: "19.0", FileCount: 0}
 	if err := validateMetadata(metadata, "1.2.0", "18.6"); err == nil {
 		t.Fatal("newer PostgreSQL backup accepted")
 	}
 	metadata.PgVersion = "18.6"
-	metadata.SchemaMigration = 5
+	if err := validateMetadata(metadata, "1.2.0", "18.6"); err != nil {
+		t.Fatalf("current migration rejected: %v", err)
+	}
+	metadata.SchemaMigration = latest + 1
 	if err := validateMetadata(metadata, "1.2.0", "18.6"); err == nil {
 		t.Fatal("newer migration accepted")
 	}

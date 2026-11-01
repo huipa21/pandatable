@@ -9,9 +9,10 @@ import (
 )
 
 type MetaAttachmentPurgeQueue struct {
-	ID          pgtype.UUID
-	StoragePath string
-	HasThumb    bool
+	ID            pgtype.UUID
+	StoragePath   string
+	HasThumb      bool
+	CleanupUserID pgtype.UUID
 }
 
 type MetaRelation struct {

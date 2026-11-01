@@ -182,6 +182,10 @@ func (api *authHTTP) protect(next http.Handler) http.Handler {
 			timeout = backupPreflightTimeout
 		} else if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/imports/analyze") {
 			timeout = importUploadTimeout
+		} else if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/v1/admin/users/") ||
+			r.Method == http.MethodPost && (r.URL.Path == "/api/v1/admin/user-deletions/cleanup" ||
+				strings.HasPrefix(r.URL.Path, "/api/v1/admin/users/") && strings.HasSuffix(r.URL.Path, "/ownerships/transfer")) {
+			timeout = 2 * time.Minute
 		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()

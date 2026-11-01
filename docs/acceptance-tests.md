@@ -193,7 +193,9 @@ Exact commands, failures, costs and cleanup:
 | AT-117 | Partial | Real settings changes reach existing NULL-timezone auth/profile readers and new-user defaults; explicit timezone/locale choices survive. Datetime display, relative filters and profile UI remain deferred. |
 | AT-321 | Pass | `attachments.spec.ts` production-runtime desktop scenario creates the field in Field UI, uploads a PNG by picker and PDF by drag/drop, persists/reloads both, verifies thumbnail/download, and confirms an unauthorized user gets 404. Mobile is an intentional spec skip. |
 | AT-322 | Pass | `attachments.spec.ts` lowers persisted uploadMaxMb and verifies an over-limit upload returns 413 with the localized error; `admin-users.spec.ts` also passes the full settings browser scenario on desktop/mobile. |
-| AT-113..115 | Pending, unchanged | Read-only orphan flag follows active direct user owners; rescue/transfer/hard deletion remain M3. |
+| AT-113 | Pass | T3.10 desktop/mobile browser and PG18 tests verify the orphan flag, active-user rescue, owner access and no implicit admin data access; disabled or group-only owners do not prevent orphan status. |
+| AT-114 | Pass | T3.10 desktop/mobile browser and PG18 tests list disabled-user ownerships and transfer all direct workspace/book/table grants, including Trash; the new owner can restore and access the transferred workspace. |
+| AT-115 | Pass | T3.10 desktop/mobile browser verifies exact username confirmation, retained shared rows and live localized deleted-user authorship. PG18 checks physical schema and personal-view removal, shared data/attachments, atomic rollback, localized export and durable cleanup failure/retry. |
 
 T1.8 remains **In progress**, not Done. Clarification and the requested AT-112
 UI-verification question were asked; user unavailable, so D-091..D-093 record

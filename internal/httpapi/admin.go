@@ -41,6 +41,9 @@ func (api *authHTTP) mountAdmin(router chi.Router) {
 		router.Get("/settings", api.adminAction(api.getSettings))
 		router.Patch("/settings", api.adminAction(api.updateSettings))
 		router.Get("/workspaces", api.adminAction(api.listWorkspaces))
+		router.Post("/workspaces/{id}/rescue", api.adminAction(api.rescueWorkspace))
+		router.Get("/user-deletions/cleanup", api.adminAction(api.pendingUserDeletionCleanup))
+		router.Post("/user-deletions/cleanup", api.adminAction(api.retryUserDeletionCleanup))
 		if api.backups != nil {
 			router.Get("/backups", api.adminAction(api.listBackups))
 			router.Post("/backups", api.adminAction(api.createBackup))
@@ -50,8 +53,11 @@ func (api *authHTTP) mountAdmin(router chi.Router) {
 		}
 		router.Get("/users/{id}", api.adminAction(api.getManagedUser))
 		router.Get("/users/{id}/groups", api.adminAction(api.listUserGroups))
+		router.Get("/users/{id}/ownerships", api.adminAction(api.listUserOwnerships))
+		router.Post("/users/{id}/ownerships/transfer", api.adminAction(api.transferUserOwnerships))
 		router.Post("/users", api.adminAction(api.createUser))
 		router.Patch("/users/{id}", api.adminAction(api.updateUser))
+		router.Delete("/users/{id}", api.adminAction(api.hardDeleteUser))
 		router.Post("/users/{id}/reset-password", api.adminAction(api.resetUserPassword))
 		router.Get("/groups", api.adminAction(api.listGroups))
 		router.Post("/groups", api.adminAction(api.createGroup))

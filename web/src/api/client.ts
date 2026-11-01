@@ -252,6 +252,18 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_PRINCIPAL_NOT_FOUND')
     case 'ERR_LAST_OWNER':
       return t('errors.ERR_LAST_OWNER')
+    case 'ERR_USER_NOT_DISABLED':
+      return t('errors.ERR_USER_NOT_DISABLED')
+    case 'ERR_WORKSPACE_NOT_ORPHANED':
+      return t('errors.ERR_WORKSPACE_NOT_ORPHANED')
+    case 'ERR_USERNAME_CONFIRMATION':
+      return t('errors.ERR_USERNAME_CONFIRMATION')
+    case 'ERR_LIFECYCLE_INCONSISTENT':
+      return t('errors.ERR_LIFECYCLE_INCONSISTENT')
+    case 'ERR_LIFECYCLE_UNAVAILABLE':
+      return t('errors.ERR_LIFECYCLE_UNAVAILABLE')
+    case 'ERR_USER_CLEANUP_PENDING':
+      return t('errors.ERR_USER_CLEANUP_PENDING')
     case 'ERR_AUTH_BUSY':
       return t('errors.ERR_AUTH_BUSY')
     case 'ERR_RATE_LIMITED':

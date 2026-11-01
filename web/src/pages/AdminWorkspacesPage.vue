@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../api/client'
 import type { AdminWorkspace, WorkspaceListing } from '../api/types'
+import ActiveUserPicker from '../components/admin/ActiveUserPicker.vue'
 import { useAuthStore } from '../stores/auth'
 
 const { t, n } = useI18n()
@@ -17,13 +18,32 @@ const appliedQ = ref('')
 const offset = ref(0)
 const limit = ref(50)
 const loading = ref(false)
+const busy = ref(false)
 const error = ref<unknown>(null)
+const saved = ref(false)
+const rescueId = ref('')
+const recipient = ref('')
 let controller: AbortController | undefined
 let generation = 0
+let disposed = false
 onBeforeUnmount(() => {
+  disposed = true
   generation++
   controller?.abort()
 })
+
+async function failed(cause: unknown) {
+  error.value = cause
+  if (!(cause instanceof RequestError)) return
+  if (cause.code === 'ERR_UNAUTHENTICATED') {
+    auth.setUser(null)
+    await router.replace('/login')
+  } else if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
+    await router.replace('/change-password')
+  } else if (cause.code === 'ERR_PERMISSION_DENIED') {
+    await router.replace('/home')
+  }
+}
 
 async function load() {
   controller?.abort()
@@ -56,17 +76,7 @@ async function load() {
     }
   } catch (cause) {
     if (!own.signal.aborted && current === generation) {
-      error.value = cause
-      if (cause instanceof RequestError) {
-        if (cause.code === 'ERR_UNAUTHENTICATED') {
-          auth.setUser(null)
-          await router.replace('/login')
-        } else if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
-          await router.replace('/change-password')
-        } else if (cause.code === 'ERR_PERMISSION_DENIED') {
-          await router.replace('/home')
-        }
-      }
+      await failed(cause)
     }
   } finally {
     if (current === generation) loading.value = false
@@ -81,6 +91,40 @@ function search() {
 function page(delta: number) {
   offset.value = Math.max(0, offset.value + delta * limit.value)
   void load()
+}
+
+function openRescue(id: string) {
+  rescueId.value = id
+  recipient.value = ''
+  saved.value = false
+}
+
+async function rescue() {
+  if (busy.value || !rescueId.value || !recipient.value) return
+  busy.value = true
+  error.value = null
+  saved.value = false
+  try {
+    await request(
+      `/admin/workspaces/${rescueId.value}/rescue`,
+      'POST',
+      { userId: recipient.value },
+      AbortSignal.timeout(10_000),
+    )
+    if (disposed) return
+    rescueId.value = ''
+    recipient.value = ''
+    await load()
+    if (!disposed && !error.value) saved.value = true
+  } catch (cause) {
+    if (disposed) return
+    rescueId.value = ''
+    recipient.value = ''
+    await load()
+    if (!disposed) await failed(cause)
+  } finally {
+    if (!disposed) busy.value = false
+  }
 }
 void load()
 </script>
@@ -115,6 +159,9 @@ void load()
     <NAlert v-if="error" type="error" role="alert">
       {{ errorMessage(error) }}
       <NButton :disabled="loading" @click="load">{{ t('auth.retry') }}</NButton>
+    </NAlert>
+    <NAlert v-if="saved" type="success" role="status">
+      {{ t('lifecycle.rescued') }}
     </NAlert>
     <NSpin v-if="loading" :description="t('workspaces.loading')" />
     <template v-else-if="!error">
@@ -164,6 +211,33 @@ void load()
               })
             }}
           </p>
+          <NButton
+            v-if="item.orphaned && rescueId !== item.id"
+            :disabled="busy || !!rescueId"
+            @click="openRescue(item.id)"
+          >
+            {{ t('lifecycle.rescue') }}
+          </NButton>
+          <div v-if="rescueId === item.id">
+            <ActiveUserPicker
+              v-model="recipient"
+              :disabled="busy"
+              @failure="failed"
+            />
+            <div class="user-actions">
+              <NButton
+                type="primary"
+                :loading="busy"
+                :disabled="busy || !recipient"
+                @click="rescue"
+              >
+                {{ t('lifecycle.rescue') }}
+              </NButton>
+              <NButton :disabled="busy" @click="rescueId = ''">
+                {{ t('admin.cancel') }}
+              </NButton>
+            </div>
+          </div>
         </article>
       </div>
       <div class="user-actions pagination">

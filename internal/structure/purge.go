@@ -103,7 +103,7 @@ func (s *Service) purgeCandidate(ctx context.Context, candidate purgeCandidate, 
 		}
 		switch candidate.kind {
 		case "workspace", "book", "table":
-			err = purgeTree(ctx, tx, candidate, cutoff)
+			err = purgeTree(ctx, tx, candidate, cutoff, pgtype.UUID{})
 		case "field":
 			err = purgeField(ctx, tx, candidate.id, cutoff)
 		case "view":
@@ -124,7 +124,7 @@ func (s *Service) purgeCandidate(ctx context.Context, candidate purgeCandidate, 
 	return written && err == nil, sanitizeLock(err)
 }
 
-func purgeTree(ctx context.Context, tx pgx.Tx, candidate purgeCandidate, cutoff time.Time) error {
+func purgeTree(ctx context.Context, tx pgx.Tx, candidate purgeCandidate, cutoff time.Time, cleanupUser pgtype.UUID) error {
 	switch candidate.kind {
 	case "workspace", "book", "table":
 	default:
@@ -153,7 +153,7 @@ func purgeTree(ctx context.Context, tx pgx.Tx, candidate purgeCandidate, cutoff 
 		if err := purgeTableRelations(ctx, tx, tableIDs, tableSet, cutoff); err != nil {
 			return err
 		}
-		if err := queueTableAttachments(ctx, tx, tableIDs); err != nil {
+		if err := queueTableAttachments(ctx, tx, tableIDs, cleanupUser); err != nil {
 			return err
 		}
 		if err := queries.DeletePurgedGrants(ctx, structuresql.DeletePurgedGrantsParams{
@@ -200,8 +200,10 @@ func purgeTree(ctx context.Context, tx pgx.Tx, candidate purgeCandidate, cutoff 
 	return nil
 }
 
-func queueTableAttachments(ctx context.Context, tx pgx.Tx, tableIDs []pgtype.UUID) error {
-	if err := structuresql.New(tx).QueuePurgedTableAttachments(ctx, tableIDs); err != nil {
+func queueTableAttachments(ctx context.Context, tx pgx.Tx, tableIDs []pgtype.UUID, cleanupUser pgtype.UUID) error {
+	if err := structuresql.New(tx).QueuePurgedTableAttachments(ctx, structuresql.QueuePurgedTableAttachmentsParams{
+		Ids: tableIDs, CleanupUserID: cleanupUser,
+	}); err != nil {
 		return fmt.Errorf("queue purged table attachments: %w", err)
 	}
 	return nil
@@ -387,6 +389,10 @@ func (s *Service) drainPurgeFiles(ctx context.Context, files PurgeFileStore) err
 	if err != nil {
 		return fmt.Errorf("list queued attachment removals: %w", err)
 	}
+	return s.removeQueuedFiles(ctx, files, queued)
+}
+
+func (s *Service) removeQueuedFiles(ctx context.Context, files PurgeFileStore, queued []structuresql.MetaAttachmentPurgeQueue) error {
 	var failures []error
 	for _, file := range queued {
 		if err := files.RemovePurgedFile(ctx, file.ID.String(), file.StoragePath, file.HasThumb); err != nil {
@@ -400,6 +406,42 @@ func (s *Service) drainPurgeFiles(ctx context.Context, files PurgeFileStore) err
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// PurgeOwnedWorkspace removes a workspace inside the caller's locked transaction.
+func PurgeOwnedWorkspace(ctx context.Context, tx pgx.Tx, workspace, user pgtype.UUID) error {
+	if !workspace.Valid || !user.Valid {
+		return errors.New("workspace purge requires valid workspace and user IDs")
+	}
+	return purgeTree(ctx, tx, purgeCandidate{kind: "workspace", id: workspace, workspace: workspace},
+		time.Now(), user)
+}
+
+// DrainUserDeletionFiles retries durable file removals for one deletion, or all
+// user deletions when user is empty. Failed removals stay in the purge queue.
+func (s *Service) DrainUserDeletionFiles(ctx context.Context, files PurgeFileStore, user string) error {
+	if files == nil {
+		return errors.New("user deletion cleanup requires an attachment file store")
+	}
+	var id pgtype.UUID
+	if user != "" {
+		if err := id.Scan(user); err != nil || !id.Valid {
+			return errors.New("invalid deletion cleanup user ID")
+		}
+	}
+	queued, err := s.queries.ListUserDeletionAttachmentRemovals(ctx, id)
+	if err != nil {
+		return fmt.Errorf("list user deletion attachments: %w", err)
+	}
+	return s.removeQueuedFiles(ctx, files, queued)
+}
+
+func (s *Service) PendingUserDeletionFiles(ctx context.Context) (int64, error) {
+	count, err := s.queries.CountUserDeletionAttachmentRemovals(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("count user deletion attachments: %w", err)
+	}
+	return count, nil
 }
 
 // PurgeTrash removes expired resources transactionally and drains the durable

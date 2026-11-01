@@ -39,6 +39,7 @@ type aclFixture struct {
 	authService       *auth.Service
 	aclService        *acl.Service
 	attachmentService *attachments.Service
+	dataDir           string
 	phc               string
 	logins            int
 	users             []string
@@ -65,7 +66,8 @@ func newACLFixture(t *testing.T) *aclFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &aclFixture{t: t, pool: pool, ctx: ctx, resolver: resolver, authService: authService, aclService: aclService}
+	f := &aclFixture{t: t, pool: pool, ctx: ctx, resolver: resolver, authService: authService, aclService: aclService,
+		dataDir: t.TempDir()}
 	if f.phc, err = auth.NewPasswords().Hash(ctx, aclPassword); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +79,7 @@ func newACLFixture(t *testing.T) *aclFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attachmentService, err := attachments.New(pool, resolver, t.TempDir())
+	attachmentService, err := attachments.New(pool, resolver, f.dataDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +115,9 @@ func newACLFixture(t *testing.T) *aclFixture {
 		}{{"DELETE FROM meta.grants WHERE resource_id = ANY($1::uuid[]) OR principal_id = ANY($1::uuid[])", append(append(append([]string{}, f.spaces...), f.users...), f.groups...)},
 			{"DELETE FROM meta.workspaces WHERE id = ANY($1::uuid[])", f.spaces},
 			{"DELETE FROM meta.groups WHERE id = ANY($1::uuid[])", f.groups},
-			{"DELETE FROM meta.users WHERE id = ANY($1::uuid[])", f.users}} {
+			{"DELETE FROM meta.users WHERE id = ANY($1::uuid[])", f.users},
+			{"DELETE FROM meta.attachment_purge_queue WHERE cleanup_user_id = ANY($1::uuid[])", f.users},
+			{"DELETE FROM meta.deleted_users WHERE id = ANY($1::uuid[])", f.users}} {
 			if _, err := pool.Exec(cleanup, sql.query, sql.ids); err != nil {
 				t.Error(err)
 			}

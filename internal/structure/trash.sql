@@ -224,8 +224,9 @@ DELETE FROM meta.tables WHERE id=$1;
 DELETE FROM meta.views WHERE id=$1;
 
 -- name: QueuePurgedTableAttachments :exec
-INSERT INTO meta.attachment_purge_queue (id,storage_path,has_thumb)
-SELECT id,storage_path,has_thumb FROM meta.attachments WHERE table_id=ANY(sqlc.arg(ids)::uuid[]);
+INSERT INTO meta.attachment_purge_queue (id,storage_path,has_thumb,cleanup_user_id)
+SELECT id,storage_path,has_thumb,sqlc.narg(cleanup_user_id)::uuid
+FROM meta.attachments WHERE table_id=ANY(sqlc.arg(ids)::uuid[]);
 
 -- name: QueuePurgedFieldAttachments :exec
 INSERT INTO meta.attachment_purge_queue (id,storage_path,has_thumb)
@@ -270,7 +271,16 @@ SELECT count(*) FROM meta.fields WHERE id=ANY(sqlc.arg(ids)::uuid[])
   AND deleted_at < sqlc.arg(cutoff)::timestamptz;
 
 -- name: ListQueuedAttachmentRemovals :many
-SELECT id, storage_path, has_thumb FROM meta.attachment_purge_queue ORDER BY id;
+SELECT id, storage_path, has_thumb, cleanup_user_id FROM meta.attachment_purge_queue ORDER BY id;
+
+-- name: ListUserDeletionAttachmentRemovals :many
+SELECT id, storage_path, has_thumb, cleanup_user_id FROM meta.attachment_purge_queue
+WHERE cleanup_user_id IS NOT NULL
+  AND (sqlc.narg(user_id)::uuid IS NULL OR cleanup_user_id=sqlc.narg(user_id))
+ORDER BY id;
+
+-- name: CountUserDeletionAttachmentRemovals :one
+SELECT count(*) FROM meta.attachment_purge_queue WHERE cleanup_user_id IS NOT NULL;
 
 -- name: AcknowledgeAttachmentRemoval :exec
 DELETE FROM meta.attachment_purge_queue WHERE id=$1 AND storage_path=$2 AND has_thumb=$3;

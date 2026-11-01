@@ -120,20 +120,21 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		if err != nil {
 			t.Fatal("connect to disposable database for verification failed")
 		}
-		var count, initialCount, metadataCount, restoreCount, trashCount int
+		var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount int
 		err = verification.QueryRow(ctx, `SELECT count(*),
 			count(*) FILTER (WHERE version_id = 1 AND is_applied),
 			count(*) FILTER (WHERE version_id = 2 AND is_applied),
 			count(*) FILTER (WHERE version_id = 3 AND is_applied),
-			count(*) FILTER (WHERE version_id = 4 AND is_applied)
-			FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount)
+			count(*) FILTER (WHERE version_id = 4 AND is_applied),
+			count(*) FILTER (WHERE version_id = 5 AND is_applied)
+			FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount)
 		closeErr := verification.Close(ctx)
 		if err != nil || closeErr != nil {
 			t.Fatalf("read/close migration verification: %v, %v", err, closeErr)
 		}
-		if count != 5 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 {
-			t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d; want 5/1/1/1/1",
-				iteration, count, initialCount, metadataCount, restoreCount, trashCount)
+		if count != 6 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 {
+			t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d; want 6/1/1/1/1/1",
+				iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount)
 		}
 		if migrationRecords() != beforeRestarts {
 			t.Fatal("restart changed migration records")
@@ -159,7 +160,7 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		if strings.Contains(output.String(), databaseURL) || strings.Contains(output.String(), "postgres://") {
 			t.Fatal("startup logs exposed database connection information")
 		}
-		t.Logf("serve startup %d: health=200, API=404, graceful stop, migrations 1/2/3/4 each recorded once and unchanged, zero remaining connections", iteration)
+		t.Logf("serve startup %d: health=200, API=404, graceful stop, migrations 1/2/3/4/5 each recorded once and unchanged, zero remaining connections", iteration)
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

@@ -342,7 +342,7 @@ func (plan *exportPlan) eachBatch(ctx context.Context, emit func([]exportRow, ma
 		if err := enrichRowFormulas(ctx, plan.tx, plan.actor, plan.table, plan.fields, records); err != nil {
 			return err
 		}
-		labels, err := exportUserLabels(ctx, plan.tx, plan.fields, records)
+		labels, err := exportUserLabels(ctx, plan.tx, plan.fields, records, plan.actor.Locale)
 		if err != nil {
 			return err
 		}
@@ -352,7 +352,7 @@ func (plan *exportPlan) eachBatch(ctx context.Context, emit func([]exportRow, ma
 	}
 }
 
-func exportUserLabels(ctx context.Context, tx pgx.Tx, fields []rowField, records []RowRecord) (map[string]string, error) {
+func exportUserLabels(ctx context.Context, tx pgx.Tx, fields []rowField, records []RowRecord, locale string) (map[string]string, error) {
 	seen := make(map[string]bool)
 	ids := make([]pgtype.UUID, 0)
 	for _, field := range fields {
@@ -388,7 +388,14 @@ func exportUserLabels(ctx context.Context, tx pgx.Tx, fields []rowField, records
 		return nil, fmt.Errorf("resolve export user labels: %w", err)
 	}
 	for _, user := range users {
-		labels[user.ID.String()] = user.Name
+		name := user.Name
+		if user.Deleted {
+			name = "Deleted user"
+			if locale == "zh-CN" {
+				name = "已删除的用户"
+			}
+		}
+		labels[user.ID.String()] = name
 	}
 	return labels, nil
 }

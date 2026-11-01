@@ -31,9 +31,11 @@ ORDER BY u.username, u.id
 LIMIT 21;
 
 -- name: ResolveTableUserLabels :many
-SELECT id, display_name AS name
-FROM meta.users
-WHERE id = ANY(sqlc.arg(ids)::uuid[])
+SELECT id, display_name AS name, false AS deleted
+FROM meta.users WHERE id = ANY(sqlc.arg(ids)::uuid[])
+UNION ALL
+SELECT id, ''::text AS name, true AS deleted
+FROM meta.deleted_users WHERE id = ANY(sqlc.arg(ids)::uuid[])
 ORDER BY id;
 
 -- name: SearchShareGroups :many

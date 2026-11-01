@@ -39,6 +39,25 @@ func (q *Queries) CountActiveAdmins(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countDanglingUserOwnerships = `-- name: CountDanglingUserOwnerships :one
+SELECT count(*) FROM meta.grants g
+WHERE g.principal_type='user' AND g.principal_id=$1 AND g.level='owner'
+  AND NOT ((g.resource_type='workspace' AND EXISTS (
+        SELECT 1 FROM meta.workspaces w WHERE w.id=g.resource_id))
+    OR (g.resource_type='book' AND EXISTS (
+        SELECT 1 FROM meta.books b JOIN meta.workspaces w ON w.id=b.workspace_id WHERE b.id=g.resource_id))
+    OR (g.resource_type='table' AND EXISTS (
+        SELECT 1 FROM meta.tables t JOIN meta.books b ON b.id=t.book_id
+        JOIN meta.workspaces w ON w.id=b.workspace_id WHERE t.id=g.resource_id)))
+`
+
+func (q *Queries) CountDanglingUserOwnerships(ctx context.Context, principalID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countDanglingUserOwnerships, principalID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countGroupMembers = `-- name: CountGroupMembers :one
 SELECT count(*) FROM meta.users u JOIN meta.group_members m ON m.user_id=u.id
 WHERE m.group_id=$1
@@ -74,6 +93,18 @@ type CountGroupsParams struct {
 
 func (q *Queries) CountGroups(ctx context.Context, arg CountGroupsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countGroups, arg.Q, arg.UserID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUserOwnerships = `-- name: CountUserOwnerships :one
+SELECT count(*) FROM meta.grants
+WHERE principal_type='user' AND principal_id=$1 AND level='owner'
+`
+
+func (q *Queries) CountUserOwnerships(ctx context.Context, principalID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserOwnerships, principalID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -240,6 +271,15 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (GetUserRow, erro
 	return i, err
 }
 
+const hardDeleteUser = `-- name: HardDeleteUser :exec
+DELETE FROM meta.users WHERE id=$1
+`
+
+func (q *Queries) HardDeleteUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, hardDeleteUser, id)
+	return err
+}
+
 const identityExists = `-- name: IdentityExists :one
 SELECT EXISTS (
   SELECT 1 FROM meta.users
@@ -376,6 +416,94 @@ func (q *Queries) ListGroups(ctx context.Context, arg ListGroupsParams) ([]ListG
 			&i.Description,
 			&i.CreatedAt,
 			&i.MemberCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSoleOwnedWorkspaces = `-- name: ListSoleOwnedWorkspaces :many
+SELECT w.id FROM meta.workspaces w JOIN meta.grants g
+  ON g.resource_type='workspace' AND g.resource_id=w.id AND g.principal_type='user'
+  AND g.principal_id=$1 AND g.level='owner'
+WHERE NOT EXISTS (
+    SELECT 1 FROM meta.grants other
+    WHERE other.resource_type='workspace' AND other.resource_id=w.id
+      AND other.level='owner' AND other.id<>g.id
+)
+ORDER BY w.id
+`
+
+func (q *Queries) ListSoleOwnedWorkspaces(ctx context.Context, principalID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listSoleOwnedWorkspaces, principalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserOwnerships = `-- name: ListUserOwnerships :many
+SELECT g.resource_type,g.resource_id,
+    CASE g.resource_type WHEN 'workspace' THEN w.name WHEN 'book' THEN b.name ELSE t.name END::text AS name,
+    w.id AS workspace_id,w.name AS workspace_name,
+    (w.deleted_at IS NOT NULL OR b.deleted_at IS NOT NULL OR t.deleted_at IS NOT NULL)::boolean AS trashed
+FROM meta.grants g
+LEFT JOIN meta.tables t ON g.resource_type='table' AND t.id=g.resource_id
+LEFT JOIN meta.books b ON (g.resource_type='book' AND b.id=g.resource_id) OR b.id=t.book_id
+JOIN meta.workspaces w ON (g.resource_type='workspace' AND w.id=g.resource_id) OR w.id=b.workspace_id
+WHERE g.principal_type='user' AND g.principal_id=$1::uuid AND g.level='owner'
+ORDER BY w.name,w.id,g.resource_type,g.resource_id
+LIMIT $3::int OFFSET $2::int
+`
+
+type ListUserOwnershipsParams struct {
+	UserID     pgtype.UUID
+	PageOffset int32
+	PageLimit  int32
+}
+
+type ListUserOwnershipsRow struct {
+	ResourceType  string
+	ResourceID    pgtype.UUID
+	Name          string
+	WorkspaceID   pgtype.UUID
+	WorkspaceName string
+	Trashed       bool
+}
+
+func (q *Queries) ListUserOwnerships(ctx context.Context, arg ListUserOwnershipsParams) ([]ListUserOwnershipsRow, error) {
+	rows, err := q.db.Query(ctx, listUserOwnerships, arg.UserID, arg.PageOffset, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserOwnershipsRow
+	for rows.Next() {
+		var i ListUserOwnershipsRow
+		if err := rows.Scan(
+			&i.ResourceType,
+			&i.ResourceID,
+			&i.Name,
+			&i.WorkspaceID,
+			&i.WorkspaceName,
+			&i.Trashed,
 		); err != nil {
 			return nil, err
 		}
@@ -591,6 +719,17 @@ func (q *Queries) LockGroupAdministrator(ctx context.Context, id pgtype.UUID) (p
 	return id_2, err
 }
 
+const lockLifecycleWorkspace = `-- name: LockLifecycleWorkspace :one
+SELECT id FROM meta.workspaces WHERE id=$1 AND deleted_at IS NULL FOR NO KEY UPDATE
+`
+
+func (q *Queries) LockLifecycleWorkspace(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockLifecycleWorkspace, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const lockMembershipGroup = `-- name: LockMembershipGroup :one
 SELECT id FROM meta.groups WHERE id=$1 FOR KEY SHARE
 `
@@ -622,6 +761,45 @@ func (q *Queries) LockUserAdministration(ctx context.Context) error {
 	return err
 }
 
+const lockUserRelatedWorkspaces = `-- name: LockUserRelatedWorkspaces :many
+SELECT w.id FROM meta.workspaces w
+WHERE EXISTS (
+    SELECT 1 FROM meta.grants g
+    WHERE g.principal_type='user' AND g.principal_id=$1::uuid
+      AND ((g.resource_type='workspace' AND g.resource_id=w.id)
+        OR (g.resource_type='book' AND EXISTS (
+          SELECT 1 FROM meta.books b WHERE b.id=g.resource_id AND b.workspace_id=w.id))
+        OR (g.resource_type='table' AND EXISTS (
+          SELECT 1 FROM meta.tables t JOIN meta.books b ON b.id=t.book_id
+          WHERE t.id=g.resource_id AND b.workspace_id=w.id)))
+) OR EXISTS (
+    SELECT 1 FROM meta.views v JOIN meta.tables t ON t.id=v.table_id
+    JOIN meta.books b ON b.id=t.book_id
+    WHERE v.owner_id=$1::uuid AND b.workspace_id=w.id
+)
+ORDER BY w.id FOR NO KEY UPDATE OF w
+`
+
+func (q *Queries) LockUserRelatedWorkspaces(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockUserRelatedWorkspaces, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const readSettings = `-- name: ReadSettings :many
 SELECT key, value FROM meta.settings WHERE key = ANY($1::text[]) ORDER BY key
 `
@@ -646,6 +824,24 @@ func (q *Queries) ReadSettings(ctx context.Context, dollar_1 []string) ([]MetaSe
 	return items, nil
 }
 
+const recordDeletedUser = `-- name: RecordDeletedUser :exec
+INSERT INTO meta.deleted_users(id) VALUES ($1)
+`
+
+func (q *Queries) RecordDeletedUser(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, recordDeletedUser, id)
+	return err
+}
+
+const removeAllUserGrants = `-- name: RemoveAllUserGrants :exec
+DELETE FROM meta.grants WHERE principal_type='user' AND principal_id=$1
+`
+
+func (q *Queries) RemoveAllUserGrants(ctx context.Context, principalID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, removeAllUserGrants, principalID)
+	return err
+}
+
 const removeGroupMember = `-- name: RemoveGroupMember :execrows
 DELETE FROM meta.group_members WHERE group_id=$1 AND user_id=$2
 `
@@ -661,6 +857,15 @@ func (q *Queries) RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberPa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const removeUserOwnerships = `-- name: RemoveUserOwnerships :exec
+DELETE FROM meta.grants WHERE principal_type='user' AND principal_id=$1 AND level='owner'
+`
+
+func (q *Queries) RemoveUserOwnerships(ctx context.Context, principalID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, removeUserOwnerships, principalID)
+	return err
 }
 
 const resetPassword = `-- name: ResetPassword :exec
@@ -715,6 +920,24 @@ func (q *Queries) SessionUser(ctx context.Context, idHash []byte) (SessionUserRo
 	return i, err
 }
 
+const setWorkspaceOwner = `-- name: SetWorkspaceOwner :exec
+INSERT INTO meta.grants(resource_type,resource_id,principal_type,principal_id,level,granted_by)
+VALUES ('workspace',$1::uuid,'user',$2::uuid,'owner',$3::uuid)
+ON CONFLICT(resource_type,resource_id,principal_type,principal_id)
+DO UPDATE SET level='owner',granted_by=EXCLUDED.granted_by
+`
+
+type SetWorkspaceOwnerParams struct {
+	WorkspaceID pgtype.UUID
+	UserID      pgtype.UUID
+	ActorID     pgtype.UUID
+}
+
+func (q *Queries) SetWorkspaceOwner(ctx context.Context, arg SetWorkspaceOwnerParams) error {
+	_, err := q.db.Exec(ctx, setWorkspaceOwner, arg.WorkspaceID, arg.UserID, arg.ActorID)
+	return err
+}
+
 const systemDatabase = `-- name: SystemDatabase :one
 SELECT pg_database_size(current_database())::bigint AS size_bytes,
        count(*)::bigint AS connections,
@@ -758,6 +981,29 @@ func (q *Queries) SystemMigration(ctx context.Context) (int64, error) {
 	var migration int64
 	err := row.Scan(&migration)
 	return migration, err
+}
+
+const transferUserOwnerships = `-- name: TransferUserOwnerships :execrows
+INSERT INTO meta.grants(resource_type,resource_id,principal_type,principal_id,level,granted_by)
+SELECT resource_type,resource_id,'user',$1::uuid,'owner',$2::uuid
+FROM meta.grants
+WHERE principal_type='user' AND principal_id=$3::uuid AND level='owner'
+ON CONFLICT(resource_type,resource_id,principal_type,principal_id)
+DO UPDATE SET level='owner',granted_by=EXCLUDED.granted_by
+`
+
+type TransferUserOwnershipsParams struct {
+	RecipientID pgtype.UUID
+	ActorID     pgtype.UUID
+	UserID      pgtype.UUID
+}
+
+func (q *Queries) TransferUserOwnerships(ctx context.Context, arg TransferUserOwnershipsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, transferUserOwnerships, arg.RecipientID, arg.ActorID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateGroup = `-- name: UpdateGroup :exec
@@ -808,6 +1054,21 @@ func (q *Queries) ValidSettingTimezone(ctx context.Context, name string) (bool, 
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const workspaceIsOrphaned = `-- name: WorkspaceIsOrphaned :one
+SELECT NOT EXISTS (
+    SELECT 1 FROM meta.grants g JOIN meta.users u ON u.id=g.principal_id
+    WHERE g.resource_type='workspace' AND g.resource_id=$1
+      AND g.principal_type='user' AND g.level='owner' AND u.status='active'
+)
+`
+
+func (q *Queries) WorkspaceIsOrphaned(ctx context.Context, resourceID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, workspaceIsOrphaned, resourceID)
+	var not_exists bool
+	err := row.Scan(&not_exists)
+	return not_exists, err
 }
 
 const writeSetting = `-- name: WriteSetting :exec

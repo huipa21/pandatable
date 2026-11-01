@@ -192,3 +192,96 @@ WITH owners AS (
 )
 SELECT resource_id,principal_id,principal_type,name,username,status
 FROM owners WHERE position<=50 ORDER BY resource_id,position;
+
+-- name: LockUserRelatedWorkspaces :many
+SELECT w.id FROM meta.workspaces w
+WHERE EXISTS (
+    SELECT 1 FROM meta.grants g
+    WHERE g.principal_type='user' AND g.principal_id=sqlc.arg(user_id)::uuid
+      AND ((g.resource_type='workspace' AND g.resource_id=w.id)
+        OR (g.resource_type='book' AND EXISTS (
+          SELECT 1 FROM meta.books b WHERE b.id=g.resource_id AND b.workspace_id=w.id))
+        OR (g.resource_type='table' AND EXISTS (
+          SELECT 1 FROM meta.tables t JOIN meta.books b ON b.id=t.book_id
+          WHERE t.id=g.resource_id AND b.workspace_id=w.id)))
+) OR EXISTS (
+    SELECT 1 FROM meta.views v JOIN meta.tables t ON t.id=v.table_id
+    JOIN meta.books b ON b.id=t.book_id
+    WHERE v.owner_id=sqlc.arg(user_id)::uuid AND b.workspace_id=w.id
+)
+ORDER BY w.id FOR NO KEY UPDATE OF w;
+
+-- name: LockLifecycleWorkspace :one
+SELECT id FROM meta.workspaces WHERE id=$1 AND deleted_at IS NULL FOR NO KEY UPDATE;
+
+-- name: WorkspaceIsOrphaned :one
+SELECT NOT EXISTS (
+    SELECT 1 FROM meta.grants g JOIN meta.users u ON u.id=g.principal_id
+    WHERE g.resource_type='workspace' AND g.resource_id=$1
+      AND g.principal_type='user' AND g.level='owner' AND u.status='active'
+);
+
+-- name: CountUserOwnerships :one
+SELECT count(*) FROM meta.grants
+WHERE principal_type='user' AND principal_id=$1 AND level='owner';
+
+-- name: CountDanglingUserOwnerships :one
+SELECT count(*) FROM meta.grants g
+WHERE g.principal_type='user' AND g.principal_id=$1 AND g.level='owner'
+  AND NOT ((g.resource_type='workspace' AND EXISTS (
+        SELECT 1 FROM meta.workspaces w WHERE w.id=g.resource_id))
+    OR (g.resource_type='book' AND EXISTS (
+        SELECT 1 FROM meta.books b JOIN meta.workspaces w ON w.id=b.workspace_id WHERE b.id=g.resource_id))
+    OR (g.resource_type='table' AND EXISTS (
+        SELECT 1 FROM meta.tables t JOIN meta.books b ON b.id=t.book_id
+        JOIN meta.workspaces w ON w.id=b.workspace_id WHERE t.id=g.resource_id)));
+
+-- name: ListUserOwnerships :many
+SELECT g.resource_type,g.resource_id,
+    CASE g.resource_type WHEN 'workspace' THEN w.name WHEN 'book' THEN b.name ELSE t.name END::text AS name,
+    w.id AS workspace_id,w.name AS workspace_name,
+    (w.deleted_at IS NOT NULL OR b.deleted_at IS NOT NULL OR t.deleted_at IS NOT NULL)::boolean AS trashed
+FROM meta.grants g
+LEFT JOIN meta.tables t ON g.resource_type='table' AND t.id=g.resource_id
+LEFT JOIN meta.books b ON (g.resource_type='book' AND b.id=g.resource_id) OR b.id=t.book_id
+JOIN meta.workspaces w ON (g.resource_type='workspace' AND w.id=g.resource_id) OR w.id=b.workspace_id
+WHERE g.principal_type='user' AND g.principal_id=sqlc.arg(user_id)::uuid AND g.level='owner'
+ORDER BY w.name,w.id,g.resource_type,g.resource_id
+LIMIT sqlc.arg(page_limit)::int OFFSET sqlc.arg(page_offset)::int;
+
+-- name: TransferUserOwnerships :execrows
+INSERT INTO meta.grants(resource_type,resource_id,principal_type,principal_id,level,granted_by)
+SELECT resource_type,resource_id,'user',sqlc.arg(recipient_id)::uuid,'owner',sqlc.arg(actor_id)::uuid
+FROM meta.grants
+WHERE principal_type='user' AND principal_id=sqlc.arg(user_id)::uuid AND level='owner'
+ON CONFLICT(resource_type,resource_id,principal_type,principal_id)
+DO UPDATE SET level='owner',granted_by=EXCLUDED.granted_by;
+
+-- name: RemoveUserOwnerships :exec
+DELETE FROM meta.grants WHERE principal_type='user' AND principal_id=$1 AND level='owner';
+
+-- name: SetWorkspaceOwner :exec
+INSERT INTO meta.grants(resource_type,resource_id,principal_type,principal_id,level,granted_by)
+VALUES ('workspace',sqlc.arg(workspace_id)::uuid,'user',sqlc.arg(user_id)::uuid,'owner',sqlc.arg(actor_id)::uuid)
+ON CONFLICT(resource_type,resource_id,principal_type,principal_id)
+DO UPDATE SET level='owner',granted_by=EXCLUDED.granted_by;
+
+-- name: ListSoleOwnedWorkspaces :many
+SELECT w.id FROM meta.workspaces w JOIN meta.grants g
+  ON g.resource_type='workspace' AND g.resource_id=w.id AND g.principal_type='user'
+  AND g.principal_id=$1 AND g.level='owner'
+WHERE NOT EXISTS (
+    SELECT 1 FROM meta.grants other
+    WHERE other.resource_type='workspace' AND other.resource_id=w.id
+      AND other.level='owner' AND other.id<>g.id
+)
+ORDER BY w.id;
+
+-- name: RemoveAllUserGrants :exec
+DELETE FROM meta.grants WHERE principal_type='user' AND principal_id=$1;
+
+-- name: RecordDeletedUser :exec
+INSERT INTO meta.deleted_users(id) VALUES ($1);
+
+-- name: HardDeleteUser :exec
+DELETE FROM meta.users WHERE id=$1;

@@ -9,6 +9,7 @@ import type { AttachmentValue } from '../../api/types'
 import {
   queueUserLabels,
   userLabel,
+  userLabelDeleted,
   userLabelFailed,
 } from '../../fields/userDirectory'
 
@@ -70,7 +71,9 @@ const users = computed(() =>
       props.resolveUser?.(id) ?? userLabel(props.identity, props.tableId, id)
     return {
       id,
-      label: name ?? t('field.user.unknown', { id: id.slice(0, 8) }),
+      label: userLabelDeleted(props.identity, props.tableId, id)
+        ? t('field.user.deleted')
+        : (name ?? t('field.user.unknown', { id: id.slice(0, 8) })),
       failed: userLabelFailed(props.identity, props.tableId, id),
     }
   }),

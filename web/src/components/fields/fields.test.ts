@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { config, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { config, flushPromises, mount } from '@vue/test-utils'
 import { i18n, loadLocale } from '../../i18n'
 import { bindField, type BoundField } from '../../fields/registry'
 import { fieldErrorMessage, fieldKindLabel } from '../../fields/messages'
@@ -7,6 +7,7 @@ import { KINDS } from '../../fields/registry'
 import type { Reason } from '../../fields/types'
 import FieldRenderer from './FieldRenderer.vue'
 import FieldEditor from './FieldEditor.vue'
+import { invalidateUserLabels } from '../../fields/userDirectory'
 
 config.global.plugins = [i18n]
 
@@ -15,6 +16,7 @@ beforeEach(async () => {
   await loadLocale('zh-CN')
   i18n.global.locale.value = 'en'
 })
+afterEach(() => vi.unstubAllGlobals())
 
 function field(kind: string, options: unknown = null): BoundField {
   const bound = bindField(kind, options)
@@ -126,6 +128,7 @@ describe('FieldRenderer', () => {
         resolveUser: () => 'Alice',
       },
     })
+
     expect(known.text()).toBe('Alice')
     const unknown = mount(FieldRenderer, {
       props: { field: field('updated_by'), value: id },
@@ -135,6 +138,80 @@ describe('FieldRenderer', () => {
     i18n.global.locale.value = 'zh-CN'
     await unknown.vm.$nextTick()
     expect(unknown.text()).toBe('未知用户（0190a1b2）')
+  })
+
+  it('refreshes cached authorship as a localized deleted user after navigation changes', async () => {
+    const id = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
+    let removed = false
+    const fetch = vi.fn(async () =>
+      Response.json({
+        items: [
+          removed ? { id, name: '', deleted: true } : { id, name: 'Alice' },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    invalidateUserLabels()
+    const wrapper = mount(FieldRenderer, {
+      props: {
+        field: field('created_by'),
+        value: id,
+        identity: 'viewer',
+        tableId: 'table',
+      },
+    })
+    try {
+      await flushPromises()
+      expect(wrapper.text()).toBe('Alice')
+      removed = true
+      invalidateUserLabels()
+      await flushPromises()
+      expect(wrapper.text()).toBe('Deleted user')
+      i18n.global.locale.value = 'zh-CN'
+      await wrapper.vm.$nextTick()
+      expect(wrapper.text()).toBe('已删除的用户')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('does not restore a deleted name from an in-flight stale directory response', async () => {
+    const id = '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
+    let finishOld!: (response: Response) => void
+    let finishNew!: (response: Response) => void
+    const fetch = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<Response>((resolve) => (finishOld = resolve)),
+      )
+      .mockImplementationOnce(
+        () => new Promise<Response>((resolve) => (finishNew = resolve)),
+      )
+    vi.stubGlobal('fetch', fetch)
+    invalidateUserLabels()
+    const wrapper = mount(FieldRenderer, {
+      props: {
+        field: field('created_by'),
+        value: id,
+        identity: 'viewer',
+        tableId: 'table',
+      },
+    })
+    try {
+      await flushPromises()
+      expect(fetch).toHaveBeenCalledTimes(1)
+      invalidateUserLabels()
+      await flushPromises()
+      expect(fetch).toHaveBeenCalledTimes(2)
+      finishNew(Response.json({ items: [{ id, name: '', deleted: true }] }))
+      await flushPromises()
+      expect(wrapper.text()).toBe('Deleted user')
+      finishOld(Response.json({ items: [{ id, name: 'Alice' }] }))
+      await flushPromises()
+      expect(wrapper.text()).toBe('Deleted user')
+    } finally {
+      wrapper.unmount()
+    }
   })
 })
 

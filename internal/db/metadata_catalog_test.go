@@ -15,6 +15,9 @@ type columnSpec struct {
 }
 
 var metadataColumns = map[string][]columnSpec{
+	"deleted_users": {
+		{"id", "uuid", false, ""},
+	},
 	"groups": {
 		{"id", "uuid", false, "uuidv7()"},
 		{"name", "text", false, ""},
@@ -163,6 +166,7 @@ var metadataColumns = map[string][]columnSpec{
 		{"id", "uuid", false, ""},
 		{"storage_path", "text", false, ""},
 		{"has_thumb", "boolean", false, ""},
+		{"cleanup_user_id", "uuid", true, ""},
 	},
 	"backups": {
 		{"id", "uuid", false, "uuidv7()"},

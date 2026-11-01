@@ -10,7 +10,11 @@ import {
 } from '../../api/client'
 import type { AttachmentValue, DirectoryPrincipal } from '../../api/types'
 import type { AttachmentOptions } from '../../fields/attachment'
-import { queueUserLabels, searchTableUsers } from '../../fields/userDirectory'
+import {
+  queueUserLabels,
+  searchTableUsers,
+  userLabelDeleted,
+} from '../../fields/userDirectory'
 import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, Reason, Result, WireValue } from '../../fields/types'
 
@@ -270,6 +274,8 @@ function openAttachmentPicker() {
 }
 
 function userLabel(id: string) {
+  if (userLabelDeleted(props.identity, props.tableId, id))
+    return t('field.user.deleted')
   return (
     props.resolveUser?.(id) ?? t('field.user.unknown', { id: id.slice(0, 8) })
   )

@@ -25,8 +25,9 @@ type DirectoryListing struct {
 }
 
 type UserLabel struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Deleted bool   `json:"deleted,omitempty"`
 }
 
 // Directory exposes minimal, bounded identity discovery only to scope owners.
@@ -221,7 +222,7 @@ func (service *Service) TableUserLabels(ctx context.Context, userID, tableID str
 	}
 	result := make([]UserLabel, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, UserLabel{ID: row.ID.String(), Name: row.Name})
+		result = append(result, UserLabel{ID: row.ID.String(), Name: row.Name, Deleted: row.Deleted})
 	}
 	return result, nil
 }
