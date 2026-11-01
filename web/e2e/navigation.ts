@@ -5,6 +5,7 @@ import {
   expect,
   observeBrowser,
   expectHTTPFailure,
+  allowHTTPFailure,
   expectBrowserClean,
 } from './fixtures'
 import type { Navigation, RowQueryResult, TableSchema } from '../src/api/types'
@@ -72,13 +73,7 @@ export async function create(
   )
 }
 
-async function rename(
-  page: Page,
-  id: string,
-  name: string,
-  locale = en,
-  expectSuccess = true,
-) {
+async function startRename(page: Page, id: string, name: string, locale = en) {
   const nav = await tree(page, locale)
   const actions = nav.locator(`[data-nav-id="${id}"] > .node-actions`)
   if (!((await actions.getAttribute('open')) !== null))
@@ -93,13 +88,16 @@ async function rename(
   await dialog
     .getByRole('textbox', { name: locale.nav.name, exact: true })
     .fill(name)
+  return dialog
+}
+
+async function rename(page: Page, id: string, name: string, locale = en) {
+  const dialog = await startRename(page, id, name, locale)
   await dialog
     .getByRole('button', { name: locale.admin.confirm, exact: true })
     .click()
-  if (expectSuccess) {
-    await expect(dialog).not.toBeVisible()
-    await closeDrawer(page, locale)
-  }
+  await expect(dialog).not.toBeVisible()
+  await closeDrawer(page, locale)
 }
 
 async function noOverflow(page: Page) {
@@ -894,6 +892,7 @@ export async function verifyNavigation(
     await actions
       .getByRole('button', { name: zh.nav.delete, exact: true })
       .click()
+    allowHTTPFailure(alice, 'GET', `/api/v1/tables/${tid}/schema`, 404)
     await dialog
       .getByRole('button', { name: zh.admin.confirm, exact: true })
       .click()
@@ -909,14 +908,22 @@ export async function verifyNavigation(
     await alice
       .getByRole('button', { name: zh.common.languages.en, exact: true })
       .click()
+    const staleRename = await startRename(alice, siblingTable, 'Gone')
     expectHTTPFailure(alice, 'PATCH', `/api/v1/tables/${siblingTable}`, 404)
-    await alice.request.delete(`/api/v1/tables/${siblingTable}`, { headers: h })
-    await rename(alice, siblingTable, 'Gone', en, false)
-    await expect(alice.getByRole('dialog').getByRole('alert')).toContainText(
+    expect(
+      (
+        await alice.request.delete(`/api/v1/tables/${siblingTable}`, {
+          headers: h,
+        })
+      ).status(),
+    ).toBe(200)
+    await staleRename
+      .getByRole('button', { name: en.admin.confirm, exact: true })
+      .click()
+    await expect(staleRename.getByRole('alert')).toContainText(
       en.errors.ERR_NOT_FOUND,
     )
-    await alice
-      .getByRole('dialog')
+    await staleRename
       .getByRole('button', { name: en.admin.cancel, exact: true })
       .click()
     await closeDrawer(alice)

@@ -601,7 +601,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
   - **T3.12 evidence: Pass.** Required PG18 HTTP test `TestSQLInjectionStringsRemainDataThroughHTTPAT804` stores injection-shaped table and field names, filters literal values with equality and containment, and verifies the users table and session remain intact.
 - **AT-805 — Browser matrix** · M3 *(manual)* · Smoke test on Chrome, Edge, Firefox, Safari desktop, iOS Safari, Android Chrome.
   - **T3.11 evidence (2026-11-01): Pending.** No manual six-browser/device matrix was performed. Chromium desktop/mobile emulation is not a substitute.
-  - **T3.12 evidence: Partial.** Installed Chrome and Edge pass the desktop smoke; Playwright Firefox and WebKit engines also pass, but do not certify stock Firefox/Safari or physical iOS/Android devices.
+  - **T3.12 evidence: Partial.** Scripted desktop smoke passes on installed Chrome, Edge and headed stock Firefox. Firefox also establishes an authenticated WebSocket and rejects stale access after logout; its expected post-logout WebSocket rejection appears in the browser log. Playwright Firefox and WebKit engines also pass, but do not certify stock Safari or physical iOS/Android devices.
 - **AT-806 — Responsive** · M3 · All main pages usable at 390 px width (no horizontal page scroll except grid area).
   - **T3.11 evidence (2026-11-01): Partial automated coverage.** Desktop and mobile Chromium navigate 16 main routes at 390 px in both languages, check headings and page overflow, and verify the mobile row list is visible. This does not exhaustively exercise every page's controls.
 
@@ -710,17 +710,17 @@ conflicting historical summaries above.
 | Test | Status | Evidence / remaining boundary |
 |---|---|---|
 | AT-004 | Pass | The milestone image is linux/amd64, 171,849,346 bytes, UID/GID 10001:10001, with an executable healthcheck and PostgreSQL 18 `pg_dump`. |
-| AT-110 | Reopened | The production dashboard scenario expected migration 2 but observed 5. Its test now derives the latest migration from the actual files; focused dashboard assertions passed before later sharing failures. |
+| AT-110 | Reopened | The production dashboard scenario expected migration 2 but observed 5. Its test now derives the latest migration from the actual files; focused desktop/mobile admin scenarios pass, but the milestone gate remains failed. |
 | AT-102/116 | Pass (focused) | The profile browser scenario verifies username/email login, translated errors, logout/back navigation, display-name changes and password replacement. It passed in the fast runtime image; the milestone run timed out before it. |
 | AT-117 | Pass (focused) | The profile browser scenario verifies Shanghai/London datetime display and default-timezone changes. Required PG18 HTTP evidence verifies `is today` for users on different calendar dates. The milestone profile scenario did not run. |
-| AT-209 / sharing | Reopened | Focused admin scenarios failed on a missing-principal alert and an expected revocation 404. Subsequent browser failures prevented a conclusive retest; the existing sharing test is unchanged. |
-| AT-305/311 | Reopened | The production stale-version scenario did not observe its expected 409. A test-route experiment failed and was removed; the original conflict scenario remains unresolved. |
+| AT-209 / sharing | Reopened | The focused desktop and mobile admin scenarios now pass after synchronizing principal-change refreshes and explicitly verifying the revoked-access API 404. The production milestone gate remains failed. |
+| AT-305/311 | Reopened | The production stale-version scenario missed its expected 409. A deterministic stale-PATCH setup now passes the focused desktop scenario and preserves both edits; the production milestone gate remains failed. |
 | AT-306/308 | Pass | A headed Chrome/real Excel check verifies both directions, including the 12-cell single request, invalid-cell reporting, date and select label. |
 | AT-307 | Fail | Pasting ten rows at the second-to-last row offers eight additional rows, not the nine required by the literal criterion. |
 | AT-409 | Reopened | The production formula scenario failed after another scenario changed the shared user timezone. Test cleanup and actor-timezone assertions were corrected; both focused formula projects pass, but the milestone gate remains failed. |
 | AT-507 | Pass | A writer's temporary override of a locked shared view saves privately without changing that shared view. |
 | AT-804 | Pass | The required PG18 HTTP injection test verifies literal table/field names and filter values and confirms the users table and session remain intact. |
-| AT-805/806 | Partial | Chrome and Edge desktop smoke and Playwright Firefox/WebKit engines pass; stock Firefox/Safari, physical iOS/Android, and exhaustive responsive controls remain unverified. |
+| AT-805/806 | Partial | Scripted Chrome, Edge and stock Firefox desktop smoke and Playwright Firefox/WebKit engines pass; stock Safari, physical iOS/Android, and exhaustive responsive controls remain unverified. |
 | AT-001/005/006, AT-312/512/801, AT-707 | Partial | Linux/Docker, authorized Ubuntu/Caddy deployment, target-host performance and fresh-host restore checks remain unavailable. |
 | AT-702 | Partial | Package round-trip fidelity remains blocked by attachment identity/content, possible timestamp collisions and missing view locks. |
 

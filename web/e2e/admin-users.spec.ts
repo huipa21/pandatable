@@ -16,7 +16,14 @@ import { verifyNavigation } from './navigation'
 async function signIn(page: Page, login: string, password: string) {
   await paceLogin(page)
   await page.goto('/login')
-  await page.getByLabel(en.auth.login, { exact: true }).fill(login)
+  const english = page.getByLabel(en.auth.login, { exact: true })
+  const chinese = page.getByLabel(zh.auth.login, { exact: true })
+  await expect(english.or(chinese)).toBeVisible()
+  if (await chinese.isVisible())
+    await page
+      .getByRole('button', { name: zh.common.languages.en, exact: true })
+      .click()
+  await english.fill(login)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
 }

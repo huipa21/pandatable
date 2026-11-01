@@ -29,6 +29,17 @@ async function grants(
   expect(response.status()).toBe(200)
   return response.json()
 }
+function waitForGrantRefresh(page: Page, kind: ResourceKind, id: string) {
+  return page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      url.pathname === '/api/v1/grants' &&
+      url.searchParams.get('resource') === `${kind}:${id}` &&
+      response.request().method() === 'GET' &&
+      response.status() === 200
+    )
+  })
+}
 async function open(page: Page, path: string, locale = en) {
   await page.goto(path)
   await page
@@ -414,13 +425,20 @@ export async function verifySharing(
     await direct(carol, c.id)
       .getByRole('button', { name: en.sharing.remove, exact: true })
       .click()
-    expectHTTPFailure(carol, 'GET', '/api/v1/grants', 404)
+    // Navigation reconciliation can detect the missing table without another GET.
     await dialog(carol)
       .getByRole('button', { name: en.admin.confirm, exact: true })
       .click()
     await expect(dialog(carol).getByRole('alert')).toContainText(
       en.errors.ERR_NOT_FOUND,
     )
+    const revoked = await carol.request.get(
+      `/api/v1/grants?resource=table:${tid}`,
+    )
+    expect(revoked.status()).toBe(404)
+    expect(await revoked.json()).toMatchObject({
+      error: { code: 'ERR_NOT_FOUND' },
+    })
     await close(carol)
     await expect(
       carol.getByRole('heading', { name: en.nav.removedTitle, exact: true }),
@@ -474,6 +492,7 @@ export async function verifySharing(
     transientGroup = vanished.id
     await open(alice, workspacePath)
     await reviewAdd(alice, vanished.name, vanished.id, 'read', 'group')
+    const groupRefresh = waitForGrantRefresh(alice, 'workspace', wid)
     expect(
       (
         await admin.request.delete(`/api/v1/admin/groups/${vanished.id}`, {
@@ -482,6 +501,8 @@ export async function verifySharing(
       ).status(),
     ).toBe(200)
     transientGroup = undefined
+    await groupRefresh
+    await expect(dialog(alice).getByRole('status')).toHaveCount(0)
     expectHTTPFailure(alice, 'PUT', '/api/v1/grants', 404)
     await dialog(alice)
       .getByRole('button', { name: en.admin.confirm, exact: true })
@@ -510,6 +531,7 @@ export async function verifySharing(
     }
     await open(alice, workspacePath)
     await reviewAdd(alice, target.username, target.id, 'read')
+    const userRefresh = waitForGrantRefresh(alice, 'workspace', wid)
     expect(
       (
         await admin.request.patch(`/api/v1/admin/users/${target.id}`, {
@@ -518,6 +540,8 @@ export async function verifySharing(
         })
       ).status(),
     ).toBe(200)
+    await userRefresh
+    await expect(dialog(alice).getByRole('status')).toHaveCount(0)
     expectHTTPFailure(alice, 'PUT', '/api/v1/grants', 409)
     await dialog(alice)
       .getByRole('button', { name: en.admin.confirm, exact: true })

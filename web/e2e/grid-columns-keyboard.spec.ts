@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Page, Route } from '@playwright/test'
 import type { Components } from '@revolist/revogrid'
 import {
   test,
@@ -638,33 +638,57 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       })
     ).status(),
   ).toBe(200)
-  expectHTTPFailure(page, 'PATCH', `/api/v1/views/${viewId}`, 409)
-  const conflictMenu = await fieldsMenu(page, en)
-  await conflictMenu
-    .getByLabel(en.grid.columnWidth.replace('{name}', name.name), {
-      exact: true,
-    })
-    .fill('285')
-  await conflictMenu
-    .getByLabel(en.grid.columnWidth.replace('{name}', name.name), {
-      exact: true,
-    })
-    .press('Tab')
-  await poll(async () => {
-    const config = (await configOf()).config
-    return [
-      config.fields.find((field) => field.id === name.id)?.width,
-      config.fields.find((field) => field.id === qty.id)?.width,
-    ]
-  }).toEqual([285, 320])
-  await expect(
-    page.getByRole('alert').filter({ hasText: en.errors.ERR_VERSION_CONFLICT }),
-  ).toBeVisible()
-  const source = await grid.evaluate(
-    async (element) =>
-      (await (element as HTMLElement & Components.RevoGrid).getSource()).filter(
-        (row) => row.__rowId,
-      ).length,
-  )
-  expect(source).toBeLessThanOrEqual(300)
+  const viewRoute = `**/api/v1/views/${viewId}`
+  let stalePatchSent = false
+  const forceStaleVersion = async (route: Route) => {
+    if (route.request().method() === 'PATCH' && !stalePatchSent) {
+      // Reproduce a delayed realtime notification even if it arrives first.
+      stalePatchSent = true
+      await route.continue({
+        headers: {
+          ...route.request().headers(),
+          'if-match': String(beforeConflict.version),
+        },
+      })
+    } else {
+      await route.continue()
+    }
+  }
+  await page.route(viewRoute, forceStaleVersion)
+  try {
+    expectHTTPFailure(page, 'PATCH', `/api/v1/views/${viewId}`, 409)
+    const conflictMenu = await fieldsMenu(page, en)
+    await conflictMenu
+      .getByLabel(en.grid.columnWidth.replace('{name}', name.name), {
+        exact: true,
+      })
+      .fill('285')
+    await conflictMenu
+      .getByLabel(en.grid.columnWidth.replace('{name}', name.name), {
+        exact: true,
+      })
+      .press('Tab')
+    await poll(async () => {
+      const config = (await configOf()).config
+      return [
+        config.fields.find((field) => field.id === name.id)?.width,
+        config.fields.find((field) => field.id === qty.id)?.width,
+      ]
+    }).toEqual([285, 320])
+    await expect(
+      page
+        .getByRole('alert')
+        .filter({ hasText: en.errors.ERR_VERSION_CONFLICT }),
+    ).toBeVisible()
+    expect(stalePatchSent).toBe(true)
+    const source = await grid.evaluate(
+      async (element) =>
+        (
+          await (element as HTMLElement & Components.RevoGrid).getSource()
+        ).filter((row) => row.__rowId).length,
+    )
+    expect(source).toBeLessThanOrEqual(300)
+  } finally {
+    await page.unroute(viewRoute, forceStaleVersion)
+  }
 })
