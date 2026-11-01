@@ -114,6 +114,7 @@ func (api *authHTTP) serveAttachment(w http.ResponseWriter, r *http.Request, use
 	w.Header().Set("Content-Type", file.ContentType)
 	w.Header().Set("Content-Disposition", contentDisposition)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'")
 	if file.SHA256 != "" && !thumbnail {
 		w.Header().Set("ETag", `"`+file.SHA256+`"`)
 	}

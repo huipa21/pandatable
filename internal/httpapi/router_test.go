@@ -169,8 +169,15 @@ func TestRequestIDAccessLogAndSecurityHeaders(t *testing.T) {
 				t.Errorf("%s=%q, want %q", header, got, want)
 			}
 		}
-		if !strings.Contains(response.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") {
-			t.Error("missing CSP frame protection")
+		csp := response.Header().Get("Content-Security-Policy")
+		for _, directive := range []string{"script-src 'self'", "script-src-attr 'none'", "frame-src 'none'",
+			"form-action 'self'", "frame-ancestors 'none'"} {
+			if !strings.Contains(csp, directive) {
+				t.Errorf("missing CSP directive %q", directive)
+			}
+		}
+		if strings.Contains(csp, "'unsafe-eval'") || strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
+			t.Error("CSP permits unsafe scripts")
 		}
 	}
 	events := parseLogs(t, logs.Bytes())

@@ -589,11 +589,16 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 ## AT-8xx Non-functional (all)
 
 - **AT-801 — Memory budget** · M3 · Under a 10-user simulated load (k6/script: editing, scrolling, realtime) for 15 min, app RSS < 150 MB, host memory < 3.2 GB used.
+  - **T3.11 evidence (2026-11-01): Not certified.** The driver validates duration, per-user activity, fresh samples and strict thresholds; a real two-user browser smoke covers scrolling, edits, peer events and both metrics. No 15-minute run was made on the non-equivalent local VM. The earlier above-target app RSS observation remains open.
 - **AT-802 — i18n completeness** · M0+ *(local gate)* · `en.json` and `zh-CN.json` key sets identical; no hard-coded strings (lint rule).
 - **AT-803 — Security headers & CSRF** · M1 *(API)* · Requests without `X-PT-CSRF` or with foreign Origin rejected; cookies HttpOnly+Secure+SameSite=Lax; CSP, nosniff present.
+  - **T3.11 evidence (2026-11-01): Pass rechecked.** Real HTTP/PG18 tests cover failed CSRF, malformed/unsupported login requests and untrusted forwarding, plus sniffed uploads, metadata mismatch and sandbox headers; browser and router tests cover the stricter SPA CSP. Existing D-073 cookie/Origin evidence remains valid.
 - **AT-804 — SQL injection** · M1/M2 *(API)* · Field/table names and filter values containing `"; DROP TABLE` etc. are stored/handled as data.
+  - **T3.11 evidence (2026-11-01): Partial, unchanged.** The new read-only doctor checks metadata/catalog drift, not injection scenarios; the remaining table/field-name and filter-value API evidence is still required.
 - **AT-805 — Browser matrix** · M3 *(manual)* · Smoke test on Chrome, Edge, Firefox, Safari desktop, iOS Safari, Android Chrome.
+  - **T3.11 evidence (2026-11-01): Pending.** No manual six-browser/device matrix was performed. Chromium desktop/mobile emulation is not a substitute.
 - **AT-806 — Responsive** · M3 · All main pages usable at 390 px width (no horizontal page scroll except grid area).
+  - **T3.11 evidence (2026-11-01): Partial automated coverage.** Desktop and mobile Chromium navigate 16 main routes at 390 px in both languages, check headings and page overflow, and verify the mobile row list is visible. This does not exhaustively exercise every page's controls.
 
 ## AT-9xx Post-v1 (M4, M5)
 

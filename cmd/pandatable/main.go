@@ -13,6 +13,7 @@ import (
 
 	"pandatable/internal/config"
 	"pandatable/internal/db"
+	"pandatable/internal/doctor"
 )
 
 var version = "0.0.0-dev"
@@ -71,7 +72,7 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, version)
 		return 0
-	case "serve", "migrate":
+	case "serve", "migrate", "doctor":
 		cfg, err := config.Parse(commandArgs)
 		if errors.Is(err, flag.ErrHelp) {
 			printCommandUsage(stdout, command)
@@ -108,10 +109,34 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 			}
 			logger.Info("database migrations complete")
 			return 0
+		case "doctor":
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			pool, err := db.Open(ctx, cfg)
+			if err != nil {
+				logger.Error("doctor failed", "error", err)
+				return 1
+			}
+			defer pool.Close()
+			findings, err := doctor.Check(ctx, pool)
+			if err != nil {
+				logger.Error("doctor failed", "error", err)
+				return 1
+			}
+			for _, finding := range findings {
+				logger.Error("schema drift detected", "kind", finding.Kind, "object", finding.Object,
+					"expected", finding.Expected, "actual", finding.Actual)
+			}
+			if len(findings) > 0 {
+				logger.Error("doctor found schema drift", "findings", len(findings))
+				return 1
+			}
+			logger.Info("doctor metadata and catalog checks passed")
+			return 0
 		}
 	case "restore":
 		return runRestore(commandArgs, stdout, stderr)
-	case "doctor", "reset-admin-password":
+	case "reset-admin-password":
 		if len(commandArgs) == 1 && (commandArgs[0] == "--help" || commandArgs[0] == "-h") {
 			fmt.Fprintf(stdout, "Usage: pandatable %s\n", command)
 			return 0
@@ -121,7 +146,6 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		task := map[string]string{
-			"doctor":               "unassigned",
 			"reset-admin-password": "T1.5",
 		}[command]
 		return reportUnimplemented(newJSONLogger(stdout, slog.LevelInfo), command, task)
@@ -151,7 +175,7 @@ Commands:
   migrate               Validate configuration and run database migrations (T0.3)
   healthcheck           Probe HTTP /healthz without database configuration (T0.6)
   restore               Restore a trusted backup with --yes
-  doctor                Diagnose the installation (not yet scheduled)
+  doctor                Check database migrations and schema drift (read-only)
   reset-admin-password  Reset an administrator password (T3.10)
   version               Print the application version
   help                  Show this help`)

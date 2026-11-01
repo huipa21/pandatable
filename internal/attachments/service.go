@@ -308,11 +308,14 @@ func (service *Service) Open(ctx context.Context, userID, attachmentID string, t
 		return nil, err
 	}
 	metadata, err = service.queries.WithTx(tx).Get(ctx, id)
-	if errors.Is(err, pgx.ErrNoRows) || metadata.TableID != target.ID {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, acl.ErrNotFound()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("recheck attachment metadata: %w", err)
+	}
+	if metadata.TableID != target.ID {
+		return nil, acl.ErrNotFound()
 	}
 	if _, err := service.queries.WithTx(tx).FieldForUpload(ctx, attachmentssql.FieldForUploadParams{
 		ID: metadata.FieldID, TableID: target.ID,
@@ -334,6 +337,9 @@ func (service *Service) Open(ctx context.Context, userID, attachmentID string, t
 		if !metadata.HasThumb {
 			return nil, acl.ErrNotFound()
 		}
+		if !safeImage(metadata.MimeType) {
+			return nil, errors.New("thumbnail metadata has an unsafe image type")
+		}
 		path += ".thumb.png"
 	}
 	file, err := openRegular(path)
@@ -342,6 +348,19 @@ func (service *Service) Open(ctx context.Context, userID, attachmentID string, t
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open attachment: %w", err)
+	}
+	sniffed, err := sniffReader(file)
+	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	expectedType := metadata.MimeType
+	if thumbnail {
+		expectedType = "image/png"
+	}
+	if sniffed != expectedType {
+		_ = file.Close()
+		return nil, errors.New("attachment content does not match stored media type")
 	}
 	name, err := cleanName(metadata.FileName)
 	if err != nil {
@@ -460,10 +479,17 @@ func sniffFile(path string) (string, error) {
 		return "", fmt.Errorf("open attachment for MIME sniffing: %w", err)
 	}
 	defer file.Close()
+	return sniffReader(file)
+}
+
+func sniffReader(file io.ReadSeeker) (string, error) {
 	buffer := make([]byte, maxSniffBytes)
 	n, err := file.Read(buffer)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("read attachment for MIME sniffing: %w", err)
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("rewind attachment after MIME sniffing: %w", err)
 	}
 	mediaType, _, err := mime.ParseMediaType(http.DetectContentType(buffer[:n]))
 	if err != nil {

@@ -281,8 +281,83 @@ failed HTTP refreshes keep a visibly stale snapshot with retry.
   restart while no user exists; only the dedicated `SETUP_TOKEN=…` entry is
   permitted to expose it. Setup is transaction-serialized and the endpoint
   returns 410 after completion.
-- Login rate limits (per IP from trusted `X-Forwarded-For`, per account); session idle timeout 7 days, absolute 30 days; sessions revoked on password reset/disable.
-- Upload MIME sniffing; only PNG, JPEG, GIF, and WebP are served inline and thumbnailed. All other types are served with `Content-Disposition: attachment`; responses set `X-Content-Type-Options: nosniff`; CSP on SPA.
+- Login rate limits (per IP from trusted `X-Forwarded-For`, per account); malformed JSON and unsupported content types consume the IP budget only after Origin/CSRF and client-IP validation. Session idle timeout 7 days, absolute 30 days; sessions revoked on password reset/disable.
+- Upload MIME sniffing; only PNG, JPEG, GIF, and WebP are served inline and thumbnailed. Other types are attachments. Opened files and PNG thumbnails are re-sniffed before serving; a metadata/content mismatch fails rather than being served. Responses set `X-Content-Type-Options: nosniff` and a sandbox CSP; the SPA disallows inline script attributes and frames and restricts form submissions to itself.
+
+### Read-only drift doctor
+
+From the server's Compose directory, with the app and DB running:
+
+```
+docker compose exec -T app pandatable doctor
+```
+
+The command uses the app's normal database configuration and logs structured
+findings with physical identifiers, expected values and actual values. It
+checks the embedded migration history and metadata against book schemas,
+tables, stored field types, relation columns and junction tables, including
+objects in Trash, in a repeatable-read, read-only snapshot. Exit 0 means these
+checks found no drift; exit 1 means drift **or** a database/check failure. It
+never migrates or repairs. Indexes, constraints, defaults, row contents and
+attachment files are not checked, so a clean result is not a full integrity
+certification. Investigate failures and use an approved backup/repair procedure.
+
+### Ten-user load measurement
+
+Use the existing developer dependencies and Playwright Chromium on a **separate
+load generator**, against an authorized disposable deployment. The test
+repeatedly changes the first ten rows, so do not point it at real user data.
+Create a shared, unfiltered, unsorted and ungrouped grid view with at least
+600 stable rows and a visible non-unique text field with no `maxLength` or a
+limit of at least 16. Prepare ten distinct active accounts with write access to
+that table and view; complete any forced password changes first. The first
+account must be an administrator for `/api/v1/admin/system`. Avoid other
+edits and allow the login rate-limit window to clear before starting.
+
+Create a private JSON file outside the repository, replacing every placeholder:
+
+```json
+{
+  "baseURL": "https://table.example",
+  "tableId": "<table UUID>",
+  "viewId": "<shared grid view UUID>",
+  "fieldId": "<visible text field UUID>",
+  "users": [
+    { "login": "<admin>", "password": "<private>" },
+    { "login": "<user 2>", "password": "<private>" },
+    { "login": "<user 3>", "password": "<private>" },
+    { "login": "<user 4>", "password": "<private>" },
+    { "login": "<user 5>", "password": "<private>" },
+    { "login": "<user 6>", "password": "<private>" },
+    { "login": "<user 7>", "password": "<private>" },
+    { "login": "<user 8>", "password": "<private>" },
+    { "login": "<user 9>", "password": "<private>" },
+    { "login": "<user 10>", "password": "<private>" }
+  ]
+}
+```
+
+From the Windows repository root, for example:
+
+```powershell
+node .\web\scripts\load-test.mjs --config C:\private\pt-load.json --report C:\private\pt-load-report.jsonl
+```
+
+The report path must not exist; keep both files access-restricted and never
+commit them. The file creation mode is restrictive on Unix, but Windows ACLs
+must be set separately. The driver logs in at least 6.1 seconds apart, then
+uses ten independent browser contexts to scroll, edit distinct rows and receive
+peer realtime events for 15 minutes. It samples app RSS and host-used RAM from
+the admin collector every six seconds and fails on missing/stale samples,
+incomplete activity or peaks **at or above** 150,000,000 and 3,200,000,000
+bytes respectively. A shorter `--duration-seconds` run is a smoke test: it
+writes an incomplete summary and exits nonzero, not a passing load result.
+
+The JSONL output is an observation, not automatic AT-801 certification.
+Independently verify that the server, container/VM host-memory visibility,
+deployment, workload and separate generator are equivalent to the target
+2-vCPU/4-GB host. The collector can observe a VM rather than the physical
+host; do not infer host certification from that measurement.
 
 ### T1.2 auth operating policy
 

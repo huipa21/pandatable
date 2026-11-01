@@ -18,6 +18,9 @@ test('real embedded shell, health, assets and history boundaries', async ({
   await expect(page.getByText(en.login.notice)).toBeVisible()
   const csp = response?.headers()['content-security-policy']
   expect(csp).toContain("script-src 'self'")
+  expect(csp).toContain("script-src-attr 'none'")
+  expect(csp).toContain("frame-src 'none'")
+  expect(csp).toContain("form-action 'self'")
   expect(csp).not.toContain("'unsafe-eval'")
   expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/)
   expect(response?.headers()['x-content-type-options']).toBe('nosniff')

@@ -83,6 +83,31 @@ func TestAttachmentUploadRowACLAndFileLifecycle(t *testing.T) {
 	if pdfFile.MIME != "application/pdf" || pdfFile.Thumb != nil {
 		t.Fatalf("PDF upload = %+v", pdfFile)
 	}
+	html := []byte("<!doctype html><script>alert(1)</script>")
+	htmlFile := decode[attachments.File](f,
+		attachmentUpload(f, owner, table.Table.ID, otherField.ID, "disguised.png", html), http.StatusCreated)
+	if htmlFile.MIME != "text/html" || htmlFile.Thumb != nil {
+		t.Fatalf("disguised HTML upload = %+v", htmlFile)
+	}
+	disguised := f.api(owner, http.MethodGet, "/attachments/"+htmlFile.ID, "")
+	f.expectStatus(disguised, http.StatusOK, "")
+	if !strings.HasPrefix(disguised.Header().Get("Content-Disposition"), "attachment") ||
+		disguised.Header().Get("Content-Type") != "text/html" ||
+		disguised.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		!strings.Contains(disguised.Header().Get("Content-Security-Policy"), "sandbox") {
+		t.Fatalf("unsafe attachment response headers = %v", disguised.Header())
+	}
+	if _, err := f.pool.Exec(f.ctx, `UPDATE meta.attachments SET mime_type='image/png' WHERE id=$1`, htmlFile.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.expectStatus(f.api(owner, http.MethodGet, "/attachments/"+htmlFile.ID, ""),
+		http.StatusInternalServerError, "ERR_INTERNAL")
+	if _, err := f.pool.Exec(f.ctx, `UPDATE meta.attachments SET mime_type='text/html' WHERE id=$1`, htmlFile.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.expectStatus(f.api(owner, http.MethodGet, "/attachments/"+htmlFile.ID, ""), http.StatusOK, "")
+	f.expectStatus(attachmentUpload(f, owner, table.Table.ID, otherField.ID, "broken.png",
+		[]byte("\x89PNG\r\n\x1a\nnot-an-image")), http.StatusBadRequest, "ERR_INVALID_IMAGE")
 
 	f.expectStatus(f.api(stranger, http.MethodGet, "/attachments/"+pngFile.ID, ""), http.StatusNotFound, "ERR_NOT_FOUND")
 	f.expectStatus(attachmentUpload(f, stranger, table.Table.ID, field.ID, "stranger.pdf", pdf), http.StatusNotFound, "ERR_NOT_FOUND")

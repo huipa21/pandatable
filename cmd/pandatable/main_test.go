@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -20,6 +21,7 @@ func TestRunHelpAndVersionDoNotRequireDatabaseConfiguration(t *testing.T) {
 		{"root help", []string{"--help"}, "Commands:"},
 		{"serve help", []string{"serve", "--help"}, "--database-url"},
 		{"migrate help", []string{"migrate", "--help"}, "--database-url"},
+		{"doctor help", []string{"doctor", "--help"}, "--database-url"},
 		{"restore help", []string{"restore", "--help"}, "--yes"},
 		{"version", []string{"version"}, version},
 	} {
@@ -48,6 +50,7 @@ func TestRunRejectsMalformedArguments(t *testing.T) {
 		{[]string{"serve", "--unknown"}, 2},
 		{[]string{"serve", "unexpected"}, 2},
 		{[]string{"serve"}, 1},
+		{[]string{"doctor"}, 1},
 	}
 	for _, test := range tests {
 		t.Run(strings.Join(test.args, "_"), func(t *testing.T) {
@@ -125,7 +128,6 @@ func TestRunStubsReportTheirBoundaries(t *testing.T) {
 		command string
 		task    string
 	}{
-		{"doctor", "unassigned"},
 		{"reset-admin-password", "T1.5"},
 	} {
 		t.Run(test.command, func(t *testing.T) {
@@ -137,6 +139,34 @@ func TestRunStubsReportTheirBoundaries(t *testing.T) {
 				t.Errorf("output %q does not identify boundary %s", stdout.String(), test.task)
 			}
 		})
+	}
+}
+
+func TestDoctorCLIReportsDrift(t *testing.T) {
+	pool := database.Open(t)
+	t.Setenv("PT_DATABASE_URL", database.URL(t))
+	t.Setenv("PT_BASE_URL", "https://table.example")
+	t.Setenv("PT_DATA_DIR", t.TempDir())
+	t.Setenv("PT_DB_CONNECT_RETRIES", "0")
+	t.Setenv("PT_LOG_LEVEL", "info")
+	var stdout, stderr bytes.Buffer
+	if got := runWith([]string{"doctor"}, &stdout, &stderr); got != 0 ||
+		!strings.Contains(stdout.String(), "doctor metadata and catalog checks passed") {
+		t.Fatalf("doctor = %d, stdout=%s stderr=%s", got, stdout.String(), stderr.String())
+	}
+	if _, err := pool.Exec(context.Background(), `CREATE SCHEMA b_zzzzzzzzzz`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DROP SCHEMA b_zzzzzzzzzz`); err != nil {
+			t.Error(err)
+		}
+	})
+	stdout.Reset()
+	stderr.Reset()
+	if got := runWith([]string{"doctor"}, &stdout, &stderr); got != 1 ||
+		!strings.Contains(stdout.String(), "unexpected_schema") {
+		t.Fatalf("doctor drift = %d, stdout=%s stderr=%s", got, stdout.String(), stderr.String())
 	}
 }
 

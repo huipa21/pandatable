@@ -253,21 +253,36 @@ func TestForcedChangeAndDisabledHTTPPostgreSQL(t *testing.T) {
 
 func TestMalformedLoginIPLimitHTTPPostgreSQL(t *testing.T) {
 	f := newHTTPAuthFixture(t)
+	for range 12 {
+		request := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader("{"))
+		request.RemoteAddr = "192.0.2.1:12345"
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Origin", "https://evil.example")
+		request.Header.Set("X-PT-CSRF", "1")
+		response := httptest.NewRecorder()
+		f.handler.ServeHTTP(response, request)
+		requireStatus(t, response, 403)
+	}
 	for attempt := range 10 {
 		request := httptest.NewRequest("POST", "/api/v1/auth/login", strings.NewReader("{"))
 		request.RemoteAddr = "192.0.2.1:12345"
 		request.Header.Set("Content-Type", "application/json")
+		status := http.StatusBadRequest
+		if attempt%2 == 1 {
+			request.Header.Set("Content-Type", "text/plain")
+			status = http.StatusUnsupportedMediaType
+		}
 		request.Header.Set("Origin", "https://table.example")
 		request.Header.Set("X-PT-CSRF", "1")
 		request.Header.Set("X-Forwarded-For", "198.51.100."+strconv.Itoa(attempt+1))
 		response := httptest.NewRecorder()
 		f.handler.ServeHTTP(response, request)
-		requireStatus(t, response, 400)
+		requireStatus(t, response, status)
 	}
 	response := f.request("POST", "/auth/login", `{"login":"`+f.username+`","password":"`+f.password+`"}`, nil)
 	requireStatus(t, response, 429)
 	assertError(t, response, "ERR_RATE_LIMITED")
-	t.Log("ten malformed login requests consume the same socket-IP budget; untrusted forwarding cannot bypass it")
+	t.Log("failed CSRF does not consume budget; malformed and unsupported login requests do; untrusted forwarding cannot bypass it")
 }
 
 func TestAuthInputAndInternalErrorsHTTPPostgreSQL(t *testing.T) {
