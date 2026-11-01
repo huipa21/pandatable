@@ -155,6 +155,27 @@ export interface WorkspaceListing {
   total: number
 }
 
+export interface BackupRecord {
+  id: string
+  fileName: string
+  sizeBytes: number | null
+  status: 'running' | 'done' | 'failed'
+  errorCode?: string
+  createdBy: string | null
+  createdByName: string
+  createdAt: string
+  finishedAt: string | null
+  progress?: {
+    stage: 'dumping' | 'archiving' | 'finalizing'
+    percent: number
+  }
+}
+
+export interface BackupListing {
+  items: BackupRecord[]
+  freeBytes: number
+}
+
 export type ResourceKind = 'workspace' | 'book' | 'table'
 export type TrashKind = ResourceKind | 'field' | 'view'
 

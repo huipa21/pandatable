@@ -213,7 +213,13 @@ the SPA through the real Caddy domain separately (AT-005).
 
 ## 7. Restore
 
-See [11-import-export-backup.md §3](11-import-export-backup.md#restore-cli).
+Stop every app instance and restore only a trusted archive. The Compose image
+already has `pandatable` as its entrypoint, so use `docker compose run --rm app
+restore <archive> --yes`, not a second `pandatable` argument. Keep the app
+stopped if restore fails after an uncertain database commit; retain the
+reported recovery files and retry. See
+[11-import-export-backup.md §3](11-import-export-backup.md#restore-cli) for
+compatibility, staging-space and recovery details.
 
 ## 8. Monitoring (Admin → Dashboard)
 

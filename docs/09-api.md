@@ -200,8 +200,18 @@ surrogates.
 | GET | `/meta/currencies` | ISO 4217 codes — any user |
 | GET | `/admin/system` | CPU %, load, mem used/total, disk used/free, db size, files size, backups size, app RSS, uptime, versions |
 | GET/POST | `/admin/backups` | list / create (async job) |
+| GET | `/admin/backups/{id}` | status of one backup |
 | GET | `/admin/backups/{id}/download` | streamed zip |
-| DELETE | `/admin/backups/{id}` | |
+| DELETE | `/admin/backups/{id}` | delete backup file and record |
+
+T3.9 (D-194): the admin-only listing returns `{items,freeBytes}`. `POST`
+accepts `{}` and returns a running record with 202; records include filename,
+size, status, creator, timestamps, optional failure code and in-process
+`{stage,percent}` progress. The status route returns the same record; only a
+completed, size-matching regular archive can be downloaded. Deletion returns `{eventId}` and
+rejects running jobs. A concurrent backup/restore returns `ERR_BACKUP_BUSY`;
+insufficient space returns `ERR_BACKUP_DISK_SPACE`, and failed jobs remain
+visible with a localized error code. All routes reject query parameters.
 
 #### T1.5 users contract (D-081..D-083)
 

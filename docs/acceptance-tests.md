@@ -578,8 +578,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-705 — Large import memory** · M3 · Import 200k rows CSV: completes, app RSS stays < 300 MB.
   - **T3.8 evidence (2026-11-01): Pass.** The focused browser gate imported 200,000 rows and measured the app process lifetime high-water RSS at 268,263,424 bytes, below 300,000,000 bytes.
 - **AT-706 — Backup create/download/delete** · M3 · Admin creates backup → status running → done; zip contains `db.dump`, `files/`, `backup.json`; download works; delete removes file.
+  - **T3.9 evidence (2026-11-01): Pass.** Desktop and mobile browser tests create a real backup, inspect the downloaded ZIP and metadata, and verify deletion of both the archive and record; PG18 tests cover progress, failures, recovery and authorization.
 - **AT-707 — Restore** · M3 *(manual)* · Restore backup on a fresh host via CLI → all users, workspaces, data, attachments present.
+  - **T3.9 automated evidence (2026-11-01): Pass; manual acceptance pending.** The real CLI restored a real PG18 dump and attachments into a disposable database/data directory, recovering users, workspace and row data; tests also verify rollback and slow-restore handling. A separate fresh-host manual restore has not been performed.
 - **AT-708 — Backup disk guard** · M3 *(API)* · Insufficient free disk → backup refused with translated error.
+  - **T3.9 evidence (2026-11-01): Pass.** Desktop and mobile browser tests use a sparse file in the owned disposable data volume to trigger the real guard, verify English and Chinese errors, and confirm no backup record is created.
 
 ## AT-8xx Non-functional (all)
 

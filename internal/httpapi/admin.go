@@ -41,6 +41,13 @@ func (api *authHTTP) mountAdmin(router chi.Router) {
 		router.Get("/settings", api.adminAction(api.getSettings))
 		router.Patch("/settings", api.adminAction(api.updateSettings))
 		router.Get("/workspaces", api.adminAction(api.listWorkspaces))
+		if api.backups != nil {
+			router.Get("/backups", api.adminAction(api.listBackups))
+			router.Post("/backups", api.adminAction(api.createBackup))
+			router.Get("/backups/{id}", api.adminAction(api.getBackup))
+			router.Get("/backups/{id}/download", api.adminAction(api.downloadBackup))
+			router.Delete("/backups/{id}", api.adminAction(api.deleteBackup))
+		}
 		router.Get("/users/{id}", api.adminAction(api.getManagedUser))
 		router.Get("/users/{id}/groups", api.adminAction(api.listUserGroups))
 		router.Post("/users", api.adminAction(api.createUser))

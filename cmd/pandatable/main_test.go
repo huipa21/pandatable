@@ -20,6 +20,7 @@ func TestRunHelpAndVersionDoNotRequireDatabaseConfiguration(t *testing.T) {
 		{"root help", []string{"--help"}, "Commands:"},
 		{"serve help", []string{"serve", "--help"}, "--database-url"},
 		{"migrate help", []string{"migrate", "--help"}, "--database-url"},
+		{"restore help", []string{"restore", "--help"}, "--yes"},
 		{"version", []string{"version"}, version},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -124,7 +125,6 @@ func TestRunStubsReportTheirBoundaries(t *testing.T) {
 		command string
 		task    string
 	}{
-		{"restore", "T3.9"},
 		{"doctor", "unassigned"},
 		{"reset-admin-password", "T1.5"},
 	} {
@@ -137,6 +137,24 @@ func TestRunStubsReportTheirBoundaries(t *testing.T) {
 				t.Errorf("output %q does not identify boundary %s", stdout.String(), test.task)
 			}
 		})
+	}
+}
+
+func TestRestoreRequiresExplicitConfirmation(t *testing.T) {
+	t.Setenv("PT_DATABASE_URL", "")
+	t.Setenv("PT_BASE_URL", "")
+	for _, args := range [][]string{
+		{"restore"}, {"restore", "backup.zip"}, {"restore", "--yes"},
+		{"restore", "backup.zip", "--yes", "--yes"}, {"restore", "backup.zip", "--unknown"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if got := runWith(args, &stdout, &stderr); got != 2 || !strings.Contains(stderr.String(), "restore") {
+			t.Errorf("runWith(%v) = %d, stderr %q", args, got, stderr.String())
+		}
+	}
+	var stdout, stderr bytes.Buffer
+	if got := runWith([]string{"restore", "backup.zip", "--yes"}, &stdout, &stderr); got != 1 {
+		t.Errorf("confirmed restore without configuration = %d, want 1", got)
 	}
 }
 

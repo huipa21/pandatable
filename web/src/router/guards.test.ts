@@ -38,6 +38,7 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
     '/admin/dashboard',
     '/admin/settings',
     '/admin/workspaces',
+    '/admin/backups',
     '/admin/users',
     '/profile',
     '/admin/groups',
@@ -52,6 +53,7 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
     '/admin/dashboard',
     '/admin/settings',
     '/admin/workspaces',
+    '/admin/backups',
     '/admin/future',
     '/admin/groups',
     '/admin/groups/group-id',
@@ -82,6 +84,8 @@ it('lets cleared admins access the user panel and exposes network failures', asy
   expect(router.currentRoute.value.path).toBe('/admin/settings')
   await router.push('/admin/workspaces')
   expect(router.currentRoute.value.path).toBe('/admin/workspaces')
+  await router.push('/admin/backups')
+  expect(router.currentRoute.value.path).toBe('/admin/backups')
   await router.push('/profile')
   expect(router.currentRoute.value.path).toBe('/profile')
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('offline')))

@@ -192,6 +192,8 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 				testEnv[key] = value
 			}
 			testEnv["PT_E2E_SETUP_TOKEN"] = setupToken
+			testEnv["PT_E2E_ENGINE"] = selected.name
+			testEnv["PT_E2E_APP_CONTAINER"] = containerIDs[0]
 			if opts.perf {
 				return runner.performance(ctx, selected.name, project, baseURL, results, testEnv, compose)
 			}

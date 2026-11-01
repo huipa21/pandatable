@@ -69,23 +69,26 @@ Limits: file ≤ the configured upload limit (maximum 100 MB), ≤ 500k rows. Im
 ### Create
 Admin → Backups → **Create backup** → async job:
 
-1. `pg_dump --format=custom --no-owner --dbname=$PT_DATABASE_URL` → temp `db.dump` (requires `pg_dump` 18 in the app image).
+1. Export a repeatable-read database snapshot with `pg_dump --format=custom --no-owner` → temp `db.dump` (requires `pg_dump` 18 in the app image). Backup-catalog rows are excluded; they describe local files, not portable data.
 2. Zip (deflate, streamed): `db.dump`, `files/**` (attachments), `backup.json` (`{appVersion, schemaMigration, createdAt, pgVersion, fileCount}`).
 3. Write to `$PT_DATA_DIR/backups/pandatable-YYYYMMDD-HHMMSS.zip` (timestamp in app `default_timezone`), record in `meta.backups`.
-4. Only one backup job at a time; runs with `nice`/low priority (`ionice` not available in containers — acceptable).
+4. A PostgreSQL advisory lock permits one backup or restore at a time, including across app instances. The job runs with `nice`/low priority (`ionice` is not available in containers). Backup and restore transactions disable the configured idle and statement timeouts locally so large jobs can finish; cancellation still stops them.
 
 ### List / download / delete
 - List shows file, size, status, created by/at; free disk shown alongside.
 - Download streamed with `Content-Length`; delete removes file + record.
 - Pre-flight: refuse to start if free disk < 2 × (db size + files size).
+- Failed or interrupted jobs are marked failed; incomplete files are removed. A staged deletion is reconciled with the database after interruption; conflicting files are preserved and reported rather than overwritten.
 
 ### Restore (CLI)
 ```
 docker compose stop app
-docker compose run --rm app pandatable restore /data/backups/pandatable-20261024-030000.zip --yes
+docker compose run --rm app restore /data/backups/pandatable-20261024-030000.zip --yes
 docker compose up -d app
 ```
-Restore: verify zip & versions → drop & recreate database objects (`pg_restore --clean --if-exists`) → replace `files/` → run migrations → done. Documented in 13-deployment.md. UI restore is in the backlog.
+Stop **all** app instances before restoring. Restore only a trusted archive: PostgreSQL dumps can execute SQL. The archive is validated and staged before replacement, so its uncompressed contents must fit in the data volume's free space. The backup must have the same app major version, no newer app release or migration, and a PostgreSQL major version no newer than the target. At the same numeric app version, a prerelease target accepts only the same prerelease.
+
+Restore drops and recreates database objects in a transaction using `pg_restore --clean --if-exists`, replaces `files/`, and runs migrations. Existing catalog entries for valid local backup files are retained; an archive restored from the local backups directory is registered there. A failure before database commit leaves existing data unchanged. If commit is uncertain or a later step fails, the command reports the recovery staging directory: keep the app stopped, retain the archive and staging files, inspect the error, and retry the restore before restarting. No UI restore is provided.
 
 ### Backup scope note
 Backups are consistent snapshots of the DB (pg_dump uses a single snapshot). Attachments copied after the dump may include files newer than the dump — harmless (orphan files are cleaned by the purge job).

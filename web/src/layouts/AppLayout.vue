@@ -140,6 +140,9 @@ async function logout() {
         <RouterLink v-if="auth.user.role === 'admin'" to="/admin/workspaces">
           {{ t('workspaces.title') }}
         </RouterLink>
+        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/backups">
+          {{ t('backups.title') }}
+        </RouterLink>
         <RouterLink to="/change-password">
           {{ t('auth.changePassword') }}
         </RouterLink>

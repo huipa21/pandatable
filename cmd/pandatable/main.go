@@ -109,7 +109,9 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 			logger.Info("database migrations complete")
 			return 0
 		}
-	case "restore", "doctor", "reset-admin-password":
+	case "restore":
+		return runRestore(commandArgs, stdout, stderr)
+	case "doctor", "reset-admin-password":
 		if len(commandArgs) == 1 && (commandArgs[0] == "--help" || commandArgs[0] == "-h") {
 			fmt.Fprintf(stdout, "Usage: pandatable %s\n", command)
 			return 0
@@ -119,7 +121,6 @@ func runWith(args []string, stdout, stderr io.Writer) int {
 			return 2
 		}
 		task := map[string]string{
-			"restore":              "T3.9",
 			"doctor":               "unassigned",
 			"reset-admin-password": "T1.5",
 		}[command]
@@ -149,7 +150,7 @@ Commands:
   serve                 Validate configuration and start the HTTP server (T0.4)
   migrate               Validate configuration and run database migrations (T0.3)
   healthcheck           Probe HTTP /healthz without database configuration (T0.6)
-  restore               Restore a backup (T3.9)
+  restore               Restore a trusted backup with --yes
   doctor                Diagnose the installation (not yet scheduled)
   reset-admin-password  Reset an administrator password (T3.10)
   version               Print the application version

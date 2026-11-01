@@ -11,6 +11,7 @@ import (
 	"pandatable/internal/admin"
 	"pandatable/internal/attachments"
 	"pandatable/internal/auth"
+	"pandatable/internal/backup"
 	"pandatable/internal/config"
 	"pandatable/internal/db"
 	"pandatable/internal/httpapi"
@@ -67,6 +68,17 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure attachment service: %w", err)
 	}
+	backupManager, err := backup.New(ctx, pool, cfg.DatabaseURL, cfg.DataDir, version, logger)
+	if err != nil {
+		return fmt.Errorf("configure backups: %w", err)
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := backupManager.Close(closeCtx); err != nil {
+			logger.Error("backup shutdown failed", "error", err)
+		}
+	}()
 	hub, err := realtime.New(pool, resolver, authService, logger)
 	if err != nil {
 		return fmt.Errorf("configure realtime hub: %w", err)
@@ -88,7 +100,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Warn("SETUP_TOKEN=" + setupToken)
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
-		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor,
+		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor, Backups: backupManager,
 		Attachments: attachmentService, Realtime: hub, Version: version, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {

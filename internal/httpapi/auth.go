@@ -23,6 +23,7 @@ import (
 	"pandatable/internal/apperr"
 	"pandatable/internal/attachments"
 	"pandatable/internal/auth"
+	"pandatable/internal/backup"
 	"pandatable/internal/events"
 	"pandatable/internal/realtime"
 	"pandatable/internal/structure"
@@ -36,6 +37,7 @@ type AuthOptions struct {
 	Structure      *structure.Service
 	Admin          *admin.Service
 	System         *admin.SystemMonitor
+	Backups        *backup.Manager
 	Attachments    *attachments.Service
 	Realtime       *realtime.Hub
 	Version        string
@@ -50,6 +52,7 @@ type authHTTP struct {
 	admin       *admin.Service
 	attachments *attachments.Service
 	system      *admin.SystemMonitor
+	backups     *backup.Manager
 	realtime    *realtime.Hub
 	exports     *exportTickets
 	imports     *importJobs
@@ -72,7 +75,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
 	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, attachments: options.Attachments,
-		system: options.System, realtime: options.Realtime, exports: newExportTickets(), imports: newImportJobs(logger), version: options.Version, logger: logger, origin: origin,
+		system: options.System, backups: options.Backups, realtime: options.Realtime, exports: newExportTickets(), imports: newImportJobs(logger), version: options.Version, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -172,6 +175,11 @@ func (api *authHTTP) protect(next http.Handler) http.Handler {
 		timeout := 10 * time.Second
 		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/exports/") {
 			timeout = exportTimeout
+		} else if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/admin/backups/") &&
+			strings.HasSuffix(r.URL.Path, "/download") {
+			timeout = backupDownloadTimeout
+		} else if r.Method == http.MethodPost && r.URL.Path == "/api/v1/admin/backups" {
+			timeout = backupPreflightTimeout
 		} else if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/imports/analyze") {
 			timeout = importUploadTimeout
 		}

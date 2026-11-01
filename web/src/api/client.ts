@@ -198,6 +198,18 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_UNDO_UNAVAILABLE')
     case 'ERR_UPLOAD_TOO_LARGE':
       return t('errors.ERR_UPLOAD_TOO_LARGE')
+    case 'ERR_BACKUP_BUSY':
+      return t('errors.ERR_BACKUP_BUSY')
+    case 'ERR_BACKUP_DISK_SPACE':
+      return t('errors.ERR_BACKUP_DISK_SPACE')
+    case 'ERR_BACKUP_NAME_CONFLICT':
+      return t('errors.ERR_BACKUP_NAME_CONFLICT')
+    case 'ERR_BACKUP_FAILED':
+      return t('errors.ERR_BACKUP_FAILED')
+    case 'ERR_BACKUP_INTERRUPTED':
+      return t('errors.ERR_BACKUP_INTERRUPTED')
+    case 'ERR_BACKUP_UNAVAILABLE':
+      return t('errors.ERR_BACKUP_UNAVAILABLE')
     case 'ERR_IMPORT_BUSY':
       return t('errors.ERR_IMPORT_BUSY')
     case 'ERR_IMPORT_STATE':

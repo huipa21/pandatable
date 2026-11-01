@@ -74,6 +74,10 @@ export const router = createRouter({
       component: () => import('../pages/AdminWorkspacesPage.vue'),
     },
     {
+      path: '/admin/backups',
+      component: () => import('../pages/AdminBackupsPage.vue'),
+    },
+    {
       path: '/connection-error',
       component: () => import('../pages/ConnectionErrorPage.vue'),
     },

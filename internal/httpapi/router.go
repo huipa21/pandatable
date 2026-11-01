@@ -11,18 +11,25 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"pandatable/internal/backup"
 )
 
 type managedHandler struct {
 	*chi.Mux
 	imports *importJobs
+	backups *backup.Manager
 }
 
 func (handler *managedHandler) shutdown(ctx context.Context) error {
-	if handler.imports == nil {
-		return nil
+	var result error
+	if handler.imports != nil {
+		result = errors.Join(result, handler.imports.shutdown(ctx))
 	}
-	return handler.imports.shutdown(ctx)
+	if handler.backups != nil {
+		result = errors.Join(result, handler.backups.Close(ctx))
+	}
+	return result
 }
 
 func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handler, error) {
@@ -60,6 +67,7 @@ func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handle
 			return nil, err
 		}
 		handler.imports = authAPI.imports
+		handler.backups = authAPI.backups
 		authAPI.mount(api)
 	}
 	router.Mount("/api/v1", api)
