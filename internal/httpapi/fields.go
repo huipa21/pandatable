@@ -14,7 +14,7 @@ import (
 )
 
 // fieldBodyLimit bounds field create/patch bodies so 500-choice options stay
-// reachable (D-125); every other route keeps the 4096-byte limit.
+// reachable (D-125).
 const fieldBodyLimit = 512 << 10
 
 type fieldResponse struct {

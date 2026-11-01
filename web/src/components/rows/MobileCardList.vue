@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../../api/client'
 import type {
   DataRow,
+  ExportViewQuery,
   FilterNode,
   RowMutation,
   RowGroupResult,
@@ -26,6 +27,7 @@ import CellPresence from '../presence/CellPresence.vue'
 import { RemoteRowsWindow, remotePageSize } from '../grid/remoteWindow'
 import { RealtimeRowSync } from '../grid/realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from '../grid/groupedRows'
+import { normalizeColumns } from '../grid/viewColumns'
 
 const props = defineProps<{
   schema: TableSchema
@@ -86,6 +88,12 @@ const display = computed(() =>
 const view = computed(() =>
   props.schema.views.find((candidate) => candidate.id === props.viewId),
 )
+const viewColumns = computed(() =>
+  normalizeColumns(
+    view.value?.config ?? { fields: [], frozen: 0 },
+    props.schema,
+  ),
+)
 const groupBy = computed(() => view.value?.config.groupBy ?? [])
 const state = computed(() => {
   void revision.value
@@ -93,7 +101,15 @@ const state = computed(() => {
 })
 const visibleIds = computed(() => {
   void revision.value
-  return override.value ?? remoteRows?.fieldIds ?? []
+  return (
+    override.value ??
+    remoteRows?.fieldIds ??
+    (groupedRows
+      ? viewColumns.value.fields
+          .filter((field) => field.visible)
+          .map((field) => field.id)
+      : [])
+  )
 })
 const preview = computed(() =>
   visibleIds.value
@@ -486,7 +502,7 @@ function toggleField(id: string, checked: boolean) {
   const next = new Set(visibleIds.value)
   if (checked) next.add(id)
   else next.delete(id)
-  override.value = fields.value
+  override.value = viewColumns.value.fields
     .filter((field) => next.has(field.id))
     .map((field) => field.id)
   void refresh()
@@ -555,7 +571,13 @@ watch(
   ],
   () => options.value?.close(),
 )
-defineExpose({ refresh: () => refresh() })
+defineExpose({
+  refresh: () => refresh(),
+  exportQuery: (): ExportViewQuery => ({
+    ...(override.value === null ? {} : { fieldIds: [...override.value] }),
+    groupBy: [...groupBy.value],
+  }),
+})
 onBeforeUnmount(() => {
   disposed = true
   generation++

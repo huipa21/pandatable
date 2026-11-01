@@ -533,6 +533,12 @@ it('sends transient quick search and renders configured footer aggregates', asyn
     .map(([, init]) => JSON.parse(String(init?.body)) as RowQueryRequest)
     .at(-1)
   expect(query?.search).toBe('acme')
+  expect(wrapper!.vm.$.exposed?.exportQuery()).toMatchObject({
+    fieldIds: ['name', 'amount'],
+    sorts: [],
+    groupBy: [],
+    search: 'acme',
+  })
 
   await wrapper!
     .get(
@@ -601,6 +607,10 @@ it('adds, prioritizes, changes, and removes transient sort criteria', async () =
       .filter(([path]) => String(path).endsWith('/query'))
       .map(([, init]) => JSON.parse(String(init?.body)) as RowQueryRequest)
   expect(requests().at(-1)?.sorts).toEqual([
+    { fieldId: 'due', direction: 'asc' },
+    { fieldId: 'status', direction: 'desc' },
+  ])
+  expect(wrapper!.vm.$.exposed?.exportQuery().sorts).toEqual([
     { fieldId: 'due', direction: 'asc' },
     { fieldId: 'status', direction: 'desc' },
   ])

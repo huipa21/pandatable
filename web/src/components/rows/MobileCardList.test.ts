@@ -137,6 +137,7 @@ it('renders hidden display values plus four visible fields, exact IDs and no gri
 
 it('offers native bounded options for real field visibility without filter/group/highlight controls', async () => {
   const { wrapper, fetcher } = await setup()
+  expect(wrapper.vm.$.exposed?.exportQuery()).toEqual({ groupBy: [] })
   await wrapper.get('.mobile-toolbar button').trigger('click')
   expect(wrapper.get('dialog.mobile-sheet').attributes('open')).toBeDefined()
   expect(wrapper.findAll('.field-choice')).toHaveLength(7)
@@ -146,8 +147,48 @@ it('offers native bounded options for real field visibility without filter/group
     ([, init]) => JSON.parse(String(init?.body)) as RowQueryRequest,
   )
   expect(bodies.at(-1)?.fieldIds).toContain('name')
+  expect(wrapper.vm.$.exposed?.exportQuery().fieldIds).toContain('name')
   expect(wrapper.get('dialog.mobile-sheet').attributes('open')).toBeDefined()
   expect(wrapper.text()).not.toMatch(/Filter|Group|Highlight/)
+})
+
+it('keeps grouped mobile visibility and exported overrides in view order', async () => {
+  const schema = schemaOf()
+  schema.views[0]!.config = {
+    fields: [
+      'extra1',
+      'name',
+      'extra0',
+      'extra2',
+      'extra3',
+      'extra4',
+      'extra5',
+    ].map((id) => ({ id, visible: ['extra1', 'name', 'extra2'].includes(id) })),
+    frozen: 0,
+    groupBy: ['extra1'],
+  }
+  const rows = provider(1)
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) =>
+    url.endsWith('/groups')
+      ? Response.json({
+          groups: [{ key: 'G', count: 1, aggregates: [] }],
+          schemaVersion: 1,
+        })
+      : rows(url, init),
+  )
+  const { wrapper } = await setup(fetcher, schema)
+  await wrapper.get('.mobile-toolbar button').trigger('click')
+  const choices = wrapper.findAll('.field-choice input')
+  expect((choices[0]!.element as HTMLInputElement).checked).toBe(true)
+  expect((choices[1]!.element as HTMLInputElement).checked).toBe(false)
+  expect((choices[2]!.element as HTMLInputElement).checked).toBe(true)
+  expect((choices[3]!.element as HTMLInputElement).checked).toBe(true)
+  await choices[3]!.setValue(false)
+  await flushPromises()
+  expect(wrapper.vm.$.exposed?.exportQuery()).toEqual({
+    fieldIds: ['extra1', 'name'],
+    groupBy: ['extra1'],
+  })
 })
 
 it('keeps empty/query failures honest and retries explicitly', async () => {

@@ -89,7 +89,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
 		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor,
-		Attachments: attachmentService, Realtime: hub, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Attachments: attachmentService, Realtime: hub, Version: version, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)

@@ -199,6 +199,14 @@
       "view": "视图"
     }
   },
+  "export": {
+    "title": "导出",
+    "csv": "CSV（当前视图）",
+    "package": "PandaTable XLSX 数据包",
+    "packageNotice": "数据包包含整个数据表和共享视图；附件仅包含文件名。",
+    "preparing": "正在准备下载",
+    "failed": "无法开始导出。{message}"
+  },
   "grid": {
     "title": "数据网格",
     "fields": "字段",

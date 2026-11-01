@@ -567,7 +567,9 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 ## AT-7xx Import / Export / Backup (M3)
 
 - **AT-701 — CSV export** · M3 · Export view → CSV opens correctly in Excel with Chinese text (BOM), respecting view filter/sort/visible fields.
+  - **T3.7 evidence (2026-11-01): Pass.** Desktop and mobile browser exports verify filtering, sorting, grouping and visible fields; PostgreSQL tests verify quoting and actor timezone. Microsoft Excel opened an actual BOM export with Chinese text, quotation marks and an embedded comma.
 - **AT-702 — XLSX package round-trip** · M3 · Export table T (all types, views, a formula, a link) as PandaTable package → import as new table T' → T' has identical fields (types, options, constraints), views, and data; link becomes re-linked (if target exists and user chooses) or text.
+  - **T3.7 evidence (2026-11-01): Partial — export artifact only.** Browser download and PostgreSQL package tests verify the very-hidden manifest, field/view metadata, typed cells, list separators, formulas, links and access masking. Microsoft Excel opened a generated package with Chinese text, a numeric cell and its very-hidden manifest intact. The complete round-trip remains pending T3.8 import.
 - **AT-703 — Plain import new table** · M3 · Import a 10k-row CSV (GBK encoded) → wizard guesses types (integer, date, single select, text); user adjusts; table created; invalid cells reported.
 - **AT-704 — Import append** · M3 · Import XLSX into existing table with column mapping → rows appended; write users allowed, read users not.
 - **AT-705 — Large import memory** · M3 · Import 200k rows CSV: completes, app RSS stays < 300 MB.

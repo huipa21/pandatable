@@ -83,7 +83,7 @@ func newACLFixture(t *testing.T) *aclFixture {
 	}
 	f.attachmentService = attachmentService
 	options := AuthOptions{Service: authService, ACL: aclService, Structure: structureService, Admin: adminService,
-		Attachments: attachmentService, BaseURL: "https://table.example"}
+		Attachments: attachmentService, Version: "0.0.0-dev", BaseURL: "https://table.example"}
 	logger := slog.New(slog.NewJSONHandler(&bytes.Buffer{}, nil))
 	if f.handler, err = New(logger, testAssets(), options); err != nil {
 		t.Fatal(err)

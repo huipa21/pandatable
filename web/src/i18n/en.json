@@ -199,6 +199,14 @@
       "view": "View"
     }
   },
+  "export": {
+    "title": "Export",
+    "csv": "CSV (current view)",
+    "package": "PandaTable XLSX package",
+    "packageNotice": "The package includes the entire table and shared views; attachments contain file names only.",
+    "preparing": "Preparing download",
+    "failed": "Export could not be started. {message}"
+  },
   "grid": {
     "title": "Data grid",
     "fields": "Fields",

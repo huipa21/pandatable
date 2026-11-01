@@ -459,6 +459,13 @@ export interface RowSort {
   direction: 'asc' | 'desc'
 }
 
+export interface ExportViewQuery {
+  fieldIds?: string[]
+  sorts?: RowSort[]
+  groupBy?: string[]
+  search?: string
+}
+
 export type FilterNode =
   | { op: 'and' | 'or'; items: FilterNode[] }
   | { field: string; cmp: Op; value?: RowValue }

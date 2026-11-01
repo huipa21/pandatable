@@ -38,6 +38,7 @@ type AuthOptions struct {
 	System         *admin.SystemMonitor
 	Attachments    *attachments.Service
 	Realtime       *realtime.Hub
+	Version        string
 	BaseURL        string
 	TrustedProxies []netip.Prefix
 }
@@ -50,6 +51,8 @@ type authHTTP struct {
 	attachments *attachments.Service
 	system      *admin.SystemMonitor
 	realtime    *realtime.Hub
+	exports     *exportTickets
+	version     string
 	logger      *slog.Logger
 	origin      string
 	secure      bool
@@ -68,7 +71,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
 	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, attachments: options.Attachments,
-		system: options.System, realtime: options.Realtime, logger: logger, origin: origin,
+		system: options.System, realtime: options.Realtime, exports: newExportTickets(), version: options.Version, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -165,7 +168,11 @@ func (api *authHTTP) protect(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
-		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		timeout := 10 * time.Second
+		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/exports/") {
+			timeout = exportTimeout
+		}
+		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -249,8 +256,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, value any) error {
 	return decodeJSONLimit(w, r, value, 4096)
 }
 
-// decodeJSONLimit is decodeJSON with an explicit body bound; only field bodies
-// use a larger one (D-125).
+// decodeJSONLimit is decodeJSON with an explicit body bound.
 func decodeJSONLimit(w http.ResponseWriter, r *http.Request, value any, limit int64) error {
 	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || contentType != "application/json" {

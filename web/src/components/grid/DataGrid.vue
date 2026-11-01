@@ -35,6 +35,7 @@ import {
 } from '../../api/client'
 import type {
   DataRow,
+  ExportViewQuery,
   FilterNode,
   HighlightColor,
   HighlightRule,
@@ -2343,6 +2344,12 @@ onMounted(() => {
 
 defineExpose({
   refresh: () => initialize(rows.snapshot().activePage * remotePageSize),
+  exportQuery: (): ExportViewQuery => ({
+    fieldIds: [...visibleFieldIds.value],
+    sorts: sortCriteria.value.map((sort) => ({ ...sort })),
+    groupBy: [...groupBy.value],
+    ...(searchTerm.value ? { search: searchTerm.value } : {}),
+  }),
 })
 
 onBeforeUnmount(() => {

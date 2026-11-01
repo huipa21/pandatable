@@ -47,8 +47,21 @@ async function setup(path: string) {
     global: {
       plugins: [pinia, i18n, router],
       stubs: {
-        DataGrid: { template: '<div data-testid="production-grid" />' },
+        DataGrid: {
+          methods: {
+            exportQuery: () => ({
+              fieldIds: ['name'],
+              sorts: [{ fieldId: 'name', direction: 'desc' }],
+              groupBy: [],
+              search: 'active',
+            }),
+          },
+          template: '<div data-testid="production-grid" />',
+        },
         MobileCardList: {
+          methods: {
+            exportQuery: () => ({ fieldIds: ['mobile-field'], groupBy: [] }),
+          },
           template:
             '<div data-testid="mobile-cards"><button @click="$emit(\'add\')">+</button></div>',
         },
@@ -64,6 +77,119 @@ async function setup(path: string) {
   await flushPromises()
   return { wrapper, router, nav }
 }
+
+it('downloads the active desktop view and full-table package using native links', async () => {
+  useAuthStore().setUser(navUser)
+  const schema = tableSchema()
+  schema.views[0]!.config.filter = {
+    field: 'name',
+    cmp: 'contains',
+    value: 'active',
+  }
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).endsWith('/export') && init?.method === 'POST'
+      ? Response.json({ ticket: 'A'.repeat(26) }, { status: 201 })
+      : Response.json(schema),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const links: string[] = []
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      links.push(this.getAttribute('href') ?? '')
+    })
+  const { wrapper } = await setup('/t/t/v/v')
+  try {
+    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await flushPromises()
+    const csvRequest = fetcher.mock.calls.find(([path]) =>
+      String(path).endsWith('/export'),
+    )?.[1]
+    expect(JSON.parse(String(csvRequest?.body))).toEqual({
+      format: 'csv',
+      fieldIds: ['name'],
+      sorts: [{ fieldId: 'name', direction: 'desc' }],
+      groupBy: [],
+      search: 'active',
+      filter: { field: 'name', cmp: 'contains', value: 'active' },
+    })
+    expect(links).toEqual([`/api/v1/exports/${'A'.repeat(26)}`])
+    await wrapper.findAll('.view-export button')[1]!.trigger('click')
+    await flushPromises()
+    const packageRequest = fetcher.mock.calls
+      .filter(([path]) => String(path).endsWith('/export'))
+      .at(-1)?.[1]
+    expect(JSON.parse(String(packageRequest?.body))).toEqual({ format: 'xlsx' })
+    expect(links).toHaveLength(2)
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(wrapper.get('.view-export summary').text()).toBe(
+      i18n.global.t('export.title'),
+    )
+  } finally {
+    wrapper.unmount()
+    click.mockRestore()
+  }
+})
+
+it('exports mobile field overrides, reports failures, and cancels stale navigation requests', async () => {
+  useAuthStore().setUser(navUser)
+  media.matches = false
+  const schema = tableSchema()
+  schema.views.push({ ...schema.views[0]!, id: 'v2', name: 'Other' })
+  let release!: (response: Response) => void
+  let mode: 'failure' | 'pending' = 'failure'
+  let signal: AbortSignal | undefined
+  const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).endsWith('/export'))
+      return Promise.resolve(Response.json(schema))
+    signal = init?.signal ?? undefined
+    if (mode === 'failure')
+      return Promise.resolve(
+        Response.json(
+          { error: { code: 'ERR_VALIDATION', message: 'invalid' } },
+          { status: 400 },
+        ),
+      )
+    return new Promise<Response>((resolve) => {
+      release = resolve
+    })
+  })
+  vi.stubGlobal('fetch', fetcher)
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(() => {})
+  const { wrapper, router } = await setup('/t/t/v/v')
+  try {
+    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await flushPromises()
+    const request = fetcher.mock.calls.find(([path]) =>
+      String(path).endsWith('/export'),
+    )?.[1]
+    expect(JSON.parse(String(request?.body))).toEqual({
+      format: 'csv',
+      fieldIds: ['mobile-field'],
+      groupBy: [],
+      filter: null,
+    })
+    expect(wrapper.get('.view-export [role="alert"]').text()).toContain(
+      'Export could not be started.',
+    )
+    mode = 'pending'
+    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    expect(wrapper.find('.view-export [role="status"]').exists()).toBe(true)
+    await router.push('/t/t/v/v2')
+    await flushPromises()
+    expect(signal?.aborted).toBe(true)
+    release(Response.json({ ticket: 'A'.repeat(26) }, { status: 201 }))
+    await flushPromises()
+    expect(click).not.toHaveBeenCalled()
+    expect(wrapper.find('.view-export [role="alert"]').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+    click.mockRestore()
+  }
+})
 
 it('reports table opening and view changes without changing subscriptions', async () => {
   useAuthStore().setUser(navUser)

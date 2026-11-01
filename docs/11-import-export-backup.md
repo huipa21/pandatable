@@ -2,20 +2,23 @@
 
 ## 1. Export (FR-X1)
 
-Exports the **current view** (its visible fields, filter, sort; groups flattened), streamed (no full in-memory buffer).
+CSV exports the **current view** (its visible fields, filter, sort; groups flattened).
+The PandaTable package exports the **full table** and shared views. Both are streamed
+without buffering the complete output in memory (D-189).
 
 ### CSV
 - UTF-8 with BOM (Excel-friendly for Chinese), comma separator, RFC 4180 quoting.
 - Values formatted via codec `FormatText` (select labels, `a, b` for multi-select, user display names, link display values, attachment file names). Datetimes formatted in the exporting user's timezone (ISO-like `YYYY-MM-DD HH:mm:ss`).
 - Data only — no types.
+- Values are not formula-escaped because the CSV preserves the formatted data. Spreadsheet applications may interpret untrusted values beginning with formula characters as formulas; open exports only from trusted sources.
 
 ### XLSX (PandaTable package)
 Generated with `excelize` streaming writer.
 
 | Sheet | Content |
 |---|---|
-| `Data` (named after table) | Header row = field names; typed cells (numbers as numbers, dates as dates, booleans as TRUE/FALSE, others as text). |
-| `_pandatable` (hidden, very-hidden state) | One cell `A1` with JSON manifest (split over A1..An if > 32k chars). |
+| `Data` | First column `_id` holds original row IDs; subsequent headers are field names. Cells use numeric, date and boolean types where representable, otherwise text. |
+| `_pandatable` (very-hidden state) | JSON manifest in `A1..An`, split at 32,000 UTF-16 code units without splitting a character. |
 
 Manifest:
 ```jsonc
@@ -37,9 +40,11 @@ Manifest:
 ```
 
 Notes:
-- For a full-fidelity package the XLSX contains **all fields and all rows of the table** (not only the view), plus all shared views; the CSV respects the view. The export dialog offers: *CSV (current view)*, *XLSX (current view, data only)*, *XLSX PandaTable package (full table + views + types)*.
-- Link columns store target display values; manifest keeps the relation definition. Formulas stored as expressions (values also written for readability).
+- The package contains **all fields and all rows of the table** (not only the view), plus all shared views; the CSV respects the view. The export control offers *CSV (current view)* and *XLSX PandaTable package (full table + views + types)*. A data-only current-view XLSX is not part of T3.7.
+- List-valued `multi_select`, `text_array`, `int_array`, and `multi_user` cells contain JSON arrays of their canonical string values. Link cells contain JSON arrays of target display values; the manifest keeps the relation definition. Package import must decode these arrays rather than splitting on commas. Formulas are stored as expressions (values also written for readability).
 - Attachments: file names only (files are not embedded; backups cover files).
+- User fields in packages contain UUIDs rather than display names, allowing identity resolution on import. Datetimes are UTC Excel date cells, displayed to milliseconds for Excel compatibility; imports must read the raw serial before any formatted-cell access and account for Excel's floating-point precision. Dates before 1900 are ISO text. Numbers with more than 15 significant digits and padded autonumbers are text to avoid truncation.
+- XLSX's row, column and cell limits apply. Each uncompressed ZIP entry is limited to less than 4 GiB; an oversized or failed stream is aborted rather than returned as a successful partial file.
 
 ## 2. Import (FR-X2)
 

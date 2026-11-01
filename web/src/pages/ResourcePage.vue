@@ -13,6 +13,7 @@ import { createResourceLabel, accessLevelLabel } from '../i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../api/client'
 import type {
+  ExportViewQuery,
   FilterNode,
   FormConfig,
   ResourceKind,
@@ -59,7 +60,10 @@ const MobileCardList = defineAsyncComponent(
 const RowExpandDialog = defineAsyncComponent(
   () => import('../components/rows/RowExpandDialog.vue'),
 )
-const grid = ref<{ refresh: () => Promise<void> }>()
+const grid = ref<{
+  refresh: () => Promise<void>
+  exportQuery: () => ExportViewQuery
+}>()
 const media = window.matchMedia('(min-width: 768px)')
 const desktop = ref(media.matches)
 const newRow = ref(false)
@@ -70,6 +74,10 @@ const localViewConfig = shallowRef<ViewColumns | null>(null)
 const hasLocalViewChanges = ref(false)
 const viewError = ref('')
 const viewBusy = ref(false)
+const exportError = ref('')
+const exportBusy = ref(false)
+let exportController: AbortController | undefined
+let exportGeneration = 0
 const newViewName = ref('')
 const newViewScope = ref<'shared' | 'personal'>('personal')
 const newViewType = ref<'grid' | 'form'>('grid')
@@ -369,6 +377,59 @@ watch(
   { immediate: true },
 )
 
+watch(
+  [() => route.params.tableId, () => route.params.viewId, () => auth.user?.id],
+  () => {
+    exportGeneration++
+    exportController?.abort()
+    exportBusy.value = false
+    exportError.value = ''
+  },
+)
+
+async function downloadExport(format: 'csv' | 'xlsx') {
+  const activeView = view.value
+  if (!activeView || exportBusy.value || (format === 'csv' && !grid.value))
+    return
+  const current = ++exportGeneration
+  const controller = new AbortController()
+  exportController = controller
+  exportBusy.value = true
+  exportError.value = ''
+  try {
+    const body =
+      format === 'csv'
+        ? { format, ...grid.value!.exportQuery(), filter: filterValue.value }
+        : { format }
+    const result = await request<{ ticket: string }>(
+      `/views/${encodeURIComponent(activeView.id)}/export`,
+      'POST',
+      body,
+      AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+    )
+    if (controller.signal.aborted || current !== exportGeneration) return
+    if (
+      typeof result.ticket !== 'string' ||
+      !/^[A-Z2-7]{26,128}$/.test(result.ticket)
+    )
+      throw new RequestError('ERR_INTERNAL', 500)
+    const link = document.createElement('a')
+    link.href = `/api/v1/exports/${encodeURIComponent(result.ticket)}`
+    link.hidden = true
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } catch (cause) {
+    if (!controller.signal.aborted && current === exportGeneration)
+      exportError.value = t('export.failed', { message: errorMessage(cause) })
+  } finally {
+    if (current === exportGeneration) {
+      exportBusy.value = false
+      exportController = undefined
+    }
+  }
+}
+
 function canManageView(item: TableView) {
   if (item.scope === 'personal') return true
   return (
@@ -619,6 +680,8 @@ async function deleteView(item: TableView) {
 onBeforeUnmount(() => {
   generation++
   controller?.abort()
+  exportGeneration++
+  exportController?.abort()
   media.removeEventListener('change', resized)
 })
 </script>
@@ -706,6 +769,27 @@ onBeforeUnmount(() => {
           <dt>{{ t('nav.access') }}</dt>
           <dd>{{ accessLevelLabel(schema.myLevel) }}</dd>
         </dl>
+        <details v-if="view" class="view-export">
+          <summary>{{ t('export.title') }}</summary>
+          <button
+            v-if="view.type === 'grid'"
+            type="button"
+            :disabled="exportBusy || !grid"
+            @click="downloadExport('csv')"
+          >
+            {{ t('export.csv') }}
+          </button>
+          <button
+            type="button"
+            :disabled="exportBusy"
+            @click="downloadExport('xlsx')"
+          >
+            {{ t('export.package') }}
+          </button>
+          <p>{{ t('export.packageNotice') }}</p>
+          <p v-if="exportBusy" role="status">{{ t('export.preparing') }}</p>
+          <p v-if="exportError" role="alert">{{ exportError }}</p>
+        </details>
         <nav class="view-links" :aria-label="t('nav.views')">
           <div v-for="(item, index) in schema.views" :key="item.id">
             <RouterLink
