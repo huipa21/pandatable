@@ -74,8 +74,8 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.8 | Import | ⏸ | 2026-11-01 | D-190–193; task gates and AT-703–705 pass; AT-702 remains blocked by package fidelity. [Record](task-prompts/T3.8.md#record-2026-11-01). |
 | T3.9 | Backups | 🟨 | 2026-11-01 | D-194; task gates and AT-706/708 pass; fresh-host manual AT-707 remains pending. [Record](task-prompts/T3.9.md#record-2026-11-01). |
 | T3.10 | User lifecycle admin | ✅ | 2026-11-01 | D-195; AT-113–115 and both task gates pass. [Record](task-prompts/T3.10.md#record-2026-11-01). |
-| T3.11 | Hardening | 🟨 | 2026-11-01 | D-196–198; load-smoke startup race fixed, AT-804 passes HTTP/PG18 checks and AT-806 checks initially visible controls at 390 px. Target-host AT-801, full browser matrix AT-805 and complete AT-806 remain open. [Record](task-prompts/T3.11.md#record-2026-11-01). |
-| T3.12 | Release v1.0 | ⏸ | 2026-11-01 | Guide, audit and focused responsive/grid/load checks recorded; production gate, remaining acceptance and an authorized target block tagging and deployment. [Record](task-prompts/T3.12.md#record-2026-11-01). |
+| T3.11 | Hardening | 🟨 | 2026-11-01 | D-196–198; load-driver startup and viewport-reset regressions pass, AT-804 passes HTTP/PG18 checks and AT-806 covers selected 390-pixel controls and workflows. Target-host AT-801, full browser matrix AT-805 and complete AT-806 remain open. [Record](task-prompts/T3.11.md#record-2026-11-01). |
+| T3.12 | Release v1.0 | ⏸ | 2026-11-01 | Guide, audit and expanded responsive/grid/load checks recorded; production gate, remaining acceptance and an authorized target block tagging and deployment. [Record](task-prompts/T3.12.md#record-2026-11-01). |
 | T4.1 | Kanban view | ⬜ | | |
 | T4.2 | Gallery view | ⬜ | | |
 | T5.1 | Calendar view | ⬜ | | |
@@ -96,7 +96,7 @@ attempt; current affected verdicts are in the T3.12 acceptance evidence.
 | AT-5xx Views | 12 | 0 | |
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
-| AT-8xx Non-functional | 6 | 2 | Historical count; T3.12 adds HTTP/PG18 AT-804 and initial 390-pixel control checks. AT-805/806 remain partial, and target-host NFR-1/2/3 and full-load AT-801 are uncertified. |
+| AT-8xx Non-functional | 6 | 2 | Historical count; T3.12 adds HTTP/PG18 AT-804 and selected 390-pixel menu, dialog and workflow checks. AT-805/806 remain partial, and target-host NFR-1/2/3 and full-load AT-801 are uncertified. |
 | AT-9xx Post-v1 | 4 | 0 | |
 
 ## Open questions / follow-ups
@@ -114,7 +114,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
-| 2026-11-01 | T3.12 blocked: audit, guide and focused responsive/grid/load evidence recorded; production gate, acceptance and authorized deployment remain open. |
+| 2026-11-01 | T3.12 blocked: audit, guide, expanded responsive checks and load-driver recovery recorded; production gate, acceptance and authorized deployment remain open. |
 | 2026-11-01 | T3.11 implemented and task gates pass; target-host load, remaining injection evidence, browser matrix and complete responsive usability remain open. |
 | 2026-11-01 | T3.10 Done: ownership transfer, orphan rescue and hard-delete lifecycle pass AT-113–115 and task gates. |
 | 2026-11-01 | T3.9 implemented and automated gates pass; fresh-host restore acceptance remains pending. |

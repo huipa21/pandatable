@@ -192,6 +192,7 @@ export async function scrollToLoaded(page, index, rowId) {
   const grid = page.locator('revo-grid')
   const deadline = performance.now() + 20_000
   let scrolled = false
+  let recheckViewportAt = 0
   while (performance.now() < deadline) {
     if (!scrolled) {
       scrolled = await grid.evaluate(async (element, target) => {
@@ -204,6 +205,7 @@ export async function scrollToLoaded(page, index, rowId) {
         await sleep(50)
         continue
       }
+      recheckViewportAt = performance.now() + 500
     }
     const loaded = await grid.evaluate(
       async (grid, { target, expected, rowLabel }) => {
@@ -246,6 +248,28 @@ export async function scrollToLoaded(page, index, rowId) {
       { target: index, expected: rowId, rowLabel: en.rowExpand.open },
     )
     if (loaded) return
+    if (performance.now() >= recheckViewportAt) {
+      // A viewport reset can cancel the target page after it was requested.
+      const targetInView = await grid.evaluate((element, target) => {
+        const row = element.querySelector(
+          `revogr-data[col-type="colPinStart"] .rgRow[data-rgrow="${target}"]`,
+        )
+        const viewport = row?.closest('revogr-data')
+        if (!row || !viewport) return false
+        const rect = row.getBoundingClientRect()
+        const bounds = viewport.getBoundingClientRect()
+        return (
+          rect.width > 0 &&
+          rect.height > 0 &&
+          rect.bottom > bounds.top &&
+          rect.top < bounds.bottom &&
+          rect.right > bounds.left &&
+          rect.left < bounds.right
+        )
+      }, index)
+      if (!targetInView) scrolled = false
+      recheckViewportAt = performance.now() + 500
+    }
     await sleep(50)
   }
   throw new Error(`Timed out waiting for grid row ${index} to load and render`)

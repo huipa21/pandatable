@@ -593,7 +593,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 
 - **AT-801 — Memory budget** · M3 · Under a 10-user simulated load (k6/script: editing, scrolling, realtime) for 15 min, app RSS < 150 MB, host memory < 3.2 GB used.
   - **T3.11 evidence (2026-11-01): Not certified.** The driver validates duration, per-user activity, fresh samples and strict thresholds; a real two-user browser smoke covers scrolling, edits, peer events and both metrics. No 15-minute run was made on the non-equivalent local VM. The earlier above-target app RSS observation remains open.
-  - **T3.12 evidence: Not certified.** A reproduced grid-initialization race in the load driver was fixed and its real two-user smoke passes; the required target-host load run remains unperformed.
+  - **T3.12 evidence: Not certified.** The load driver now handles an uninitialized grid and a viewport reset that cancels target-page requests. Deterministic regressions and a real two-user smoke with an injected reset pass; the required target-host load run remains unperformed.
 - **AT-802 — i18n completeness** · M0+ *(local gate)* · `en.json` and `zh-CN.json` key sets identical; no hard-coded strings (lint rule).
 - **AT-803 — Security headers & CSRF** · M1 *(API)* · Requests without `X-PT-CSRF` or with foreign Origin rejected; cookies HttpOnly+Secure+SameSite=Lax; CSP, nosniff present.
   - **T3.11 evidence (2026-11-01): Pass rechecked.** Real HTTP/PG18 tests cover failed CSRF, malformed/unsupported login requests and untrusted forwarding, plus sniffed uploads, metadata mismatch and sandbox headers; browser and router tests cover the stricter SPA CSP. Existing D-073 cookie/Origin evidence remains valid.
@@ -605,7 +605,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
   - **T3.12 evidence: Partial.** Scripted desktop smoke passes on installed Chrome, Edge and headed stock Firefox. Firefox also establishes an authenticated WebSocket and rejects stale access after logout; its expected post-logout WebSocket rejection appears in the browser log. Playwright Firefox and WebKit engines also pass, but do not certify stock Safari or physical iOS/Android devices.
 - **AT-806 — Responsive** · M3 · All main pages usable at 390 px width (no horizontal page scroll except grid area).
   - **T3.11 evidence (2026-11-01): Partial automated coverage.** Desktop and mobile Chromium navigate 16 main routes at 390 px in both languages, check headings and page overflow, and verify the mobile row list is visible. This does not exhaustively exercise every page's controls.
-  - **T3.12 evidence: Partial.** Desktop and mobile Chromium additionally check the bounds of initially visible header and main controls on those routes, and use trial clicks to verify enabled controls are reachable. Collapsed menus and dialog interactions are not exhaustively exercised.
+  - **T3.12 evidence: Partial.** Desktop and mobile Chromium check initially visible controls, selected expanded menus and structure/sharing/import/field/row dialogs at 390 px in both languages. They also edit a row and create and submit a form. Other menus and workflows are not exhaustively exercised.
 
 ## AT-9xx Post-v1 (M4, M5)
 
@@ -723,7 +723,7 @@ conflicting historical summaries above.
 | AT-507 | Pass | A writer's temporary override of a locked shared view saves privately without changing that shared view. |
 | AT-804 | Pass | The required PG18 HTTP injection test verifies literal table/field names and filter values and confirms the users table and session remain intact. |
 | AT-805 | Partial | Scripted Chrome, Edge and stock Firefox desktop smoke and Playwright Firefox/WebKit engines pass; stock Safari and physical iOS/Android remain unverified. |
-| AT-806 | Partial | The 390-pixel desktop/mobile route checks now include bounds and trial actionability for initially visible controls; collapsed menus and dialogs are not exhaustively verified. |
+| AT-806 | Partial | Desktop/mobile Chromium at 390 px checks selected menus, dialogs, row editing and form submission in both languages; the complete UI is not exhaustively verified. |
 | AT-001/005/006, AT-312/512/801, AT-707 | Partial | Linux/Docker, authorized Ubuntu/Caddy deployment, target-host performance and fresh-host restore checks remain unavailable. |
 | AT-702 | Partial | Package round-trip fidelity remains blocked by attachment identity/content, possible timestamp collisions and missing view locks. |
 
