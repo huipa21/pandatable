@@ -52,6 +52,7 @@ type authHTTP struct {
 	system      *admin.SystemMonitor
 	realtime    *realtime.Hub
 	exports     *exportTickets
+	imports     *importJobs
 	version     string
 	logger      *slog.Logger
 	origin      string
@@ -71,7 +72,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
 	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, attachments: options.Attachments,
-		system: options.System, realtime: options.Realtime, exports: newExportTickets(), version: options.Version, logger: logger, origin: origin,
+		system: options.System, realtime: options.Realtime, exports: newExportTickets(), imports: newImportJobs(logger), version: options.Version, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -171,6 +172,8 @@ func (api *authHTTP) protect(next http.Handler) http.Handler {
 		timeout := 10 * time.Second
 		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/exports/") {
 			timeout = exportTimeout
+		} else if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/imports/analyze") {
+			timeout = importUploadTimeout
 		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -295,6 +298,9 @@ func (api *authHTTP) mount(router chi.Router) {
 	}
 	if api.attachments != nil && api.admin != nil {
 		api.mountAttachments(router)
+	}
+	if api.structure != nil && api.admin != nil {
+		api.mountImports(router)
 	}
 	if api.admin != nil {
 		router.Get("/meta/app", api.appSettings)

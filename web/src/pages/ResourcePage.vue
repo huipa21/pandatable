@@ -16,6 +16,7 @@ import type {
   ExportViewQuery,
   FilterNode,
   FormConfig,
+  ImportResult,
   ResourceKind,
   TableSchema,
   TableView,
@@ -60,6 +61,9 @@ const MobileCardList = defineAsyncComponent(
 const RowExpandDialog = defineAsyncComponent(
   () => import('../components/rows/RowExpandDialog.vue'),
 )
+const ImportDialog = defineAsyncComponent(
+  () => import('../components/importing/ImportDialog.vue'),
+)
 const grid = ref<{
   refresh: () => Promise<void>
   exportQuery: () => ExportViewQuery
@@ -76,6 +80,7 @@ const viewError = ref('')
 const viewBusy = ref(false)
 const exportError = ref('')
 const exportBusy = ref(false)
+const importOpen = ref(false)
 let exportController: AbortController | undefined
 let exportGeneration = 0
 const newViewName = ref('')
@@ -386,6 +391,27 @@ watch(
     exportError.value = ''
   },
 )
+
+watch(
+  [() => route.params.tableId, () => route.params.bookId, () => auth.user?.id],
+  () => {
+    importOpen.value = false
+  },
+)
+
+async function imported() {
+  await nav.refresh(true)
+  if (kind.value === 'table') await grid.value?.refresh()
+}
+
+async function openImportedTable(result: ImportResult) {
+  if (!result.tableId) return
+  importOpen.value = false
+  const path = result.viewId
+    ? `/t/${result.tableId}/v/${result.viewId}`
+    : `/t/${result.tableId}`
+  await router.push(path)
+}
 
 async function downloadExport(format: 'csv' | 'xlsx') {
   const activeView = view.value
@@ -760,6 +786,13 @@ onBeforeUnmount(() => {
         >
           {{ createResourceLabel(node.childKind) }}
         </button>
+        <button
+          v-if="kind === 'book' && node.canCreate"
+          type="button"
+          @click="importOpen = true"
+        >
+          {{ t('import.newTable') }}
+        </button>
       </template>
 
       <template v-else-if="schema">
@@ -769,6 +802,13 @@ onBeforeUnmount(() => {
           <dt>{{ t('nav.access') }}</dt>
           <dd>{{ accessLevelLabel(schema.myLevel) }}</dd>
         </dl>
+        <button
+          v-if="schema.myLevel === 'write' || schema.myLevel === 'owner'"
+          type="button"
+          @click="importOpen = true"
+        >
+          {{ t('import.append') }}
+        </button>
         <details v-if="view" class="view-export">
           <summary>{{ t('export.title') }}</summary>
           <button
@@ -1021,6 +1061,16 @@ onBeforeUnmount(() => {
           @schema-changed="loadSchema(true)"
         />
       </template>
+      <ImportDialog
+        v-if="importOpen && (kind === 'book' || kind === 'table')"
+        :key="`${kind}:${node.id}`"
+        :target-kind="kind"
+        :target-id="node.id"
+        :schema="schema"
+        @close="importOpen = false"
+        @completed="imported"
+        @open-table="openImportedTable"
+      />
     </template>
     <button
       v-else-if="nav.error"

@@ -53,14 +53,15 @@ Flow: upload → `imports:analyze` → wizard → `imports` job → progress →
 ### Plain CSV/XLSX
 1. Analyze: detect encoding (UTF-8/UTF-8-BOM/GBK), delimiter, header row; sample first 1,000 rows; guess type per column (integer → decimal → date → datetime → checkbox → single select if ≤ 20 distinct values & repeated → text).
 2. Wizard: for new table — rename columns, choose type, skip column; for existing table — map each column to an existing field or skip.
-3. Execute: stream rows, parse with codec `ParsePaste`, `COPY` into the table in batches of 5,000; invalid cells → NULL and reported (row, column, value) in the result (first 1,000 issues downloadable as CSV).
+3. Execute: stream rows, parse with codec `ParsePaste`, `COPY` into the table in batches of 5,000; invalid cells → NULL and reported (row, column, value) in the result (first 1,000 issues downloadable as CSV). If a required or codec-enforced non-null column cannot store NULL, the batch fails explicitly instead. Reports retain the original values and carry the same spreadsheet-formula risk as CSV exports.
 
 ### PandaTable package (manifest detected)
 - **New table:** recreate fields with exact types/options/constraints and views; insert rows. Computed fields recreated after data. Link fields: if a table with the manifest's `targetTable` name exists in the target book, user may choose to re-link by matching display values; otherwise converted to text fields (user informed).
 - **Append to existing table:** mapping auto-filled by field name + type compatibility.
 - Import is one transaction for new tables (all-or-nothing); for appends, batches commit progressively with result report.
+- Attachment names in the existing package format cannot recover file identities or contents; nonempty attachment cells are reported invalid and stored as NULL. Exact timestamp round-trips are also subject to Excel serial precision. See D-190.
 
-Limits: file ≤ 100 MB (setting), ≤ 500k rows.
+Limits: file ≤ the configured upload limit (maximum 100 MB), ≤ 500k rows. Import jobs and their status are process-local; staged temporary files may remain after process exit.
 
 ## 3. Backup (FR-X3)
 

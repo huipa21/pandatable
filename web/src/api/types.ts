@@ -466,6 +466,54 @@ export interface ExportViewQuery {
   search?: string
 }
 
+export interface ImportColumn {
+  index: number
+  name: string
+  uiType: string
+  options: Record<string, unknown> | null
+  examples?: string[]
+  packageKey?: string
+  linkTarget?: string
+  relinkTargetId?: string
+  targetFieldId?: string
+}
+
+export interface ImportAnalysis {
+  format: 'csv' | 'xlsx' | 'package'
+  encoding?: string
+  delimiter?: string
+  hasHeader: boolean
+  sampledRows: number
+  tableName?: string
+  columns: ImportColumn[]
+}
+
+export interface ImportMapping {
+  index: number
+  name: string
+  uiType: string
+  options: Record<string, unknown>
+  targetFieldId: string
+  skip: boolean
+  relink: boolean
+}
+
+export interface ImportResult {
+  tableId?: string
+  viewId?: string
+  rows: number
+  invalidCells: number
+  convertedLinks?: string[]
+}
+
+export interface ImportJob {
+  id: string
+  status: 'ready' | 'running' | 'done' | 'failed'
+  result: ImportResult
+  errorCode?: string
+  hasReport: boolean
+}
+
 export type FilterNode =
   | { op: 'and' | 'or'; items: FilterNode[] }
   | { field: string; cmp: Op; value?: RowValue }

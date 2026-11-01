@@ -197,163 +197,169 @@ func (s *Service) CreateRelation(ctx context.Context, actor Actor, tableID strin
 	var result RelationResult
 	err = retryCollisions(func() error {
 		return s.run(ctx, actor, scope{target: source, schemaChanged: true}, func(c *txn) error {
-			sourceTable, err := lockTable(ctx, c, source.ID)
-			if err != nil {
-				return err
-			}
-			targetTable := sourceTable
-			targetBookID := pgtype.UUID{}
-			if source.ID != target.ID {
-				targetTable, err = lockTable(ctx, c, target.ID)
-				if err != nil {
-					return err
-				}
-				targetMeta, err := c.q.GetTable(ctx, target.ID)
-				if err != nil {
-					return notFoundIfNoRows(err, "read relation target table")
-				}
-				targetBookID = targetMeta.BookID
-			} else {
-				sourceMeta, err := c.q.GetTable(ctx, source.ID)
-				if err != nil {
-					return notFoundIfNoRows(err, "read relation source table")
-				}
-				targetBookID = sourceMeta.BookID
-			}
-			sourceMeta, err := c.q.GetTable(ctx, source.ID)
-			if err != nil {
-				return notFoundIfNoRows(err, "read relation source table")
-			}
-			if sourceMeta.BookID != targetBookID || sourceTable.physical.Schema != targetTable.physical.Schema {
-				return validation("Relation targets must be in the same live book")
-			}
-			if source.ID != target.ID {
-				if _, err := acl.LockPath(ctx, c.tx, target); err != nil {
-					return err
-				}
-				access, err := acl.AccessUncached(ctx, c.tx, c.user, target)
-				if err != nil {
-					return err
-				}
-				if !access.Visible {
-					return acl.ErrNotFound()
-				}
-				if err := access.Check(acl.Owner); err != nil {
-					return err
-				}
-			}
-
-			parentTable, childTable := sourceTable, targetTable
-			parentTableID, childTableID := source.ID, target.ID
-			parentName, childName := name, reverseName
-			if (input.Kind == "one_many" || input.Kind == "one_one") && sourceSide == "child" {
-				parentTable, childTable = targetTable, sourceTable
-				parentTableID, childTableID = target.ID, source.ID
-				parentName, childName = reverseName, name
-			}
-			parentPosition, err := c.q.MaxUserFieldPosition(ctx, parentTableID)
-			if err != nil {
-				return fmt.Errorf("read parent relation field position: %w", err)
-			}
-			parentFieldID, err := insertRelationField(ctx, c.tx, parentTableID, parentName, parentPosition+positionStep)
-			if err != nil {
-				return err
-			}
-			childPosition, err := c.q.MaxUserFieldPosition(ctx, childTableID)
-			if err != nil {
-				return fmt.Errorf("read child relation field position: %w", err)
-			}
-			if parentTableID == childTableID {
-				childPosition += positionStep
-			}
-			childFieldID, err := insertRelationField(ctx, c.tx, childTableID, childName, childPosition+positionStep)
-			if err != nil {
-				return err
-			}
-
-			var fkColumn, junction any
-			switch input.Kind {
-			case "one_one", "one_many":
-				fkColumn, err = s.newName(ddl.Column)
-				if err != nil {
-					return err
-				}
-				action := map[string]ddl.DeleteAction{
-					"set_null": ddl.SetNull, "cascade": ddl.Cascade, "restrict": ddl.Restrict,
-				}[onDelete]
-				if err := ddl.AddRelationColumn(ctx, c.tx, childTable.physical, fkColumn.(string),
-					parentTable.physical, input.Kind == "one_one", action); err != nil {
-					return err
-				}
-			case "many_many":
-				junctionName, err := s.newName(ddl.Junction)
-				if err != nil {
-					return err
-				}
-				junction = junctionName
-				if err := ddl.CreateJunction(ctx, c.tx, parentTable.physical.Schema, junctionName,
-					parentTable.physical, childTable.physical); err != nil {
-					return err
-				}
-			}
-			var relationID pgtype.UUID
-			err = c.tx.QueryRow(ctx, `INSERT INTO meta.relations
-				(book_id,kind,parent_table_id,child_table_id,parent_field_id,child_field_id,fk_column,junction_table,on_delete)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-				sourceMeta.BookID, input.Kind, parentTableID, childTableID, parentFieldID,
-				childFieldID, fkColumn, junction, onDelete).Scan(&relationID)
-			if err != nil {
-				return fmt.Errorf("insert relation metadata: %w", err)
-			}
-			parentOptions, _ := json.Marshal(map[string]string{
-				"relationId": relationID.String(), "targetTableId": childTableID.String(), "side": "parent",
-			})
-			childOptions, _ := json.Marshal(map[string]string{
-				"relationId": relationID.String(), "targetTableId": parentTableID.String(), "side": "child",
-			})
-			for _, update := range []struct {
-				id      pgtype.UUID
-				options []byte
-			}{{parentFieldID, parentOptions}, {childFieldID, childOptions}} {
-				if _, err := c.tx.Exec(ctx, "UPDATE meta.fields SET options=$2::jsonb WHERE id=$1", update.id, update.options); err != nil {
-					return fmt.Errorf("store relation field options: %w", err)
-				}
-			}
-			if _, err := c.tx.Exec(ctx, "UPDATE meta.tables SET schema_version=schema_version+1 WHERE id=$1 OR id=$2",
-				parentTableID, childTableID); err != nil {
-				return fmt.Errorf("bump relation schema versions: %w", err)
-			}
-			schema, err := loadSchema(ctx, c.q, c.tx, source.ID, c.user, acl.Owner)
-			if err != nil {
-				return err
-			}
-			relation := Relation{ID: relationID.String(), Kind: input.Kind, ParentTableID: parentTableID.String(),
-				ChildTableID: childTableID.String(), ParentFieldID: parentFieldID.String(),
-				ChildFieldID: childFieldID.String(), OnDelete: onDelete}
-			var fieldID pgtype.UUID
-			if parentTableID == source.ID {
-				fieldID = parentFieldID
-			} else {
-				fieldID = childFieldID
-			}
-			var created *Field
-			for index := range schema.Fields {
-				if schema.Fields[index].ID == fieldID.String() {
-					created = &schema.Fields[index]
-					break
-				}
-			}
-			if created == nil {
-				return errors.New("created relation field missing from schema")
-			}
-			result = RelationResult{Field: created, Schema: schema, Relation: relation}
-			if target.ID != source.ID {
-				return emitSchema(ctx, c.tx, actor, target.ID)
-			}
-			return nil
+			return s.createRelationTx(ctx, c, source, target, input, name, reverseName, onDelete, sourceSide, &result)
 		})
 	})
 	return result, err
+}
+
+func (s *Service) createRelationTx(ctx context.Context, c *txn, source, target acl.Resource,
+	input RelationInput, name, reverseName, onDelete, sourceSide string, result *RelationResult,
+) error {
+	sourceTable, err := lockTable(ctx, c, source.ID)
+	if err != nil {
+		return err
+	}
+	targetTable := sourceTable
+	targetBookID := pgtype.UUID{}
+	if source.ID != target.ID {
+		targetTable, err = lockTable(ctx, c, target.ID)
+		if err != nil {
+			return err
+		}
+		targetMeta, err := c.q.GetTable(ctx, target.ID)
+		if err != nil {
+			return notFoundIfNoRows(err, "read relation target table")
+		}
+		targetBookID = targetMeta.BookID
+	} else {
+		sourceMeta, err := c.q.GetTable(ctx, source.ID)
+		if err != nil {
+			return notFoundIfNoRows(err, "read relation source table")
+		}
+		targetBookID = sourceMeta.BookID
+	}
+	sourceMeta, err := c.q.GetTable(ctx, source.ID)
+	if err != nil {
+		return notFoundIfNoRows(err, "read relation source table")
+	}
+	if sourceMeta.BookID != targetBookID || sourceTable.physical.Schema != targetTable.physical.Schema {
+		return validation("Relation targets must be in the same live book")
+	}
+	if source.ID != target.ID {
+		if _, err := acl.LockPath(ctx, c.tx, target); err != nil {
+			return err
+		}
+		access, err := acl.AccessUncached(ctx, c.tx, c.user, target)
+		if err != nil {
+			return err
+		}
+		if !access.Visible {
+			return acl.ErrNotFound()
+		}
+		if err := access.Check(acl.Owner); err != nil {
+			return err
+		}
+	}
+
+	parentTable, childTable := sourceTable, targetTable
+	parentTableID, childTableID := source.ID, target.ID
+	parentName, childName := name, reverseName
+	if sourceSide == "child" {
+		parentTable, childTable = targetTable, sourceTable
+		parentTableID, childTableID = target.ID, source.ID
+		parentName, childName = reverseName, name
+	}
+	parentPosition, err := c.q.MaxUserFieldPosition(ctx, parentTableID)
+	if err != nil {
+		return fmt.Errorf("read parent relation field position: %w", err)
+	}
+	parentFieldID, err := insertRelationField(ctx, c.tx, parentTableID, parentName, parentPosition+positionStep)
+	if err != nil {
+		return err
+	}
+	childPosition, err := c.q.MaxUserFieldPosition(ctx, childTableID)
+	if err != nil {
+		return fmt.Errorf("read child relation field position: %w", err)
+	}
+	if parentTableID == childTableID {
+		childPosition += positionStep
+	}
+	childFieldID, err := insertRelationField(ctx, c.tx, childTableID, childName, childPosition+positionStep)
+	if err != nil {
+		return err
+	}
+
+	var fkColumn, junction any
+	switch input.Kind {
+	case "one_one", "one_many":
+		fkColumn, err = s.newName(ddl.Column)
+		if err != nil {
+			return err
+		}
+		action := map[string]ddl.DeleteAction{
+			"set_null": ddl.SetNull, "cascade": ddl.Cascade, "restrict": ddl.Restrict,
+		}[onDelete]
+		if err := ddl.AddRelationColumn(ctx, c.tx, childTable.physical, fkColumn.(string),
+			parentTable.physical, input.Kind == "one_one", action); err != nil {
+			return err
+		}
+	case "many_many":
+		junctionName, err := s.newName(ddl.Junction)
+		if err != nil {
+			return err
+		}
+		junction = junctionName
+		if err := ddl.CreateJunction(ctx, c.tx, parentTable.physical.Schema, junctionName,
+			parentTable.physical, childTable.physical); err != nil {
+			return err
+		}
+	}
+	var relationID pgtype.UUID
+	err = c.tx.QueryRow(ctx, `INSERT INTO meta.relations
+				(book_id,kind,parent_table_id,child_table_id,parent_field_id,child_field_id,fk_column,junction_table,on_delete)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+		sourceMeta.BookID, input.Kind, parentTableID, childTableID, parentFieldID,
+		childFieldID, fkColumn, junction, onDelete).Scan(&relationID)
+	if err != nil {
+		return fmt.Errorf("insert relation metadata: %w", err)
+	}
+	parentOptions, _ := json.Marshal(map[string]string{
+		"relationId": relationID.String(), "targetTableId": childTableID.String(), "side": "parent",
+	})
+	childOptions, _ := json.Marshal(map[string]string{
+		"relationId": relationID.String(), "targetTableId": parentTableID.String(), "side": "child",
+	})
+	for _, update := range []struct {
+		id      pgtype.UUID
+		options []byte
+	}{{parentFieldID, parentOptions}, {childFieldID, childOptions}} {
+		if _, err := c.tx.Exec(ctx, "UPDATE meta.fields SET options=$2::jsonb WHERE id=$1", update.id, update.options); err != nil {
+			return fmt.Errorf("store relation field options: %w", err)
+		}
+	}
+	if _, err := c.tx.Exec(ctx, "UPDATE meta.tables SET schema_version=schema_version+1 WHERE id=$1 OR id=$2",
+		parentTableID, childTableID); err != nil {
+		return fmt.Errorf("bump relation schema versions: %w", err)
+	}
+	schema, err := loadSchema(ctx, c.q, c.tx, source.ID, c.user, acl.Owner)
+	if err != nil {
+		return err
+	}
+	relation := Relation{ID: relationID.String(), Kind: input.Kind, ParentTableID: parentTableID.String(),
+		ChildTableID: childTableID.String(), ParentFieldID: parentFieldID.String(),
+		ChildFieldID: childFieldID.String(), OnDelete: onDelete}
+	var fieldID pgtype.UUID
+	if parentTableID == source.ID {
+		fieldID = parentFieldID
+	} else {
+		fieldID = childFieldID
+	}
+	var created *Field
+	for index := range schema.Fields {
+		if schema.Fields[index].ID == fieldID.String() {
+			created = &schema.Fields[index]
+			break
+		}
+	}
+	if created == nil {
+		return errors.New("created relation field missing from schema")
+	}
+	*result = RelationResult{Field: created, Schema: schema, Relation: relation}
+	if target.ID != source.ID {
+		return emitSchema(ctx, c.tx, c.actor, target.ID)
+	}
+	return nil
 }
 
 func lockRelationTables(ctx context.Context, c *txn, relation relationRecord, sourceID pgtype.UUID) (lockedTable, lockedTable, error) {

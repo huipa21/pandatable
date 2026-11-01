@@ -1,5 +1,5 @@
 import { i18n } from '../i18n'
-import type { AttachmentValue } from './types'
+import type { AttachmentValue, ImportAnalysis } from './types'
 import { newEventId } from './eventIds'
 
 /** Safe, bounded error details; server messages are never shown. */
@@ -47,6 +47,24 @@ export interface RequestOptions {
   ifMatch?: number
 }
 
+async function readResponse<T>(response: Response): Promise<T> {
+  const result: unknown = await response.json()
+  if (!response.ok) {
+    const failure =
+      typeof result === 'object' &&
+      result !== null &&
+      'error' in result &&
+      typeof result.error === 'object' &&
+      result.error !== null
+        ? (result.error as Record<string, unknown>)
+        : {}
+    const code =
+      typeof failure.code === 'string' ? failure.code : 'ERR_INTERNAL'
+    throw new RequestError(code, response.status, readDetails(failure.details))
+  }
+  return result as T
+}
+
 export async function request<T>(
   path: string,
   method = 'GET',
@@ -72,21 +90,7 @@ export async function request<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
-  const result: unknown = await response.json()
-  if (!response.ok) {
-    const failure =
-      typeof result === 'object' &&
-      result !== null &&
-      'error' in result &&
-      typeof result.error === 'object' &&
-      result.error !== null
-        ? (result.error as Record<string, unknown>)
-        : {}
-    const code =
-      typeof failure.code === 'string' ? failure.code : 'ERR_INTERNAL'
-    throw new RequestError(code, response.status, readDetails(failure.details))
-  }
-  return result as T
+  return readResponse<T>(response)
 }
 
 export async function uploadAttachment(
@@ -108,23 +112,29 @@ export async function uploadAttachment(
       signal,
     },
   )
-  const result: unknown = await response.json()
-  if (!response.ok) {
-    const failure =
-      typeof result === 'object' &&
-      result !== null &&
-      'error' in result &&
-      typeof result.error === 'object' &&
-      result.error !== null
-        ? (result.error as Record<string, unknown>)
-        : {}
-    throw new RequestError(
-      typeof failure.code === 'string' ? failure.code : 'ERR_INTERNAL',
-      response.status,
-      readDetails(failure.details),
-    )
-  }
-  return result as AttachmentValue
+  return readResponse<AttachmentValue>(response)
+}
+
+export async function analyzeImport(
+  kind: 'book' | 'table',
+  id: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<{ id: string; analysis: ImportAnalysis }> {
+  const form = new FormData()
+  form.append('file', file)
+  const response = await fetch(
+    `/api/v1/${kind}s/${encodeURIComponent(id)}/imports/analyze`,
+    {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { 'X-PT-CSRF': '1', 'X-PT-Event-ID': newEventId() },
+      body: form,
+      signal,
+    },
+  )
+  return readResponse<{ id: string; analysis: ImportAnalysis }>(response)
 }
 
 export async function deleteAttachment(
@@ -188,6 +198,16 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_UNDO_UNAVAILABLE')
     case 'ERR_UPLOAD_TOO_LARGE':
       return t('errors.ERR_UPLOAD_TOO_LARGE')
+    case 'ERR_IMPORT_BUSY':
+      return t('errors.ERR_IMPORT_BUSY')
+    case 'ERR_IMPORT_STATE':
+      return t('errors.ERR_IMPORT_STATE')
+    case 'ERR_IMPORT_NOT_STARTED':
+      return t('errors.ERR_IMPORT_NOT_STARTED')
+    case 'ERR_IMPORT_RUNNING':
+      return t('errors.ERR_IMPORT_RUNNING')
+    case 'ERR_IMPORT_ROWS_LIMIT':
+      return t('errors.ERR_IMPORT_ROWS_LIMIT')
     case 'ERR_ATTACHMENT_TYPE':
       return t('errors.ERR_ATTACHMENT_TYPE')
     case 'ERR_IMAGE_TOO_LARGE':
