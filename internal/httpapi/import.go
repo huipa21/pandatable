@@ -45,12 +45,20 @@ type importJob struct {
 	result     structure.ImportResult
 	errorCode  string
 	timer      *time.Timer
+	removing   bool
 }
 
 type importJobs struct {
-	mu     sync.Mutex
-	items  map[string]*importJob
-	logger *slog.Logger
+	mu           sync.Mutex
+	items        map[string]*importJob
+	logger       *slog.Logger
+	ctx          context.Context
+	cancel       context.CancelFunc
+	active       sync.WaitGroup
+	closed       bool
+	shutdownOnce sync.Once
+	shutdownDone chan struct{}
+	shutdownErr  error
 }
 
 type importJobStatus struct {
@@ -62,12 +70,17 @@ type importJobStatus struct {
 }
 
 func newImportJobs(logger *slog.Logger) *importJobs {
-	return &importJobs{items: make(map[string]*importJob), logger: logger}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &importJobs{items: make(map[string]*importJob), logger: logger, ctx: ctx, cancel: cancel,
+		shutdownDone: make(chan struct{})}
 }
 
 func (jobs *importJobs) reserve(userID string, target structure.ImportTarget) (*importJob, error) {
 	jobs.mu.Lock()
 	defer jobs.mu.Unlock()
+	if jobs.closed {
+		return nil, apperr.New(503, "ERR_IMPORT_BUSY", "Imports are shutting down")
+	}
 	userCount, uploads := 0, 0
 	for _, job := range jobs.items {
 		if job.userID == userID {
@@ -85,14 +98,23 @@ func (jobs *importJobs) reserve(userID string, target structure.ImportTarget) (*
 		job.id = rand.Text()
 	}
 	jobs.items[job.id] = job
+	jobs.active.Add(1)
 	job.timer = time.AfterFunc(importJobTTL, func() { jobs.expire(job.id) })
 	return job, nil
 }
 
 func (jobs *importJobs) expire(id string) {
 	jobs.mu.Lock()
+	if jobs.closed {
+		jobs.mu.Unlock()
+		return
+	}
 	job := jobs.items[id]
 	if job == nil {
+		jobs.mu.Unlock()
+		return
+	}
+	if job.removing {
 		jobs.mu.Unlock()
 		return
 	}
@@ -101,39 +123,105 @@ func (jobs *importJobs) expire(id string) {
 		jobs.mu.Unlock()
 		return
 	}
-	delete(jobs.items, id)
-	upload, report := job.uploadPath, job.reportPath
+	job.timer.Stop()
+	job.removing = true
+	jobs.active.Add(1)
 	jobs.mu.Unlock()
-	jobs.removeFiles(id, upload, report)
+	defer jobs.active.Done()
+	jobs.removeJob(job)
 }
 
-func (jobs *importJobs) removeFiles(id string, paths ...string) {
+func (jobs *importJobs) removeFiles(id string, paths ...string) error {
+	var result error
 	for _, path := range paths {
 		if path != "" {
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 				jobs.logger.Error("import temporary file cleanup failed", "job_id", id)
+				result = errors.Join(result, fmt.Errorf("remove import temporary file: %w", err))
 			}
 		}
+	}
+	return result
+}
+
+func (jobs *importJobs) removeJob(job *importJob) error {
+	uploadErr := jobs.removeFiles(job.id, job.uploadPath)
+	reportErr := jobs.removeFiles(job.id, job.reportPath)
+	err := errors.Join(uploadErr, reportErr)
+	jobs.mu.Lock()
+	defer jobs.mu.Unlock()
+	job.removing = false
+	if uploadErr == nil {
+		job.uploadPath = ""
+	}
+	if reportErr == nil {
+		job.reportPath = ""
+	}
+	if err == nil {
+		delete(jobs.items, job.id)
+		return nil
+	}
+	if job.status == "uploading" {
+		job.status, job.errorCode = "failed", "ERR_INTERNAL"
+	}
+	job.timer = time.AfterFunc(importJobTTL, func() { jobs.expire(job.id) })
+	return err
+}
+
+func (jobs *importJobs) shutdown(ctx context.Context) error {
+	jobs.shutdownOnce.Do(func() {
+		jobs.mu.Lock()
+		jobs.closed = true
+		jobs.cancel()
+		jobs.mu.Unlock()
+		go func() {
+			jobs.active.Wait()
+			jobs.mu.Lock()
+			items := jobs.items
+			jobs.items = make(map[string]*importJob)
+			for _, job := range items {
+				job.timer.Stop()
+			}
+			jobs.mu.Unlock()
+			for id, job := range items {
+				jobs.shutdownErr = errors.Join(jobs.shutdownErr, jobs.removeFiles(id, job.uploadPath, job.reportPath))
+			}
+			close(jobs.shutdownDone)
+		}()
+	})
+	select {
+	case <-jobs.shutdownDone:
+		return jobs.shutdownErr
+	case <-ctx.Done():
+		return fmt.Errorf("wait for import jobs to shut down: %w", ctx.Err())
 	}
 }
 
 func (jobs *importJobs) discard(id, userID string) error {
 	jobs.mu.Lock()
+	if jobs.closed {
+		jobs.mu.Unlock()
+		return apperr.New(503, "ERR_IMPORT_BUSY", "Imports are shutting down")
+	}
 	job := jobs.items[id]
 	if job == nil || job.userID != userID {
 		jobs.mu.Unlock()
 		return acl.ErrNotFound()
 	}
+	if job.removing {
+		jobs.mu.Unlock()
+		return apperr.New(409, "ERR_IMPORT_BUSY", "Import cleanup is in progress")
+	}
 	if job.status == "running" {
 		jobs.mu.Unlock()
 		return apperr.New(409, "ERR_IMPORT_RUNNING", "Import is still running")
 	}
-	delete(jobs.items, id)
 	job.timer.Stop()
-	upload, report := job.uploadPath, job.reportPath
+	job.removing = true
+	jobs.active.Add(1)
 	jobs.mu.Unlock()
-	jobs.removeFiles(id, upload, report)
-	return nil
+	defer jobs.active.Done()
+	return jobs.removeJob(job)
 }
 
 func (jobs *importJobs) target(id, userID string) (structure.ImportTarget, error) {
@@ -143,15 +231,24 @@ func (jobs *importJobs) target(id, userID string) (structure.ImportTarget, error
 	if job == nil || job.userID != userID || job.status == "uploading" {
 		return structure.ImportTarget{}, acl.ErrNotFound()
 	}
+	if job.removing {
+		return structure.ImportTarget{}, apperr.New(409, "ERR_IMPORT_BUSY", "Import cleanup is in progress")
+	}
 	return job.target, nil
 }
 
 func (jobs *importJobs) start(id, userID string) (*structure.ImportFile, structure.ImportTarget, error) {
 	jobs.mu.Lock()
 	defer jobs.mu.Unlock()
+	if jobs.closed {
+		return nil, structure.ImportTarget{}, apperr.New(503, "ERR_IMPORT_BUSY", "Imports are shutting down")
+	}
 	job := jobs.items[id]
 	if job == nil || job.userID != userID {
 		return nil, structure.ImportTarget{}, acl.ErrNotFound()
+	}
+	if job.removing {
+		return nil, structure.ImportTarget{}, apperr.New(409, "ERR_IMPORT_BUSY", "Import cleanup is in progress")
 	}
 	if job.status != "ready" {
 		return nil, structure.ImportTarget{}, apperr.New(409, "ERR_IMPORT_STATE", "Import is not ready")
@@ -162,6 +259,7 @@ func (jobs *importJobs) start(id, userID string) (*structure.ImportFile, structu
 		}
 	}
 	job.status = "running"
+	jobs.active.Add(1)
 	return job.file, job.target, nil
 }
 
@@ -183,7 +281,13 @@ func (jobs *importJobs) finish(id string, result structure.ImportResult, reportP
 		return
 	}
 	upload := job.uploadPath
-	job.uploadPath, job.file = "", nil
+	jobs.mu.Unlock()
+	uploadErr := jobs.removeFiles(id, upload)
+	jobs.mu.Lock()
+	if uploadErr == nil {
+		job.uploadPath = ""
+	}
+	job.file = nil
 	job.reportPath, job.errorCode = reportPath, errorCode
 	result.Issues = nil
 	job.result = result
@@ -194,7 +298,6 @@ func (jobs *importJobs) finish(id string, result structure.ImportResult, reportP
 	job.timer.Stop()
 	job.timer = time.AfterFunc(importJobTTL, func() { jobs.expire(id) })
 	jobs.mu.Unlock()
-	jobs.removeFiles(id, upload)
 }
 
 func (jobs *importJobs) status(id, userID string) (importJobStatus, string, error) {
@@ -203,6 +306,9 @@ func (jobs *importJobs) status(id, userID string) (importJobStatus, string, erro
 	job := jobs.items[id]
 	if job == nil || job.userID != userID || job.status == "uploading" {
 		return importJobStatus{}, "", acl.ErrNotFound()
+	}
+	if job.removing {
+		return importJobStatus{}, "", apperr.New(409, "ERR_IMPORT_BUSY", "Import cleanup is in progress")
 	}
 	return importJobStatus{ID: id, Status: job.status, Result: job.result, ErrorCode: job.errorCode,
 		HasReport: job.reportPath != ""}, job.reportPath, nil
@@ -260,11 +366,16 @@ func (api *authHTTP) analyzeImport(w http.ResponseWriter, r *http.Request, user 
 		api.fail(w, r, err)
 		return
 	}
+	defer api.imports.active.Done()
 	ready := false
 	defer func() {
 		if !ready {
 			if err := api.imports.discard(job.id, user.ID); err != nil {
-				api.logger.Error("import reservation cleanup failed", "job_id", job.id)
+				var app *apperr.Error
+				// Shutdown takes ownership of reservations that are still in flight.
+				if !errors.As(err, &app) || app.Code != "ERR_IMPORT_BUSY" {
+					api.logger.Error("import reservation cleanup failed", "job_id", job.id)
+				}
 			}
 		}
 	}()
@@ -382,7 +493,8 @@ func (api *authHTTP) startImport(w http.ResponseWriter, r *http.Request, user au
 func (api *authHTTP) runImport(id string, actor structure.Actor, target structure.ImportTarget,
 	file *structure.ImportFile, request structure.ImportRequest, eventID string,
 ) {
-	ctx, cancel := context.WithTimeout(events.WithID(context.Background(), eventID), importJobTimeout)
+	defer api.imports.active.Done()
+	ctx, cancel := context.WithTimeout(events.WithID(api.imports.ctx, eventID), importJobTimeout)
 	defer cancel()
 	result, runErr := api.structure.RunImport(ctx, actor, target, file, request,
 		func(result structure.ImportResult) { api.imports.progress(id, result) })

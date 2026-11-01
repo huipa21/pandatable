@@ -61,7 +61,7 @@ Flow: upload → `imports:analyze` → wizard → `imports` job → progress →
 - Import is one transaction for new tables (all-or-nothing); for appends, batches commit progressively with result report.
 - Attachment names in the existing package format cannot recover file identities or contents; nonempty attachment cells are reported invalid and stored as NULL. Exact timestamp round-trips are also subject to Excel serial precision. See D-190.
 
-Limits: file ≤ the configured upload limit (maximum 100 MB), ≤ 500k rows. Import jobs and their status are process-local; staged temporary files may remain after process exit.
+Limits: file ≤ the configured upload limit (maximum 100 MB), ≤ 500k rows. Import jobs and their status are process-local. Graceful shutdown cancels jobs and removes tracked temporary files; abrupt termination, a timeout or cleanup failure can leave files behind (D-191).
 
 ## 3. Backup (FR-X3)
 

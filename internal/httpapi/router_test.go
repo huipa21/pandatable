@@ -34,11 +34,11 @@ func testRouter(t *testing.T, output io.Writer, level slog.Level, assets fs.FS) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, ok := handler.(*chi.Mux)
+	router, ok := handler.(*managedHandler)
 	if !ok {
 		t.Fatalf("handler has unexpected type %T", handler)
 	}
-	return router
+	return router.Mux
 }
 
 func TestRoutesAndSPAFallback(t *testing.T) {

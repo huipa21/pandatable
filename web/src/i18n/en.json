@@ -220,7 +220,7 @@
     "formatPackage": "PandaTable package",
     "analyzed": "{format} detected; {count} rows sampled.",
     "encoding": "Encoding: {encoding}",
-    "packageNotice": "Fields and shared views will be restored. Package attachments contain file names only and cannot restore files.",
+    "packageNotice": "Fields and shared views will be restored. Attachment cells with file names cannot be restored and will be reported as invalid; Excel timestamps may lose precision.",
     "tableName": "New table name",
     "header": "First row contains column names",
     "mapping": "Column mapping",

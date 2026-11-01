@@ -12,7 +12,18 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-func Run(ctx context.Context, listener net.Listener, handler http.Handler, logger *slog.Logger) error {
+func Run(ctx context.Context, listener net.Listener, handler http.Handler, logger *slog.Logger) (result error) {
+	defer func() {
+		managed, ok := handler.(interface{ shutdown(context.Context) error })
+		if !ok {
+			return
+		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		if err := managed.shutdown(shutdownCtx); err != nil {
+			result = errors.Join(result, fmt.Errorf("shutdown HTTP handler: %w", err))
+		}
+	}()
 	server := &http.Server{
 		Handler:           handler,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"io"
 	"mime/multipart"
@@ -110,4 +111,53 @@ func TestImportJobLimitsAndCleanup(t *testing.T) {
 		ID string `json:"id"`
 	}](f, f.importUpload(owner, path, "small.csv", "Name\nAlice\n"), 201)
 	f.expectStatus(f.api(owner, "DELETE", "/imports/"+last.ID, ""), 200, "")
+}
+
+func TestImportAPIShutdownCleansPendingAndCompletedJobs(t *testing.T) {
+	f := newACLFixture(t)
+	owner := f.user("user", false)
+	book := f.newBook(owner, f.newWorkspace(owner, "Import shutdown").ID, "Import")
+	path := "/books/" + book.ID + "/imports/analyze"
+	analyze := func(content string) string {
+		t.Helper()
+		return decode[struct {
+			ID string `json:"id"`
+		}](f, f.importUpload(owner, path, "input.csv", content), 201).ID
+	}
+	pending := analyze("Name\nAlice\n")
+	completed := analyze("Amount\n1\nbad\n3\n")
+	jobPath := "/imports/" + completed
+	f.expectStatus(f.api(owner, "POST", jobPath,
+		`{"name":"Shutdown test","hasHeader":true,"columns":[{"index":0,"name":"Amount","uiType":"integer","options":{}}]}`), 202, "")
+	managed := f.handler.(*managedHandler)
+	var report string
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		status, reportPath, err := managed.imports.status(completed, owner.id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Status == "done" {
+			report = reportPath
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if report == "" {
+		t.Fatal("completed import did not produce an issue report")
+	}
+	managed.imports.mu.Lock()
+	upload := managed.imports.items[pending].uploadPath
+	managed.imports.mu.Unlock()
+	if upload == "" {
+		t.Fatal("pending import did not retain its upload")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := managed.shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	requireImportFileRemoved(t, upload)
+	requireImportFileRemoved(t, report)
+	f.expectStatus(f.api(owner, "GET", "/imports/"+pending, ""), 404, "ERR_NOT_FOUND")
 }

@@ -71,7 +71,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T3.5 | Undo/redo | ✅ | 2026-11-01 | D-187; AT-608/609 and both task gates pass. [Record](task-prompts/T3.5.md#record-2026-11-01). |
 | T3.6 | Trash & purge | ✅ | 2026-11-01 | D-188; AT-203/325/610 and both task gates pass. [Record](task-prompts/T3.6.md#record-2026-11-01). |
 | T3.7 | Export | 🟨 | 2026-11-01 | Implementation complete; AT-701 and task gates pass; full AT-702 awaits T3.8 import. [Record](task-prompts/T3.7.md#record-2026-11-01). |
-| T3.8 | Import | ⏸ | 2026-11-01 | D-190; command gates and AT-703–705 pass; AT-702 remains blocked by package fidelity. [Record](task-prompts/T3.8.md#record-2026-11-01). |
+| T3.8 | Import | ⏸ | 2026-11-01 | D-190–191; command gates and AT-703–705 pass; AT-702 remains blocked by package fidelity. [Record](task-prompts/T3.8.md#record-2026-11-01). |
 | T3.9 | Backups | ⬜ | | |
 | T3.10 | User lifecycle admin | ⬜ | | |
 | T3.11 | Hardening | ⬜ | | |
@@ -113,6 +113,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-01 | T3.8 follow-up: graceful import cleanup verified; AT-702 remains blocked by package fidelity. |
 | 2026-11-01 | T3.8 implemented: plain imports pass AT-703–705; AT-702 remains partial pending the package fidelity contract. |
 | 2026-11-01 | T3.8 started: import analysis, mapping, execution and package round-trip. |
 | 2026-11-01 | T3.7 implemented: CSV and PandaTable package export pass task gates; AT-702 round-trip awaits T3.8. |

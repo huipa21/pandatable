@@ -256,6 +256,16 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
   })
   try {
     await upload(wrapper)
+    expect(wrapper.text()).toContain(
+      'Attachment cells with file names cannot be restored and will be reported as invalid; Excel timestamps may lose precision.',
+    )
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(wrapper.text()).toContain(
+      '仅包含文件名的附件单元格无法恢复，将报告为无效；Excel 时间戳可能损失精度。',
+    )
+    i18n.global.locale.value = 'en'
+    await flushPromises()
     const columns = wrapper.findAll('.import-column')
     await columns[0]!.get('input[type=checkbox]').setValue(true)
     expect(columns[1]!.text()).toContain('this field will become text')

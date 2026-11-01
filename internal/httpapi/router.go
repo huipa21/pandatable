@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -12,6 +13,18 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
+type managedHandler struct {
+	*chi.Mux
+	imports *importJobs
+}
+
+func (handler *managedHandler) shutdown(ctx context.Context) error {
+	if handler.imports == nil {
+		return nil
+	}
+	return handler.imports.shutdown(ctx)
+}
+
 func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handler, error) {
 	if len(options) > 1 {
 		return nil, errors.New("only one auth configuration is supported")
@@ -21,6 +34,7 @@ func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handle
 		return nil, err
 	}
 	router := chi.NewRouter()
+	handler := &managedHandler{Mux: router}
 	router.Use(requestID, accessLog(logger), securityHeaders,
 		middleware.SetHeader("Vary", "Accept-Encoding"), middleware.Compress(5), recoverPanic(logger))
 	router.NotFound(notFound)
@@ -45,6 +59,7 @@ func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handle
 		if err != nil {
 			return nil, err
 		}
+		handler.imports = authAPI.imports
 		authAPI.mount(api)
 	}
 	router.Mount("/api/v1", api)
@@ -52,7 +67,7 @@ func New(logger *slog.Logger, assets fs.FS, options ...AuthOptions) (http.Handle
 	router.Handle("/api/*", http.HandlerFunc(notFound))
 
 	router.Handle("/*", spa)
-	return router, nil
+	return handler, nil
 }
 
 func notFound(w http.ResponseWriter, _ *http.Request) {

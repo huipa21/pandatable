@@ -220,7 +220,7 @@
     "formatPackage": "PandaTable 数据包",
     "analyzed": "检测到{format}；已采样 {count} 行。",
     "encoding": "编码：{encoding}",
-    "packageNotice": "将还原字段和共享视图。数据包中的附件仅有文件名，无法还原文件。",
+    "packageNotice": "将还原字段和共享视图。仅包含文件名的附件单元格无法恢复，将报告为无效；Excel 时间戳可能损失精度。",
     "tableName": "新表名称",
     "header": "首行包含列名",
     "mapping": "列映射",
