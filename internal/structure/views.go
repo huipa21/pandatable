@@ -39,10 +39,17 @@ type ViewColumns struct {
 	FormSet    bool            `json:"-"`
 	Kanban     *KanbanConfig   `json:"kanban,omitempty"`
 	KanbanSet  bool            `json:"-"`
+	Gallery    *GalleryConfig  `json:"gallery,omitempty"`
+	GallerySet bool            `json:"-"`
 }
 
 type KanbanConfig struct {
 	GroupField *string  `json:"groupField"`
+	Fields     []string `json:"fields"`
+}
+
+type GalleryConfig struct {
+	CoverField *string  `json:"coverField"`
 	Fields     []string `json:"fields"`
 }
 
@@ -99,6 +106,10 @@ func readViewColumns(raw []byte, fields []Field) (ViewColumns, error) {
 		kanban := normalizeKanbanConfig(*config.Kanban, fields)
 		config.Kanban = &kanban
 	}
+	if config.Gallery != nil {
+		gallery := normalizeGalleryConfig(*config.Gallery, fields)
+		config.Gallery = &gallery
+	}
 	return normalizeViewColumns(config, fields)
 }
 
@@ -117,6 +128,7 @@ func normalizeViewColumns(config ViewColumns, fields []Field) (ViewColumns, erro
 		Highlight:  append([]HighlightRule(nil), config.Highlight...),
 		Form:       config.Form,
 		Kanban:     config.Kanban,
+		Gallery:    config.Gallery,
 	}
 	sortable := make(map[string]bool, len(fields))
 	for _, field := range fields {
@@ -173,13 +185,35 @@ func normalizeKanbanConfig(config KanbanConfig, fields []Field) KanbanConfig {
 			result.GroupField = config.GroupField
 		}
 	}
-	seen := make(map[string]bool, len(config.Fields))
-	for _, id := range config.Fields {
+	result.Fields = normalizeCardFields(config.Fields, live)
+	return result
+}
+
+func normalizeGalleryConfig(config GalleryConfig, fields []Field) GalleryConfig {
+	live := make(map[string]Field, len(fields))
+	for _, field := range fields {
+		live[field.ID] = field
+	}
+	result := GalleryConfig{}
+	if config.CoverField != nil {
+		field, ok := live[*config.CoverField]
+		if ok && field.UIType == string(codec.Attachment) {
+			result.CoverField = config.CoverField
+		}
+	}
+	result.Fields = normalizeCardFields(config.Fields, live)
+	return result
+}
+
+func normalizeCardFields(fields []string, live map[string]Field) []string {
+	result := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, id := range fields {
 		if _, ok := live[id]; !ok || seen[id] {
 			continue
 		}
 		seen[id] = true
-		result.Fields = append(result.Fields, id)
+		result = append(result, id)
 	}
 	return result
 }
@@ -263,6 +297,12 @@ func (s *Service) UpdateViewKanban(ctx context.Context, actor Actor, id string, 
 	})
 }
 
+func (s *Service) UpdateViewGallery(ctx context.Context, actor Actor, id string, version int32, input GalleryConfig) (View, error) {
+	return s.updateViewComponent(ctx, actor, id, version, "gallery", func(table rowTable) (any, error) {
+		return validateGalleryConfig(input, table)
+	})
+}
+
 func (s *Service) updateViewComponent(ctx context.Context, actor Actor, id string, version int32, kind string,
 	validate func(rowTable) (any, error),
 ) (View, error) {
@@ -338,19 +378,40 @@ func validateKanbanConfig(config KanbanConfig, table rowTable) (KanbanConfig, er
 			return KanbanConfig{}, validation("Kanban grouping requires a live single select or user field")
 		}
 	}
-	if config.Fields == nil || len(config.Fields) > len(table.fields) {
-		return KanbanConfig{}, validation("Kanban card fields are invalid")
+	if err := validateCardFields(config.Fields, table, "Kanban"); err != nil {
+		return KanbanConfig{}, err
 	}
-	seen := make(map[string]bool, len(config.Fields))
-	for _, fieldID := range config.Fields {
+	return config, nil
+}
+
+func validateGalleryConfig(config GalleryConfig, table rowTable) (GalleryConfig, error) {
+	if config.CoverField != nil {
+		field, ok := table.byID[*config.CoverField]
+		id, valid := acl.ParseUUID(*config.CoverField)
+		if !ok || !valid || id.String() != *config.CoverField || field.kind != codec.Attachment {
+			return GalleryConfig{}, validation("Gallery cover requires a live attachment field")
+		}
+	}
+	if err := validateCardFields(config.Fields, table, "Gallery"); err != nil {
+		return GalleryConfig{}, err
+	}
+	return config, nil
+}
+
+func validateCardFields(fields []string, table rowTable, viewType string) error {
+	if fields == nil || len(fields) > len(table.fields) {
+		return validation(viewType + " card fields are invalid")
+	}
+	seen := make(map[string]bool, len(fields))
+	for _, fieldID := range fields {
 		_, live := table.byID[fieldID]
 		id, valid := acl.ParseUUID(fieldID)
 		if !live || !valid || id.String() != fieldID || seen[fieldID] {
-			return KanbanConfig{}, validation("Kanban card fields must reference unique live table fields")
+			return validation(viewType + " card fields must reference unique live table fields")
 		}
 		seen[fieldID] = true
 	}
-	return config, nil
+	return nil
 }
 
 func validateFormConfig(config FormConfig, table rowTable) (FormConfig, error) {

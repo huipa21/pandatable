@@ -105,7 +105,7 @@ func (s *Service) CreateView(ctx context.Context, actor Actor, tableID string, i
 	if input.Type == "" {
 		input.Type = "grid"
 	}
-	if input.Type != "grid" && input.Type != "form" && input.Type != "kanban" {
+	if input.Type != "grid" && input.Type != "form" && input.Type != "kanban" && input.Type != "gallery" {
 		return View{}, validation("View type is invalid")
 	}
 	user, ok := acl.ParseUUID(actor.ID)
@@ -437,12 +437,17 @@ func defaultViewConfig(table rowTable, viewType string) ([]byte, error) {
 			Fields: []FormField{}, AfterSubmit: "message",
 		}
 	}
-	if viewType == "kanban" {
-		config.Kanban = &KanbanConfig{Fields: make([]string, 0, len(table.fields))}
+	if viewType == "kanban" || viewType == "gallery" {
+		fields := make([]string, 0, len(table.fields))
 		for _, field := range table.fields {
 			if !field.system {
-				config.Kanban.Fields = append(config.Kanban.Fields, field.id)
+				fields = append(fields, field.id)
 			}
+		}
+		if viewType == "kanban" {
+			config.Kanban = &KanbanConfig{Fields: fields}
+		} else {
+			config.Gallery = &GalleryConfig{Fields: fields}
 		}
 	}
 	return json.Marshal(config)

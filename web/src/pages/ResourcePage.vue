@@ -16,6 +16,7 @@ import type {
   ExportViewQuery,
   FilterNode,
   FormConfig,
+  GalleryConfig,
   ImportResult,
   KanbanConfig,
   ResourceKind,
@@ -59,6 +60,12 @@ const KanbanBuilder = defineAsyncComponent(
 const KanbanView = defineAsyncComponent(
   () => import('../components/views/KanbanView.vue'),
 )
+const GalleryBuilder = defineAsyncComponent(
+  () => import('../components/views/GalleryBuilder.vue'),
+)
+const GalleryView = defineAsyncComponent(
+  () => import('../components/views/GalleryView.vue'),
+)
 const DataGrid = defineAsyncComponent(
   () => import('../components/grid/DataGrid.vue'),
 )
@@ -76,10 +83,12 @@ const grid = ref<{
   exportQuery: () => ExportViewQuery
 }>()
 const kanban = ref<{ refresh: () => Promise<void> }>()
+const gallery = ref<{ refresh: () => Promise<void> }>()
 
 function refreshVisibleRows() {
   void grid.value?.refresh()
   void kanban.value?.refresh()
+  void gallery.value?.refresh()
 }
 
 const media = window.matchMedia('(min-width: 768px)')
@@ -99,7 +108,7 @@ let exportController: AbortController | undefined
 let exportGeneration = 0
 const newViewName = ref('')
 const newViewScope = ref<'shared' | 'personal'>('personal')
-const newViewType = ref<'grid' | 'form' | 'kanban'>('grid')
+const newViewType = ref<'grid' | 'form' | 'kanban' | 'gallery'>('grid')
 const viewNameDrafts = ref<Record<string, string>>({})
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
@@ -143,7 +152,9 @@ const view = computed(() =>
 )
 const showRowDialog = computed(
   () =>
-    (view.value?.type === 'grid' || view.value?.type === 'kanban') &&
+    (view.value?.type === 'grid' ||
+      view.value?.type === 'kanban' ||
+      view.value?.type === 'gallery') &&
     (typeof route.params.rowId === 'string' || newRow.value),
 )
 const canCreateSharedView = computed(
@@ -418,6 +429,7 @@ async function imported() {
   if (kind.value === 'table') {
     await grid.value?.refresh()
     await kanban.value?.refresh()
+    await gallery.value?.refresh()
   }
 }
 
@@ -563,10 +575,13 @@ async function saveForm(form: FormConfig) {
   }
 }
 
-async function saveKanban(config: KanbanConfig) {
+async function saveCardView(
+  kind: 'kanban' | 'gallery',
+  config: KanbanConfig | GalleryConfig,
+) {
   if (
     !view.value ||
-    view.value.type !== 'kanban' ||
+    view.value.type !== kind ||
     !schema.value ||
     !canManageView(view.value) ||
     viewBusy.value
@@ -581,7 +596,7 @@ async function saveKanban(config: KanbanConfig) {
     const result = await request<ViewMutation>(
       `/views/${encodeURIComponent(before.id)}`,
       'PATCH',
-      { config: { kanban: config } },
+      { config: { [kind]: config } },
       AbortSignal.timeout(10_000),
       { ifMatch: before.version },
     )
@@ -1001,6 +1016,7 @@ onBeforeUnmount(() => {
               <option value="grid">{{ t('form.gridType') }}</option>
               <option value="form">{{ t('form.formType') }}</option>
               <option value="kanban">{{ t('kanban.viewType') }}</option>
+              <option value="gallery">{{ t('gallery.viewType') }}</option>
             </select>
           </label>
           <button type="submit" :disabled="viewBusy || !newViewName.trim()">
@@ -1040,7 +1056,14 @@ onBeforeUnmount(() => {
           :schema="schema"
           :view="view"
           :busy="viewBusy"
-          @save="saveKanban"
+          @save="(config) => saveCardView('kanban', config)"
+        />
+        <GalleryBuilder
+          v-if="view?.type === 'gallery' && canManageView(view)"
+          :schema="schema"
+          :view="view"
+          :busy="viewBusy"
+          @save="(config) => saveCardView('gallery', config)"
         />
         <FieldPanel
           v-if="desktop"
@@ -1107,6 +1130,18 @@ onBeforeUnmount(() => {
         <KanbanView
           v-else-if="view?.type === 'kanban'"
           ref="kanban"
+          :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
+          :schema="schema"
+          :view="view"
+          :identity="auth.user?.id ?? ''"
+          @schema-changed="loadSchema(true)"
+          @expand="
+            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+          "
+        />
+        <GalleryView
+          v-else-if="view?.type === 'gallery'"
+          ref="gallery"
           :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
           :schema="schema"
           :view="view"

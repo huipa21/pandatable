@@ -413,6 +413,25 @@
     "moreUsers": "还有更多匹配项，请缩小搜索范围。",
     "addUser": "为{name}添加列"
   },
+  "gallery": {
+    "viewType": "画廊",
+    "settings": "配置画廊",
+    "coverField": "封面附件字段",
+    "noCoverField": "不设置封面字段",
+    "cardFields": "卡片字段",
+    "save": "保存画廊",
+    "loading": "正在加载画廊…",
+    "loadFailed": "无法刷新画廊：{message}",
+    "empty": "没有可显示的行。",
+    "noImage": "没有封面图片",
+    "coverUnavailable": "封面图片不可用",
+    "open": "打开行",
+    "openRow": "打开行 {id}",
+    "page": "第 {page} / {total} 页",
+    "previous": "上一页",
+    "next": "下一页",
+    "pagingLimit": "画廊翻页仅支持前 {count} 行。"
+  },
   "filter": {
     "group": "筛选组",
     "match": "匹配方式",

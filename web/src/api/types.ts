@@ -302,10 +302,16 @@ export interface ViewColumns {
   highlight?: HighlightRule[]
   form?: FormConfig
   kanban?: KanbanConfig
+  gallery?: GalleryConfig
 }
 
 export interface KanbanConfig {
   groupField: string | null
+  fields: string[]
+}
+
+export interface GalleryConfig {
+  coverField: string | null
   fields: string[]
 }
 

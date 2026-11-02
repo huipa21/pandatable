@@ -44,7 +44,7 @@ the row editor or use the add-row control to create a row.
 ### 4. Use views and forms
 
 Select an existing view or enter a view name, choose **Personal** or **Shared**
-and a **Grid**, **Form**, or **Kanban** type, then choose **Create view**.
+and a **Grid**, **Form**, **Kanban**, or **Gallery** type, then choose **Create view**.
 Readers can create personal views; shared views require write access. Owners can
 lock shared views. If you cannot save changes to a shared view, you can apply
 temporary changes and use **Save current changes as a personal view**.
@@ -60,6 +60,12 @@ grouping, search for a table user to add an empty destination column. Use the
 column and card page controls to see more items. Writers can drag a card or
 choose its **Move card** control and a destination; readers can open cards without
 moving them. Other participants' changes refresh the board.
+
+In Gallery settings, choose an attachment field for the cover and select the
+card fields. The first attachment with an image thumbnail becomes the cover;
+cards without an available image show a placeholder. Use the page controls to
+see more cards, and choose **Open row** to inspect or edit a record according
+to your access. Other participants' row changes refresh the gallery.
 
 ### 5. Collaborate
 
@@ -128,8 +134,8 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 
 ### 4. 使用视图和表单
 
-选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**、**表单**或
-**看板**类型，然后选择**创建视图**。读取者可以创建个人视图；共享视图需要写入
+选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**、**表单**、
+**看板**或**画廊**类型，然后选择**创建视图**。读取者可以创建个人视图；共享视图需要写入
 权限。所有者可以锁定共享视图。如果无法保存共享视图的更改，可以临时调整并选择
 **将当前更改保存为个人视图**。
 
@@ -141,6 +147,10 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 按用户分组时，可以搜索数据表用户来添加空的目标列。使用列和卡片的翻页控件查看更多
 项目。有写入权限的用户可以拖动卡片，或选择卡片的**移动卡片**控件和目标；读取者可以
 打开卡片，但不能移动。其他参与者的更改会刷新看板。
+
+在画廊设置中，选择附件字段作为封面，并选择卡片字段。第一个带有图片缩略图的附件
+将作为封面；没有可用图片的卡片会显示占位内容。使用翻页控件查看更多卡片，并选择
+**打开行**，根据权限查看或编辑记录。其他参与者的行更改会刷新画廊。
 
 ### 5. 协作
 

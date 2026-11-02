@@ -238,6 +238,17 @@ func TestImportPackageRoundTrip(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("configure package Kanban view: %v", err)
 	}
+	gallery, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
+		ViewInput{Name: "Photo gallery", Type: "gallery", Scope: "shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	photo := extraFields["Files"]
+	if _, err := f.service.UpdateViewGallery(f.ctx, owner, gallery.ID, gallery.Version, GalleryConfig{
+		CoverField: &photo.ID, Fields: []string{source.Fields[0].ID, amount.ID},
+	}); err != nil {
+		t.Fatalf("configure package Gallery view: %v", err)
+	}
 	filtered, err := f.service.CreateView(f.ctx, owner, source.Table.ID,
 		ViewInput{Name: "Computed filter", Type: "grid", Scope: "shared"})
 	if err != nil {

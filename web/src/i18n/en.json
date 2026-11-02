@@ -413,6 +413,25 @@
     "moreUsers": "More matches are available; refine the search.",
     "addUser": "Add column for {name}"
   },
+  "gallery": {
+    "viewType": "Gallery",
+    "settings": "Configure Gallery",
+    "coverField": "Cover attachment field",
+    "noCoverField": "No cover field",
+    "cardFields": "Card fields",
+    "save": "Save Gallery",
+    "loading": "Loading gallery…",
+    "loadFailed": "Gallery could not be refreshed: {message}",
+    "empty": "No rows to display.",
+    "noImage": "No cover image",
+    "coverUnavailable": "Cover image unavailable",
+    "open": "Open row",
+    "openRow": "Open row {id}",
+    "page": "Page {page} of {total}",
+    "previous": "Previous page",
+    "next": "Next page",
+    "pagingLimit": "Only the first {count} rows are available through gallery paging."
+  },
   "filter": {
     "group": "Filter group",
     "match": "Match",

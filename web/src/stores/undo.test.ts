@@ -383,7 +383,7 @@ describe('per-tab undo history', () => {
     expect(undo.redoStack).toHaveLength(0)
   })
 
-  it.each(['grid', 'form', 'kanban'] as const)(
+  it.each(['grid', 'form', 'kanban', 'gallery'] as const)(
     'undoes and redoes %s configuration using the current view version',
     async (type) => {
       const schema = tableSchema()
@@ -405,11 +405,15 @@ describe('per-tab undo history', () => {
         ...(type === 'kanban'
           ? { kanban: { groupField: 'name', fields: ['name'] } }
           : {}),
+        ...(type === 'gallery'
+          ? { gallery: { coverField: 'photo', fields: ['name'] } }
+          : {}),
       }
       const after: TableView = structuredClone(before)
       after.version = 2
       if (type === 'form') after.config.form!.title = 'After'
       else if (type === 'kanban') after.config.kanban!.fields = []
+      else if (type === 'gallery') after.config.gallery!.fields = []
       else after.config.fields[0]!.visible = false
       let current = structuredClone(after)
       const fetcher = vi.fn(
@@ -441,6 +445,7 @@ describe('per-tab undo history', () => {
 
       if (type === 'form') current.config.form!.title = 'Someone else'
       else if (type === 'kanban') current.config.kanban!.groupField = null
+      else if (type === 'gallery') current.config.gallery!.coverField = null
       else current.config.fields[0]!.width = 210
       await undo.undo()
       expect(undo.error).toMatchObject({ code: 'ERR_VERSION_CONFLICT' })

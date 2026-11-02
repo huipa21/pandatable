@@ -29,7 +29,8 @@ import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore } from '../../stores/realtime'
 import { patchUndoStep, useUndoStore } from '../../stores/undo'
 import FieldRenderer from '../fields/FieldRenderer.vue'
-import RelationLinks from '../relations/RelationLinks.vue'
+import CardFieldValues from './CardFieldValues.vue'
+import { bindCardFields } from './cardFields'
 
 const props = defineProps<{
   schema: TableSchema
@@ -95,14 +96,11 @@ const displayBound = computed(() =>
     : null,
 )
 const cardFields = computed(() =>
-  (props.view.config.kanban?.fields ?? [])
-    .filter((id) => id !== displayField.value?.id)
-    .flatMap((id) => {
-      const field = props.schema.fields.find((item) => item.id === id)
-      return field
-        ? [{ field, bound: bindField(field.uiType, field.options) }]
-        : []
-    }),
+  bindCardFields(
+    props.schema.fields,
+    props.view.config.kanban?.fields ?? [],
+    displayField.value?.id ?? null,
+  ),
 )
 const fieldIds = computed(() =>
   Array.from(
@@ -218,10 +216,6 @@ function hasTitle(row: DataRow) {
     ? row.fields[displayField.value.id]
     : undefined
   return isWireValue(value) && value !== null
-}
-
-function hasRelationValue(field: TableField, row: DataRow) {
-  return field.uiType === 'link' && isWireValue(row.fields[field.id])
 }
 
 function current(token: number) {
@@ -652,29 +646,13 @@ defineExpose({ refresh })
               />
               <span v-else>{{ t('mobileRows.untitled', { id: row.id }) }}</span>
             </button>
-            <div
-              v-for="item in cardFields"
-              :key="item.field.id"
-              class="card-field"
-            >
-              <span class="card-label">{{ item.field.name }}</span>
-              <RelationLinks
-                v-if="hasRelationValue(item.field, row)"
-                :links="row.fields[item.field.id]"
-              />
-              <FieldRenderer
-                v-else-if="
-                  item.bound.ok && isWireValue(row.fields[item.field.id])
-                "
-                :field="item.bound.value"
-                :value="wireValue(row.fields[item.field.id])"
-                :env="env"
-                :table-id="schema.table.id"
-                :identity="identity"
-                :links="false"
-              />
-              <span v-else>{{ t('grid.unsupportedField') }}</span>
-            </div>
+            <CardFieldValues
+              :items="cardFields"
+              :row="row"
+              :env="env"
+              :table-id="schema.table.id"
+              :identity="identity"
+            />
             <button
               v-if="canWrite && movingRow !== row.id"
               type="button"
@@ -802,14 +780,6 @@ defineExpose({ refresh })
 .card-title {
   font-weight: 600;
   text-align: left;
-}
-.card-field {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-.card-label {
-  color: var(--muted);
 }
 button,
 input,

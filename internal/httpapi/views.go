@@ -121,6 +121,18 @@ func (api *authHTTP) updateView(w http.ResponseWriter, r *http.Request, user aut
 		}{view, eventID(r)})
 		return
 	}
+	if config.GallerySet {
+		view, err := api.structure.UpdateViewGallery(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, *config.Gallery)
+		if err != nil {
+			api.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			View    structure.View `json:"view"`
+			EventID string         `json:"eventId"`
+		}{view, eventID(r)})
+		return
+	}
 	view, err := api.structure.UpdateViewColumns(r.Context(), actorOf(user), chi.URLParam(r, "id"), version, config)
 	if err != nil {
 		api.fail(w, r, err)
@@ -186,6 +198,7 @@ func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {
 		Highlight  json.RawMessage `json:"highlight"`
 		Form       json.RawMessage `json:"form"`
 		Kanban     json.RawMessage `json:"kanban"`
+		Gallery    json.RawMessage `json:"gallery"`
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return structure.ViewColumns{}, invalid
@@ -233,30 +246,23 @@ func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {
 		}
 		return structure.ViewColumns{Form: &form, FormSet: true}, nil
 	}
-	if len(input.Kanban) > 0 {
+	if len(input.Kanban) > 0 || len(input.Gallery) > 0 {
 		var members map[string]json.RawMessage
-		if json.Unmarshal(raw, &members) != nil || len(members) != 1 ||
-			bytes.Equal(bytes.TrimSpace(input.Kanban), []byte("null")) {
+		if json.Unmarshal(raw, &members) != nil || len(members) != 1 {
 			return structure.ViewColumns{}, invalid
 		}
-		var kanbanInput struct {
-			GroupField json.RawMessage `json:"groupField"`
-			Fields     *[]string       `json:"fields"`
-		}
-		nested := json.NewDecoder(bytes.NewReader(input.Kanban))
-		nested.DisallowUnknownFields()
-		if nested.Decode(&kanbanInput) != nil || len(kanbanInput.GroupField) == 0 || kanbanInput.Fields == nil {
-			return structure.ViewColumns{}, invalid
-		}
-		kanban := structure.KanbanConfig{Fields: *kanbanInput.Fields}
-		if !bytes.Equal(bytes.TrimSpace(kanbanInput.GroupField), []byte("null")) {
-			var id string
-			if json.Unmarshal(kanbanInput.GroupField, &id) != nil {
-				return structure.ViewColumns{}, invalid
+		if len(input.Kanban) > 0 {
+			group, fields, err := decodeCardViewConfig(input.Kanban, "groupField")
+			if err != nil {
+				return structure.ViewColumns{}, err
 			}
-			kanban.GroupField = &id
+			return structure.ViewColumns{Kanban: &structure.KanbanConfig{GroupField: group, Fields: fields}, KanbanSet: true}, nil
 		}
-		return structure.ViewColumns{Kanban: &kanban, KanbanSet: true}, nil
+		cover, fields, err := decodeCardViewConfig(input.Gallery, "coverField")
+		if err != nil {
+			return structure.ViewColumns{}, err
+		}
+		return structure.ViewColumns{Gallery: &structure.GalleryConfig{CoverField: cover, Fields: fields}, GallerySet: true}, nil
 	}
 	if input.Fields == nil || input.Frozen == nil {
 		return structure.ViewColumns{}, invalid
@@ -329,4 +335,26 @@ func decodeViewConfig(raw json.RawMessage) (structure.ViewColumns, error) {
 		})
 	}
 	return config, nil
+}
+
+func decodeCardViewConfig(raw json.RawMessage, field string) (*string, []string, error) {
+	invalid := apperr.New(400, "ERR_VALIDATION", "View configuration is invalid")
+	var members map[string]json.RawMessage
+	if json.Unmarshal(raw, &members) != nil || len(members) != 2 {
+		return nil, nil, invalid
+	}
+	value, present := members[field]
+	rawFields, fieldsPresent := members["fields"]
+	var fields []string
+	if !present || !fieldsPresent || json.Unmarshal(rawFields, &fields) != nil || fields == nil {
+		return nil, nil, invalid
+	}
+	if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		return nil, fields, nil
+	}
+	var id string
+	if json.Unmarshal(value, &id) != nil {
+		return nil, nil, invalid
+	}
+	return &id, fields, nil
 }

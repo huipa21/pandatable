@@ -104,6 +104,26 @@ function asFiles(value: WireValue): AttachmentValue[] {
   return Array.isArray(value) ? (value as unknown as AttachmentValue[]) : []
 }
 
+export function attachmentCover(
+  value: unknown,
+): Result<{ name: string; thumb: string } | null> {
+  const normalized = normalize(value)
+  if (!normalized.ok) return normalized
+  if (normalized.value === null) return ok(null)
+  if (!Array.isArray(normalized.value)) return fail('invalid_array')
+  for (const item of normalized.value) {
+    if (
+      item !== null &&
+      typeof item === 'object' &&
+      !Array.isArray(item) &&
+      typeof item.name === 'string' &&
+      typeof item.thumb === 'string'
+    )
+      return ok({ name: item.name, thumb: item.thumb })
+  }
+  return ok(null)
+}
+
 export const attachmentKind: FieldKind<AttachmentOptions> = {
   kind: 'attachment',
   readOnly: false,

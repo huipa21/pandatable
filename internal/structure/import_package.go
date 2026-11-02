@@ -432,7 +432,7 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 	unavailable := packageUnavailableViewFields(table, manifest, keys)
 	for index, source := range manifest.Views {
 		name, err := cleanName(source.Name)
-		if err != nil || source.Type != "grid" && source.Type != "form" && source.Type != "kanban" {
+		if err != nil || source.Type != "grid" && source.Type != "form" && source.Type != "kanban" && source.Type != "gallery" {
 			return "", validation("The package view metadata is invalid")
 		}
 		if err := validatePackageViewFilter(source.Config.Filter); err != nil {
@@ -460,6 +460,16 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 			}
 			config.Kanban = &kanban
 		}
+		if source.Type == "gallery" {
+			if config.Gallery == nil {
+				return "", validation("The package Gallery configuration is missing")
+			}
+			gallery, err := validateGalleryConfig(*config.Gallery, table)
+			if err != nil {
+				return "", err
+			}
+			config.Gallery = &gallery
+		}
 		validationConfig, affected, err := packageViewValidationConfig(config, table, unavailable)
 		if err != nil {
 			return "", err
@@ -468,7 +478,7 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 		if err != nil {
 			return "", err
 		}
-		if config.Form != nil || config.Kanban != nil || affected {
+		if config.Form != nil || config.Kanban != nil || config.Gallery != nil || affected {
 			var stored map[string]json.RawMessage
 			if err := json.Unmarshal(raw, &stored); err != nil {
 				return "", fmt.Errorf("decode restored view: %w", err)
@@ -483,6 +493,12 @@ func restorePackageViews(ctx context.Context, c *txn, table rowTable, manifest *
 				stored["kanban"], err = json.Marshal(config.Kanban)
 				if err != nil {
 					return "", fmt.Errorf("encode restored Kanban: %w", err)
+				}
+			}
+			if config.Gallery != nil {
+				stored["gallery"], err = json.Marshal(config.Gallery)
+				if err != nil {
+					return "", fmt.Errorf("encode restored Gallery: %w", err)
 				}
 			}
 			if affected {

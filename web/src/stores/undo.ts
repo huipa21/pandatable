@@ -49,7 +49,7 @@ export type UndoStep =
       kind: 'view'
       tableId: string
       viewId: string
-      viewType: 'grid' | 'form' | 'kanban'
+      viewType: 'grid' | 'form' | 'kanban' | 'gallery'
       config: ViewColumns
       expected: ViewColumns
     }
@@ -150,7 +150,8 @@ export function viewUndoStep(
   if (
     before.type !== 'grid' &&
     before.type !== 'form' &&
-    before.type !== 'kanban'
+    before.type !== 'kanban' &&
+    before.type !== 'gallery'
   )
     throw new Error('Unsupported view type in undo history')
   const previous = viewConfigMember(before.type, before.config)
@@ -167,11 +168,12 @@ export function viewUndoStep(
 }
 
 function viewConfigMember(
-  type: 'grid' | 'form' | 'kanban',
+  type: 'grid' | 'form' | 'kanban' | 'gallery',
   config: ViewColumns,
 ) {
   if (type === 'form') return config.form
   if (type === 'kanban') return config.kanban
+  if (type === 'gallery') return config.gallery
   return config
 }
 
@@ -485,7 +487,9 @@ export const useUndoStore = defineStore('undo', () => {
         ? { form: step.config.form }
         : step.viewType === 'kanban'
           ? { kanban: step.config.kanban }
-          : step.config
+          : step.viewType === 'gallery'
+            ? { gallery: step.config.gallery }
+            : step.config
     const result = await request<ViewMutation>(
       `/views/${encodeURIComponent(step.viewId)}`,
       'PATCH',

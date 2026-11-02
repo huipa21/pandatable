@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { KanbanConfig, TableSchema, TableView } from '../../api/types'
+import CardFieldsPicker from './CardFieldsPicker.vue'
 
 const props = defineProps<{
   schema: TableSchema
@@ -43,10 +44,8 @@ const groupingFields = computed(() =>
   ),
 )
 
-function toggleField(id: string, checked: boolean) {
-  draft.value.fields = checked
-    ? [...draft.value.fields.filter((item) => item !== id), id]
-    : draft.value.fields.filter((item) => item !== id)
+function setFields(fields: string[]) {
+  draft.value.fields = fields
   dirty.value = true
 }
 
@@ -80,19 +79,13 @@ function save() {
           </option>
         </select>
       </label>
-      <fieldset :disabled="busy">
-        <legend>{{ t('kanban.cardFields') }}</legend>
-        <label v-for="field in fields" :key="field.id" class="field-choice">
-          <input
-            type="checkbox"
-            :checked="draft.fields.includes(field.id)"
-            @change="
-              toggleField(field.id, ($event.target as HTMLInputElement).checked)
-            "
-          />
-          {{ field.name }}
-        </label>
-      </fieldset>
+      <CardFieldsPicker
+        :fields="fields"
+        :selected="draft.fields"
+        :legend="t('kanban.cardFields')"
+        :busy="busy"
+        @change="setFields"
+      />
       <button type="submit" :disabled="busy">{{ t('kanban.save') }}</button>
     </form>
   </details>
@@ -100,8 +93,7 @@ function save() {
 
 <style scoped>
 .kanban-settings,
-form,
-fieldset {
+form {
   display: grid;
   gap: 12px;
 }
@@ -111,19 +103,9 @@ fieldset {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
-fieldset {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-}
 label {
   display: grid;
   gap: 4px;
-}
-.field-choice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 select,
 button {

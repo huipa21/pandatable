@@ -32,7 +32,9 @@ All row reads go through `internal/query`, which compiles a **view config** (+ a
   // form view
   "form": { "title": "", "description": "", "fields": [ { "id": "…", "label": "…", "help": "…", "required": true } ], "afterSubmit": "message|new" },
   // kanban (M4)
-  "kanban": { "groupField": "fld_status", "coverField": null },
+  "kanban": { "groupField": "fld_status", "fields": ["fld_name"] },
+  // gallery (M4)
+  "gallery": { "coverField": "fld_photo", "fields": ["fld_name"] },
   // calendar (M5)
   "calendar": { "dateField": "fld_due", "endField": null }
 }
@@ -56,6 +58,12 @@ use ordinary row updates and their validation, permissions, history, and
 realtime events. Package export/import remaps Kanban field IDs with the other
 view configuration. The existing 1,000-bucket group-query limit remains an
 explicit error rather than silently dropping groups.
+
+Gallery views store `gallery: { coverField: fieldId | null, fields: fieldId[] }`
+(D-204). The cover must be an active attachment field and card fields must be
+unique active fields. Saves use view versions, stale references are omitted on
+read, and package transfers remap both kinds of field ID. Queries use the
+existing filter, sort, authorization and realtime paths.
 
 T1.21 introduced the Grid column subset (D-148): ordered
 `fields:[{id,visible,width?}]` and `frozen`. T2.7–T2.9 add configured sort,

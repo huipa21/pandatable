@@ -506,6 +506,16 @@ can inspect cards but not move them. Realtime notifications refresh the board;
 row edits and configuration changes use the existing permission, error, and
 undo paths.
 
+### T4.2 Gallery view (D-204)
+
+Gallery cards show the display field, selected card fields and the first
+attachment with a canonical thumbnail in the configured cover field. Missing
+images and invalid or failed previews have explicit placeholders. Cards open
+the existing row dialog; configuration uses the existing permission, version
+and undo paths. Realtime changes refresh the current page. Pages contain at
+most 20 cards, and the UI reports the existing query offset limit when it
+prevents access to additional rows.
+
 ## 5. Mobile (< 768 px) — D-016
 
 - Sidebar becomes drawer; toolbar collapses into a "View options" bottom sheet (filter/sort/group/highlight builders are the same components in drawers).

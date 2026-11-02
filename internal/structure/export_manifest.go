@@ -277,6 +277,18 @@ func packageViewConfig(source ViewColumns, keys map[string]string) (ViewColumns,
 			}
 		}
 	}
+	if config.Gallery != nil {
+		if config.Gallery.CoverField != nil {
+			if err := key(config.Gallery.CoverField); err != nil {
+				return ViewColumns{}, err
+			}
+		}
+		for index := range config.Gallery.Fields {
+			if err := key(&config.Gallery.Fields[index]); err != nil {
+				return ViewColumns{}, err
+			}
+		}
+	}
 	return config, nil
 }
 
