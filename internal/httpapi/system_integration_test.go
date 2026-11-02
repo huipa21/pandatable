@@ -75,7 +75,7 @@ func TestAdminSystemHTTPAuthorizationAndContract(t *testing.T) {
 	}
 	var result admin.SystemSnapshot
 	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil || result.CollectedAt.IsZero() ||
-		result.Database.Value == nil || result.Versions.Migration.Value == nil || *result.Versions.Migration.Value != 5 ||
+		result.Database.Value == nil || result.Versions.Migration.Value == nil || *result.Versions.Migration.Value != 6 ||
 		result.FilesBytes.Value == nil || *result.FilesBytes.Value != 0 {
 		t.Fatal("invalid actual system metrics DTO", err)
 	}

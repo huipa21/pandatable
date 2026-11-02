@@ -206,6 +206,19 @@ login/profile APIs alone.
 - Native labeled controls and the single-column form at <=767 px preserve
   keyboard/touch use and avoid adding initial grid imports. Both locale catalogs
   contain matching profile strings.
+- T5.2 adds the default-off mention-email checkbox to this same profile form.
+  It sends only a changed `mentionEmail` value and does not disable in-app
+  notifications.
+
+### T5.2 email and password recovery (D-205..D-207)
+
+- Admin Settings links to a localized SMTP form. Saved settings are reloaded
+  without revealing either credential; blank username and password inputs
+  preserve their stored values unless the administrator explicitly removes
+  them. Test mail uses saved settings and reports delivery errors.
+- Login links to a generic email reset request. The reset page removes the
+  token fragment from the browser address immediately, keeps it in memory
+  until submission, and requires sign-in again after completion.
 
 ### T1.8 settings and read-only workspace inventory (D-091..D-093)
 

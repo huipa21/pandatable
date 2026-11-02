@@ -139,6 +139,26 @@ var metadataColumns = map[string][]columnSpec{
 		{"read_at", "timestamp with time zone", true, ""},
 		{"created_at", "timestamp with time zone", false, "now()"},
 	},
+	"smtp_settings": {
+		{"singleton", "boolean", false, "true"},
+		{"enabled", "boolean", false, "false"},
+		{"host", "text", false, "''::text"},
+		{"port", "integer", false, "587"},
+		{"security", "text", false, "'starttls'::text"},
+		{"username", "text", false, "''::text"},
+		{"password_cipher", "bytea", true, ""},
+		{"from_address", "text", false, "''::text"},
+	},
+	"password_resets": {
+		{"user_id", "uuid", false, ""},
+		{"token_hash", "bytea", false, ""},
+		{"expires_at", "timestamp with time zone", false, ""},
+	},
+	"mention_mail_jobs": {
+		{"notification_id", "uuid", false, ""},
+		{"attempts", "integer", false, "0"},
+		{"next_attempt_at", "timestamp with time zone", false, "now()"},
+	},
 	"row_history": {
 		{"id", "bigint", false, ""},
 		{"table_id", "uuid", false, ""},
@@ -258,6 +278,7 @@ func TestMetadataCatalogPostgreSQL(t *testing.T) {
 		"grants_principal_idx":                   "CREATE INDEX grants_principal_idx ON meta.grants USING btree (principal_type, principal_id)",
 		"comments_table_row_idx":                 "CREATE INDEX comments_table_row_idx ON meta.comments USING btree (table_id, row_id)",
 		"notifications_user_read_idx":            "CREATE INDEX notifications_user_read_idx ON meta.notifications USING btree (user_id, read_at)",
+		"mention_mail_jobs_due_idx":              "CREATE INDEX mention_mail_jobs_due_idx ON meta.mention_mail_jobs USING btree (next_attempt_at)",
 		"row_history_table_row_id_idx":           "CREATE INDEX row_history_table_row_id_idx ON meta.row_history USING btree (table_id, row_id, id DESC)",
 		"row_history_created_at_idx":             "CREATE INDEX row_history_created_at_idx ON meta.row_history USING btree (created_at)",
 		"attachments_table_field_idx":            "CREATE INDEX attachments_table_field_idx ON meta.attachments USING btree (table_id, field_id)",
@@ -273,5 +294,5 @@ func TestMetadataCatalogPostgreSQL(t *testing.T) {
 			t.Errorf("index %s: valid=%v, definition=%s; want %s", name, valid, got, want)
 		}
 	}
-	t.Log("clean migration: all 17 meta tables; exact new column types/nullability/defaults, identity and lookup indexes verified")
+	t.Log("clean migration: all meta tables; exact new column types/nullability/defaults, identity and lookup indexes verified")
 }

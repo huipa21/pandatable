@@ -34,7 +34,7 @@ func TestEmbeddedMigrationOrdering(t *testing.T) {
 			names = append(names, entry.Name())
 		}
 	}
-	if want := []string{"0001_initial.sql", "0002_metadata.sql", "0003_restore_system.sql", "0004_trash.sql", "0005_user_lifecycle.sql"}; !reflect.DeepEqual(names, want) {
+	if want := []string{"0001_initial.sql", "0002_metadata.sql", "0003_restore_system.sql", "0004_trash.sql", "0005_user_lifecycle.sql", "0006_mail.sql"}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migration files = %v, want %v", names, want)
 	}
 }
@@ -71,7 +71,7 @@ func TestInitialMigrationPostgreSQL(t *testing.T) {
 	}
 
 	expectedColumns := map[string][]string{
-		"users":    {"id", "username", "email", "display_name", "password_hash", "role", "status", "must_change_password", "locale", "theme", "timezone", "avatar_color", "last_login_at", "created_at", "updated_at"},
+		"users":    {"id", "username", "email", "display_name", "password_hash", "role", "status", "must_change_password", "locale", "theme", "timezone", "avatar_color", "last_login_at", "created_at", "updated_at", "mention_email"},
 		"sessions": {"id_hash", "user_id", "created_at", "last_seen_at", "expires_at", "ip", "user_agent"},
 		"settings": {"key", "value"},
 	}

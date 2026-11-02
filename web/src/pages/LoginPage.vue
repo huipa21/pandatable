@@ -77,6 +77,9 @@ async function submit() {
         >
           {{ t('auth.signIn') }}
         </NButton>
+        <RouterLink to="/forgot-password">
+          {{ t('mail.forgotPassword') }}
+        </RouterLink>
       </form>
     </NCard>
   </section>

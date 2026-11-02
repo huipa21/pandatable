@@ -615,6 +615,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
   - **T4.2 evidence (2026-11-02): Pass.** Fast Playwright desktop and mobile Chromium configure a Gallery, render an authenticated attachment thumbnail and selected fields, verify an empty-cover placeholder and persisted settings, and observe a second client's realtime update. Focused tests cover invalid/failed previews, paging, permissions and package field-ID remapping.
 - **AT-903 — Calendar** · M5 · Calendar by date/datetime field (month/week), drag to reschedule.
 - **AT-904 — SMTP** · M5 · Admin configures SMTP and sends test email; user self-service password reset by email; mention emails (opt-in).
+  - **T5.2 evidence (2026-11-02): Pass.** The task gate covers SMTP settings and test-mail success/failure, indistinguishable reset requests, expired/reused tokens, password change and session revocation, default-off/opt-in mentions, excluded recipients and delivery-failure isolation. It checks credentials and tokens are absent from responses/logs; mobile Chromium exercises 390 px, touch, Chinese and dark mode. Focused tests cover key handling, token invalidation, rate limits, opt-out before retry and access revocation before delivery.
 
 ## M1 phase review evidence (2026-10-27)
 

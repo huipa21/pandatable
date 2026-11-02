@@ -800,6 +800,36 @@ func (q *Queries) LockUserRelatedWorkspaces(ctx context.Context, userID pgtype.U
 	return items, nil
 }
 
+const readSMTPSettings = `-- name: ReadSMTPSettings :one
+SELECT enabled, host, port, security, username, password_cipher, from_address
+FROM meta.smtp_settings WHERE singleton = true
+`
+
+type ReadSMTPSettingsRow struct {
+	Enabled        bool
+	Host           string
+	Port           int32
+	Security       string
+	Username       string
+	PasswordCipher []byte
+	FromAddress    string
+}
+
+func (q *Queries) ReadSMTPSettings(ctx context.Context) (ReadSMTPSettingsRow, error) {
+	row := q.db.QueryRow(ctx, readSMTPSettings)
+	var i ReadSMTPSettingsRow
+	err := row.Scan(
+		&i.Enabled,
+		&i.Host,
+		&i.Port,
+		&i.Security,
+		&i.Username,
+		&i.PasswordCipher,
+		&i.FromAddress,
+	)
+	return i, err
+}
+
 const readSettings = `-- name: ReadSettings :many
 SELECT key, value FROM meta.settings WHERE key = ANY($1::text[]) ORDER BY key
 `
@@ -1069,6 +1099,37 @@ func (q *Queries) WorkspaceIsOrphaned(ctx context.Context, resourceID pgtype.UUI
 	var not_exists bool
 	err := row.Scan(&not_exists)
 	return not_exists, err
+}
+
+const writeSMTPSettings = `-- name: WriteSMTPSettings :exec
+UPDATE meta.smtp_settings
+SET enabled = $1, host = $2, port = $3,
+    security = $4, username = $5,
+    password_cipher = $6, from_address = $7
+WHERE singleton = true
+`
+
+type WriteSMTPSettingsParams struct {
+	Enabled        bool
+	Host           string
+	Port           int32
+	Security       string
+	Username       string
+	PasswordCipher []byte
+	FromAddress    string
+}
+
+func (q *Queries) WriteSMTPSettings(ctx context.Context, arg WriteSMTPSettingsParams) error {
+	_, err := q.db.Exec(ctx, writeSMTPSettings,
+		arg.Enabled,
+		arg.Host,
+		arg.Port,
+		arg.Security,
+		arg.Username,
+		arg.PasswordCipher,
+		arg.FromAddress,
+	)
+	return err
 }
 
 const writeSetting = `-- name: WriteSetting :exec

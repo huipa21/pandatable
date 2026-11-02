@@ -37,6 +37,7 @@ type User struct {
 	Timezone           *string `json:"timezone"`
 	EffectiveTimezone  string  `json:"effectiveTimezone"`
 	AvatarColor        string  `json:"avatarColor"`
+	MentionEmail       bool    `json:"mentionEmail"`
 }
 
 type Session struct {
@@ -45,11 +46,12 @@ type Session struct {
 }
 
 type ProfilePatch struct {
-	DisplayName *string
-	Locale      *string
-	Theme       *string
-	Timezone    *string
-	TimezoneSet bool
+	DisplayName  *string
+	Locale       *string
+	Theme        *string
+	Timezone     *string
+	TimezoneSet  bool
+	MentionEmail *bool
 }
 
 type Service struct {
@@ -58,6 +60,7 @@ type Service struct {
 	passwords   *Passwords
 	dummy       string
 	limits      *limits
+	resetLimits *limits
 	now         func() time.Time
 	setupMu     sync.RWMutex
 	setupToken  string
@@ -74,7 +77,7 @@ func New(pool *db.Pool) (*Service, error) {
 		return nil, fmt.Errorf("initialize password worker: %w", err)
 	}
 	return &Service{pool: pool, queries: authsql.New(pool), passwords: passwords,
-		dummy: dummy, limits: newLimits(), now: time.Now}, nil
+		dummy: dummy, limits: newLimits(), resetLimits: newLimits(), now: time.Now}, nil
 }
 
 func unauthenticated() *apperr.Error {
@@ -138,7 +141,7 @@ func userDTO(ctx context.Context, queries *authsql.Queries, row authsql.GetUserR
 		ID: row.ID.String(), Username: row.Username, Email: stringPointer(row.Email),
 		DisplayName: row.DisplayName, Role: row.Role, MustChangePassword: row.MustChangePassword,
 		Locale: row.Locale, Theme: row.Theme, Timezone: stringPointer(row.Timezone),
-		EffectiveTimezone: timezone, AvatarColor: row.AvatarColor,
+		EffectiveTimezone: timezone, AvatarColor: row.AvatarColor, MentionEmail: row.MentionEmail,
 	}, nil
 }
 
@@ -378,7 +381,7 @@ func (service *Service) ChangePassword(ctx context.Context, token, current, next
 }
 
 func (service *Service) UpdateProfile(ctx context.Context, token string, patch ProfilePatch) (User, error) {
-	if patch.DisplayName == nil && patch.Locale == nil && patch.Theme == nil && !patch.TimezoneSet {
+	if patch.DisplayName == nil && patch.Locale == nil && patch.Theme == nil && !patch.TimezoneSet && patch.MentionEmail == nil {
 		return User{}, validation()
 	}
 	if patch.DisplayName != nil {
@@ -413,6 +416,9 @@ func (service *Service) UpdateProfile(ctx context.Context, token string, patch P
 		if patch.Theme != nil {
 			row.Theme = *patch.Theme
 		}
+		if patch.MentionEmail != nil {
+			row.MentionEmail = *patch.MentionEmail
+		}
 		if patch.TimezoneSet {
 			if patch.Timezone != nil {
 				valid, err := queries.ValidTimezone(ctx, *patch.Timezone)
@@ -430,7 +436,8 @@ func (service *Service) UpdateProfile(ctx context.Context, token string, patch P
 			return err
 		}
 		if err := queries.UpdateProfile(ctx, authsql.UpdateProfileParams{ID: locked.ID, DisplayName: row.DisplayName,
-			Locale: row.Locale, Theme: row.Theme, Timezone: row.Timezone, UpdatedAt: timestamp(now)}); err != nil {
+			Locale: row.Locale, Theme: row.Theme, Timezone: row.Timezone, UpdatedAt: timestamp(now),
+			MentionEmail: row.MentionEmail}); err != nil {
 			return fmt.Errorf("update profile: %w", err)
 		}
 		return nil

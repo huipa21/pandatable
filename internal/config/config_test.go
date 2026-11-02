@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"log/slog"
 	"strings"
@@ -145,6 +147,36 @@ func TestParseAllowsEmptyTrustedProxyList(t *testing.T) {
 	}
 	if len(cfg.TrustedProxies) != 0 {
 		t.Fatalf("TrustedProxies = %v, want empty", cfg.TrustedProxies)
+	}
+}
+
+func TestParseSMTPKey(t *testing.T) {
+	key := bytes.Repeat([]byte{7}, 32)
+	valid := base64.StdEncoding.EncodeToString(key)
+	values := map[string]string{
+		"PT_DATABASE_URL": "postgresql://db/pandatable",
+		"PT_BASE_URL":     "https://table.example.com",
+	}
+	cfg, err := parse(nil, lookup(values))
+	if err != nil || len(cfg.SMTPKey) != 0 {
+		t.Fatal("SMTP key should be optional", err)
+	}
+	values["PT_SMTP_KEY"] = valid
+	cfg, err = parse(nil, lookup(values))
+	if err != nil || !bytes.Equal(cfg.SMTPKey, key) {
+		t.Fatal("valid SMTP key was not decoded", err)
+	}
+	for _, invalid := range []string{
+		"private-invalid-key",
+		base64.StdEncoding.EncodeToString(key[:31]),
+		strings.TrimRight(valid, "="),
+		valid + "\n",
+	} {
+		values["PT_SMTP_KEY"] = invalid
+		_, err := parse(nil, lookup(values))
+		if err == nil || !strings.Contains(err.Error(), "PT_SMTP_KEY") || strings.Contains(err.Error(), invalid) {
+			t.Fatal("invalid SMTP key was accepted or exposed")
+		}
 	}
 }
 

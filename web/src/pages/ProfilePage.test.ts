@@ -25,6 +25,7 @@ const profile: AuthUser = {
   timezone: 'Asia/Tokyo',
   effectiveTimezone: 'Asia/Tokyo',
   avatarColor: 'teal',
+  mentionEmail: false,
 }
 
 beforeEach(async () => {
@@ -93,6 +94,36 @@ it('loads the own profile, sends only changed fields, and saves through the exis
     )
     expect(wrapper.get('[role="status"]').text()).toBe('Profile saved.')
     expect(useAuthStore().user?.displayName).toBe('Alice A.')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('saves the opt-in mention email preference without changing other profile fields', async () => {
+  const fetch = vi.fn((path: string, options: RequestInit) => {
+    if (options.method === 'PATCH')
+      return Promise.resolve(
+        Response.json({
+          user: { ...profile, mentionEmail: true },
+          eventId: 'event',
+        }),
+      )
+    return Promise.resolve(responseFor(path))
+  })
+  vi.stubGlobal('fetch', fetch)
+  const wrapper = mount(ProfilePage, {
+    global: { plugins: [pinia, i18n], stubs: { RouterLink: true } },
+  })
+  try {
+    await flushPromises()
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(fetch).toHaveBeenLastCalledWith(
+      '/api/v1/auth/me',
+      expect.objectContaining({ body: '{"mentionEmail":true}' }),
+    )
+    expect(useAuthStore().user?.mentionEmail).toBe(true)
   } finally {
     wrapper.unmount()
   }

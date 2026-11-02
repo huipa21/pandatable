@@ -100,6 +100,7 @@ Extensions: `pg_trgm`, `pg_stat_statements` (created by migration).
 | `PT_DATA_DIR` | `/data` | `files/`, `backups/`, `tmp/` |
 | `PT_LISTEN` | `:8080` | listen address |
 | `PT_BASE_URL` | — | public URL; Origin/CSRF check, Secure cookies for HTTPS; HTTP auth restricted to literal localhost/loopback |
+| `PT_SMTP_KEY` | — | optional base64-encoded 32-byte AES key for encrypting the stored SMTP password |
 | `PT_TRUSTED_PROXIES` | `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16` | CIDRs whose `X-Forwarded-*` headers are trusted |
 | `PT_DB_MAX_CONNS` | `20` | pgx pool size |
 | `PT_LOG_LEVEL` | `info` | slog level, JSON logs to stdout |
@@ -114,6 +115,21 @@ The [developer seed](14-dev-build-release.md#t120-safe-seed-and-production-brows
 is explicit CLI-only tooling, never a production startup action or HTTP route.
 
 App-level defaults configured in Admin → Settings (stored in DB, not env): `default_timezone` (Asia/Shanghai), `default_currency` (CNY), `default_locale`, upload limit, retention days (D-049, D-050).
+
+T5.2 configures SMTP in Admin → Settings → Email. STARTTLS or implicit TLS
+verifies the server certificate; plaintext is allowed only on loopback. Before
+storing an SMTP password, provision `PT_SMTP_KEY` as a random 32-byte key
+encoded with standard base64 (for example, `openssl rand -base64 32`). Supply
+it to Compose via the protected server `.env`, never commit it, and back it up
+separately from database archives. The SMTP username is stored in the
+database, so protect backups as sensitive data. A missing or changed key cannot
+decrypt an existing password; disable SMTP and clear the stored password before
+rotating the key, then configure the new password after restart. Retain the
+matching old key for each pre-rotation backup; if it is lost, clear and
+re-enter the SMTP password after restoring. SMTP delivery failures are logged
+without credentials or recipient/content data. Reset
+requests are best effort; mention mail is retried twice and may duplicate
+after an uncertain delivery or crash (D-205..D-207).
 
 T1.8 implements these settings plus app name without a migration, restart or
 new dependency. See [API contracts](09-api.md#t18-settings-and-workspace-inventory-d-091d-093)

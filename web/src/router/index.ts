@@ -9,6 +9,14 @@ export const router = createRouter({
     { path: '/', redirect: '/login' },
     { path: '/setup', component: () => import('../pages/SetupPage.vue') },
     { path: '/login', component: () => import('../pages/LoginPage.vue') },
+    {
+      path: '/forgot-password',
+      component: () => import('../pages/ForgotPasswordPage.vue'),
+    },
+    {
+      path: '/reset-password',
+      component: () => import('../pages/ResetPasswordPage.vue'),
+    },
     { path: '/home', component: () => import('../pages/HomePage.vue') },
     {
       path: '/trash',
@@ -68,6 +76,10 @@ export const router = createRouter({
     {
       path: '/admin/settings',
       component: () => import('../pages/AdminSettingsPage.vue'),
+    },
+    {
+      path: '/admin/smtp',
+      component: () => import('../pages/AdminSMTPPage.vue'),
     },
     {
       path: '/admin/workspaces',

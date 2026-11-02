@@ -12,7 +12,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | M2 Data power | 🟨 | 2026-10-29 | | v0.2.0 | T3.12's production gate failed the AT-409 formula scenario; T2.5 is reopened. |
 | M3 Collaboration & ops | 🟨 | 2026-10-31 | | — (v1.0.0 planned) | Release blocked by the failed production gate, outstanding acceptance and lack of an authorized deployment target. |
 | M4 More views | 🟨 | 2026-11-02 | | v1.1.0 | T4.1 and T4.2 done; the phase-end production gate remains. |
-| M5 Calendar & mail | ⬜ | | | v1.2.0 | |
+| M5 Calendar & mail | 🟨 | 2026-11-02 | | v1.2.0 | T5.2 done; T5.1 and the phase-end production gate remain. |
 
 ## Tasks
 
@@ -79,7 +79,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T4.1 | Kanban view | ✅ | 2026-11-02 | D-203; AT-901 and both task gates pass. [Record](task-prompts/T4.1.md#record-2026-11-02). |
 | T4.2 | Gallery view | ✅ | 2026-11-02 | D-204; AT-902 and both task gates pass. [Record](task-prompts/T4.2.md#record-2026-11-02). |
 | T5.1 | Calendar view | ⬜ | | |
-| T5.2 | SMTP | ⬜ | | |
+| T5.2 | SMTP | ✅ | 2026-11-02 | D-205..D-207; AT-904 and both task gates pass. [Record](task-prompts/T5.2.md#record-2026-11-02). |
 
 ## Acceptance test status
 
@@ -97,7 +97,7 @@ attempt; current affected verdicts are in the T3.12 acceptance evidence.
 | AT-6xx Collaboration | 10 | 0 | |
 | AT-7xx Import/Export/Backup | 8 | 0 | |
 | AT-8xx Non-functional | 6 | 2 | Historical count; T3.12 adds HTTP/PG18 AT-804 and selected 390-pixel menu, dialog and workflow checks. AT-805/806 remain partial, and target-host NFR-1/2/3 and full-load AT-801 are uncertified. |
-| AT-9xx Post-v1 | 4 | 2 | AT-901 and AT-902 pass T4.1 and T4.2. |
+| AT-9xx Post-v1 | 4 | 3 | AT-901, AT-902 and AT-904 pass their task gates. |
 
 ## Open questions / follow-ups
 
@@ -114,6 +114,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-02 | T5.2 Done: SMTP, self-service password reset and opt-in mention email pass AT-904 and both task gates. |
 | 2026-11-02 | T4.2 Done: Gallery covers and selected card fields pass AT-902 and both task gates. |
 | 2026-11-02 | T4.1 Done: Kanban grouping, accessible moves and realtime pass AT-901 and both task gates. |
 | 2026-11-01 | T3.12 blocked: audit, guide and cross-engine/responsive/load follow-ups recorded; production gate, acceptance and authorized deployment remain open. |

@@ -19,6 +19,7 @@ const form = reactive({
   locale: 'en' as AuthUser['locale'],
   theme: 'system' as Theme,
   timezone: null as string | null,
+  mentionEmail: false,
 })
 const timezones = ref<string[]>([])
 const loading = ref(false)
@@ -50,6 +51,7 @@ function assignUser(user: AuthUser) {
   form.locale = user.locale
   form.theme = user.theme
   form.timezone = user.timezone
+  form.mentionEmail = user.mentionEmail
   auth.setUser(user)
 }
 
@@ -94,6 +96,8 @@ async function save() {
   if (form.locale !== previous.locale) patch.locale = form.locale
   if (form.theme !== previous.theme) patch.theme = form.theme
   if (form.timezone !== previous.timezone) patch.timezone = form.timezone
+  if (form.mentionEmail !== previous.mentionEmail)
+    patch.mentionEmail = form.mentionEmail
   saved.value = false
   if (Object.keys(patch).length === 0) return
 
@@ -190,6 +194,11 @@ void load()
           </option>
         </select>
       </NFormItem>
+      <label class="form-wide">
+        <input v-model="form.mentionEmail" type="checkbox" :disabled="busy" />
+        {{ t('mail.mentionOptIn') }}
+      </label>
+      <p class="form-wide">{{ t('mail.mentionNotice') }}</p>
       <div class="user-actions form-wide">
         <NButton
           attr-type="submit"

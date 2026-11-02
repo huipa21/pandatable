@@ -37,6 +37,7 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
     '/profile',
     '/admin/dashboard',
     '/admin/settings',
+    '/admin/smtp',
     '/admin/workspaces',
     '/admin/backups',
     '/admin/users',
@@ -52,6 +53,7 @@ it('redirects unauthenticated and non-admin deep admin routes', async () => {
   for (const path of [
     '/admin/dashboard',
     '/admin/settings',
+    '/admin/smtp',
     '/admin/workspaces',
     '/admin/backups',
     '/admin/future',
@@ -82,6 +84,8 @@ it('lets cleared admins access the user panel and exposes network failures', asy
   expect(router.currentRoute.value.path).toBe('/admin/dashboard')
   await router.push('/admin/settings')
   expect(router.currentRoute.value.path).toBe('/admin/settings')
+  await router.push('/admin/smtp')
+  expect(router.currentRoute.value.path).toBe('/admin/smtp')
   await router.push('/admin/workspaces')
   expect(router.currentRoute.value.path).toBe('/admin/workspaces')
   await router.push('/admin/backups')

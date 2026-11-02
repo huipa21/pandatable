@@ -165,9 +165,52 @@ func (q *Queries) FindLoginUsers(ctx context.Context, login string) ([]FindLogin
 	return items, nil
 }
 
+const findPasswordReset = `-- name: FindPasswordReset :one
+SELECT user_id FROM meta.password_resets
+WHERE token_hash = $1 AND expires_at > $2::timestamptz
+`
+
+type FindPasswordResetParams struct {
+	TokenHash []byte
+	Now       pgtype.Timestamptz
+}
+
+func (q *Queries) FindPasswordReset(ctx context.Context, arg FindPasswordResetParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, findPasswordReset, arg.TokenHash, arg.Now)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
+}
+
+const findResetUsers = `-- name: FindResetUsers :many
+SELECT id FROM meta.users
+WHERE lower(email) = $1::text AND status = 'active'
+LIMIT 2
+`
+
+func (q *Queries) FindResetUsers(ctx context.Context, email string) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, findResetUsers, email)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUser = `-- name: GetUser :one
 SELECT id, username, email, display_name, role, must_change_password,
-       locale, theme, timezone, avatar_color
+       locale, theme, timezone, avatar_color, mention_email
 FROM meta.users WHERE id = $1 AND status = 'active'
 `
 
@@ -182,6 +225,7 @@ type GetUserRow struct {
 	Theme              string
 	Timezone           pgtype.Text
 	AvatarColor        string
+	MentionEmail       bool
 }
 
 func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (GetUserRow, error) {
@@ -198,8 +242,29 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (GetUserRow, erro
 		&i.Theme,
 		&i.Timezone,
 		&i.AvatarColor,
+		&i.MentionEmail,
 	)
 	return i, err
+}
+
+const lockPasswordReset = `-- name: LockPasswordReset :one
+SELECT user_id FROM meta.password_resets
+WHERE token_hash = $1 AND user_id = $2
+  AND expires_at > $3::timestamptz
+FOR UPDATE
+`
+
+type LockPasswordResetParams struct {
+	TokenHash []byte
+	UserID    pgtype.UUID
+	Now       pgtype.Timestamptz
+}
+
+func (q *Queries) LockPasswordReset(ctx context.Context, arg LockPasswordResetParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockPasswordReset, arg.TokenHash, arg.UserID, arg.Now)
+	var user_id pgtype.UUID
+	err := row.Scan(&user_id)
+	return user_id, err
 }
 
 const lockSetup = `-- name: LockSetup :exec
@@ -272,6 +337,24 @@ func (q *Queries) SetupNeeded(ctx context.Context) (pgtype.Bool, error) {
 	return column_1, err
 }
 
+const storePasswordReset = `-- name: StorePasswordReset :exec
+INSERT INTO meta.password_resets (user_id, token_hash, expires_at)
+VALUES ($1, $2, $3)
+ON CONFLICT (user_id) DO UPDATE
+SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at
+`
+
+type StorePasswordResetParams struct {
+	UserID    pgtype.UUID
+	TokenHash []byte
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (q *Queries) StorePasswordReset(ctx context.Context, arg StorePasswordResetParams) error {
+	_, err := q.db.Exec(ctx, storePasswordReset, arg.UserID, arg.TokenHash, arg.ExpiresAt)
+	return err
+}
+
 const timezones = `-- name: Timezones :many
 SELECT name::text FROM pg_timezone_names WHERE name NOT LIKE 'posix/%' AND name NOT LIKE 'right/%' ORDER BY name
 `
@@ -328,17 +411,19 @@ func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) (Tou
 
 const updateProfile = `-- name: UpdateProfile :exec
 UPDATE meta.users
-SET display_name = $2, locale = $3, theme = $4, timezone = $5, updated_at = $6
+SET display_name = $2, locale = $3, theme = $4, timezone = $5, updated_at = $6,
+    mention_email = $7
 WHERE id = $1
 `
 
 type UpdateProfileParams struct {
-	ID          pgtype.UUID
-	DisplayName string
-	Locale      string
-	Theme       string
-	Timezone    pgtype.Text
-	UpdatedAt   pgtype.Timestamptz
+	ID           pgtype.UUID
+	DisplayName  string
+	Locale       string
+	Theme        string
+	Timezone     pgtype.Text
+	UpdatedAt    pgtype.Timestamptz
+	MentionEmail bool
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) error {
@@ -349,6 +434,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) er
 		arg.Theme,
 		arg.Timezone,
 		arg.UpdatedAt,
+		arg.MentionEmail,
 	)
 	return err
 }

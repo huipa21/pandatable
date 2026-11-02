@@ -12,6 +12,7 @@ export interface AuthUser {
   timezone: string | null
   effectiveTimezone: string
   avatarColor: string
+  mentionEmail: boolean
 }
 
 export interface LoginRequest {
@@ -38,7 +39,10 @@ export interface PasswordRequest {
 }
 
 export type ProfilePatch = Partial<
-  Pick<AuthUser, 'displayName' | 'locale' | 'theme' | 'timezone'>
+  Pick<
+    AuthUser,
+    'displayName' | 'locale' | 'theme' | 'timezone' | 'mentionEmail'
+  >
 >
 
 export interface AuthMutation {
@@ -133,6 +137,23 @@ export interface AttachmentValue {
 
 export interface SettingsMutation extends AuthMutation {
   settings: AdminSettings
+}
+
+export interface SMTPSettings {
+  enabled: boolean
+  host: string
+  port: number
+  security: 'starttls' | 'tls' | 'none'
+  hasUsername: boolean
+  hasPassword: boolean
+  fromAddress: string
+}
+
+export type SMTPPatch = Partial<
+  Omit<SMTPSettings, 'hasUsername' | 'hasPassword'>
+> & {
+  username?: string
+  password?: string
 }
 
 export interface AdminWorkspace {

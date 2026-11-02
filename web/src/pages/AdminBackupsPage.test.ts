@@ -22,6 +22,7 @@ const admin: AuthUser = {
   timezone: null,
   effectiveTimezone: 'UTC',
   avatarColor: '#123456',
+  mentionEmail: false,
 }
 
 const running: BackupRecord = {

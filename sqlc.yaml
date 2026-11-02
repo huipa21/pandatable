@@ -58,6 +58,16 @@ sql:
   - engine: postgresql
     schema:
       - migrations
+    queries: internal/mailer/queries.sql
+    gen:
+      go:
+        package: mailersql
+        out: internal/mailer/mailersql
+        sql_package: pgx/v5
+        omit_unused_structs: true
+  - engine: postgresql
+    schema:
+      - migrations
       - internal/admin/catalog.sql
     queries: internal/backup/queries.sql
     gen:

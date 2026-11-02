@@ -17,6 +17,7 @@ const user: AuthUser = {
   timezone: null,
   effectiveTimezone: 'Asia/Shanghai',
   avatarColor: 'teal',
+  mentionEmail: false,
 }
 
 beforeEach(() => setActivePinia(createPinia()))

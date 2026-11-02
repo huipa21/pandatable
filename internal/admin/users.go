@@ -26,13 +26,21 @@ type Service struct {
 	queries  *adminsql.Queries
 	auth     *auth.Service
 	resolver *acl.Resolver
+	smtpKey  []byte
 }
 
-func NewService(pool *db.Pool, authentication *auth.Service, resolver *acl.Resolver) (*Service, error) {
+func NewService(pool *db.Pool, authentication *auth.Service, resolver *acl.Resolver, smtpKeys ...[]byte) (*Service, error) {
 	if pool == nil || pool.Pool == nil || authentication == nil || resolver == nil {
 		return nil, errors.New("admin service requires database, auth service and ACL resolver")
 	}
-	return &Service{pool: pool, queries: adminsql.New(pool), auth: authentication, resolver: resolver}, nil
+	if len(smtpKeys) > 1 || len(smtpKeys) == 1 && len(smtpKeys[0]) != 0 && len(smtpKeys[0]) != 32 {
+		return nil, errors.New("SMTP key must contain 32 bytes")
+	}
+	service := &Service{pool: pool, queries: adminsql.New(pool), auth: authentication, resolver: resolver}
+	if len(smtpKeys) == 1 {
+		service.smtpKey = append([]byte(nil), smtpKeys[0]...)
+	}
+	return service, nil
 }
 
 type User struct {

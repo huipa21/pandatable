@@ -8,7 +8,7 @@ SELECT id, password_hash, status FROM meta.users WHERE id = $1 FOR UPDATE;
 
 -- name: GetUser :one
 SELECT id, username, email, display_name, role, must_change_password,
-       locale, theme, timezone, avatar_color
+       locale, theme, timezone, avatar_color, mention_email
 FROM meta.users WHERE id = $1 AND status = 'active';
 
 -- name: CreateSession :exec
@@ -52,8 +52,30 @@ UPDATE meta.users SET password_hash = $2, must_change_password = false, updated_
 
 -- name: UpdateProfile :exec
 UPDATE meta.users
-SET display_name = $2, locale = $3, theme = $4, timezone = $5, updated_at = $6
+SET display_name = $2, locale = $3, theme = $4, timezone = $5, updated_at = $6,
+    mention_email = $7
 WHERE id = $1;
+
+-- name: FindResetUsers :many
+SELECT id FROM meta.users
+WHERE lower(email) = sqlc.arg(email)::text AND status = 'active'
+LIMIT 2;
+
+-- name: StorePasswordReset :exec
+INSERT INTO meta.password_resets (user_id, token_hash, expires_at)
+VALUES (sqlc.arg(user_id), sqlc.arg(token_hash), sqlc.arg(expires_at))
+ON CONFLICT (user_id) DO UPDATE
+SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at;
+
+-- name: FindPasswordReset :one
+SELECT user_id FROM meta.password_resets
+WHERE token_hash = sqlc.arg(token_hash) AND expires_at > sqlc.arg(now)::timestamptz;
+
+-- name: LockPasswordReset :one
+SELECT user_id FROM meta.password_resets
+WHERE token_hash = sqlc.arg(token_hash) AND user_id = sqlc.arg(user_id)
+  AND expires_at > sqlc.arg(now)::timestamptz
+FOR UPDATE;
 
 -- name: DefaultTimezone :one
 SELECT COALESCE((SELECT CASE WHEN jsonb_typeof(value) = 'string' THEN value #>> '{}' ELSE '' END

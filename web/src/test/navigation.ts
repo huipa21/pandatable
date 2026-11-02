@@ -12,6 +12,7 @@ export const navUser: AuthUser = {
   timezone: null,
   effectiveTimezone: 'Asia/Shanghai',
   avatarColor: '#123456',
+  mentionEmail: false,
 }
 
 export function navigation(): Navigation {

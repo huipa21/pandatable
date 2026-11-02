@@ -40,6 +40,11 @@ func (api *authHTTP) mountAdmin(router chi.Router) {
 		router.Get("/system", api.adminAction(api.systemMetrics))
 		router.Get("/settings", api.adminAction(api.getSettings))
 		router.Patch("/settings", api.adminAction(api.updateSettings))
+		if api.mailer != nil {
+			router.Get("/smtp", api.adminAction(api.getSMTP))
+			router.Patch("/smtp", api.adminAction(api.updateSMTP))
+			router.Post("/smtp/test", api.adminAction(api.testSMTP))
+		}
 		router.Get("/workspaces", api.adminAction(api.listWorkspaces))
 		router.Post("/workspaces/{id}/rescue", api.adminAction(api.rescueWorkspace))
 		router.Get("/user-deletions/cleanup", api.adminAction(api.pendingUserDeletionCleanup))

@@ -252,10 +252,16 @@ func notifyMentions(ctx context.Context, tx pgx.Tx, actor Actor, tableID, commen
 		if recipient.String() == actor.ID {
 			continue
 		}
-		if _, err := q.InsertMentionNotification(ctx, structuresql.InsertMentionNotificationParams{
+		notificationID, err := q.InsertMentionNotification(ctx, structuresql.InsertMentionNotificationParams{
 			UserID: recipient, CommentID: commentID,
-		}); err != nil {
+		})
+		if err != nil {
 			return fmt.Errorf("insert mention notification: %w", err)
+		}
+		if err := q.EnqueueMentionMail(ctx, structuresql.EnqueueMentionMailParams{
+			NotificationID: notificationID, UserID: recipient,
+		}); err != nil {
+			return fmt.Errorf("enqueue mention mail: %w", err)
 		}
 		if err := events.Emit(ctx, tx, events.Event{
 			Type: "notification", TableID: tableID.String(), Recipient: recipient.String(), By: actor.ID,

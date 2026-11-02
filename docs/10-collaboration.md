@@ -57,6 +57,12 @@ handler tx ──► pg_notify('pt_events', '{"t":"row.updated","tableId":"…",
   is not subscribed to the table. Removing a mention or deleting a comment
   removes its notifications; listings also hide revoked access and deleted
   comments.
+- T5.2 optionally queues an email for newly added mentions when the recipient
+  has opted in and has an email address. After commit, the worker rechecks
+  recipient status, preference, comment and table access. Generic mail links
+  to the application without including comment content. Failed delivery is
+  logged and retried twice; it never rolls back the comment or notification
+  (D-207).
 - The bell shows the persisted unread count. Clicking resolves an accessible
   grid, opens the row modal with the comment focused and marks the notification
   read. Comment and notification lists load 50 at a time; a linked older

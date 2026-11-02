@@ -34,9 +34,9 @@ are never renamed and trashed physical-name reservations are never reused.
 
 ## 2. Meta schema
 
-The SQL below describes the current schema; the executable source is
-[`0001_initial.sql`](../migrations/0001_initial.sql) plus the forward-only
-[`0002_metadata.sql`](../migrations/0002_metadata.sql). Never edit an applied
+The SQL below describes the core schema; the executable source is
+[`0001_initial.sql`](../migrations/0001_initial.sql) and the forward-only
+migrations through [`0006_mail.sql`](../migrations/0006_mail.sql). Never edit an applied
 migration. See D-069..D-071 for the T1.1 integrity clarifications.
 
 ```sql
@@ -46,7 +46,7 @@ CREATE SCHEMA meta;
 CREATE TABLE meta.users (
   id                    uuid PRIMARY KEY DEFAULT uuidv7(),
   username              text NOT NULL UNIQUE,         -- lowercase, [a-z0-9._-]{3,32}
-  email                 text UNIQUE,                  -- optional (SMTP later)
+  email                 text UNIQUE,                  -- optional
   display_name          text NOT NULL,
   password_hash         text NOT NULL,                -- argon2id PHC string
   role                  text NOT NULL CHECK (role IN ('admin','user')),
@@ -55,6 +55,7 @@ CREATE TABLE meta.users (
   locale                text NOT NULL DEFAULT 'en' CHECK (locale IN ('en','zh-CN')),
   theme                 text NOT NULL DEFAULT 'system' CHECK (theme IN ('light','dark','system')),
   timezone              text,                         -- IANA name; NULL = app default_timezone (Asia/Shanghai)
+  mention_email         boolean NOT NULL DEFAULT false,
   avatar_color          text NOT NULL,
   last_login_at         timestamptz,
   created_at            timestamptz NOT NULL DEFAULT now(),
@@ -291,6 +292,15 @@ CREATE TABLE meta.backups (
   finished_at timestamptz
 );
 ```
+
+### T5.2 mail metadata (D-205..D-207)
+
+Migration 0006 adds the default-off `users.mention_email` preference,
+singleton `smtp_settings` with an encrypted password, and `password_resets`
+with one SHA-256 token digest and expiry per user. A user email, password or
+status change invalidates that user's outstanding reset. `mention_mail_jobs`
+references persisted notifications with cascading deletion; it stores only a
+notification ID, attempt count and next attempt time, not addresses or content.
 
 ### T1.8 settings and inventory readers (D-091..D-093)
 

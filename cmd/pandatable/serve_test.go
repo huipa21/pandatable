@@ -128,20 +128,21 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 					t.Errorf("close migration verification: %v", err)
 				}
 			}()
-			var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount int
+			var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount, mailCount int
 			err = verification.QueryRow(ctx, `SELECT count(*),
 				count(*) FILTER (WHERE version_id = 1 AND is_applied),
 				count(*) FILTER (WHERE version_id = 2 AND is_applied),
 				count(*) FILTER (WHERE version_id = 3 AND is_applied),
 				count(*) FILTER (WHERE version_id = 4 AND is_applied),
-				count(*) FILTER (WHERE version_id = 5 AND is_applied)
-				FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount)
+				count(*) FILTER (WHERE version_id = 5 AND is_applied),
+				count(*) FILTER (WHERE version_id = 6 AND is_applied)
+				FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount, &mailCount)
 			if err != nil {
 				t.Fatalf("read migration verification: %v", err)
 			}
-			if count != 6 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 {
-				t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d; want 6/1/1/1/1/1",
-					iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount)
+			if count != 7 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 || mailCount != 1 {
+				t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d, mail=%d; want 7/1/1/1/1/1/1",
+					iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount, mailCount)
 			}
 			if migrationRecords() != beforeRestarts {
 				t.Fatal("restart changed migration records")
@@ -168,7 +169,7 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 		if strings.Contains(output.String(), databaseURL) || strings.Contains(output.String(), "postgres://") {
 			t.Fatal("startup logs exposed database connection information")
 		}
-		t.Logf("serve startup %d: health=200, API=404, graceful stop, migrations 1/2/3/4/5 each recorded once and unchanged, zero remaining connections", iteration)
+		t.Logf("serve startup %d: health=200, API=404, graceful stop, migrations 1/2/3/4/5/6 each recorded once and unchanged, zero remaining connections", iteration)
 	}
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

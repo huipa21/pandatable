@@ -141,6 +141,25 @@ func (q *Queries) DeleteRowComment(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const enqueueMentionMail = `-- name: EnqueueMentionMail :exec
+INSERT INTO meta.mention_mail_jobs (notification_id)
+SELECT $1::uuid
+WHERE EXISTS (
+  SELECT 1 FROM meta.users
+  WHERE id = $2::uuid AND mention_email AND email IS NOT NULL
+)
+`
+
+type EnqueueMentionMailParams struct {
+	NotificationID pgtype.UUID
+	UserID         pgtype.UUID
+}
+
+func (q *Queries) EnqueueMentionMail(ctx context.Context, arg EnqueueMentionMailParams) error {
+	_, err := q.db.Exec(ctx, enqueueMentionMail, arg.NotificationID, arg.UserID)
+	return err
+}
+
 const fieldTable = `-- name: FieldTable :one
 
 SELECT f.table_id

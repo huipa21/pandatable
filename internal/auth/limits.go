@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/sha256"
 	"net/netip"
 	"sync"
 	"time"
@@ -23,10 +24,39 @@ type limits struct {
 	mu       sync.Mutex
 	ips      map[netip.Addr]ipWindow
 	accounts map[string]*accountWindow
+	emails   map[[32]byte]ipWindow
 }
 
 func newLimits() *limits {
-	return &limits{ips: make(map[netip.Addr]ipWindow), accounts: make(map[string]*accountWindow)}
+	return &limits{ips: make(map[netip.Addr]ipWindow), accounts: make(map[string]*accountWindow),
+		emails: make(map[[32]byte]ipWindow)}
+}
+
+func (limits *limits) email(email string, now time.Time) bool {
+	limits.mu.Lock()
+	defer limits.mu.Unlock()
+	key := sha256.Sum256([]byte(email))
+	window, exists := limits.emails[key]
+	if exists && now.Before(window.start.Add(time.Minute)) {
+		if window.count >= 3 {
+			return false
+		}
+		window.count++
+		limits.emails[key] = window
+		return true
+	}
+	if len(limits.emails) >= limitCapacity {
+		for key, entry := range limits.emails {
+			if !now.Before(entry.start.Add(time.Minute)) {
+				delete(limits.emails, key)
+			}
+		}
+		if len(limits.emails) >= limitCapacity {
+			return false
+		}
+	}
+	limits.emails[key] = ipWindow{start: now, count: 1}
+	return true
 }
 
 func (limits *limits) ip(ip netip.Addr, now time.Time) bool {

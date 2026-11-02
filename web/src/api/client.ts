@@ -266,6 +266,12 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_USER_CLEANUP_PENDING')
     case 'ERR_AUTH_BUSY':
       return t('errors.ERR_AUTH_BUSY')
+    case 'ERR_RESET_TOKEN':
+      return t('errors.ERR_RESET_TOKEN')
+    case 'ERR_SMTP_KEY':
+      return t('errors.ERR_SMTP_KEY')
+    case 'ERR_SMTP_SEND':
+      return t('errors.ERR_SMTP_SEND')
     case 'ERR_RATE_LIMITED':
       return t('errors.ERR_RATE_LIMITED')
     case 'ERR_CSRF':

@@ -63,7 +63,7 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		INSERT INTO meta.t11_unrelated VALUES ('not owned by migration 0002');
 	`)
 	const snapshotSQL = `SELECT jsonb_build_object(
-		'users', (SELECT jsonb_agg(to_jsonb(u) ORDER BY id) FROM meta.users u),
+		'users', (SELECT jsonb_agg(to_jsonb(u) - 'mention_email' ORDER BY id) FROM meta.users u),
 		'sessions', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id_hash) FROM meta.sessions s),
 		'settings', (SELECT jsonb_agg(to_jsonb(s) ORDER BY key) FROM meta.settings s),
 		'version1', (SELECT jsonb_agg(to_jsonb(v) ORDER BY id) FROM public.goose_db_version v WHERE version_id = 1),
@@ -92,11 +92,16 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		if afterRerun := migrationRecords(t, ctx, migrationDB); beforeRerun != afterRerun {
 			t.Fatal("repeated migration changed version records")
 		}
-		assertSQL(t, ctx, pool, `SELECT count(*) = 6 AND count(*) FILTER (WHERE version_id = 1 AND is_applied) = 1
+		assertSQL(t, ctx, pool, `SELECT count(*) = 7 AND count(*) FILTER (WHERE version_id = 1 AND is_applied) = 1
 			AND count(*) FILTER (WHERE version_id = 2 AND is_applied) = 1
 			AND count(*) FILTER (WHERE version_id = 3 AND is_applied) = 1
 			AND count(*) FILTER (WHERE version_id = 4 AND is_applied) = 1
-			AND count(*) FILTER (WHERE version_id = 5 AND is_applied) = 1 FROM public.goose_db_version`)
+			AND count(*) FILTER (WHERE version_id = 5 AND is_applied) = 1
+			AND count(*) FILTER (WHERE version_id = 6 AND is_applied) = 1 FROM public.goose_db_version`)
+		assertSQL(t, ctx, pool, `SELECT NOT mention_email FROM meta.users WHERE username = 't11_sentinel'`)
+		assertSQL(t, ctx, pool, `SELECT to_regclass('meta.smtp_settings') IS NOT NULL
+			AND to_regclass('meta.password_resets') IS NOT NULL
+			AND to_regclass('meta.mention_mail_jobs') IS NOT NULL`)
 		var after string
 		if err := pool.QueryRow(ctx, snapshotSQL).Scan(&after); err != nil || before != after {
 			t.Fatalf("cycle %d upgrade changed 0001 values/record/extensions/unrelated object (error=%v)", cycle+1, err)
@@ -113,6 +118,11 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		}
 		assertSQL(t, ctx, pool, `SELECT count(*) = 1 FROM meta.row_history`)
 		assertSQL(t, ctx, pool, `SELECT to_regclass('meta.deleted_users') IS NULL`)
+		assertSQL(t, ctx, pool, `SELECT to_regclass('meta.smtp_settings') IS NULL
+			AND to_regclass('meta.password_resets') IS NULL
+			AND to_regclass('meta.mention_mail_jobs') IS NULL
+			AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='meta'
+				AND table_name='users' AND column_name='mention_email')`)
 		if _, err := provider.Up(ctx); err != nil {
 			t.Fatalf("cycle %d reapply later migrations: %v", cycle+1, err)
 		}
@@ -120,6 +130,7 @@ func TestMetadataUpgradeRollbackPostgreSQL(t *testing.T) {
 		assertSQL(t, ctx, pool, `SELECT to_regclass('meta.deleted_users') IS NOT NULL
 			AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='meta'
 				AND table_name='attachment_purge_queue' AND column_name='cleanup_user_id')`)
+		assertSQL(t, ctx, pool, `SELECT NOT mention_email FROM meta.users WHERE username = 't11_sentinel'`)
 		if _, err := provider.DownTo(ctx, 1); err != nil {
 			t.Fatalf("cycle %d rollback to 0001: %v", cycle+1, err)
 		}

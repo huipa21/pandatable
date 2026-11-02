@@ -510,6 +510,14 @@ INSERT INTO meta.notifications (user_id, kind, payload)
 VALUES (sqlc.arg(user_id)::uuid, 'mention', jsonb_build_object('commentId', sqlc.arg(comment_id)::uuid))
 RETURNING id;
 
+-- name: EnqueueMentionMail :exec
+INSERT INTO meta.mention_mail_jobs (notification_id)
+SELECT sqlc.arg(notification_id)::uuid
+WHERE EXISTS (
+  SELECT 1 FROM meta.users
+  WHERE id = sqlc.arg(user_id)::uuid AND mention_email AND email IS NOT NULL
+);
+
 -- name: DeleteMentionNotifications :exec
 DELETE FROM meta.notifications
 WHERE kind = 'mention' AND user_id = ANY(sqlc.arg(user_ids)::uuid[])

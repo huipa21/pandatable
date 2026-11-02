@@ -136,6 +136,9 @@ void load()
       <h1>{{ t('settings.title') }}</h1>
     </div>
     <p>{{ t('settings.defaultsNotice') }}</p>
+    <p>
+      <RouterLink to="/admin/smtp">{{ t('mail.adminTitle') }}</RouterLink>
+    </p>
     <p class="settings-deferred">{{ t('settings.trashJobNotice') }}</p>
     <NAlert v-if="error" type="error" role="alert">
       {{ errorMessage(error) }}

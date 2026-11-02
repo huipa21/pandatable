@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -25,6 +26,7 @@ type Config struct {
 	DBMaxConns       int
 	LogLevel         slog.Level
 	DBConnectRetries int
+	SMTPKey          []byte
 }
 
 type UsageError struct {
@@ -55,6 +57,7 @@ func parse(args []string, lookup func(string) (string, bool)) (Config, error) {
 	dbMaxConns := read("PT_DB_MAX_CONNS", "20")
 	logLevel := read("PT_LOG_LEVEL", "info")
 	dbConnectRetries := read("PT_DB_CONNECT_RETRIES", "30")
+	smtpKey := read("PT_SMTP_KEY", "")
 
 	flags := flag.NewFlagSet("pandatable", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -102,6 +105,12 @@ func parse(args []string, lookup func(string) (string, bool)) (Config, error) {
 	}
 	if cfg.DBConnectRetries, err = parseInteger("PT_DB_CONNECT_RETRIES", dbConnectRetries, 0); err != nil {
 		return Config{}, err
+	}
+	if smtpKey != "" {
+		cfg.SMTPKey, err = base64.StdEncoding.Strict().DecodeString(smtpKey)
+		if err != nil || len(cfg.SMTPKey) != 32 || base64.StdEncoding.EncodeToString(cfg.SMTPKey) != smtpKey {
+			return Config{}, errors.New("PT_SMTP_KEY must be a base64-encoded 32-byte key")
+		}
 	}
 	return cfg, nil
 }

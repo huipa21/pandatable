@@ -25,6 +25,7 @@ import (
 	"pandatable/internal/auth"
 	"pandatable/internal/backup"
 	"pandatable/internal/events"
+	"pandatable/internal/mailer"
 	"pandatable/internal/realtime"
 	"pandatable/internal/structure"
 )
@@ -40,6 +41,7 @@ type AuthOptions struct {
 	Backups        *backup.Manager
 	Attachments    *attachments.Service
 	Realtime       *realtime.Hub
+	Mailer         *mailer.Service
 	Version        string
 	BaseURL        string
 	TrustedProxies []netip.Prefix
@@ -54,6 +56,7 @@ type authHTTP struct {
 	system      *admin.SystemMonitor
 	backups     *backup.Manager
 	realtime    *realtime.Hub
+	mailer      *mailer.Service
 	exports     *exportTickets
 	imports     *importJobs
 	version     string
@@ -75,7 +78,7 @@ func newAuthHTTP(logger *slog.Logger, options AuthOptions) (*authHTTP, error) {
 		logger.Warn("local HTTP authentication uses non-Secure cookies")
 	}
 	return &authHTTP{service: options.Service, acl: options.ACL, structure: options.Structure, admin: options.Admin, attachments: options.Attachments,
-		system: options.System, backups: options.Backups, realtime: options.Realtime, exports: newExportTickets(), imports: newImportJobs(logger), version: options.Version, logger: logger, origin: origin,
+		system: options.System, backups: options.Backups, realtime: options.Realtime, mailer: options.Mailer, exports: newExportTickets(), imports: newImportJobs(logger), version: options.Version, logger: logger, origin: origin,
 		secure: secure, proxies: options.TrustedProxies}, nil
 }
 
@@ -298,6 +301,10 @@ func (api *authHTTP) mount(router chi.Router) {
 	router.Get("/auth/me", api.me)
 	router.Patch("/auth/me", api.profile)
 	router.Post("/auth/password", api.password)
+	if api.mailer != nil {
+		router.Post("/auth/reset/request", api.requestPasswordReset)
+		router.Post("/auth/reset/complete", api.completePasswordReset)
+	}
 	router.Get("/meta/timezones", api.timezones)
 	if api.realtime != nil {
 		router.Get("/ws", api.websocket)
@@ -459,10 +466,11 @@ func patchString(raw json.RawMessage, nullable bool) (*string, error) {
 
 func (api *authHTTP) profile(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		DisplayName json.RawMessage `json:"displayName"`
-		Locale      json.RawMessage `json:"locale"`
-		Theme       json.RawMessage `json:"theme"`
-		Timezone    json.RawMessage `json:"timezone"`
+		DisplayName  json.RawMessage `json:"displayName"`
+		Locale       json.RawMessage `json:"locale"`
+		Theme        json.RawMessage `json:"theme"`
+		Timezone     json.RawMessage `json:"timezone"`
+		MentionEmail json.RawMessage `json:"mentionEmail"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		api.fail(w, r, err)
@@ -473,6 +481,14 @@ func (api *authHTTP) profile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	patch := auth.ProfilePatch{TimezoneSet: len(input.Timezone) != 0}
+	if len(input.MentionEmail) != 0 {
+		var value bool
+		if string(input.MentionEmail) == "null" || json.Unmarshal(input.MentionEmail, &value) != nil {
+			api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Expected a boolean preference"))
+			return
+		}
+		patch.MentionEmail = &value
+	}
 	for _, field := range []struct {
 		raw      json.RawMessage
 		dest     **string

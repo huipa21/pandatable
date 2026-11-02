@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -115,6 +116,10 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 	tag := "0.0.0-" + project
 	baseURL := "http://127.0.0.1:" + port
 	password := rand.Text()
+	var smtpKey [32]byte
+	if _, err := rand.Read(smtpKey[:]); err != nil {
+		return fmt.Errorf("generate E2E SMTP key: %w", err)
+	}
 	dir, err := os.MkdirTemp("", "ptdev-e2e-")
 	if err != nil {
 		return err
@@ -132,6 +137,7 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 		"COMPOSE_PROJECT_NAME": project, "PT_VERSION": tag,
 		"PT_DB_PASSWORD": password, "PT_LOCAL_HTTP_PORT": port,
 		"PT_BASE_URL": baseURL, "PT_TRUSTED_PROXIES": "",
+		"PT_SMTP_KEY":     base64.StdEncoding.EncodeToString(smtpKey[:]),
 		"PT_E2E_BASE_URL": baseURL, "PT_E2E_RESULTS_DIR": results,
 		"PT_DB_NAME": "pandatable", "PT_E2E_PERF": "",
 	}

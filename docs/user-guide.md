@@ -11,6 +11,10 @@ You may be required to change your temporary password before continuing. There
 is no self-registration. Use **Profile** to change your display name, language,
 theme, or timezone and save your changes; use **Change password** to update your
 password. The language and theme controls in the header also change the display.
+If SMTP is configured, **Forgot password?** sends a reset link to the email
+address on your account. The link expires after 30 minutes and can be used
+once; changing the password signs out all sessions. In **Profile**, optionally
+enable mention emails; in-app notifications remain available.
 
 ### 2. Navigate and share
 
@@ -102,6 +106,12 @@ backup requires an operator using the documented server CLI; a package export
 is not a substitute for a backup. See the [deployment guide](13-deployment.md)
 for operational procedures.
 
+Administrators can open **Settings → Email (SMTP)**, configure and save the
+mail server, then send a test message. Leave credential fields blank to retain
+stored values, or select their removal controls to clear them. An SMTP password
+requires the operator to provision the encryption key described in the deployment
+guide.
+
 ## 简体中文
 
 ### 1. 登录和设置偏好
@@ -109,6 +119,9 @@ for operational procedures.
 请向管理员获取账号，然后使用用户名或邮箱登录。首次使用临时密码时，可能需要先
 修改密码。系统不提供自助注册。在**个人资料**中修改显示名称、语言、主题或时区并
 保存；使用**修改密码**更新密码。页眉中的语言和主题控件也可以切换显示。
+如果已配置 SMTP，可通过**忘记密码？**向账号邮箱申请重置链接。链接 30 分钟内
+有效且只能使用一次；修改密码后所有会话都会退出。在**个人资料**中可选择启用
+提及邮件，应用内通知仍然可用。
 
 ### 2. 导航和共享
 
@@ -179,3 +192,7 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 管理员可以打开**备份**，选择**创建备份**，等待状态完成，然后**下载**归档并
 妥善保存。恢复备份需要运维人员使用文档中的服务器命令行工具；数据包导出不能
 代替备份。运维流程请参阅[部署指南](13-deployment.md)。
+
+管理员可以打开**设置 → 电子邮件（SMTP）**，配置并保存邮件服务器，然后发送测试
+邮件。凭据字段留空可保留原值，也可以选择移除控件清除原值。保存 SMTP 密码前，
+运维人员需按部署指南配置加密密钥。

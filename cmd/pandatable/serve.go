@@ -15,6 +15,7 @@ import (
 	"pandatable/internal/config"
 	"pandatable/internal/db"
 	"pandatable/internal/httpapi"
+	"pandatable/internal/mailer"
 	"pandatable/internal/realtime"
 	"pandatable/internal/structure"
 	"pandatable/internal/web"
@@ -60,9 +61,13 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("configure structure service: %w", err)
 	}
-	adminService, err := admin.NewService(pool, authService, resolver)
+	adminService, err := admin.NewService(pool, authService, resolver, cfg.SMTPKey)
 	if err != nil {
 		return fmt.Errorf("configure admin service: %w", err)
+	}
+	mailService, err := mailer.New(pool, authService, adminService, cfg.BaseURL, logger)
+	if err != nil {
+		return fmt.Errorf("configure mail service: %w", err)
 	}
 	attachmentService, err := attachments.New(pool, resolver, cfg.DataDir)
 	if err != nil {
@@ -101,7 +106,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	handler, err := httpapi.New(logger, assets, httpapi.AuthOptions{
 		Service: authService, ACL: aclService, Structure: structureService, Admin: adminService, System: monitor, Backups: backupManager,
-		Attachments: attachmentService, Realtime: hub, Version: version, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
+		Attachments: attachmentService, Realtime: hub, Mailer: mailService, Version: version, BaseURL: cfg.BaseURL, TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP handler: %w", err)
@@ -126,11 +131,17 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		defer close(trashDone)
 		structureService.RunTrashRetentionWorker(autoIndexCtx, logger, attachmentService)
 	}()
+	mailDone := make(chan struct{})
+	go func() {
+		defer close(mailDone)
+		mailService.Run(autoIndexCtx)
+	}()
 	defer func() {
 		stopAutoIndex()
 		<-autoIndexDone
 		<-historyDone
 		<-trashDone
+		<-mailDone
 	}()
 	return httpapi.Run(ctx, listener, handler, logger)
 }

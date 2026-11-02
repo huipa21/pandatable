@@ -285,3 +285,13 @@ INSERT INTO meta.deleted_users(id) VALUES ($1);
 
 -- name: HardDeleteUser :exec
 DELETE FROM meta.users WHERE id=$1;
+-- name: ReadSMTPSettings :one
+SELECT enabled, host, port, security, username, password_cipher, from_address
+FROM meta.smtp_settings WHERE singleton = true;
+
+-- name: WriteSMTPSettings :exec
+UPDATE meta.smtp_settings
+SET enabled = sqlc.arg(enabled), host = sqlc.arg(host), port = sqlc.arg(port),
+    security = sqlc.arg(security), username = sqlc.arg(username),
+    password_cipher = sqlc.narg(password_cipher), from_address = sqlc.arg(from_address)
+WHERE singleton = true;
