@@ -120,7 +120,7 @@ Exact commands, failure corrections, CPU/memory observations and owned cleanup:
 
 | Test | Status | Evidence / remaining requirement |
 |---|---|---|
-| AT-101 | Pass | Production-image Chromium setup: empty-instance redirect, wrong-token 401, desktop and Pixel 7 form layout, first-admin creation, authenticated `/auth/me`, completed status and POST 410. Browser/CSP diagnostics clean. |
+| AT-101 | Pass | Production-image Chromium setup: empty-instance redirect, wrong-token 401, desktop and Pixel 7 form layout, first-admin creation, authenticated `/auth/me`, completed status and POST 410. Browser/CSP diagnostics clean. Setup-origin fix (2026-11-02): fast setup E2E passes; live Vite browser navigation canonicalizes localhost to the configured origin and reaches token validation rather than CSRF rejection. |
 | AT-002/003/004/802 | Pass preserved | Required PG18 migration/restart gate; shell/spike image checks; initial shell gzip 138,976 bytes (<600,000); 80 matching non-empty locale keys. |
 | AT-103/803 | Pass preserved | Existing real HTTP/PG18 rate-limit, CSRF/Origin, cookie and security-header coverage remains green in the required gate. |
 | AT-102/116 and full AT-117 | Partial, unchanged | Login/profile UI and real datetime/filter/admin-default behavior remain outside T1.3. |

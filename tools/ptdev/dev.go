@@ -79,7 +79,7 @@ func (runner runner) dev(ctx context.Context) (err error) {
 		"PT_LISTEN":       cfg.Listen,
 		"PT_BASE_URL":     cfg.BaseURL,
 	}
-	fmt.Printf("Dev UI: http://127.0.0.1:5173; API proxy: %s (WebSocket-ready)\n", target)
+	fmt.Printf("Dev UI: %s; API proxy: %s (WebSocket-ready)\n", cfg.BaseURL, target)
 	return supervise(ctx,
 		func(ctx context.Context) *exec.Cmd {
 			command := runner.command(ctx, "", env, binary, "serve")
@@ -87,7 +87,10 @@ func (runner runner) dev(ctx context.Context) (err error) {
 			return command
 		},
 		func(ctx context.Context) *exec.Cmd {
-			return runner.command(ctx, "web", map[string]string{"PT_DEV_API_TARGET": target}, "node", vite)
+			return runner.command(ctx, "web", map[string]string{
+				"PT_DEV_API_TARGET": target,
+				"PT_BASE_URL":       cfg.BaseURL,
+			}, "node", vite)
 		},
 	)
 }

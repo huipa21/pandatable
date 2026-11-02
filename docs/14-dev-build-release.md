@@ -54,6 +54,14 @@ Vite's API target is derived from `PT_LISTEN` (wildcard hosts mapped to loopback
 port zero is rejected. Standalone `pnpm dev` uses `PT_DEV_API_TARGET` or
 `http://127.0.0.1:8080`. No WebSocket server is implemented.
 
+Vite redirects browser page navigation between loopback aliases (`localhost`,
+`127.0.0.1`, `[::1]`) to the exact local HTTP `PT_BASE_URL` origin (D-208).
+`ptdev dev` passes the resolved base URL to both processes and prints that URL.
+Standalone `pnpm dev` must use the same `PT_BASE_URL` as the backend (default
+`http://127.0.0.1:5173`). Reload an already-open page after changing this setting.
+API requests and their Origin headers are never rewritten: a mismatched origin
+still returns `403 ERR_CSRF`; setup displays the localized security-check error.
+
 The supervisor compiles once (restart it for Go changes); Vite provides frontend
 HMR. Both servers are direct children, not `go run`/`pnpm` grandchildren. Either
 child exit/start failure stops the other and returns a visible error. Ctrl+C or

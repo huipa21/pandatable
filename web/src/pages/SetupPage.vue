@@ -14,6 +14,7 @@ const setupErrorCodes = [
   'ERR_SETUP_TOKEN',
   'ERR_SETUP_COMPLETE',
   'ERR_AUTH_BUSY',
+  'ERR_CSRF',
 ] as const
 type SetupErrorCode = (typeof setupErrorCodes)[number] | 'ERR_INTERNAL'
 
@@ -41,6 +42,8 @@ const errorMessage = computed(() => {
       return t('errors.ERR_SETUP_COMPLETE')
     case 'ERR_AUTH_BUSY':
       return t('errors.ERR_AUTH_BUSY')
+    case 'ERR_CSRF':
+      return t('errors.ERR_CSRF')
     default:
       return t('errors.ERR_INTERNAL')
   }

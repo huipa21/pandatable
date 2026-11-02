@@ -82,6 +82,30 @@ func TestCSRFRequiresBothHeaderAndOrigin(t *testing.T) {
 	}
 }
 
+func TestCSRFLocalDevOriginIsExact(t *testing.T) {
+	api := &authHTTP{origin: "http://127.0.0.1:5173", logger: slog.New(slog.NewJSONHandler(io.Discard, nil))}
+	for _, test := range []struct {
+		origin string
+		status int
+	}{
+		{"http://127.0.0.1:5173", http.StatusNoContent},
+		{"http://localhost:5173", http.StatusForbidden},
+		{"http://127.0.0.1:8080", http.StatusForbidden},
+		{"https://evil.example", http.StatusForbidden},
+	} {
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/setup", nil)
+		request.Header.Set("Origin", test.origin)
+		request.Header.Set("X-PT-CSRF", "1")
+		response := httptest.NewRecorder()
+		api.protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})).ServeHTTP(response, request)
+		if response.Code != test.status {
+			t.Errorf("origin=%q: status=%d, want=%d", test.origin, response.Code, test.status)
+		}
+	}
+}
+
 func TestTrustedProxyChains(t *testing.T) {
 	proxies := []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8"), netip.MustParsePrefix("2001:db8:1::/48")}
 	for _, test := range []struct {

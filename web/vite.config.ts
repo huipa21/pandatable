@@ -2,9 +2,11 @@ import { fileURLToPath, URL } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import VueI18n from '@intlify/unplugin-vue-i18n/vite'
 import { defineConfig } from 'vitest/config'
+import { canonicalDevOrigin } from './dev-origin'
 
 export default defineConfig({
   plugins: [
+    canonicalDevOrigin(process.env.PT_BASE_URL ?? 'http://127.0.0.1:5173'),
     vue(),
     VueI18n({
       include: fileURLToPath(new URL('./src/i18n/*.json', import.meta.url)),
