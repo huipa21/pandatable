@@ -69,9 +69,13 @@ afterEach(() => {
 async function setup() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+    routes: [
+      { path: '/w/:workspaceId', component: { template: '<div />' } },
+      { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
+    ],
   })
-  await router.push('/home')
+  // The sidebar tree shows the workspace named by the route.
+  await router.push('/w/w')
   return { plugins: [pinia, i18n, router] }
 }
 

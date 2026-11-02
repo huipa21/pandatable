@@ -17,6 +17,7 @@ import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore } from '../../stores/realtime'
 
 const { t, locale } = useI18n()
+const emit = defineEmits<{ count: [value: number] }>()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
@@ -167,6 +168,7 @@ watch(
     if (status === 'connected') void load()
   },
 )
+watch(unreadCount, (count) => emit('count', count), { immediate: true })
 onBeforeUnmount(() => {
   disposed = true
   generation++
@@ -201,6 +203,7 @@ onBeforeUnmount(() => {
         <path d="M6 9a6 6 0 0 1 12 0v5l2 3H4l2-3z" />
         <path d="M10 20h4" />
       </svg>
+      <span aria-hidden="true">{{ t('notifications.title') }}</span>
       <span v-if="unreadCount" class="unread-count">{{ unreadCount }}</span>
     </button>
     <span v-if="error && !opened" role="alert">{{
@@ -261,20 +264,27 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.notification-bell {
-  position: relative;
+.notification-bell > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 .unread-count {
-  margin-left: 4px;
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 12px;
+  text-align: center;
 }
 .notification-list {
-  position: absolute;
-  z-index: 20;
-  right: 0;
-  width: min(360px, calc(100vw - 24px));
-  max-height: min(70dvh, 500px);
+  max-height: min(50dvh, 400px);
   overflow: auto;
-  padding: 12px;
+  margin: 4px 0;
+  padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -296,15 +306,5 @@ onBeforeUnmount(() => {
   gap: 4px;
   width: 100%;
   text-align: left;
-}
-
-@media (max-width: 1200px) {
-  .notification-bell {
-    position: static;
-  }
-  .notification-list {
-    right: auto;
-    left: 12px;
-  }
 }
 </style>

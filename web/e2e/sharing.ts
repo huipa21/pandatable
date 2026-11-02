@@ -7,6 +7,7 @@ import type {
   ResourceKind,
   TableSchema,
 } from '../src/api/types'
+import { openNodeActions, setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -166,17 +167,14 @@ export async function verifySharing(
   let groupId: string | undefined
   let transientGroup: string | undefined
   try {
-    await alice
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(alice, 'en')
     // Native dialog stacks above the mobile drawer and returns keyboard focus.
     if (alice.viewportSize()!.width < 768)
       await alice
         .getByRole('button', { name: en.nav.open, exact: true })
         .click()
     const actions = alice.locator(`[data-nav-id="${wid}"] > .node-actions`)
-    if ((await actions.getAttribute('open')) === null)
-      await actions.locator('summary').click()
+    await openNodeActions(actions)
     const trigger = actions.getByRole('button', {
       name: en.sharing.open,
       exact: true,
@@ -565,12 +563,8 @@ export async function verifySharing(
       fullPage: true,
     })
     await close(alice)
-    await alice
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
-    await alice
-      .getByRole('button', { name: zh.common.themes.dark, exact: true })
-      .click()
+    await setLocale(alice, 'zh-CN')
+    await setTheme(alice, 'dark')
     await open(alice, tablePath, zh)
     await expect(dialog(alice, zh)).toContainText(zh.sharing.inherited)
     await expect(alice.locator('html')).toHaveAttribute('data-theme', 'dark')
@@ -580,9 +574,7 @@ export async function verifySharing(
       fullPage: true,
     })
     await close(alice, zh)
-    await alice
-      .getByRole('button', { name: zh.common.themes.light, exact: true })
-      .click()
+    await setTheme(alice, 'light')
     // Preserve T1.11's Chinese-locale continuation and independent admin inventory.
     expect(
       (await admin.request.get(`/api/v1/tables/${tid}/schema`)).status(),

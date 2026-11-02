@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { expect, expectHTTPFailure, paceLogin, test } from './fixtures'
 import type { BackupListing, BackupRecord } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -103,9 +104,7 @@ test('AT-706/708: admin backup lifecycle, ZIP download and localized disk guard'
     await paceLogin(page)
     await page.goto('/login')
     if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-      await page
-        .getByRole('button', { name: en.common.languages.en, exact: true })
-        .click()
+      await setLocale(page, 'en')
     await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
     await page
       .getByLabel(en.auth.password, { exact: true })
@@ -200,9 +199,7 @@ test('AT-706/708: admin backup lifecycle, ZIP download and localized disk guard'
     await expect(page.getByRole('alert')).toContainText(
       en.errors.ERR_BACKUP_DISK_SPACE,
     )
-    await page
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
+    await setLocale(page, 'zh-CN')
     await expect(page.getByRole('alert')).toContainText(
       zh.errors.ERR_BACKUP_DISK_SPACE,
     )

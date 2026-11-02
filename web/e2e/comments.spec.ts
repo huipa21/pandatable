@@ -7,6 +7,7 @@ import {
   paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { openAccountMenu } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -63,8 +64,8 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
   expect(createdRow.status()).toBe(201)
   const row = ((await createdRow.json()).rows as DataRow[])[0]!
 
-  const bobName = isMobile ? 'bob-mobile' : 'bob'
-  const outsiderName = isMobile ? 'bobby-mobile' : 'bobby'
+  const bobName = isMobile ? 'bob-mention-mobile' : 'bob'
+  const outsiderName = isMobile ? 'bobby-mention-mobile' : 'bobby'
   const createUser = async (username: string, displayName: string) => {
     const response = await page.request.post('/api/v1/admin/users', {
       headers: headers(),
@@ -99,6 +100,7 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
       : { width: 1440, height: 900 },
     isMobile,
     hasTouch: isMobile,
+    locale: 'en-US',
   })
   const bob = await bobContext.newPage()
   const bobDiagnostics = await observeBrowser(bob)
@@ -126,6 +128,7 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
     await login(bob, bobName, 'Changed-password-123')
     await bob.goto('/home')
     await expect.poll(() => connected).toBe(true)
+    await openAccountMenu(bob)
     const bell = bob.getByRole('button', {
       name: en.notifications.button.replace('{count}', '0'),
     })
@@ -183,6 +186,15 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
     const unreadBell = bob.getByRole('button', {
       name: en.notifications.button.replace('{count}', '1'),
     })
+    await expect(
+      bob.getByRole('button', {
+        name: en.account.menuUnread
+          .replace('{name}', 'Bob')
+          .replace('{count}', '1'),
+        exact: true,
+      }),
+    ).toBeVisible()
+    await openAccountMenu(bob)
     await expect(unreadBell).toBeVisible()
     await unreadBell.click()
     await bob.locator('.notification-list li button').click()
@@ -196,11 +208,11 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
     const focused = bobDialog.locator(`[data-comment-id="${commentId}"]`)
     await expect(focused).toBeFocused()
     await expect(focused).toContainText(`@${bobName} please check`)
-    await expect(
-      bob.getByRole('button', {
-        name: en.notifications.button.replace('{count}', '0'),
-      }),
-    ).toBeVisible()
+    // The row dialog is modal, so read the avatar's unread summary instead.
+    await expect(bob.locator('.avatar-button')).toHaveAttribute(
+      'aria-label',
+      en.account.menu.replace('{name}', 'Bob'),
+    )
     const notifications = await bob.request.get('/api/v1/notifications')
     expect((await notifications.json()).unreadCount).toBe(0)
 

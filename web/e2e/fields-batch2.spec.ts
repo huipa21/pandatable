@@ -9,6 +9,7 @@ import type {
   TableSchema,
 } from '../src/api/types'
 import { restoreSettings } from './settings'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -20,9 +21,7 @@ async function login(page: Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: en.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })

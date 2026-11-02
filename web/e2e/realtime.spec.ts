@@ -172,6 +172,7 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
   expect(grant.status()).toBe(201)
   const bobContext = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport: isMobile
       ? { width: 390, height: 844 }
       : { width: 1440, height: 900 },
@@ -373,6 +374,7 @@ test('AT-601/602/603/605/107: live grid, LWW, reconnect and revocation', async (
 
   const bobContext = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport: { width: 1440, height: 900 },
   })
   const bob = await bobContext.newPage()
@@ -490,6 +492,7 @@ test('AT-601/602/603/605/107: live grid, LWW, reconnect and revocation', async (
 
     offlineContext = await browser.newContext({
       baseURL: process.env.PT_E2E_BASE_URL,
+      locale: 'en-US',
       viewport: { width: 1440, height: 900 },
       storageState: await page.context().storageState(),
     })
@@ -568,6 +571,7 @@ test('AT-601: mobile cards receive live row changes', async ({
   )
   const context = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,

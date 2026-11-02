@@ -83,12 +83,19 @@ test('real embedded shell, health, assets and history boundaries', async ({
   expect(post.status()).toBe(405)
 })
 
-test('locale and all theme modes persist in the actual production shell', async ({
+test('locale and theme toggles persist in the actual production shell', async ({
   page,
 }) => {
   await page.goto('/login')
   const html = page.locator('html')
   await expect(html).toHaveAttribute('lang', 'en')
+  // Before any choice the theme follows the operating system.
+  await expect(html).toHaveAttribute('data-theme', 'light')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(html).toHaveAttribute('data-theme', 'dark')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(html).toHaveAttribute('data-theme', 'light')
+
   await page
     .getByRole('button', { name: en.common.languages.zhCN, exact: true })
     .click()
@@ -97,27 +104,34 @@ test('locale and all theme modes persist in the actual production shell', async 
   ).toBeVisible()
   await expect(html).toHaveAttribute('lang', 'zh-CN')
   await page
-    .getByRole('button', { name: zh.common.themes.dark, exact: true })
+    .getByRole('button', { name: zh.common.useDark, exact: true })
     .click()
   await expect(html).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('.welcome-card')).toHaveCSS(
     'background-color',
     'rgb(24, 24, 28)',
   )
+  await expect(
+    page.getByRole('button', { name: zh.common.useLight, exact: true }),
+  ).toBeVisible()
   await page.reload()
   await expect(
     page.getByRole('heading', { name: zh.login.title }),
   ).toBeVisible()
   await expect(html).toHaveAttribute('data-theme', 'dark')
   await expect(
-    page.getByRole('button', { name: zh.common.themes.dark, exact: true }),
-  ).toHaveAttribute('aria-pressed', 'true')
+    page.getByRole('button', { name: zh.common.languages.en, exact: true }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: zh.common.useLight, exact: true }),
+  ).toBeVisible()
 
   await page
     .getByRole('button', { name: zh.common.languages.en, exact: true })
     .click()
+  await expect(html).toHaveAttribute('lang', 'en')
   await page
-    .getByRole('button', { name: en.common.themes.light, exact: true })
+    .getByRole('button', { name: en.common.useLight, exact: true })
     .click()
   await page.emulateMedia({ colorScheme: 'dark' })
   await expect(html).toHaveAttribute('data-theme', 'light')
@@ -128,25 +142,24 @@ test('locale and all theme modes persist in the actual production shell', async 
   await page.reload()
   await expect(html).toHaveAttribute('lang', 'en')
   await expect(html).toHaveAttribute('data-theme', 'light')
-  await page
-    .getByRole('button', { name: en.common.themes.system, exact: true })
-    .click()
-  await expect(html).toHaveAttribute('data-theme', 'dark')
-  await page.reload()
   await expect(
-    page.getByRole('button', { name: en.common.themes.system, exact: true }),
-  ).toHaveAttribute('aria-pressed', 'true')
-  await expect(html).toHaveAttribute('data-theme', 'dark')
-  await page.emulateMedia({ colorScheme: 'light' })
-  await expect(html).toHaveAttribute('data-theme', 'light')
+    page.getByRole('button', { name: en.common.useDark, exact: true }),
+  ).toBeVisible()
 
-  const controls = await page.locator('.preferences fieldset').all()
-  expect(controls).toHaveLength(2)
-  const language = await controls[0]!.boundingBox()
-  const theme = await controls[1]!.boundingBox()
+  const language = await page
+    .locator('.preferences .language-toggle')
+    .boundingBox()
+  const theme = await page
+    .locator('.preferences')
+    .getByRole('button', { name: en.common.useDark, exact: true })
+    .boundingBox()
   expect(language).not.toBeNull()
   expect(theme).not.toBeNull()
-  expect(Math.abs(language!.y - theme!.y)).toBeLessThan(2)
+  expect(
+    Math.abs(
+      language!.y + language!.height / 2 - (theme!.y + theme!.height / 2),
+    ),
+  ).toBeLessThan(2)
   expect(language!.x + language!.width).toBeLessThanOrEqual(theme!.x)
   expect(
     await page.evaluate(

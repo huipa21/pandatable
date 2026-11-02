@@ -7,6 +7,7 @@ import {
   expectBrowserClean,
   paceLogin,
 } from './fixtures'
+import { adminLink, openAccountMenu, setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyDashboard } from './dashboard'
@@ -19,10 +20,7 @@ async function signIn(page: Page, login: string, password: string) {
   const english = page.getByLabel(en.auth.login, { exact: true })
   const chinese = page.getByLabel(zh.auth.login, { exact: true })
   await expect(english.or(chinese)).toBeVisible()
-  if (await chinese.isVisible())
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+  if (await chinese.isVisible()) await setLocale(page, 'en')
   await english.fill(login)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
@@ -53,7 +51,7 @@ async function verifyGroups(page: Page, suffix: string) {
     expect(response.status()).toBe(201)
     createdUsers.push((await response.json()).user)
   }
-  await page.getByRole('link', { name: en.groups.title, exact: true }).click()
+  await (await adminLink(page, en.groups.title)).click()
   await expect(page.getByText(en.groups.empty, { exact: true })).toBeVisible()
   await page
     .getByRole('button', { name: en.groups.create, exact: true })
@@ -108,9 +106,7 @@ async function verifyGroups(page: Page, suffix: string) {
     .click()
   await expect(page.locator('[data-group="team-a"]')).toBeVisible()
   await page.getByRole('link', { name: 'team-a', exact: true }).click()
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(
     page.getByRole('heading', { name: zh.groups.members, exact: true }),
   ).toBeVisible()
@@ -152,19 +148,23 @@ async function verifyGroups(page: Page, suffix: string) {
     zh.errors.ERR_GROUP_NAME_CONFLICT,
   )
   await page.getByRole('button', { name: zh.admin.cancel, exact: true }).click()
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
+  await setLocale(page, 'en')
   await page
     .getByRole('link', { name: en.groups.backGroups, exact: true })
     .click()
   await page
     .getByLabel(en.groups.searchHint, { exact: true })
     .fill('no-such-group')
-  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await page
+    .locator('main')
+    .getByRole('button', { name: en.admin.search, exact: true })
+    .click()
   await expect(page.getByText(en.groups.empty, { exact: true })).toBeVisible()
   await page.getByLabel(en.groups.searchHint, { exact: true }).fill('团队')
-  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await page
+    .locator('main')
+    .getByRole('button', { name: en.admin.search, exact: true })
+    .click()
   await expect(page.locator('[data-group]')).toHaveCount(1)
   await page.getByRole('link', { name: '团队-a', exact: true }).click()
   await page
@@ -227,10 +227,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
   expect(unauthenticated.status()).toBe(401)
   await signIn(page, 'first-admin', 'Setup-password-123')
   await expect(page).toHaveURL(/\/home$/)
-  await expect(
-    page.getByRole('link', { name: en.admin.menu, exact: true }),
-  ).toBeVisible()
-  await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
+  await (await adminLink(page, en.admin.users)).click()
   await expect(page).toHaveURL(/\/admin\/users$/)
   await verifyDashboard(page)
   const participants = await verifyGroups(
@@ -258,9 +255,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
   await expect(card).toContainText(`${username}@example.test`)
 
   // Real edit/role changes in both languages, without adding sign-in attempts.
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(
     page.getByRole('heading', { name: zh.admin.users }),
   ).toBeVisible()
@@ -280,13 +275,14 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
     .getByRole('button', { name: zh.admin.confirm, exact: true })
     .click()
   await expect(card).toContainText(zh.admin.regularUser)
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
+  await setLocale(page, 'en')
   await page
     .getByLabel(en.admin.searchHint, { exact: true })
     .fill(username.toUpperCase())
-  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await page
+    .locator('main')
+    .getByRole('button', { name: en.admin.search, exact: true })
+    .click()
   await expect(page.locator('.user-card')).toHaveCount(1)
   expect(
     await page.evaluate(
@@ -313,9 +309,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
     await expect(
       userPage.getByRole('link', { name: zh.settings.title, exact: true }),
     ).toHaveCount(0)
-    await userPage
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(userPage, 'en')
     await userPage.reload()
     await expect(userPage.locator('html')).toHaveAttribute('lang', 'en')
     await expect(userPage.locator('.brand')).toContainText(branding.appName)
@@ -355,8 +349,10 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
       locale: 'zh-CN',
       effectiveTimezone: 'Europe/London',
     })
+    const userMenu = await openAccountMenu(userPage)
+    await expect(userMenu.locator('details.user-submenu')).toHaveCount(0)
     await expect(
-      userPage.getByRole('link', { name: en.admin.menu, exact: true }),
+      userMenu.getByText(en.admin.menu, { exact: true }),
     ).toHaveCount(0)
     await expect(
       userPage.getByRole('link', { name: en.groups.title, exact: true }),

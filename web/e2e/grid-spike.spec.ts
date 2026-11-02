@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import type { Components } from '@revolist/revogrid'
 import type { WindowStats } from '../src/components/grid/window'
 import { test, expect } from './fixtures'
+import { setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -32,9 +33,7 @@ test('isolated opt-in, 200k window, bounded DOM/cache, stale navigation and unmo
     await expect(
       page.getByRole('button', { name: en.spike.start, exact: true }),
     ).toHaveCount(0)
-    await page
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
+    await setLocale(page, 'zh-CN')
     await expect(page.getByText(zh.spike.mobile)).toBeVisible()
     expect(
       await page.evaluate(
@@ -267,22 +266,16 @@ test('wrapper editing, keyboard ranges, quoted TSV, Ctrl+D, fill handle, groupin
         background: getComputedStyle(element).backgroundColor,
       }))
   const light = await colors()
-  await page
-    .getByRole('button', { name: en.common.themes.dark, exact: true })
-    .click()
+  await setTheme(page, 'dark')
   await expect(grid).toHaveAttribute('theme', 'darkCompact')
   await expect.poll(colors).not.toEqual(light)
   await testInfo.attach('dark-grid', {
     body: await grid.screenshot(),
     contentType: 'image/png',
   })
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(grid).toContainText(zh.spike.fields.note)
-  await page
-    .getByRole('button', { name: zh.common.themes.light, exact: true })
-    .click()
+  await setTheme(page, 'light')
   await expect(grid).toHaveAttribute('theme', 'compact')
   await page.setViewportSize({ width: 1024, height: 1000 })
   const pinned = grid

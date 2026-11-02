@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useNavStore, type NavigationItem } from '../../stores/nav'
+import { useNavLocation } from '../../composables/useNavLocation'
+import AppIcon from '../AppIcon.vue'
+import NavActions from './NavActions.vue'
 import NavNode from './NavNode.vue'
 
 const emit = defineEmits<{ navigate: [] }>()
 const { t } = useI18n()
 const nav = useNavStore()
+const { workspace } = useNavLocation()
 let dragged: NavigationItem | null = null
 
 async function move(item: NavigationItem, index: number) {
@@ -34,36 +38,72 @@ function drop(target: NavigationItem) {
 
 <template>
   <nav :aria-label="t('nav.title')" class="nav-tree" @dragend="dragged = null">
-    <h2>{{ t('nav.title') }}</h2>
-    <div class="nav-actions">
-      <button
-        :disabled="nav.busy"
-        @click="nav.editor = { operation: 'create', kind: 'workspace' }"
-      >
-        {{ t('nav.create.workspace') }}
-      </button>
-      <button :disabled="nav.loading" @click="nav.refresh(true)">
-        {{ t('nav.refresh') }}
-      </button>
-    </div>
-    <p v-if="nav.loading" role="status">{{ t('nav.loading') }}</p>
-    <p v-if="nav.error && nav.loaded">{{ t('nav.stale') }}</p>
-    <p v-if="nav.loaded && !nav.error && nav.items.length === 0">
-      {{ t('nav.empty') }}
+    <p v-if="nav.loading && !nav.loaded" role="status">
+      {{ t('nav.loading') }}
     </p>
-    <ul v-if="nav.loaded">
-      <NavNode
-        v-for="item in nav.items"
-        :key="item.id"
-        :item="item"
-        @navigate="emit('navigate')"
-        @drag="dragged = $event"
-        @drop="drop"
-        @move="move"
-      />
+    <p v-if="nav.error && nav.loaded" class="path-only">{{ t('nav.stale') }}</p>
+    <ul v-if="nav.loaded && workspace" class="workspace-root">
+      <li :data-nav-id="workspace.id" data-kind="workspace">
+        <div class="workspace-box">
+          <RouterLink
+            class="workspace-link"
+            :to="workspace.path"
+            @click="emit('navigate')"
+          >
+            {{ workspace.name }}
+          </RouterLink>
+          <span v-if="workspace.pathOnly" class="path-only">{{
+            t('nav.pathOnly')
+          }}</span>
+        </div>
+        <NavActions :item="workspace" />
+        <div class="workspace-section">
+          <span class="path-only">{{
+            t('nav.bookCount', workspace.children.length)
+          }}</span>
+          <button
+            v-if="workspace.canCreate"
+            class="icon-button"
+            :aria-label="t('nav.createBookIn', { name: workspace.name })"
+            :title="t('nav.create.book')"
+            :disabled="nav.busy"
+            @click="
+              nav.editor = {
+                operation: 'create',
+                kind: 'book',
+                parentId: workspace.id,
+              }
+            "
+          >
+            <AppIcon name="plus" :size="16" />
+          </button>
+        </div>
+        <p
+          v-if="workspace.children.length === 0 && !workspace.pathOnly"
+          class="path-only"
+        >
+          {{ t('nav.emptyBooks') }}
+        </p>
+        <ul>
+          <NavNode
+            v-for="item in workspace.children"
+            :key="item.id"
+            :item="item"
+            @navigate="emit('navigate')"
+            @drag="dragged = $event"
+            @drop="drop"
+            @move="move"
+          />
+        </ul>
+      </li>
     </ul>
-    <RouterLink class="trash-link" to="/trash" @click="emit('navigate')">
-      {{ t('trash.title') }}
+    <RouterLink
+      v-else
+      class="workspace-box workspace-placeholder"
+      to="/home"
+      @click="emit('navigate')"
+    >
+      {{ t('nav.selectWorkspace') }}
     </RouterLink>
   </nav>
 </template>

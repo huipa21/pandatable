@@ -8,16 +8,18 @@ import { useNavStore } from '../../stores/nav'
 import NavContents from './NavContents.vue'
 import StructureDialog from './StructureDialog.vue'
 import ShareDialog from '../sharing/ShareDialog.vue'
+import UserMenu from '../account/UserMenu.vue'
+import { usePreferencesStore } from '../../stores/preferences'
 
 const { t } = useI18n()
 const nav = useNavStore()
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+const preferences = usePreferencesStore()
 const media = window.matchMedia('(max-width: 767px)')
 const mobile = ref(media.matches)
 const drawer = ref<HTMLDialogElement>()
-const drawerOpen = ref(false)
 let timer: ReturnType<typeof setInterval> | undefined
 
 function refresh() {
@@ -38,17 +40,20 @@ function visibility() {
 }
 function close() {
   drawer.value?.close()
-  drawerOpen.value = false
+  nav.drawerOpen = false
 }
 async function open() {
-  drawerOpen.value = true
   await nextTick()
-  drawer.value?.showModal()
+  if (nav.drawerOpen && !drawer.value?.open) drawer.value?.showModal()
 }
 function resize() {
   close()
   mobile.value = media.matches
 }
+watch(
+  () => nav.drawerOpen,
+  (value) => (value ? void open() : close()),
+)
 watch(() => route.fullPath, close)
 watch([() => nav.error, () => nav.mutationError], async (errors) => {
   for (const cause of errors) {
@@ -78,16 +83,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="sidebar-container">
-    <button
-      v-if="mobile"
-      class="drawer-toggle"
-      :aria-expanded="drawerOpen"
-      @click="open"
+  <div
+    :class="[
+      'sidebar-container',
+      { collapsed: mobile || preferences.sidebarCollapsed },
+    ]"
+  >
+    <aside
+      v-if="!mobile && !preferences.sidebarCollapsed"
+      class="sidebar-desktop"
     >
-      {{ t('nav.open') }}
-    </button>
-    <aside v-else class="sidebar-desktop"><NavContents /></aside>
+      <NavContents />
+      <div class="sidebar-footer"><UserMenu placement="top" /></div>
+    </aside>
     <dialog
       ref="drawer"
       class="nav-drawer"
@@ -95,7 +103,7 @@ onBeforeUnmount(() => {
       @cancel.prevent="close"
       @click="$event.target === drawer && close()"
     >
-      <div v-if="drawerOpen" class="drawer-content">
+      <div v-if="nav.drawerOpen" class="drawer-content">
         <button @click="close">{{ t('nav.close') }}</button>
         <NavContents @navigate="close" />
       </div>

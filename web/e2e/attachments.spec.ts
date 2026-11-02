@@ -7,6 +7,7 @@ import type {
   RowQueryResult,
   TableSchema,
 } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -18,9 +19,7 @@ async function login(page: import('@playwright/test').Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: en.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -158,9 +157,7 @@ async function signInAs(
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: en.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill(username)
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -311,6 +308,7 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
   await createUser(page, outsiderName)
   const outsiderContext = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL!,
+    locale: 'en-US',
   })
   const outsider = await outsiderContext.newPage()
   try {

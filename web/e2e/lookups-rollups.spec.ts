@@ -1,7 +1,7 @@
-import { expect, test, paceLogin } from './fixtures'
+import { allowHTTPFailure, expect, test, paceLogin } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type { Browser, Page } from '@playwright/test'
 
 const headers = () => ({
@@ -17,9 +17,7 @@ async function signIn(
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill(username)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
@@ -137,6 +135,7 @@ async function createReader(page: Page, browser: Browser, username: string) {
   const user = (await response.json()).user as { id: string }
   const context = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL!,
+    locale: 'en-US',
   })
   const reader = await context.newPage()
   await signIn(reader, username, 'Temporary-password-123')
@@ -265,6 +264,14 @@ test('AT-407/408/411 lookup, rollups and cross-table masking', async ({
     relation.relation.parentFieldId,
     hoursField.field.id,
   )
+  // The open grid may query mid-change and retry after a stale-schema 409.
+  for (const schema of [projectSchema, taskSchema])
+    allowHTTPFailure(
+      page,
+      'POST',
+      `/api/v1/views/${schema.views[0]!.id}/query`,
+      409,
+    )
 
   const totals = [
     ['count', hoursField.field.id],

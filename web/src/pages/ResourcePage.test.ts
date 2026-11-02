@@ -272,7 +272,7 @@ it('opens row deep links without reloading schema or remounting the grid, and re
     wrapper.unmount()
   }
 })
-it('shows real schema metadata, breadcrumbs, levels, view links and the production grid', async () => {
+it('shows real schema metadata, levels, view links and the production grid', async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json(tableSchema()))
   vi.stubGlobal('fetch', fetch)
   const { wrapper } = await setup('/t/t/v/v')
@@ -280,9 +280,7 @@ it('shows real schema metadata, breadcrumbs, levels, view links and the producti
     expect(wrapper.get('h1').text()).toBe('Table')
     expect(wrapper.get('.schema-summary').text()).toContain('Name')
     expect(wrapper.get('.schema-summary').text()).toContain('Owner')
-    expect(
-      wrapper.findAll('.breadcrumbs a').map((item) => item.text()),
-    ).toEqual(['Your PandaTable', 'Workspace', 'Book', 'Table'])
+    expect(wrapper.find('.breadcrumbs').exists()).toBe(false)
     expect(wrapper.find('[data-testid="production-grid"]').exists()).toBe(true)
     expect(fetch).toHaveBeenCalledWith(
       '/api/v1/tables/t/schema',
@@ -370,7 +368,7 @@ it('restarts an in-flight schema read when the navigation permission changes', a
   }
 })
 
-it('replaces a table shortcut with its real Grid id and ignores schema reads from an abandoned route', async () => {
+it('renders a bare table route with its default view and ignores schema reads from an abandoned route', async () => {
   vi.stubGlobal(
     'fetch',
     vi
@@ -379,7 +377,10 @@ it('replaces a table shortcut with its real Grid id and ignores schema reads fro
   )
   const first = await setup('/t/t')
   try {
-    expect(first.router.currentRoute.value.path).toBe('/t/t/v/v')
+    expect(first.router.currentRoute.value.path).toBe('/t/t')
+    expect(first.wrapper.find('[data-testid="production-grid"]').exists()).toBe(
+      true,
+    )
   } finally {
     first.wrapper.unmount()
   }

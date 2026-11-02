@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { expect, paceLogin, test } from './fixtures'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
 const headers = () => ({
@@ -16,9 +16,7 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })

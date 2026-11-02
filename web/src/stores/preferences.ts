@@ -8,6 +8,7 @@ export type Theme = 'light' | 'dark' | 'system'
 
 const localeKey = 'pandatable.locale'
 const themeKey = 'pandatable.theme'
+const sidebarKey = 'pandatable.sidebar'
 
 export const usePreferencesStore = defineStore('preferences', () => {
   const storageError = ref(false)
@@ -104,14 +105,27 @@ export const usePreferencesStore = defineStore('preferences', () => {
     storage('set', themeKey, value)
   }
 
+  function toggleTheme() {
+    setTheme(isDark.value ? 'light' : 'dark')
+  }
+
+  const sidebarCollapsed = ref(storage('get', sidebarKey) === 'collapsed')
+  function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+    storage('set', sidebarKey, sidebarCollapsed.value ? 'collapsed' : 'open')
+  }
+
   return {
     locale,
     theme,
     isDark,
     storageError,
     localeError,
+    sidebarCollapsed,
     setLocale,
     applyDefaultLocale,
     setTheme,
+    toggleTheme,
+    toggleSidebar,
   }
 })

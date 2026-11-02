@@ -14,6 +14,7 @@ import type {
   TableSchema,
   ViewMutation,
 } from '../src/api/types'
+import { adminLink, openNodeActions, setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
@@ -81,8 +82,7 @@ export async function create(
 async function startRename(page: Page, id: string, name: string, locale = en) {
   const nav = await tree(page, locale)
   const actions = nav.locator(`[data-nav-id="${id}"] > .node-actions`)
-  if (!((await actions.getAttribute('open')) !== null))
-    await actions.locator('summary').click()
+  await openNodeActions(actions)
   await actions
     .getByRole('button', { name: locale.nav.rename, exact: true })
     .click()
@@ -338,22 +338,14 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     .poll(async () => (await query()).rows[0]?.fields[name.id])
     .toBe('Persisted from the grid')
 
-  await owner
-    .getByRole('button', { name: en.common.themes.dark, exact: true })
-    .click()
+  await setTheme(owner, 'dark')
   await expect(owner.locator('html')).toHaveAttribute('data-theme', 'dark')
-  await owner
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(owner, 'zh-CN')
   await expect(
     owner.getByRole('button', { name: zh.grid.addRow, exact: true }),
   ).toBeVisible()
-  await owner
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
-  await owner
-    .getByRole('button', { name: en.common.themes.light, exact: true })
-    .click()
+  await setLocale(owner, 'en')
+  await setTheme(owner, 'light')
   await expect(owner.locator('html')).toHaveAttribute('data-theme', 'light')
 
   const dateResponse = await owner.request.post(
@@ -563,12 +555,8 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
   expect(result.rows[11]?.fields[qty.id]).toBe(109)
   owner.off('request', clipboardPatch)
 
-  await owner
-    .getByRole('button', { name: en.common.themes.dark, exact: true })
-    .click()
-  await owner
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setTheme(owner, 'dark')
+  await setLocale(owner, 'zh-CN')
   await expect(owner.locator('html')).toHaveAttribute('data-theme', 'dark')
   const dateColumn = await columnIndex(date.id)
   const stageColumn = await columnIndex(stage.id)
@@ -622,12 +610,8 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     )
     .toBe(true)
 
-  await owner
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
-  await owner
-    .getByRole('button', { name: en.common.themes.light, exact: true })
-    .click()
+  await setLocale(owner, 'en')
+  await setTheme(owner, 'light')
 }
 
 export async function verifyNavigation(
@@ -689,7 +673,10 @@ export async function verifyNavigation(
         `[data-nav-id="${wid}"] [data-nav-id="${bid}"] [data-nav-id="${tid}"]`,
       ),
     ).toBeVisible()
-    await expect(nav.getByRole('link', { name: en.trash.title })).toBeVisible()
+    await expect(nav.locator('.book-toggle')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
     if (alice.viewportSize()!.width < 768) {
       await alice.keyboard.press('Escape')
       await expect(alice.locator('.nav-drawer')).not.toBeVisible()
@@ -716,7 +703,7 @@ export async function verifyNavigation(
     const tableActions = ownerTree.locator(
       `[data-nav-id="${tid}"] > .node-actions`,
     )
-    await tableActions.locator('summary').click()
+    await openNodeActions(tableActions)
     await tableActions
       .getByRole('button', { name: en.nav.moveDown, exact: true })
       .click()
@@ -762,9 +749,7 @@ export async function verifyNavigation(
     await closeDrawer(alice)
     await rename(alice, wid, '工作区 W')
     await rename(alice, bid, '工作簿 B')
-    await alice
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
+    await setLocale(alice, 'zh-CN')
     await rename(alice, tid, '数据表 T', zh)
     await expect(
       alice.getByRole('heading', { name: '数据表 T', exact: true }),
@@ -775,14 +760,10 @@ export async function verifyNavigation(
       path: test.info().outputPath('navigation-zh.png'),
       fullPage: true,
     })
-    await alice
-      .getByRole('button', { name: zh.common.themes.dark, exact: true })
-      .click()
+    await setTheme(alice, 'dark')
     await expect(alice.locator('html')).toHaveAttribute('data-theme', 'dark')
     await noOverflow(alice)
-    await alice
-      .getByRole('button', { name: zh.common.themes.light, exact: true })
-      .click()
+    await setTheme(alice, 'light')
 
     await admin.goto('/home')
     const adminTree = await tree(admin)
@@ -793,9 +774,7 @@ export async function verifyNavigation(
     expect(await deniedTable.json()).toMatchObject({
       error: { code: 'ERR_NOT_FOUND' },
     })
-    await admin
-      .getByRole('link', { name: en.workspaces.title, exact: true })
-      .click()
+    await (await adminLink(admin, en.workspaces.title)).click()
     const inventory = admin.locator(`[data-workspace="${wid}"]`)
     await expect(inventory).toContainText('工作区 W')
     await expect(inventory).toContainText(aliceUsername)
@@ -809,6 +788,7 @@ export async function verifyNavigation(
       for (const [index, participant] of participants.entries()) {
         const context = await browser.newContext({
           baseURL: process.env.PT_E2E_BASE_URL,
+          locale: 'en-US',
           viewport: alice.viewportSize(),
           isMobile: alice.viewportSize()!.width < 768,
           hasTouch: alice.viewportSize()!.width < 768,
@@ -856,9 +836,7 @@ export async function verifyNavigation(
         const diagnostics = await observeBrowser(page)
         participantDiagnostics.push(diagnostics)
         await page.goto(`/t/${tid}/v/${viewId}`)
-        await page
-          .getByRole('button', { name: en.common.languages.en, exact: true })
-          .click()
+        await setLocale(page, 'en')
         await expect(page.locator('.schema-summary')).toContainText(
           en.nav.level.read,
         )
@@ -867,14 +845,16 @@ export async function verifyNavigation(
         await expect(visibleTree.locator('.node-actions')).toHaveCount(0)
         if (index === 1) {
           await expect(visibleTree.locator('[data-nav-id]')).toHaveCount(3)
-          await expect(visibleTree.locator('.path-only')).toHaveCount(2)
+          await expect(
+            visibleTree.locator('.path-only', { hasText: en.nav.pathOnly }),
+          ).toHaveCount(2)
           await expect(
             visibleTree.locator(
               `[data-nav-id="${siblingTable}"], [data-nav-id="${siblingBook}"]`,
             ),
           ).toHaveCount(0)
           await visibleTree
-            .locator(`[data-nav-id="${wid}"] > .nav-row a`)
+            .locator(`[data-nav-id="${wid}"] > .workspace-box a`)
             .click()
           await expect(page.locator('main')).toContainText(en.nav.pathNotice)
           await expect(page.locator('main button')).toHaveCount(0)
@@ -926,8 +906,7 @@ export async function verifyNavigation(
 
     ownerTree = await tree(alice, zh)
     const actions = ownerTree.locator(`[data-nav-id="${tid}"] > .node-actions`)
-    if ((await actions.getAttribute('open')) === null)
-      await actions.locator('summary').click()
+    await openNodeActions(actions)
     await actions
       .getByRole('button', { name: zh.nav.delete, exact: true })
       .click()
@@ -954,9 +933,7 @@ export async function verifyNavigation(
     expect(
       (await alice.request.get(`/api/v1/tables/${tid}/schema`)).status(),
     ).toBe(404)
-    await alice
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(alice, 'en')
     const staleRename = await startRename(alice, siblingTable, 'Gone')
     expectHTTPFailure(alice, 'PATCH', `/api/v1/tables/${siblingTable}`, 404)
     expect(
@@ -995,6 +972,7 @@ export async function verifyNavigation(
       .getByLabel(en.admin.searchHint, { exact: true })
       .fill(aliceUsername)
     await admin
+      .locator('main')
       .getByRole('button', { name: en.admin.search, exact: true })
       .click()
   }

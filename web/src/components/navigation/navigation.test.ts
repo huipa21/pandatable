@@ -41,31 +41,51 @@ afterEach(() => {
 async function setup() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
+    routes: [
+      { path: '/w/:workspaceId', component: { template: '<div />' } },
+      { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
+    ],
   })
-  await router.push('/home')
+  await router.push('/w/w')
   await useNavStore().refresh()
   return { plugins: [pinia, i18n, router] }
 }
 
-it('renders nested links and exposes same-parent drag plus keyboard/touch reorder only for owners', async () => {
+it('renders the selected workspace, workbook toggles, table view dropdowns and owner-only reorder', async () => {
   const global = await setup()
   const nav = useNavStore()
   const tree = navigation()
   const b = tree.workspaces[0]!.books[0]!
   b.tables.push({ ...b.tables[0]!, id: 't2', name: 'Second' })
+  tree.workspaces.push({ ...tree.workspaces[0]!, id: 'w2', books: [] })
   nav.tree = tree
   const reorder = vi.spyOn(nav, 'reorder').mockResolvedValue()
   const wrapper = mount(NavContents, { global })
   try {
-    const trash = wrapper.get('a[href="/trash"]')
-    expect(trash.text()).toBe('Trash')
-    await trash.trigger('click')
+    const box = wrapper.get('.workspace-box a')
+    expect(box.attributes('href')).toBe('/w/w')
+    await box.trigger('click')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
+    expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-nav-id]')).toHaveLength(4)
+    expect(wrapper.find('[data-nav-id="w"] > .nav-row').exists()).toBe(false)
+    expect(wrapper.get('[data-nav-id="t"] a.nav-name').attributes('href')).toBe(
+      '/t/t',
+    )
+    expect(wrapper.find('.view-list').exists()).toBe(false)
+    const views = wrapper.get('[data-nav-id="t"] .table-toggle')
+    expect(views.attributes('aria-expanded')).toBe('false')
+    await views.trigger('click')
     expect(
-      wrapper.get('[data-nav-id="w"] > .nav-row').attributes('draggable'),
-    ).toBe('false')
+      wrapper.get('[data-nav-id="t"] .view-list a').attributes('href'),
+    ).toBe('/t/t/v/v')
+    await views.trigger('click')
+    expect(wrapper.find('.view-list').exists()).toBe(false)
+    const book = wrapper.get('[data-nav-id="b"] .book-toggle')
+    expect(book.attributes('aria-expanded')).toBe('true')
+    await book.trigger('click')
+    expect(wrapper.find('[data-nav-id="t"]').exists()).toBe(false)
+    await book.trigger('click')
     const row = wrapper.get('[data-nav-id="t"]')
     await row.get('summary').trigger('click')
     await row
@@ -93,6 +113,44 @@ it('renders nested links and exposes same-parent drag plus keyboard/touch reorde
     await nextTick()
     expect(wrapper.findAll('summary')).toHaveLength(0)
     expect(wrapper.text()).toContain('Path only')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('keeps one structure action menu open and closes it outside or on Escape', async () => {
+  const global = await setup()
+  const wrapper = mount(NavContents, { global, attachTo: document.body })
+  try {
+    const menu = (id: string) =>
+      wrapper.get(`[data-nav-id="${id}"] > .node-actions`)
+        .element as HTMLDetailsElement
+    const open = async (id: string) => {
+      menu(id).open = true
+      menu(id).dispatchEvent(new Event('toggle'))
+      await nextTick()
+    }
+    await open('b')
+    await open('t')
+    expect(menu('b').open).toBe(false)
+    expect(menu('t').open).toBe(true)
+    const dialog = document.createElement('dialog')
+    document.body.append(dialog)
+    dialog.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    expect(menu('t').open).toBe(true)
+    dialog.remove()
+    menu('t')
+      .querySelector('button')!
+      .dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      )
+    expect(menu('t').open).toBe(false)
+    await open('t')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(menu('t').open).toBe(false)
   } finally {
     wrapper.unmount()
   }
@@ -168,7 +226,8 @@ it('refreshes on focus/visible interval, stops hidden/unmounted and closes the m
     expect(refresh).toHaveBeenCalledTimes(4)
     themeMedia.setDark(true)
     await nextTick()
-    await wrapper.get('.drawer-toggle').trigger('click')
+    // The header's sidebar toggle opens the drawer through the nav store.
+    nav.drawerOpen = true
     await flushPromises()
     expect(wrapper.get<HTMLDialogElement>('.nav-drawer').element.open).toBe(
       true,
@@ -177,6 +236,7 @@ it('refreshes on focus/visible interval, stops hidden/unmounted and closes the m
     expect(wrapper.get<HTMLDialogElement>('.nav-drawer').element.open).toBe(
       false,
     )
+    expect(nav.drawerOpen).toBe(false)
   } finally {
     wrapper.unmount()
     vi.restoreAllMocks()

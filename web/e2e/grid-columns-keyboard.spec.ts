@@ -9,6 +9,7 @@ import {
   paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema, ViewColumns } from '../src/api/types'
+import { setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -28,9 +29,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -187,26 +186,8 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     ['zh-CN', 'dark'],
   ] as const) {
     const messages = language === 'en' ? en : zh
-    if ((await page.locator('html').getAttribute('lang')) !== language)
-      await page
-        .getByRole('button', {
-          name:
-            language === 'en'
-              ? zh.common.languages.en
-              : en.common.languages.zhCN,
-          exact: true,
-        })
-        .click()
-    if ((await page.locator('html').getAttribute('data-theme')) !== theme)
-      await page
-        .getByRole('button', {
-          name:
-            theme === 'dark'
-              ? messages.common.themes.dark
-              : messages.common.themes.light,
-          exact: true,
-        })
-        .click()
+    await setLocale(page, language)
+    await setTheme(page, theme)
     await focus(name.id, 0)
     for (const [key, row, field] of [
       ['ArrowRight', 0, qty.id],
@@ -355,12 +336,8 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     }).toEqual({ ids: [name.id, qty.id, check.id, note.id], frozen: 0 })
     await localizedMenu.locator('summary').click()
   }
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
-  await page
-    .getByRole('button', { name: en.common.themes.light, exact: true })
-    .click()
+  await setLocale(page, 'en')
+  await setTheme(page, 'light')
 
   const nameHeader = grid.getByRole('columnheader', {
     name: name.name,
@@ -491,6 +468,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   ).toBe(201)
   const context = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport: { width: 1440, height: 900 },
   })
   try {

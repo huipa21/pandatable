@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { createResourceLabel } from '../../i18n'
-import { useNavStore, type NavigationItem } from '../../stores/nav'
-import { useSharingStore } from '../../stores/sharing'
+import { type NavigationItem, useNavStore } from '../../stores/nav'
+import AppIcon from '../AppIcon.vue'
+import NavActions from './NavActions.vue'
 
 const props = defineProps<{ item: NavigationItem }>()
 const emit = defineEmits<{
@@ -14,105 +15,69 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 const nav = useNavStore()
-const sharing = useSharingStore()
-const expanded = ref(true)
-const canShare = computed(
-  () => !props.item.pathOnly && props.item.level === 'owner',
+const route = useRoute()
+// Workbooks start open; a table's view list is a dropdown opened on demand.
+const expanded = ref(props.item.kind === 'book')
+const current = computed(
+  () =>
+    props.item.kind === 'table' &&
+    route.params.tableId === props.item.id &&
+    !route.params.viewId,
 )
 </script>
 
 <template>
   <li :data-nav-id="item.id" :data-kind="item.kind">
     <div
-      class="nav-row"
-      :draggable="item.canEdit && item.kind !== 'workspace' && !nav.busy"
+      :class="['nav-row', `nav-row-${item.kind}`, { current }]"
+      :draggable="item.canEdit && !nav.busy"
       @dragstart.stop="emit('drag', item)"
       @dragover.prevent
       @drop.prevent.stop="emit('drop', item)"
     >
       <button
-        v-if="item.children.length"
-        class="tree-toggle"
-        :aria-label="t('nav.toggle', { name: item.name })"
+        v-if="item.kind === 'book'"
+        class="book-toggle"
         :aria-expanded="expanded"
         @click="expanded = !expanded"
       >
-        {{ expanded ? t('nav.expanded') : t('nav.collapsed') }}
+        <AppIcon :name="expanded ? 'chevronDown' : 'chevronRight'" :size="14" />
+        <AppIcon name="book" :size="16" />
+        <span class="nav-name">{{ item.name }}</span>
       </button>
-      <RouterLink :to="item.path" @click="emit('navigate')">
-        {{ item.name }}
-      </RouterLink>
+      <template v-else>
+        <button
+          class="table-toggle"
+          :aria-label="t('nav.showViews', { name: item.name })"
+          :title="t('nav.showViews', { name: item.name })"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          <AppIcon class="table-icon" name="table" :size="16" />
+          <AppIcon
+            class="dropdown-icon"
+            :name="expanded ? 'chevronDown' : 'chevronRight'"
+            :size="16"
+          />
+        </button>
+        <RouterLink
+          class="nav-name"
+          :to="item.path"
+          :aria-current="current ? 'page' : undefined"
+          @click="emit('navigate')"
+        >
+          {{ item.name }}
+        </RouterLink>
+      </template>
       <span v-if="item.pathOnly" class="path-only">{{
         t('nav.pathOnly')
       }}</span>
     </div>
-    <details
-      v-if="item.canEdit || item.canCreate || canShare"
-      class="node-actions"
-    >
-      <summary>{{ t('nav.actions', { name: item.name }) }}</summary>
-      <div class="nav-actions">
-        <button v-if="canShare" @click="sharing.open(item)">
-          {{ t('sharing.open') }}
-        </button>
-        <button
-          v-if="item.canCreate && item.childKind"
-          :disabled="nav.busy"
-          @click="
-            nav.editor = {
-              operation: 'create',
-              kind: item.childKind,
-              parentId: item.id,
-            }
-          "
-        >
-          {{ createResourceLabel(item.childKind) }}
-        </button>
-        <button
-          v-if="item.canEdit"
-          :disabled="nav.busy"
-          @click="
-            nav.editor = {
-              operation: 'rename',
-              kind: item.kind,
-              id: item.id,
-              name: item.name,
-            }
-          "
-        >
-          {{ t('nav.rename') }}
-        </button>
-        <button
-          v-if="item.canEdit"
-          :disabled="nav.busy"
-          @click="
-            nav.editor = {
-              operation: 'delete',
-              kind: item.kind,
-              id: item.id,
-              name: item.name,
-            }
-          "
-        >
-          {{ t('nav.delete') }}
-        </button>
-        <template v-if="item.canEdit && item.kind !== 'workspace'">
-          <button
-            :disabled="nav.busy || item.index === 0"
-            @click="emit('move', item, item.index - 1)"
-          >
-            {{ t('nav.moveUp') }}
-          </button>
-          <button
-            :disabled="nav.busy || item.index === item.siblingCount - 1"
-            @click="emit('move', item, item.index + 1)"
-          >
-            {{ t('nav.moveDown') }}
-          </button>
-        </template>
-      </div>
-    </details>
-    <ul v-if="item.children.length && expanded">
+    <NavActions
+      :item="item"
+      @move="(node, index) => emit('move', node, index)"
+    />
+    <ul v-if="item.kind === 'book' && expanded && item.children.length">
       <NavNode
         v-for="child in item.children"
         :key="child.id"
@@ -122,6 +87,21 @@ const canShare = computed(
         @drop="emit('drop', $event)"
         @move="(node, index) => emit('move', node, index)"
       />
+    </ul>
+    <ul v-if="item.kind === 'table' && expanded" class="view-list">
+      <li v-if="!item.views.length" class="path-only">
+        {{ t('nav.emptyViews') }}
+      </li>
+      <li v-for="view in item.views" :key="view.id">
+        <RouterLink
+          class="nav-row"
+          :to="`/t/${item.id}/v/${view.id}`"
+          @click="emit('navigate')"
+        >
+          <AppIcon name="view" :size="14" />
+          <span class="nav-name">{{ view.name }}</span>
+        </RouterLink>
+      </li>
     </ul>
   </li>
 </template>

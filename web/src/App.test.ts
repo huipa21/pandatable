@@ -10,7 +10,7 @@ import { usePreferencesStore } from './stores/preferences'
 
 afterEach(() => localStorage.clear())
 
-it('AT-003: adjacent controls update the login surface and Naive UI configuration', async () => {
+it('AT-003: header toggles update the login surface and Naive UI configuration', async () => {
   const pinia = createPinia()
   const router = createRouter({
     history: createMemoryHistory(),
@@ -24,18 +24,17 @@ it('AT-003: adjacent controls update the login surface and Naive UI configuratio
   })
   try {
     expect(wrapper.find('h1').text()).toBe('Welcome to PandaTable')
-    expect(wrapper.findAll('.preferences fieldset')).toHaveLength(2)
-    const buttons = wrapper.findAll('button')
-    await buttons.find((button) => button.text() === '中文')?.trigger('click')
+    const language = wrapper.get('.preferences .language-toggle')
+    expect(language.text()).toBe('中文')
+    await language.trigger('click')
     await flushPromises()
     await vi.waitFor(() =>
       expect(wrapper.find('h1').text()).toBe('欢迎使用 PandaTable'),
     )
-    await wrapper
-      .findAll('button')
-      .find((button) => button.text() === '深色')
-      ?.trigger('click')
+    expect(wrapper.get('.preferences .language-toggle').text()).toBe('English')
+    await wrapper.get('[aria-label="切换到深色主题"]').trigger('click')
     expect(usePreferencesStore(pinia).theme).toBe('dark')
+    expect(wrapper.find('[aria-label="切换到浅色主题"]').exists()).toBe(true)
     const provider = wrapper.findComponent(NConfigProvider)
     expect(provider.props('theme')).toEqual(darkTheme)
     expect(provider.props('locale')).toEqual(zhCN)

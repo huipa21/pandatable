@@ -8,9 +8,12 @@
 
 Ask an administrator for an account, then sign in with your username or email.
 You may be required to change your temporary password before continuing. There
-is no self-registration. Use **Profile** to change your display name, language,
+is no self-registration. Open the avatar menu at the bottom of the sidebar (or
+in the header when the sidebar is hidden) for **Profile**, **Change password**,
+**Trash**, notifications, the admin pages (administrators only) and **Sign
+out**. Use **Profile** to change your display name, language,
 theme, or timezone and save your changes; use **Change password** to update your
-password. The language and theme controls in the header also change the display.
+password. The language and theme toggles in the header also change the display.
 If SMTP is configured, **Forgot password?** sends a reset link to the email
 address on your account. The link expires after 30 minutes and can be used
 once; changing the password signs out all sessions. In **Profile**, optionally
@@ -18,11 +21,16 @@ enable mention emails; in-app notifications remain available.
 
 ### 2. Navigate and share
 
-PandaTable organizes data as workspaces, books, tables, and views. In **Workspace
-navigation**, choose **New workspace**, open it and choose **New book**, then
-open the book and choose **New table**. A new table has a default grid and a
+PandaTable organizes data as workspaces (a company or program), books (a project
+whose tables can relate to each other), tables, and views (filtered or sorted
+tables). On the home page choose **New workspace**, open it and choose **New
+book**, then open the book and choose **New table**. A new table has a default grid and a
 display field named Name or 名称 according to the creator's profile language.
-On a narrow screen, open the navigation drawer first.
+The sidebar shows the selected workspace: select a book to show its tables,
+select a table name to open its default view, or point at the table icon to list
+its views. The header shows where you are and its search button (Ctrl+K) jumps
+to any workspace, book, table, or view by name. The arrow next to the logo hides
+the sidebar; on a narrow screen it opens the navigation drawer.
 
 An owner can use **Share** on a workspace, book, or table to find a user or
 group, choose **Read**, **Write**, or **Owner** access, and review and confirm
@@ -75,8 +83,8 @@ to your access. Other participants' row changes refresh the gallery.
 
 Table presence shows other participants and their focused cells. Open a row to
 see **Comments** and **History**. In a comment, type `@`, select an accessible
-user, and choose **Post comment**. The recipient can open the notification bell
-to navigate to the comment. Edits are synchronized while connected; when two
+user, and choose **Post comment**. The recipient can open notifications from the
+avatar menu (its badge shows the unread count) to navigate to the comment. Edits are synchronized while connected; when two
 people save the same cell, the last saved value wins.
 
 ### 6. Import and export
@@ -117,18 +125,24 @@ guide.
 ### 1. 登录和设置偏好
 
 请向管理员获取账号，然后使用用户名或邮箱登录。首次使用临时密码时，可能需要先
-修改密码。系统不提供自助注册。在**个人资料**中修改显示名称、语言、主题或时区并
-保存；使用**修改密码**更新密码。页眉中的语言和主题控件也可以切换显示。
+修改密码。系统不提供自助注册。侧边栏底部的头像菜单（侧边栏隐藏时位于页眉）中
+包含**个人资料**、**修改密码**、**回收站**、通知、管理页面（仅管理员）和**退出登录**。
+在**个人资料**中修改显示名称、语言、主题或时区并
+保存；使用**修改密码**更新密码。页眉中的语言和主题切换按钮也可以切换显示。
 如果已配置 SMTP，可通过**忘记密码？**向账号邮箱申请重置链接。链接 30 分钟内
 有效且只能使用一次；修改密码后所有会话都会退出。在**个人资料**中可选择启用
 提及邮件，应用内通知仍然可用。
 
 ### 2. 导航和共享
 
-PandaTable 按工作区、工作簿、数据表和视图组织数据。在**工作区导航**中选择
+PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其中的数据表可以相互
+关联）、数据表和视图（经过筛选或排序的数据表）组织数据。在首页选择
 **新建工作区**，打开后选择**新建工作簿**，再打开工作簿并选择**新建数据表**。
 新表默认包含一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或
-名称。在窄屏上，请先打开导航抽屉。
+名称。侧边栏显示当前工作区：选择工作簿可展开其数据表，选择数据表名称可打开默认
+视图，指向数据表图标可列出其视图。页眉显示当前位置，搜索按钮（Ctrl+K）可按名称
+跳转到任意工作区、工作簿、数据表或视图。徽标旁的箭头可隐藏侧边栏；在窄屏上它会
+打开导航抽屉。
 
 所有者可在工作区、工作簿或数据表上使用**共享**，查找用户或用户组，选择**只读**、
 **读写**或**所有者**权限，并在审核后确认更改。读取者可以查看数据；写入者可以编辑行；
@@ -169,7 +183,7 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 
 数据表的在线状态会显示其他参与者及其聚焦的单元格。打开一行可查看**评论**和
 **历史记录**。在评论中输入 `@`，选择有访问权限的用户，然后选择**发表评论**。
-接收者可以打开通知铃铛，跳转到该评论。连接正常时编辑会同步；两人保存同一单元格
+接收者可以从头像菜单（徽标显示未读数量）打开通知，跳转到该评论。连接正常时编辑会同步；两人保存同一单元格
 时，以最后保存的值为准。
 
 ### 6. 导入和导出

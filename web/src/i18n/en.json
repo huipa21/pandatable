@@ -17,7 +17,29 @@
     },
     "storageError": "Your display preferences could not be saved. Check your browser storage settings.",
     "localeError": "The language could not be loaded. Check your connection and try again.",
-    "backToLogin": "Back to welcome"
+    "backToLogin": "Back to welcome",
+    "useDark": "Switch to dark theme",
+    "useLight": "Switch to light theme",
+    "switchLanguage": "Switch language to {name}"
+  },
+  "search": {
+    "open": "Search",
+    "title": "Go to a workspace, book, table or view",
+    "input": "Name",
+    "placeholder": "Type a name…",
+    "empty": "No matching items.",
+    "close": "Close search",
+    "kinds": {
+      "workspace": "Workspace",
+      "book": "Book",
+      "table": "Table",
+      "view": "View"
+    }
+  },
+  "account": {
+    "menu": "Account menu for {name}",
+    "menuUnread": "Account menu for {name}, {count} unread notifications",
+    "admin": "Administration"
   },
   "realtime": {
     "reconnecting": "Live updates are disconnected. Reconnecting…",
@@ -171,7 +193,15 @@
       "write": "Write",
       "owner": "Owner"
     },
-    "tableShellNotice": "Table schema loaded. Rows, the grid and view editing are not available yet."
+    "tableShellNotice": "Table schema loaded. Rows, the grid and view editing are not available yet.",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "selectWorkspace": "Select a workspace",
+    "chooseWorkspace": "Choose a workspace",
+    "bookCount": "No books | 1 book | {count} books",
+    "showViews": "Show views of {name}",
+    "createBookIn": "New book in {name}",
+    "viewTools": "View tools"
   },
   "trash": {
     "title": "Trash",

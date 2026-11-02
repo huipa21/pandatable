@@ -19,6 +19,7 @@ import type {
   TableSchema,
   ViewMutation,
 } from '../src/api/types'
+import { openAccountMenu, setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { expect, paceLogin, test } from './fixtures'
@@ -206,9 +207,7 @@ async function reachableControls(page: Page, path: string, scope?: Locator) {
 
 async function english(page: Page) {
   if ((await page.locator('html').getAttribute('lang')) !== 'zh-CN') return
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
+  await setLocale(page, 'en')
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
 }
 
@@ -434,10 +433,7 @@ test('AT-806 main pages remain usable at 390px in both languages', async ({
   ]
   try {
     for (const locale of ['en', 'zh'] as const) {
-      if (locale === 'zh')
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === 'zh') await setLocale(page, 'zh-CN')
       for (const route of routes) {
         await page.goto(route.path)
         await expect(page.locator('main h1')).toHaveText(route[locale])
@@ -471,10 +467,7 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
   const data = await fixture(page, `menus-${testInfo.project.name}`, 1)
   try {
     for (const locale of [en, zh]) {
-      if (locale === zh)
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === zh) await setLocale(page, 'zh-CN')
       for (const target of [
         { path: '/home', kind: 'workspace' },
         { path: `/w/${data.workspaceId}`, kind: 'book' },
@@ -545,10 +538,7 @@ test('AT-806 table dialogs at 390px in both languages', async ({
   if (!row) throw new Error('Responsive fixture did not create its row')
   try {
     for (const locale of [en, zh]) {
-      if (locale === zh)
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === zh) await setLocale(page, 'zh-CN')
       await page.goto(`/t/${data.tableId}/v/${data.viewId}`)
 
       await inspectSharing(page, locale, true)
@@ -723,10 +713,7 @@ test('AT-806 form views work at 390px in both languages', async ({
     await expect(page).toHaveURL(new RegExp(`${path}$`))
 
     for (const locale of [en, zh]) {
-      if (locale === zh)
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === zh) await setLocale(page, 'zh-CN')
       await page.goto(path)
       const builder = page.locator('.form-builder')
       await builder.locator('summary').click()
@@ -793,7 +780,8 @@ test('AT-806 notification panel stays within the viewport in both languages', as
     width: number
     left: number
     right: number
-    bellRight: number
+    top: number
+    bottom: number
     panelTop: number
     bellBottom: number
     pageOverflow: boolean
@@ -801,15 +789,14 @@ test('AT-806 notification panel stays within the viewport in both languages', as
   }[] = []
   try {
     for (const locale of [en, zh]) {
-      if (locale === zh)
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === zh) await setLocale(page, 'zh-CN')
       for (const width of [
         320, 390, 480, 600, 768, 1024, 1100, 1150, 1199, 1200, 1201, 1240, 1280,
         1440,
       ]) {
         await page.setViewportSize({ width, height: 844 })
+        // The bell lives in the avatar menu (sidebar footer or header).
+        await openAccountMenu(page)
         const bell = page.locator('button[aria-controls="notification-list"]')
         await bell.click()
         const panel = page.getByRole('region', {
@@ -829,7 +816,8 @@ test('AT-806 notification panel stays within the viewport in both languages', as
           width,
           left: box.x,
           right: box.x + box.width,
-          bellRight: anchor.x + anchor.width,
+          top: box.y,
+          bottom: box.y + box.height,
           panelTop: box.y,
           bellBottom: anchor.y + anchor.height,
           pageOverflow: overflow.page,
@@ -838,14 +826,16 @@ test('AT-806 notification panel stays within the viewport in both languages', as
         if (
           sample.left < 0 ||
           sample.right > width ||
-          Math.abs(sample.panelTop - sample.bellBottom) > 1 ||
-          (width >= 1280 && Math.abs(sample.right - sample.bellRight) > 1) ||
+          sample.top < 0 ||
+          sample.bottom > 844 ||
+          sample.panelTop < sample.bellBottom ||
           sample.pageOverflow ||
           sample.panelOverflow
         )
           problems.push(sample)
         await bell.click()
         await expect(panel).toHaveCount(0)
+        await page.keyboard.press('Escape')
       }
     }
     expect(problems, 'notification viewport bounds and alignment').toEqual([])
@@ -897,10 +887,7 @@ test('AT-806 administrator forms and confirmations work at 390px in both languag
   }
   try {
     for (const locale of [en, zh]) {
-      if (locale === zh)
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === zh) await setLocale(page, 'zh-CN')
 
       await page.goto('/admin/users')
       await page
@@ -925,6 +912,7 @@ test('AT-806 administrator forms and confirmations work at 390px in both languag
         .getByLabel(locale.admin.searchHint, { exact: true })
         .fill(user.username)
       await page
+        .locator('main')
         .getByRole('button', { name: locale.admin.search, exact: true })
         .click()
       const card = page.locator(`[data-user="${user.username}"]`)
@@ -1076,10 +1064,7 @@ test('AT-806 profile and settings forms save and reload at 390px in both languag
         locale === en ? 'Responsive profile' : '响应式个人资料'
       const timezone = locale === en ? 'Asia/Shanghai' : 'Europe/London'
       const appName = locale === en ? 'Responsive settings' : '响应式设置'
-      if (locale === zh)
-        await page
-          .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-          .click()
+      if (locale === zh) await setLocale(page, 'zh-CN')
 
       await page.goto('/profile')
       const profile = page.locator('.profile-form')

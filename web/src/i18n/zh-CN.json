@@ -17,7 +17,29 @@
     },
     "storageError": "无法保存显示偏好，请检查浏览器的存储设置。",
     "localeError": "无法加载语言，请检查网络连接后重试。",
-    "backToLogin": "返回欢迎页"
+    "backToLogin": "返回欢迎页",
+    "useDark": "切换到深色主题",
+    "useLight": "切换到浅色主题",
+    "switchLanguage": "将语言切换为 {name}"
+  },
+  "search": {
+    "open": "搜索",
+    "title": "前往工作区、工作簿、数据表或视图",
+    "input": "名称",
+    "placeholder": "输入名称…",
+    "empty": "没有匹配的项目。",
+    "close": "关闭搜索",
+    "kinds": {
+      "workspace": "工作区",
+      "book": "工作簿",
+      "table": "数据表",
+      "view": "视图"
+    }
+  },
+  "account": {
+    "menu": "{name} 的账户菜单",
+    "menuUnread": "{name} 的账户菜单，{count} 条未读通知",
+    "admin": "系统管理"
   },
   "realtime": {
     "reconnecting": "实时更新已断开，正在重新连接…",
@@ -171,7 +193,15 @@
       "write": "读写",
       "owner": "所有者"
     },
-    "tableShellNotice": "表结构已加载。行、网格和视图编辑暂不可用。"
+    "tableShellNotice": "表结构已加载。行、网格和视图编辑暂不可用。",
+    "collapseSidebar": "折叠侧边栏",
+    "expandSidebar": "展开侧边栏",
+    "selectWorkspace": "选择工作区",
+    "chooseWorkspace": "选择一个工作区",
+    "bookCount": "没有工作簿 | 1 个工作簿 | {count} 个工作簿",
+    "showViews": "显示 {name} 的视图",
+    "createBookIn": "在 {name} 中新建工作簿",
+    "viewTools": "视图工具"
   },
   "trash": {
     "title": "回收站",

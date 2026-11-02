@@ -1,6 +1,7 @@
 import type { Components } from '@revolist/revogrid'
 import { test, expect, paceLogin } from './fixtures'
 import type { DataRow, HistoryListing, TableSchema } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -17,9 +18,7 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -131,31 +130,27 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
     const grid = page.locator('revo-grid')
     await expect(grid).toBeVisible()
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-    await grid.evaluate(async (element, fieldId) => {
-      const grid = element as HTMLElement & Components.RevoGrid
-      await grid.scrollToRow(0)
-      const column = (await grid.getColumns()).find(
-        (item) => item.prop === fieldId,
-      )!
-      const type = column.pin ?? 'rgCol'
-      const store = await grid.getColumnStore(type)
-      const source = store.get('source')
-      const x = store
-        .get('items')
-        .findIndex((index) => source[index]?.prop === fieldId)
-      if (x < 0) throw new Error('History paste column is not visible')
-      await grid.setCellsFocus({ x, y: 0 }, { x, y: 0 }, type)
-      grid.focus()
-    }, taskName)
-    await expect
-      .poll(() =>
-        grid.evaluate(
-          async (element) =>
-            (await (element as HTMLElement & Components.RevoGrid).getFocused())
-              ?.model?.__rowId,
-        ),
-      )
-      .toBe(first.id)
+    // Rows and shell navigation load asynchronously; refocus until it sticks.
+    await expect(async () => {
+      const focused = await grid.evaluate(async (element, fieldId) => {
+        const grid = element as HTMLElement & Components.RevoGrid
+        await grid.scrollToRow(0)
+        const column = (await grid.getColumns()).find(
+          (item) => item.prop === fieldId,
+        )!
+        const type = column.pin ?? 'rgCol'
+        const store = await grid.getColumnStore(type)
+        const source = store.get('source')
+        const x = store
+          .get('items')
+          .findIndex((index) => source[index]?.prop === fieldId)
+        if (x < 0) throw new Error('History paste column is not visible')
+        await grid.setCellsFocus({ x, y: 0 }, { x, y: 0 }, type)
+        grid.focus()
+        return (await grid.getFocused())?.model?.__rowId
+      }, taskName)
+      expect(focused).toBe(first.id)
+    }).toPass({ timeout: 10_000 })
     await page.evaluate(() =>
       navigator.clipboard.writeText('Pasted A\nPasted B'),
     )
@@ -212,9 +207,7 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
   await expect(timeline).toContainText(en.history.actions.link)
   await expect(timeline).toContainText(en.history.actions.unlink)
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await page.goto(`${base}/r/${first.id}`)
   await dialog.getByRole('tab', { name: zh.history.title, exact: true }).click()
   await expect(timeline).toContainText(zh.history.actions.link)

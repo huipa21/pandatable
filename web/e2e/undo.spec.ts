@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import type { Components } from '@revolist/revogrid'
 import { expect, expectHTTPFailure, paceLogin, test } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -412,7 +413,10 @@ test('AT-609: a collaborator conflict can be cancelled or confirmed', async ({
       })
     ).status(),
   ).toBe(201)
-  const bob = await browser.newContext({ baseURL: process.env.PT_E2E_BASE_URL })
+  const bob = await browser.newContext({
+    baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
+  })
   try {
     await paceLogin(page)
     expect(
@@ -521,9 +525,7 @@ test('AT-609: a collaborator conflict can be cancelled or confirmed', async ({
           (await readRow(page, source.table.id, row.id)).fields[fieldId],
       )
       .toBe('Bob edit')
-    await page
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
+    await setLocale(page, 'zh-CN')
     await expect(
       page.getByRole('button', { name: zh.undo.undo, exact: true }),
     ).toBeVisible()

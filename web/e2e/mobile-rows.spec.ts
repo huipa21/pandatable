@@ -2,12 +2,14 @@ import type { Page } from '@playwright/test'
 import {
   test,
   expect,
+  allowHTTPFailure,
   expectHTTPFailure,
   observeBrowser,
   expectBrowserClean,
   paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { setLocale, setTheme, signOut } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -55,9 +57,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -356,12 +356,8 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
       ),
     ).toBeLessThanOrEqual(300)
   }
-  await page
-    .getByRole('button', { name: en.common.themes.dark, exact: true })
-    .click()
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setTheme(page, 'dark')
+  await setLocale(page, 'zh-CN')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(
     page.getByRole('heading', { name: zh.mobileRows.title, exact: true }),
@@ -385,12 +381,8 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     ),
   ).toBe(true)
   await dialog.getByRole('button', { name: zh.rowExpand.close }).click()
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
-  await page
-    .getByRole('button', { name: en.common.themes.light, exact: true })
-    .click()
+  await setLocale(page, 'en')
+  await setTheme(page, 'light')
 
   await holdResponse(page, apiRow, 'GET')
   await page
@@ -532,9 +524,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     const diagnostics = await observeBrowser(reader)
     await reader.goto(base)
     if ((await reader.locator('html').getAttribute('lang')) === 'zh-CN')
-      await reader
-        .getByRole('button', { name: zh.common.languages.en, exact: true })
-        .click()
+      await setLocale(reader, 'en')
     await expect(reader.locator('.mobile-card')).toHaveCount(100)
     await expect(reader.locator('.mobile-add, .card-selection')).toHaveCount(0)
     await reader
@@ -578,7 +568,8 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
         })
       ).status(),
     ).toBe(200)
-    expectHTTPFailure(reader, 'POST', apiRows, 403)
+    // Realtime may deliver the downgrade first; the dialog then denies locally.
+    allowHTTPFailure(reader, 'POST', apiRows, 403)
     await readerDialog
       .getByRole('button', { name: en.mobileRows.create, exact: true })
       .click()
@@ -625,7 +616,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     .poll(() => page.evaluate(() => (window as HeldWindow).held))
     .toBe(true)
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
-  await page.getByRole('button', { name: en.auth.signOut, exact: true }).click()
+  await signOut(page)
   await expect(page).toHaveURL(/\/login$/)
   await page.evaluate(() => (window as HeldWindow).release?.())
   await expect(page.locator('dialog.row-expand, .mobile-card')).toHaveCount(0)

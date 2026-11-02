@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test'
 import { test, expect, paceLogin } from './fixtures'
+import { setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyFields } from './fields'
@@ -44,9 +45,7 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -63,23 +62,15 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
     await expect(
       page.getByRole('region', { name: en.mobileRows.title, exact: true }),
     ).toBeVisible()
-    await page
-      .getByRole('button', { name: en.common.themes.dark, exact: true })
-      .click()
+    await setTheme(page, 'dark')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-    await page
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
+    await setLocale(page, 'zh-CN')
     await expect(
       page.getByRole('region', { name: zh.mobileRows.title, exact: true }),
     ).toBeVisible()
     await expect(page.locator('revo-grid')).toHaveCount(0)
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
-    await page
-      .getByRole('button', { name: en.common.themes.light, exact: true })
-      .click()
+    await setLocale(page, 'en')
+    await setTheme(page, 'light')
     return
   }
   const parts = new URL(page.url()).pathname.split('/')

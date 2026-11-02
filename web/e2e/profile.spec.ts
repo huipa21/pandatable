@@ -13,6 +13,7 @@ import type {
   RowQueryResult,
   TableSchema,
 } from '../src/api/types'
+import { setLocale, setTheme, signOut } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { restoreSettings } from './settings'
@@ -24,9 +25,7 @@ const headers = () => ({
 
 async function useEnglish(page: Page) {
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: en.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
 }
 
 async function signIn(page: Page, login: string, password: string) {
@@ -244,6 +243,7 @@ async function newBrowserPage(
 }> {
   const context = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport,
     isMobile,
     hasTouch: isMobile,
@@ -298,7 +298,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
     await expect(alicePage.getByLabel(en.profile.displayName)).toHaveValue(
       'Alice',
     )
-    await alicePage.getByRole('button', { name: en.auth.signOut }).click()
+    await signOut(alicePage)
     await expect(alicePage).toHaveURL(/\/login$/)
     expect((await alicePage.request.get('/api/v1/auth/me')).status()).toBe(401)
     await alicePage.goBack()
@@ -320,8 +320,12 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
     await openProfile(alicePage)
 
     await alicePage.getByLabel(en.profile.displayName).fill('Alice Profile')
-    await alicePage.getByLabel(en.profile.language).selectOption('zh-CN')
-    await alicePage.getByLabel(en.profile.theme).selectOption('dark')
+    await alicePage
+      .getByLabel(en.profile.language, { exact: true })
+      .selectOption('zh-CN')
+    await alicePage
+      .getByLabel(en.profile.theme, { exact: true })
+      .selectOption('dark')
     await alicePage
       .getByLabel(en.profile.timezone)
       .selectOption('Asia/Shanghai')
@@ -344,12 +348,8 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
     await expect(alicePage.getByLabel(zh.profile.displayName)).toHaveValue(
       'Alice Profile',
     )
-    await alicePage
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
-    await alicePage
-      .getByRole('button', { name: en.common.themes.light, exact: true })
-      .click()
+    await setLocale(alicePage, 'en')
+    await setTheme(alicePage, 'light')
     await expect(alicePage.locator('html')).toHaveAttribute('lang', 'en')
     await expect(alicePage.locator('html')).toHaveAttribute(
       'data-theme',

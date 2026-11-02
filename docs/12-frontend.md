@@ -6,25 +6,41 @@ Vue 3 (Composition API, `<script setup>`), TypeScript (strict), Vite, Pinia, Vue
 
 ## 2. Layout
 
+Shell per D-209 (supersedes the earlier sketch):
+
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│ ☰ PandaTable   Workspace ▸ Book ▸ Table      🔔  [EN|中文] [☀|🌙] 👤 │  ← header (language + theme toggles side by side, all users)
-├──────────────┬─────────────────────────────────────────────────────┤
-│ Sidebar      │ View tabs:  Shared | Personal | + View               │
-│  Workspaces  │ Toolbar: Fields · Filter · Sort · Group · Highlight │
-│   └ Books    │          · Row height · Search · Export · Share(👥) │
-│      └ Tables│ ┌─────────────────────────────────────────────────┐ │
-│              │ │ Grid / Form / Kanban …                          │ │
-│ Trash        │ │                                                 │ │
-│ Admin ⚙ (admin only)                                             │ │
-│              │ └─────────────────────────────────────────────────┘ │
-│              │ Footer: aggregates · row count · presence avatars    │
-└──────────────┴─────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│ PT PandaTable ⇤ │ Workspace › Book › Table [› View]   🔍  中文/EN  ☀/🌙 │  ← header
+├─────────────────┬──────────────────────────────────────────────────────┤
+│ ┌─────────────┐ │ ↶ ↷  (view subheader, table routes only)             │
+│ │ Workspace ⋯ │ ├──────────────────────────────────────────────────────┤
+│ └─────────────┘ │ View tabs:  Shared | Personal | + View               │
+│ 3 books       + │ Toolbar: Fields · Filter · Sort · Group · …          │
+│ ▾ 📘 Book     ⋯ │ ┌──────────────────────────────────────────────────┐ │
+│    ▦ Table    ⋯ │ │ Grid / Form / Kanban …                           │ │
+│    ▾ Table 2    │ │                                                  │ │
+│       ◫ View    │ └──────────────────────────────────────────────────┘ │
+│ (A)³ avatar menu│                                                      │
+└─────────────────┴──────────────────────────────────────────────────────┘
 ```
+
+- Workspace = company/program; book ("workbook") = project holding tables and
+  their relations; table = sheet; view = filtered/sorted table.
+- Header: logo → `/home`; ⇤ hides/shows the sidebar (remembered) or opens the
+  mobile drawer; breadcrumb (view segment only when the URL names one); 🔍
+  quick-jump palette (Ctrl/Cmd+K, client-side over the nav tree); language and
+  light↔dark toggles. When the sidebar is hidden the avatar moves to the header.
+- Sidebar: the selected workspace (route, else last visited) as a box linking to
+  its page, "+" creates a book; books toggle their tables; hovering/focusing a
+  table's icon turns it into the views dropdown; the table name opens
+  `/t/:tableId` (default view, no redirect). "⋯" holds share/rename/delete/move.
+- Avatar menu (unread badge): notifications, Profile, Change password, Trash,
+  Admin submenu (admins), Sign out. No footer.
+- `/home`: workspace cards plus "New workspace".
 
 Routes:
 - `/setup`, `/login`, `/change-password`
-- `/w/:workspaceId`, `/w/:wid/b/:bookId`, `/t/:tableId/v/:viewId`, `/t/:tableId/v/:viewId/r/:rowId` (row modal deep link)
+- `/w/:workspaceId`, `/w/:wid/b/:bookId`, `/t/:tableId` (default view), `/t/:tableId/v/:viewId`, `/t/:tableId/v/:viewId/r/:rowId` (row modal deep link)
 - `/admin/{dashboard,users,groups,workspaces,settings,backups}` (guarded by role)
 
 ## 3. Stores (Pinia)
@@ -66,7 +82,8 @@ Routes:
   ordering or cross-parent moves.
 - Lazy `/t/:tableId/v/:viewId` reads real schema and displays table name,
   display-field name, visible views and `myLevel`. `/t/:tableId` replaces to the
-  first Grid (otherwise first visible view). Missing/mismatched parents/views,
+  first Grid (otherwise first visible view); since D-209 it renders that default
+  view in place without redirecting. Missing/mismatched parents/views,
   hidden or removed resources show neutral localized not-found copy. This is a
   schema-only shell: no grid import or row/query/field/view editing. T1.12 adds
   sharing below without expanding that boundary. T1.14 added the field panel;

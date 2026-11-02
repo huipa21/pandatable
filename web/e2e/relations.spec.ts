@@ -1,7 +1,7 @@
 import { expect, test, paceLogin, expectHTTPFailure } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
 const headers = () => ({
   Origin: process.env.PT_E2E_BASE_URL!,
@@ -12,9 +12,7 @@ async function login(page: import('@playwright/test').Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })

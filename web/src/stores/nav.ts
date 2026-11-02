@@ -24,6 +24,7 @@ export interface NavigationItem {
   canCreate: boolean
   index: number
   siblingCount: number
+  views: NavView[]
   children: NavigationItem[]
 }
 
@@ -50,6 +51,9 @@ export const useNavStore = defineStore('nav', () => {
   const mutationError = ref<unknown>(null)
   const editor = ref<StructureAction | null>(null)
   const revision = ref(0)
+  // The workspace shown in the sidebar when the route does not name one.
+  const lastWorkspaceId = ref<string | null>(null)
+  const drawerOpen = ref(false)
   let generation = 0
   let controller: AbortController | undefined
   let mutationController: AbortController | undefined
@@ -63,6 +67,8 @@ export const useNavStore = defineStore('nav', () => {
     tree.value = { workspaces: [] }
     loaded.value = loading.value = busy.value = false
     error.value = mutationError.value = editor.value = null
+    lastWorkspaceId.value = null
+    drawerOpen.value = false
     revision.value++
   }
   watch(() => auth.user?.id, reset, { flush: 'sync' })
@@ -183,6 +189,7 @@ export const useNavStore = defineStore('nav', () => {
       childKind: 'book',
       index: wi,
       siblingCount: workspaces.length,
+      views: [],
       children: w.books.map((b, bi, books) => ({
         id: b.id,
         name: b.name,
@@ -196,11 +203,13 @@ export const useNavStore = defineStore('nav', () => {
         childKind: 'table',
         index: bi,
         siblingCount: books.length,
+        views: [],
         children: b.tables.map((table, ti, tables) => ({
           id: table.id,
           name: table.name,
           kind: 'table',
-          path: tablePath(table.id, table.views),
+          // The bare table route shows the default view (breadcrumb without a view).
+          path: `/t/${table.id}`,
           parentId: b.id,
           level: table.level,
           pathOnly: false,
@@ -209,6 +218,7 @@ export const useNavStore = defineStore('nav', () => {
           childKind: null,
           index: ti,
           siblingCount: tables.length,
+          views: table.views,
           children: [],
         })),
       })),
@@ -232,6 +242,8 @@ export const useNavStore = defineStore('nav', () => {
     mutationError,
     editor,
     revision,
+    lastWorkspaceId,
+    drawerOpen,
     reset,
     refresh,
     submit,

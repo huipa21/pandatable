@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { readdir, writeFile } from 'node:fs/promises'
 import { test, expect, expectHTTPFailure } from './fixtures'
 import type { SystemSnapshot } from '../src/api/types'
+import { adminLink, setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -23,9 +24,7 @@ export async function verifyDashboard(page: Page) {
       new URL(r.url()).pathname === '/api/v1/admin/system' &&
       r.status() === 200,
   )
-  await page
-    .getByRole('link', { name: en.dashboard.title, exact: true })
-    .click()
+  await (await adminLink(page, en.dashboard.title)).click()
   await expect(
     page.getByText(en.dashboard.loading, { exact: true }),
   ).toBeVisible()
@@ -113,9 +112,7 @@ export async function verifyDashboard(page: Page) {
     path: test.info().outputPath('dashboard-en.png'),
     fullPage: true,
   })
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(
     page.getByRole('heading', { name: zh.dashboard.title, exact: true }),
   ).toBeVisible()
@@ -158,9 +155,7 @@ export async function verifyDashboard(page: Page) {
   await expect(page.locator('[data-metric="files"] dd')).toHaveText('4 KiB')
   await page.getByRole('button', { name: zh.auth.retry, exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
+  await setLocale(page, 'en')
   const observations = test.info().outputPath('dashboard-observations.json')
   await writeFile(
     observations,
@@ -170,5 +165,5 @@ export async function verifyDashboard(page: Page) {
     path: observations,
     contentType: 'application/json',
   })
-  await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
+  await (await adminLink(page, en.admin.users)).click()
 }

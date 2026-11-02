@@ -1,165 +1,167 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { NAlert, NButton, NButtonGroup } from 'naive-ui'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { usePreferencesStore } from '../stores/preferences'
 import { useAuthStore } from '../stores/auth'
-import { errorMessage, RequestError } from '../api/client'
 import { useAppSettingsStore } from '../stores/appSettings'
+import { useNavStore } from '../stores/nav'
 import { useUndoStore } from '../stores/undo'
+import { useNavLocation } from '../composables/useNavLocation'
+import AppIcon from '../components/AppIcon.vue'
+import AppBreadcrumbs from '../components/navigation/AppBreadcrumbs.vue'
 import NavSidebar from '../components/navigation/NavSidebar.vue'
-import NotificationBell from '../components/notifications/NotificationBell.vue'
+import SearchPalette from '../components/navigation/SearchPalette.vue'
+import UserMenu from '../components/account/UserMenu.vue'
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const appSettings = useAppSettingsStore()
+const nav = useNavStore()
 const undo = useUndoStore()
-const router = useRouter()
 const route = useRoute()
-const navigationVisible = computed(
-  () => auth.user && !auth.user.mustChangePassword && route.path !== '/setup',
-)
-const error = ref<unknown>(null)
-const busy = ref(false)
+const { routeWorkspaceId } = useNavLocation()
+const media = window.matchMedia('(max-width: 767px)')
+const mobile = ref(media.matches)
+const resize = (event: MediaQueryListEvent) => (mobile.value = event.matches)
+media.addEventListener('change', resize)
+onBeforeUnmount(() => media.removeEventListener('change', resize))
 
-async function logout() {
-  if (busy.value) return
-  busy.value = true
-  error.value = null
-  try {
-    await auth.logout()
-    await router.replace('/login')
-  } catch (cause) {
-    if (cause instanceof RequestError && cause.code === 'ERR_UNAUTHENTICATED') {
-      auth.setUser(null)
-      await router.replace('/login')
-    } else error.value = cause
-  } finally {
-    busy.value = false
-  }
+const navigationVisible = computed(
+  () => !!auth.user && !auth.user.mustChangePassword && route.path !== '/setup',
+)
+const sidebarShown = computed(
+  () =>
+    navigationVisible.value && !mobile.value && !preferences.sidebarCollapsed,
+)
+const tableRoute = computed(() => typeof route.params.tableId === 'string')
+const otherLocale = computed(() =>
+  preferences.locale === 'en' ? 'zh-CN' : 'en',
+)
+const otherLocaleName = computed(() =>
+  otherLocale.value === 'en'
+    ? t('common.languages.en')
+    : t('common.languages.zhCN'),
+)
+
+watch(
+  [routeWorkspaceId, () => route.path],
+  ([id, path]) => {
+    if (id) nav.lastWorkspaceId = id
+    else if (path === '/home') nav.lastWorkspaceId = null
+  },
+  { immediate: true },
+)
+
+function toggleSidebar() {
+  if (mobile.value) nav.drawerOpen = true
+  else preferences.toggleSidebar()
 }
 </script>
 
 <template>
-  <div class="app-shell">
+  <div
+    :class="[
+      'app-shell',
+      { 'with-sidebar': navigationVisible, 'sidebar-shown': sidebarShown },
+    ]"
+  >
     <header class="app-header">
-      <RouterLink class="brand" :to="auth.user ? '/home' : '/login'">
-        <span class="brand-mark" aria-hidden="true">{{
-          t('common.mark')
-        }}</span>
-        <span>{{ appSettings.appName ?? t('common.appName') }}</span>
-      </RouterLink>
-      <div class="preferences" :aria-label="t('common.preferences')">
-        <fieldset>
-          <legend>{{ t('common.language') }}</legend>
-          <NButtonGroup>
-            <NButton
-              :aria-pressed="preferences.locale === 'en'"
-              :type="preferences.locale === 'en' ? 'primary' : 'default'"
-              size="small"
-              @click="preferences.setLocale('en')"
-            >
-              {{ t('common.languages.en') }}
-            </NButton>
-            <NButton
-              :aria-pressed="preferences.locale === 'zh-CN'"
-              :type="preferences.locale === 'zh-CN' ? 'primary' : 'default'"
-              size="small"
-              @click="preferences.setLocale('zh-CN')"
-            >
-              {{ t('common.languages.zhCN') }}
-            </NButton>
-          </NButtonGroup>
-        </fieldset>
-        <fieldset>
-          <legend>{{ t('common.theme') }}</legend>
-          <NButtonGroup>
-            <NButton
-              :aria-pressed="preferences.theme === 'light'"
-              :type="preferences.theme === 'light' ? 'primary' : 'default'"
-              size="small"
-              @click="preferences.setTheme('light')"
-            >
-              {{ t('common.themes.light') }}
-            </NButton>
-            <NButton
-              :aria-pressed="preferences.theme === 'dark'"
-              :type="preferences.theme === 'dark' ? 'primary' : 'default'"
-              size="small"
-              @click="preferences.setTheme('dark')"
-            >
-              {{ t('common.themes.dark') }}
-            </NButton>
-            <NButton
-              :aria-pressed="preferences.theme === 'system'"
-              :type="preferences.theme === 'system' ? 'primary' : 'default'"
-              size="small"
-              @click="preferences.setTheme('system')"
-            >
-              {{ t('common.themes.system') }}
-            </NButton>
-          </NButtonGroup>
-        </fieldset>
+      <div class="header-brand">
+        <RouterLink class="brand" :to="auth.user ? '/home' : '/login'">
+          <span class="brand-mark" aria-hidden="true">{{
+            t('common.mark')
+          }}</span>
+          <span class="brand-name">{{
+            appSettings.appName ?? t('common.appName')
+          }}</span>
+        </RouterLink>
+        <button
+          v-if="navigationVisible"
+          class="icon-button sidebar-toggle"
+          :aria-label="
+            mobile
+              ? t('nav.open')
+              : preferences.sidebarCollapsed
+                ? t('nav.expandSidebar')
+                : t('nav.collapseSidebar')
+          "
+          :title="
+            mobile
+              ? t('nav.open')
+              : preferences.sidebarCollapsed
+                ? t('nav.expandSidebar')
+                : t('nav.collapseSidebar')
+          "
+          :aria-expanded="
+            mobile ? nav.drawerOpen : !preferences.sidebarCollapsed
+          "
+          @click="toggleSidebar"
+        >
+          <AppIcon :name="sidebarShown ? 'panelClose' : 'panelOpen'" />
+        </button>
+      </div>
+      <div class="header-main">
+        <AppBreadcrumbs v-if="navigationVisible" />
+        <div class="preferences" :aria-label="t('common.preferences')">
+          <SearchPalette v-if="navigationVisible" />
+          <button
+            class="icon-button language-toggle"
+            :title="t('common.switchLanguage', { name: otherLocaleName })"
+            :lang="otherLocale"
+            @click="preferences.setLocale(otherLocale)"
+          >
+            {{ otherLocaleName }}
+          </button>
+          <button
+            class="icon-button"
+            :aria-label="
+              preferences.isDark ? t('common.useLight') : t('common.useDark')
+            "
+            :title="
+              preferences.isDark ? t('common.useLight') : t('common.useDark')
+            "
+            @click="preferences.toggleTheme()"
+          >
+            <AppIcon :name="preferences.isDark ? 'sun' : 'moon'" />
+          </button>
+          <UserMenu v-if="auth.user && !sidebarShown" />
+        </div>
       </div>
     </header>
-    <nav v-if="auth.user" class="session-nav" :aria-label="t('auth.account')">
-      <template v-if="!auth.user.mustChangePassword">
-        <RouterLink to="/home">{{ t('auth.homeTitle') }}</RouterLink>
-        <NButton
-          size="small"
-          :disabled="!undo.canUndo"
-          aria-keyshortcuts="Control+Z Meta+Z"
-          @click="undo.undo"
-        >
-          {{ t('undo.undo') }}
-        </NButton>
-        <NButton
-          size="small"
-          :disabled="!undo.canRedo"
-          aria-keyshortcuts="Control+Y Meta+Shift+Z"
-          @click="undo.redo"
-        >
-          {{ t('undo.redo') }}
-        </NButton>
-        <NotificationBell />
-        <RouterLink to="/profile">{{ t('profile.title') }}</RouterLink>
-        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/users">
-          {{ t('admin.menu') }}
-        </RouterLink>
-        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/dashboard">
-          {{ t('dashboard.title') }}
-        </RouterLink>
-        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/groups">
-          {{ t('groups.title') }}
-        </RouterLink>
-        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/settings">
-          {{ t('settings.title') }}
-        </RouterLink>
-        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/workspaces">
-          {{ t('workspaces.title') }}
-        </RouterLink>
-        <RouterLink v-if="auth.user.role === 'admin'" to="/admin/backups">
-          {{ t('backups.title') }}
-        </RouterLink>
-        <RouterLink to="/change-password">
-          {{ t('auth.changePassword') }}
-        </RouterLink>
-      </template>
-      <NButton size="small" :loading="busy" @click="logout">
-        {{ t('auth.signOut') }}
-      </NButton>
-    </nav>
-    <div :class="['app-body', { 'with-sidebar': navigationVisible }]">
+    <div class="app-body">
       <NavSidebar v-if="navigationVisible && auth.user" :key="auth.user.id" />
       <main class="app-main">
-        <NAlert v-if="error" type="error" role="alert">
-          {{ errorMessage(error) }}
-        </NAlert>
+        <div
+          v-if="navigationVisible && tableRoute"
+          class="view-subheader"
+          role="toolbar"
+          :aria-label="t('nav.viewTools')"
+        >
+          <button
+            class="icon-button"
+            :aria-label="t('undo.undo')"
+            :title="t('undo.undo')"
+            :disabled="!undo.canUndo"
+            aria-keyshortcuts="Control+Z Meta+Z"
+            @click="undo.undo"
+          >
+            <AppIcon name="undo" />
+          </button>
+          <button
+            class="icon-button"
+            :aria-label="t('undo.redo')"
+            :title="t('undo.redo')"
+            :disabled="!undo.canRedo"
+            aria-keyshortcuts="Control+Y Meta+Shift+Z"
+            @click="undo.redo"
+          >
+            <AppIcon name="redo" />
+          </button>
+        </div>
         <slot />
       </main>
     </div>
-    <footer class="app-footer">{{ t('common.tagline') }}</footer>
   </div>
 </template>

@@ -6,8 +6,8 @@ import {
   paceLogin,
   test,
 } from './fixtures'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type {
   AuthUser,
   DataRow,
@@ -34,9 +34,7 @@ function column(page: Page, name: string): Locator {
 
 async function english(page: Page) {
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
 }
 
 test('AT-901 persists card moves and updates another connected Kanban client', async ({
@@ -139,6 +137,7 @@ test('AT-901 persists card moves and updates another connected Kanban client', a
   const boardURL = new URL(page.url()).pathname
   const peerContext = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     storageState: await page.context().storageState(),
     viewport: isMobile
       ? { width: 390, height: 844 }

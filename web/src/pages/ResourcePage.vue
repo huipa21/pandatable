@@ -26,7 +26,7 @@ import type {
   ViewMutation,
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
-import { tablePath, useNavStore, type NavigationItem } from '../stores/nav'
+import { useNavStore } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
 import { useRealtimeStore } from '../stores/realtime'
 import { useUndoStore, viewUndoStep } from '../stores/undo'
@@ -132,15 +132,11 @@ const node = computed(() => {
       (kind.value !== 'book' || item.parentId === route.params.wid),
   )
 })
-const breadcrumbs = computed(() => {
-  const items: NavigationItem[] = []
-  let current = node.value
-  while (current) {
-    items.unshift(current)
-    const parentId: string | null = current.parentId
-    current = nav.flatItems.find((item) => item.id === parentId)
-  }
-  return items
+// The bare table route shows the default view without naming it in the URL.
+const viewId = computed(() => {
+  if (typeof route.params.viewId === 'string') return route.params.viewId
+  const views = schema.value?.views ?? []
+  return (views.find((item) => item.type === 'grid') ?? views[0])?.id
 })
 const displayField = computed(() =>
   schema.value?.fields.find(
@@ -148,7 +144,7 @@ const displayField = computed(() =>
   ),
 )
 const view = computed(() =>
-  schema.value?.views.find((item) => item.id === route.params.viewId),
+  schema.value?.views.find((item) => item.id === viewId.value),
 )
 const showRowDialog = computed(
   () =>
@@ -307,8 +303,6 @@ async function loadSchema(silent = false) {
     if (current !== generation) return
     if (keep && schema.value) applySchema(result)
     else schema.value = result
-    if (!route.params.viewId && result.views.length)
-      await router.replace(tablePath(result.table.id, result.views))
   } catch (cause) {
     if (current !== generation || own.signal.aborted) return
     if (
@@ -387,7 +381,7 @@ watch(
 watch(
   [
     () => route.params.tableId,
-    () => route.params.viewId,
+    viewId,
     () => route.params.rowId,
     () => auth.user?.id,
   ],
@@ -407,15 +401,12 @@ watch(
   { immediate: true },
 )
 
-watch(
-  [() => route.params.tableId, () => route.params.viewId, () => auth.user?.id],
-  () => {
-    exportGeneration++
-    exportController?.abort()
-    exportBusy.value = false
-    exportError.value = ''
-  },
-)
+watch([() => route.params.tableId, viewId, () => auth.user?.id], () => {
+  exportGeneration++
+  exportController?.abort()
+  exportBusy.value = false
+  exportError.value = ''
+})
 
 watch(
   [() => route.params.tableId, () => route.params.bookId, () => auth.user?.id],
@@ -794,20 +785,6 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="resource-page">
-    <nav
-      v-if="!missing && !error"
-      class="breadcrumbs"
-      :aria-label="t('nav.breadcrumbs')"
-    >
-      <RouterLink to="/home">{{ t('auth.homeTitle') }}</RouterLink>
-      <template v-for="item in breadcrumbs" :key="item.id">
-        <span aria-hidden="true">{{ t('nav.separator') }}</span>
-        <RouterLink :to="item.path">{{ item.name }}</RouterLink>
-        <span v-if="item.pathOnly" class="path-only">{{
-          t('nav.pathOnly')
-        }}</span>
-      </template>
-    </nav>
     <p v-if="(!nav.loaded && !nav.error) || loading" role="status">
       {{ t('nav.loading') }}
     </p>

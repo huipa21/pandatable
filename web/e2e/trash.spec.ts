@@ -6,6 +6,7 @@ import type {
   TableSchema,
   TableView,
 } from '../src/api/types'
+import { accountLink, setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -24,9 +25,7 @@ async function login(page: Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -41,9 +40,8 @@ async function navigation(page: Page, isMobile: boolean) {
   return page.getByRole('navigation', { name: en.nav.title, exact: true })
 }
 
-async function openTrash(page: Page, isMobile: boolean) {
-  const nav = await navigation(page, isMobile)
-  await nav.getByRole('link', { name: en.trash.title, exact: true }).click()
+async function openTrash(page: Page) {
+  await (await accountLink(page, en.trash.title)).click()
   await expect(page).toHaveURL(/\/trash$/)
   await expect(
     page.getByRole('heading', { name: en.trash.title }),
@@ -133,7 +131,7 @@ test('AT-203, AT-325 and AT-610 restore deleted resources and retained data', as
   expect(((await hidden.json()) as DataRow).fields).not.toHaveProperty(field.id)
   await post(page, `/api/v1/tables/${tid}/rows`, { rows: [{ fields: {} }] })
 
-  await openTrash(page, isMobile)
+  await openTrash(page)
   const fieldCard = page.locator(`[data-trash-id="${field.id}"]`)
   await expect(fieldCard).toContainText('Retained notes')
   await expect(fieldCard).toContainText(`Trash workspace ${suffix}`)
@@ -213,9 +211,7 @@ test('AT-203, AT-325 and AT-610 restore deleted resources and retained data', as
   expect(
     ((await finalSchema.json()) as TableSchema).views.map((item) => item.id),
   ).toContain(view.id)
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(
     page.getByRole('heading', { name: zh.trash.title }),
   ).toBeVisible()

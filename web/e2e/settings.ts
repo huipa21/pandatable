@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { test, expect, expectHTTPFailure } from './fixtures'
 import type { AdminSettings } from '../src/api/types'
+import { adminLink, setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -44,7 +45,7 @@ async function changeSettings(
     },
     { times: 1 },
   )
-  await page.getByRole('link', { name: en.settings.title, exact: true }).click()
+  await (await adminLink(page, en.settings.title)).click()
   await expect(
     page.getByText(en.settings.loading, { exact: true }),
   ).toBeVisible()
@@ -127,9 +128,7 @@ async function changeSettings(
     path: test.info().outputPath('settings-en.png'),
     fullPage: true,
   })
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(
     page.getByRole('heading', { name: zh.settings.title, exact: true }),
   ).toBeVisible()
@@ -145,9 +144,7 @@ async function changeSettings(
     path: test.info().outputPath('settings-zh.png'),
     fullPage: true,
   })
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
+  await setLocale(page, 'en')
 
   await page.route(
     '**/api/v1/admin/settings',
@@ -182,9 +179,7 @@ async function changeSettings(
     },
     { times: 1 },
   )
-  await page
-    .getByRole('link', { name: en.workspaces.title, exact: true })
-    .click()
+  await (await adminLink(page, en.workspaces.title)).click()
   await expect(
     page.getByText(en.workspaces.loading, { exact: true }),
   ).toBeVisible()
@@ -211,14 +206,15 @@ async function changeSettings(
       page.getByText(en.workspaces.empty, { exact: true }),
     ).toBeVisible()
   await page.getByLabel(en.workspaces.searchHint, { exact: true }).fill('%_')
-  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await page
+    .locator('main')
+    .getByRole('button', { name: en.admin.search, exact: true })
+    .click()
   await expect(
     page.getByText(en.workspaces.empty, { exact: true }),
   ).toBeVisible()
   await expect(page.locator('.admin-workspaces a')).toHaveCount(0)
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
   await expect(
     page.getByRole('heading', { name: zh.workspaces.title, exact: true }),
   ).toBeVisible()
@@ -234,9 +230,7 @@ async function changeSettings(
     path: test.info().outputPath('workspaces-empty-zh.png'),
     fullPage: true,
   })
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
+  await setLocale(page, 'en')
   await page.route(
     '**/api/v1/admin/workspaces?*',
     (route) =>
@@ -248,13 +242,16 @@ async function changeSettings(
     { times: 1 },
   )
   expectHTTPFailure(page, 'GET', '/api/v1/admin/workspaces', 500)
-  await page.getByRole('button', { name: en.admin.search, exact: true }).click()
+  await page
+    .locator('main')
+    .getByRole('button', { name: en.admin.search, exact: true })
+    .click()
   await expect(page.getByRole('alert')).toContainText(en.errors.ERR_INTERNAL)
   await page.getByRole('button', { name: en.auth.retry, exact: true }).click()
   await expect(page.getByRole('alert')).toHaveCount(0)
   await expect(
     page.getByText(en.workspaces.empty, { exact: true }),
   ).toBeVisible()
-  await page.getByRole('link', { name: en.admin.menu, exact: true }).click()
+  await (await adminLink(page, en.admin.users)).click()
   return appName
 }

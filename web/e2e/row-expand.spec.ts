@@ -9,6 +9,7 @@ import {
   paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { setLocale, setTheme, signOut } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -50,9 +51,7 @@ async function login(page: Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -318,12 +317,8 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     .click()
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
 
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
-  await page
-    .getByRole('button', { name: zh.common.themes.dark, exact: true })
-    .click()
+  await setLocale(page, 'zh-CN')
+  await setTheme(page, 'dark')
   await page
     .getByRole('button', {
       name: zh.rowExpand.open.replace('{id}', row.id),
@@ -338,12 +333,8 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   ).toBeVisible()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await dialog.getByRole('button', { name: zh.rowExpand.close }).click()
-  await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
-    .click()
-  await page
-    .getByRole('button', { name: en.common.themes.light, exact: true })
-    .click()
+  await setLocale(page, 'en')
+  await setTheme(page, 'light')
 
   // Direct links still authorize the table/view and fetch the full row.
   expectHTTPFailure(page, 'GET', `/api/v1/tables/${tid}/rows/0`, 404)
@@ -383,7 +374,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     )
     .toBe(true)
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
-  await page.getByRole('button', { name: en.auth.signOut, exact: true }).click()
+  await signOut(page)
   await expect(page).toHaveURL(/\/login$/)
   await page.evaluate(() =>
     (window as HeldResponseWindow).releaseRowResponse?.(),
@@ -418,6 +409,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   expect(grant.status()).toBe(201)
   const readerContext = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport: { width: 1280, height: 900 },
   })
   try {

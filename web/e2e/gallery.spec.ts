@@ -6,8 +6,8 @@ import {
   paceLogin,
   test,
 } from './fixtures'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type {
   AttachmentValue,
   DataRow,
@@ -28,9 +28,7 @@ async function create<T>(page: Page, path: string, data: unknown): Promise<T> {
 
 async function english(page: Page) {
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
 }
 
 test('AT-902 displays persisted Gallery covers and selected card fields', async ({
@@ -188,6 +186,7 @@ test('AT-902 displays persisted Gallery covers and selected card fields', async 
 
   const peerContext = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     storageState: await page.context().storageState(),
     viewport: isMobile
       ? { width: 390, height: 844 }

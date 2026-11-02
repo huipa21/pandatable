@@ -1,7 +1,7 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { expect, paceLogin, test } from './fixtures'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
 const headers = () => ({
@@ -13,9 +13,7 @@ async function signInOwner(page: Page) {
   await paceLogin(page)
   await page.goto('/login')
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
   await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
   await page
     .getByLabel(en.auth.password, { exact: true })
@@ -40,9 +38,7 @@ async function createUser(page: Page, username: string) {
 
 async function setLanguageEnglish(page: Page) {
   if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
-    await page
-      .getByRole('button', { name: zh.common.languages.en, exact: true })
-      .click()
+    await setLocale(page, 'en')
 }
 
 async function signInParticipant(
@@ -51,6 +47,7 @@ async function signInParticipant(
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
     baseURL: process.env.PT_E2E_BASE_URL,
+    locale: 'en-US',
     viewport: { width: 390, height: 844 },
   })
   await paceLogin()

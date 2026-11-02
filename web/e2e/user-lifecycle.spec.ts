@@ -12,6 +12,7 @@ import type {
   GrantListing,
   TableSchema,
 } from '../src/api/types'
+import { setLocale } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -216,6 +217,7 @@ test('AT-113..115: rescue, transfer, and irreversible deletion preserve shared d
       .getByLabel(en.workspaces.searchHint, { exact: true })
       .fill(rescueName)
     await page
+      .locator('main')
       .getByRole('button', { name: en.admin.search, exact: true })
       .click()
     const card = page.locator(
@@ -366,9 +368,7 @@ test('AT-113..115: rescue, transfer, and irreversible deletion preserve shared d
     await dialog
       .getByRole('button', { name: en.rowExpand.close, exact: true })
       .click()
-    await bobPage
-      .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-      .click()
+    await setLocale(bobPage, 'zh-CN')
     await bobPage.goto(`${base}/r/${row.id}`)
     await expect(
       bobPage.locator(`dialog.row-expand [data-field-id="${createdBy.id}"]`),
