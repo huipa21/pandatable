@@ -9,6 +9,7 @@ import {
   paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
+import { openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -291,6 +292,7 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
         .getByRole('button', { name: en.rowExpand.close, exact: true })
         .click()
     const beforeSwitch = aliceFrames.length
+    await openTableOptions(bob)
     await bob
       .locator('.view-links')
       .getByRole('link', { name: 'Bob private', exact: true })
@@ -314,14 +316,13 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
     expect(aliceFrames.some((frame) => frame.viewId === privateViewId)).toBe(
       false,
     )
+    await openTableOptions(bob)
     await bob
       .locator('.view-links')
       .getByRole('link', { name: viewName, exact: true })
       .click()
     await expect(
-      bob
-        .locator('.view-links')
-        .getByRole('link', { name: viewName, exact: true }),
+      bob.locator('.view-links').locator(`a[href="${path}"]`),
     ).toHaveAttribute('aria-current', 'page')
     await focusBob()
     const leftAt = Date.now()

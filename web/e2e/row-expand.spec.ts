@@ -10,6 +10,7 @@ import {
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import { setLocale, setTheme, signOut } from './app-shell'
+import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -352,12 +353,13 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: en.grid.addRow, exact: true }).click()
   const schema = await schemaOf()
-  await page.locator('.grid-fields summary').click()
-  await page
-    .locator('.grid-fields')
-    .getByLabel('Notes', { exact: true })
+  const fields = await openFieldPanel(page)
+  await fields
+    .getByLabel(en.field.panel.showField.replace('{name}', 'Notes'), {
+      exact: true,
+    })
     .uncheck()
-  await page.locator('.grid-fields summary').click()
+  await page.locator('.grid-fields-trigger').click()
   const query = await page.request.post(`/api/v1/views/${viewId}/query`, {
     headers: h,
     data: { limit: 100 },

@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import type { Components } from '@revolist/revogrid'
 import { expect, expectHTTPFailure } from './fixtures'
+import { openFieldPanel } from './table-controls'
 import type { TableField, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
@@ -97,12 +98,7 @@ export async function revealFieldColumn(page: Page, fieldId: string) {
 /** Real Field UI/API flows on a freshly created table owned by `owner` (T1.14). */
 export async function verifyFields(owner: Page, tid: string) {
   const h = headers()
-  const panel = owner.getByRole('region', { name: en.field.panel.title })
-  if (owner.viewportSize()!.width < 768)
-    await owner
-      .getByRole('button', { name: en.mobileRows.options, exact: true })
-      .click()
-  await expect(panel).toBeVisible()
+  const panel = await openFieldPanel(owner)
   const initial = await schemaOf(owner, tid)
   const name = byName(initial, 'Name')!
 
@@ -124,6 +120,7 @@ export async function verifyFields(owner: Page, tid: string) {
   await editor
     .getByRole('checkbox', { name: en.field.panel.unique, exact: true })
     .check()
+  await editor.getByText(en.field.panel.setDefault, { exact: true }).click()
   await editor
     .getByRole('textbox', { name: en.field.panel.defaultValue, exact: true })
     .fill('7')
@@ -140,8 +137,10 @@ export async function verifyFields(owner: Page, tid: string) {
   })
   expect(schema.schemaVersion).toBeGreaterThan(initial.schemaVersion)
   const row = panel.locator(`[data-field-id="${qty.id}"]`)
-  await expect(row).toContainText(en.field.panel.required)
-  await expect(row).toContainText(en.field.panel.unique)
+  if (owner.viewportSize()!.width < 768) {
+    await expect(row).toContainText(en.field.panel.required)
+    await expect(row).toContainText(en.field.panel.unique)
+  }
   // Schema DTOs never expose physical names.
   expect(JSON.stringify(schema)).not.toMatch(
     /pg_column|pgColumn|"c_[a-z2-7]{10}"/,
@@ -175,6 +174,7 @@ export async function verifyFields(owner: Page, tid: string) {
       exact: true,
     })
     .selectOption('blue')
+  await editor.getByText(en.field.panel.setDefault, { exact: true }).click()
   await editor
     .getByRole('combobox', { name: en.field.panel.defaultValue, exact: true })
     .selectOption({ label: 'Todo' })
@@ -252,7 +252,8 @@ export async function verifyFields(owner: Page, tid: string) {
 
   // Display field, reorder and soft delete through the menu.
   await fieldAction(owner, qty.id, en.field.panel.setDisplay)
-  await expect(row).toContainText(en.field.panel.display)
+  if (owner.viewportSize()!.width < 768)
+    await expect(row).toContainText(en.field.panel.display)
   await expect(owner.locator('.schema-summary')).toContainText('数量')
   await fieldAction(owner, stage.id, en.field.panel.moveUp)
   await expect
@@ -314,15 +315,13 @@ export async function verifyFieldReader(
   field: { id: string; version: number },
 ) {
   const h = headers()
-  const panel = page.getByRole('region', { name: en.field.panel.title })
-  if (page.viewportSize()!.width < 768)
-    await page
-      .getByRole('button', { name: en.mobileRows.options, exact: true })
-      .click()
+  const panel = await openFieldPanel(page)
   await expect(panel).toContainText(en.field.panel.readOnly)
   await expect(panel).toContainText('数量')
-  await expect(panel.getByRole('button')).toHaveCount(0)
-  await expect(panel.locator('details')).toHaveCount(0)
+  await expect(
+    panel.getByRole('button', { name: en.field.panel.add, exact: true }),
+  ).toHaveCount(0)
+  await expect(panel.locator('details.field-actions')).toHaveCount(0)
   const create = await page.request.post(`/api/v1/tables/${tid}/fields`, {
     headers: h,
     data: { name: 'Denied', uiType: 'text' },

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { FilterNode, RowValue, TableSchema } from '../../api/types'
 import type { Op } from '../../fields/types'
+import AppIcon from '../AppIcon.vue'
 
 defineOptions({ name: 'FilterBuilder' })
 
@@ -11,6 +12,7 @@ const props = withDefaults(
     schema: TableSchema
     modelValue: FilterNode | null
     depth?: number
+    compact?: boolean
   }>(),
   { depth: 1 },
 )
@@ -332,9 +334,20 @@ function displayValue(value: RowValue | undefined) {
 </script>
 
 <template>
-  <fieldset class="filter-group" :data-depth="depth">
-    <legend>{{ t('filter.group') }} {{ depth }}</legend>
-    <label>
+  <fieldset
+    class="filter-group"
+    :class="{ 'compact-filter': compact }"
+    :data-depth="depth"
+  >
+    <legend :class="{ 'visually-hidden': compact && depth === 1 }">
+      {{ t('filter.group') }} {{ depth }}
+    </legend>
+    <label
+      class="filter-match"
+      :class="{
+        'visually-hidden': compact && depth === 1 && group.items.length < 2,
+      }"
+    >
       <span>{{ t('filter.match') }}</span>
       <select
         :value="group.op"
@@ -354,9 +367,19 @@ function displayValue(value: RowValue | undefined) {
         :schema="schema"
         :model-value="item"
         :depth="depth + 1"
+        :compact="compact"
         @update:model-value="updateItem(index, $event)"
       />
       <template v-else>
+        <span v-if="compact" class="filter-prefix">
+          {{
+            index === 0
+              ? t('filter.where')
+              : group.op === 'and'
+                ? t('filter.and')
+                : t('filter.or')
+          }}
+        </span>
         <label>
           <span>{{ t('filter.field') }}</span>
           <select
@@ -587,8 +610,15 @@ function displayValue(value: RowValue | undefined) {
             />
           </label>
         </template>
-        <button type="button" @click="updateItem(index, null)">
-          {{ t('filter.removeCondition') }}
+        <button
+          type="button"
+          :aria-label="t('filter.removeCondition')"
+          @click="updateItem(index, null)"
+        >
+          <AppIcon v-if="compact" name="trash" />
+          <span :class="{ 'visually-hidden': compact }">
+            {{ t('filter.removeCondition') }}
+          </span>
         </button>
       </template>
     </div>
@@ -654,5 +684,74 @@ function displayValue(value: RowValue | undefined) {
 
 .filter-item > .filter-group {
   flex: 1 1 100%;
+}
+
+.compact-filter {
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.compact-filter[data-depth='2'],
+.compact-filter[data-depth='3'] {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.compact-filter > .filter-item {
+  align-items: stretch;
+  gap: 0;
+}
+
+.compact-filter > .filter-item > label {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+
+.compact-filter > .filter-item > label > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.compact-filter > .filter-item input,
+.compact-filter > .filter-item select,
+.compact-filter > .filter-item > button,
+.filter-prefix {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  font: inherit;
+}
+
+.compact-filter > .filter-item > button {
+  width: 44px;
+  cursor: pointer;
+}
+
+.filter-prefix {
+  display: flex;
+  align-items: center;
+  width: auto;
+  min-width: 72px;
+  color: var(--muted);
+  border-radius: 8px 0 0 8px;
+}
+
+.compact-filter > .filter-item > button:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.compact-filter > .filter-actions {
+  align-items: center;
 }
 </style>

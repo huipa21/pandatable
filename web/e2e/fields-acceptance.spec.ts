@@ -3,6 +3,7 @@ import type { Components } from '@revolist/revogrid'
 import { test, expect, expectHTTPFailure, paceLogin } from './fixtures'
 import type { DataRow, RowQueryResult, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -81,7 +82,7 @@ async function addFieldViaUI(
     choices?: string[]
   },
 ) {
-  const panel = page.getByRole('region', { name: en.field.panel.title })
+  const panel = await openFieldPanel(page)
   await panel
     .getByRole('button', { name: en.field.panel.add, exact: true })
     .click()
@@ -238,6 +239,7 @@ test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, vali
   const codeField = fieldByName('Code')
 
   // Add a row through the grid.
+  await page.locator('.grid-fields-trigger').click()
   const gridRegion = page.getByRole('region', { name: en.grid.title })
   await expect(gridRegion).toBeVisible()
   const addRowBtn = page.getByRole('button', {
@@ -618,6 +620,7 @@ test('AT-323/324 previews type changes, converts explicitly, and propagates choi
 
   const fieldRow = (id: string) => page.locator(`li[data-field-id="${id}"]`)
   const actions = async (id: string) => {
+    await openFieldPanel(page)
     const row = fieldRow(id)
     await row.locator('details summary').click()
     return row
@@ -987,11 +990,16 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
   }
 
   // The Fields control reveals them.
-  const fieldsMenu = page.locator('details.grid-fields')
-  await fieldsMenu.locator('summary').click()
+  const fieldsMenu = await openFieldPanel(page)
+  await fieldsMenu
+    .getByRole('button', { name: en.field.panel.systemFields })
+    .click()
   for (const sys of systemFields) {
     await fieldsMenu
-      .getByRole('checkbox', { name: sys.name, exact: true })
+      .getByRole('checkbox', {
+        name: en.field.panel.showField.replace('{name}', sys.name),
+        exact: true,
+      })
       .check()
     const header = gridElement.getByRole('columnheader', {
       name: sys.name,
@@ -999,7 +1007,7 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
     })
     await expect(header).toBeVisible()
   }
-  await fieldsMenu.locator('summary').click()
+  await page.locator('.grid-fields-trigger').click()
 
   // Add a row created by Alice (first-admin).
   await page.getByRole('button', { name: en.grid.addRow, exact: true }).click()

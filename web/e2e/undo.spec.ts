@@ -3,6 +3,7 @@ import type { Components } from '@revolist/revogrid'
 import { expect, expectHTTPFailure, paceLogin, test } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { openFieldPanel, openGridMore } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -197,11 +198,14 @@ test('AT-608: reverse-order undo and redo preserve rows, links, comments and vie
   await expect(page.locator('revo-grid')).toBeVisible()
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
 
-  const menu = page.locator('.grid-fields')
-  await menu.locator('summary').click()
-  await menu.getByLabel('Extra', { exact: true }).uncheck()
+  const menu = await openFieldPanel(page)
+  await menu
+    .getByLabel(en.field.panel.showField.replace('{name}', 'Extra'), {
+      exact: true,
+    })
+    .uncheck()
   await expect.poll(visible).toBe(false)
-  await menu.locator('summary').click()
+  await page.locator('.grid-fields-trigger').click()
   await page.getByRole('button', { name: en.grid.addRow, exact: true }).click()
   const query = async () => {
     const response = await page.request.post(`/api/v1/views/${viewId}/query`, {
@@ -253,6 +257,7 @@ test('AT-608: reverse-order undo and redo preserve rows, links, comments and vie
         exact: true,
       })
       .check()
+  await openGridMore(page)
   await page
     .getByRole('button', {
       name: en.grid.deleteRows.replace('{count}', '3'),

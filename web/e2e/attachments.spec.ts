@@ -8,6 +8,7 @@ import type {
   TableSchema,
 } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -35,7 +36,7 @@ async function addAttachmentField(
   maxFiles: number,
   accept = '',
 ) {
-  const panel = page.getByRole('region', { name: en.field.panel.title })
+  const panel = await openFieldPanel(page)
   await panel
     .getByRole('button', { name: en.field.panel.add, exact: true })
     .click()
@@ -71,6 +72,7 @@ async function addAttachmentField(
   const schema = (await response.json()) as TableSchema
   const field = schema.fields.find((item) => item.name === name)
   if (!field) throw new Error(`Created attachment field ${name} is missing`)
+  await page.locator('.grid-fields-trigger').click()
   return field
 }
 

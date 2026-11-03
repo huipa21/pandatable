@@ -11,6 +11,7 @@ import type {
   TableField,
   TableSchema,
   TypeChangeDryRun,
+  ViewColumns,
 } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
@@ -18,6 +19,7 @@ import { CHOICE_COLORS } from '../../fields/choice'
 import { fieldKindLabel } from '../../fields/messages'
 import { isKind, kindConstraints } from '../../fields/registry'
 import type { FieldEnv, Kind } from '../../fields/types'
+import AppIcon from '../AppIcon.vue'
 import {
   colorLabel,
   createBody,
@@ -38,10 +40,15 @@ import {
 
 const MAX_CHOICES = 500
 
-const props = defineProps<{ schema: TableSchema }>()
+const props = defineProps<{
+  schema: TableSchema
+  menu?: boolean
+  columns?: ViewColumns['fields']
+}>()
 const emit = defineEmits<{
   update: [schema: TableSchema]
   reload: []
+  visibility: [id: string, visible: boolean]
 }>()
 
 const { t, locale } = useI18n()
@@ -57,6 +64,41 @@ const fields = computed(() =>
   [...props.schema.fields].sort((a, b) => a.position - b.position),
 )
 const userFields = computed(() => fields.value.filter((f) => !f.isSystem))
+const fieldSearch = ref('')
+const showSystemFields = ref(false)
+const displayedFields = computed(() => {
+  if (!props.menu) return fields.value
+  const order = new Map(
+    (props.columns ?? []).map((column, index) => [column.id, index]),
+  )
+  const query = fieldSearch.value.trim().toLocaleLowerCase()
+  return fields.value
+    .filter(
+      (field) =>
+        (showSystemFields.value || !field.isSystem) &&
+        field.name.toLocaleLowerCase().includes(query),
+    )
+    .sort(
+      (a, b) =>
+        (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+    )
+})
+function fieldVisible(field: TableField) {
+  return (
+    props.columns?.find((column) => column.id === field.id)?.visible ??
+    !field.isSystem
+  )
+}
+const allDisplayedFieldsVisible = computed(
+  () =>
+    displayedFields.value.length > 0 &&
+    displayedFields.value.every(fieldVisible),
+)
+function toggleDisplayedFields(visible: boolean) {
+  for (const field of displayedFields.value)
+    if (fieldVisible(field) !== visible) emit('visibility', field.id, visible)
+}
 
 const busy = ref(false)
 const error = ref<unknown>(null)
@@ -933,11 +975,16 @@ onBeforeUnmount(() => {
   controller = undefined
   own?.abort()
 })
+defineExpose({ openCreate: () => openEditor(null) })
 </script>
 
 <template>
-  <section class="field-panel" :aria-label="t('field.panel.title')">
-    <div class="field-panel-head">
+  <section
+    class="field-panel"
+    :class="{ 'field-panel-menu': menu }"
+    :aria-label="t('field.panel.title')"
+  >
+    <div v-if="!menu" class="field-panel-head">
       <h2>{{ t('field.panel.title') }}</h2>
       <div v-if="owner" class="field-panel-actions">
         <button type="button" :disabled="busy" @click="openEditor(null)">
@@ -965,17 +1012,53 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
-    <p v-if="!owner">{{ t('field.panel.readOnly') }}</p>
+    <div v-else class="field-menu-search">
+      <AppIcon name="search" />
+      <input
+        v-model="fieldSearch"
+        type="search"
+        :aria-label="t('field.panel.search')"
+        :placeholder="t('field.panel.search')"
+      />
+      <input
+        type="checkbox"
+        :checked="allDisplayedFieldsVisible"
+        :disabled="displayedFields.length === 0"
+        :aria-label="t('field.panel.showMatching')"
+        @change="
+          toggleDisplayedFields(($event.target as HTMLInputElement).checked)
+        "
+      />
+    </div>
+    <p v-if="!owner" class="field-read-only">
+      {{ t('field.panel.readOnly') }}
+    </p>
     <p class="field-status" role="status">{{ status }}</p>
     <p v-if="error && !dialogOpen" role="alert">{{ message }}</p>
+    <p v-if="menu && !displayedFields.length" class="field-menu-empty">
+      {{ t('field.panel.noMatches') }}
+    </p>
     <ul class="field-list">
       <li
-        v-for="field in fields"
+        v-for="field in displayedFields"
         :key="field.id"
         :data-field-id="field.id"
         :data-system="field.isSystem ? 'true' : undefined"
       >
         <div class="field-line">
+          <input
+            v-if="menu"
+            type="checkbox"
+            :checked="fieldVisible(field)"
+            :aria-label="t('field.panel.showField', { name: field.name })"
+            @change="
+              emit(
+                'visibility',
+                field.id,
+                ($event.target as HTMLInputElement).checked,
+              )
+            "
+          />
           <span class="field-name">{{ field.name }}</span>
           <span class="field-kind">{{
             field.uiType === 'link'
@@ -984,24 +1067,29 @@ onBeforeUnmount(() => {
                 ? fieldKindLabel(field.uiType)
                 : field.uiType
           }}</span>
-          <span v-if="field.isSystem" class="field-badge">
+          <span v-if="field.isSystem && !menu" class="field-badge">
             {{ t('field.panel.system') }}
           </span>
           <span
-            v-if="field.id === schema.table.displayFieldId"
+            v-if="field.id === schema.table.displayFieldId && !menu"
             class="field-badge"
           >
             {{ t('field.panel.display') }}
           </span>
-          <span v-if="field.isRequired" class="field-badge">
+          <span v-if="field.isRequired && !menu" class="field-badge">
             {{ t('field.panel.required') }}
           </span>
-          <span v-if="field.isUnique" class="field-badge">
+          <span v-if="field.isUnique && !menu" class="field-badge">
             {{ t('field.panel.unique') }}
           </span>
           <details v-if="owner" class="node-actions field-actions">
-            <summary>
-              {{ t('field.panel.actions', { name: field.name }) }}
+            <summary
+              :aria-label="t('field.panel.actions', { name: field.name })"
+            >
+              <AppIcon v-if="menu" name="more" />
+              <template v-else>
+                {{ t('field.panel.actions', { name: field.name }) }}
+              </template>
             </summary>
             <div class="field-menu">
               <button
@@ -1097,11 +1185,55 @@ onBeforeUnmount(() => {
             </div>
           </details>
         </div>
-        <p v-if="field.description" class="field-description">
+        <p v-if="field.description && !menu" class="field-description">
           {{ field.description }}
         </p>
       </li>
     </ul>
+    <footer v-if="menu" class="field-menu-footer">
+      <button
+        type="button"
+        :aria-pressed="showSystemFields"
+        @click="showSystemFields = !showSystemFields"
+      >
+        <AppIcon name="eye" />
+        {{ t('field.panel.systemFields') }}
+      </button>
+      <button
+        v-if="owner"
+        type="button"
+        :disabled="busy"
+        @click="openEditor(null)"
+      >
+        <AppIcon name="plus" />
+        {{ t('field.panel.add') }}
+      </button>
+    </footer>
+    <details v-if="menu && owner" class="field-extra-actions">
+      <summary>{{ t('field.panel.moreTypes') }}</summary>
+      <div class="field-panel-actions">
+        <button type="button" :disabled="busy" @click="openRelationEditor">
+          {{ t('relation.add') }}
+        </button>
+        <button
+          type="button"
+          :disabled="busy || !computedRelations.length"
+          @click="openComputedEditor('lookup')"
+        >
+          {{ t('field.panel.addLookup') }}
+        </button>
+        <button
+          type="button"
+          :disabled="busy || !computedRelations.length"
+          @click="openComputedEditor('rollup')"
+        >
+          {{ t('field.panel.addRollup') }}
+        </button>
+        <button type="button" :disabled="busy" @click="openFormulaEditor()">
+          {{ t('field.panel.addFormula') }}
+        </button>
+      </div>
+    </details>
 
     <dialog
       ref="editor"
@@ -1111,23 +1243,35 @@ onBeforeUnmount(() => {
       "
       @cancel.prevent="closeEditor"
     >
-      <form v-if="creating || editing" @submit.prevent="save">
-        <h2>
+      <form
+        v-if="creating || editing"
+        :class="{ 'field-create-form': creating }"
+        @submit.prevent="save"
+      >
+        <h2 :class="{ 'visually-hidden': creating && menu }">
           {{
             creating ? t('field.panel.createTitle') : t('field.panel.editTitle')
           }}
         </h2>
         <label>
-          <span>{{ t('field.panel.name') }}</span>
+          <span :class="{ 'visually-hidden': creating && menu }">{{
+            t('field.panel.name')
+          }}</span>
           <input
             v-model="draft.name"
             autofocus
             maxlength="400"
+            required
+            :placeholder="
+              creating && menu ? t('field.panel.namePlaceholder') : undefined
+            "
             :disabled="busy"
           />
         </label>
         <label v-if="creating">
-          <span>{{ t('field.panel.kind') }}</span>
+          <span :class="{ 'visually-hidden': menu }">{{
+            t('field.panel.kind')
+          }}</span>
           <select v-model="draft.kind" :disabled="busy" @change="changeKind">
             <option v-for="kind in USER_KINDS" :key="kind" :value="kind">
               {{ fieldKindLabel(kind) }}
@@ -1138,15 +1282,6 @@ onBeforeUnmount(() => {
           <dt>{{ t('field.panel.kind') }}</dt>
           <dd>{{ fieldKindLabel(draft.kind) }}</dd>
         </dl>
-        <label>
-          <span>{{ t('field.panel.description') }}</span>
-          <textarea
-            v-model="draft.description"
-            rows="2"
-            :maxlength="MAX_DESCRIPTION * 2"
-            :disabled="busy"
-          />
-        </label>
         <p v-if="systemEdit">{{ t('field.panel.systemNotice') }}</p>
         <fieldset v-else class="field-settings">
           <legend>{{ t('field.panel.settings') }}</legend>
@@ -1391,7 +1526,12 @@ onBeforeUnmount(() => {
             <input v-model="draft.isUnique" type="checkbox" :disabled="busy" />
             <span>{{ t('field.panel.unique') }}</span>
           </label>
-          <template v-if="constraints.default">
+          <details
+            v-if="constraints.default"
+            class="field-default"
+            :open="!creating"
+          >
+            <summary>{{ t('field.panel.setDefault') }}</summary>
             <label v-if="draft.kind === 'checkbox'">
               <span>{{ t('field.panel.defaultValue') }}</span>
               <select v-model="draft.defaultBool" :disabled="busy">
@@ -1462,14 +1602,29 @@ onBeforeUnmount(() => {
                 :disabled="busy"
               />
             </label>
-          </template>
+          </details>
           <label v-if="showFill" class="field-check">
             <input v-model="draft.fillEmpty" type="checkbox" :disabled="busy" />
             <span>{{ t('field.panel.fillEmpty') }}</span>
           </label>
         </fieldset>
+        <details class="field-description-editor" :open="!creating">
+          <summary>{{ t('field.panel.addDescription') }}</summary>
+          <label>
+            <span>{{ t('field.panel.description') }}</span>
+            <textarea
+              v-model="draft.description"
+              rows="2"
+              :maxlength="MAX_DESCRIPTION * 2"
+              :disabled="busy"
+            />
+          </label>
+        </details>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
+          <button type="button" :disabled="busy" @click="closeEditor">
+            {{ t('field.panel.cancel') }}
+          </button>
           <button type="submit" :disabled="busy">
             {{
               busy
@@ -1478,9 +1633,6 @@ onBeforeUnmount(() => {
                   ? t('field.panel.create')
                   : t('field.panel.save')
             }}
-          </button>
-          <button type="button" :disabled="busy" @click="closeEditor">
-            {{ t('field.panel.cancel') }}
           </button>
         </div>
       </form>

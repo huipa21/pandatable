@@ -70,6 +70,7 @@ import {
 } from '../../stores/undo'
 import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
+import AppIcon from '../AppIcon.vue'
 import FilterBuilder from '../filters/FilterBuilder.vue'
 import GridRelationCell from '../relations/GridRelationCell.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
@@ -89,6 +90,9 @@ const props = defineProps<{
   viewId: string
   identity: string
   filter?: FilterNode | null
+  fieldsOpen?: boolean
+  filterOpen?: boolean
+  filterCount?: number
 }>()
 
 function attachmentIds(value: unknown): string[] {
@@ -107,6 +111,9 @@ const emit = defineEmits<{
   expand: [rowId: string]
   viewUpdated: [view: TableView]
   viewConfigChanged: [config: ViewColumns, hasLocalChanges: boolean]
+  toggleFields: []
+  toggleFilter: []
+  createField: []
 }>()
 const { t, locale } = useI18n()
 const { template } = useTemplates()
@@ -117,6 +124,7 @@ const preferences = usePreferencesStore()
 const realtime = useRealtimeStore()
 const undo = useUndoStore()
 const host = ref<{ $el: HTMLElement & Components.RevoGrid }>()
+const toolbar = ref<HTMLElement>()
 const ready = ref(false)
 const disposed = ref(false)
 const loading = ref(false)
@@ -314,6 +322,16 @@ const columnState = useViewColumns({
   message: (cause) =>
     t('grid.columnSaveFailed', { message: errorMessage(cause) }),
 })
+const rowSize = computed(() => {
+  const sizes = { short: 32, medium: 48, tall: 64, extra: 96 }
+  return sizes[columnState.config.value.rowHeight ?? 'short']
+})
+const rowHeightOptions = computed(() => [
+  { value: 'short' as const, label: t('grid.rowHeights.short') },
+  { value: 'medium' as const, label: t('grid.rowHeights.medium') },
+  { value: 'tall' as const, label: t('grid.rowHeights.tall') },
+  { value: 'extra' as const, label: t('grid.rowHeights.extra') },
+])
 watch(
   () => [columnState.config.value, columnState.localQuery.value] as const,
   ([config, hasLocalChanges]) =>
@@ -637,45 +655,87 @@ const remoteRows = new RemoteRowsWindow(
 
 const groupBy = computed(() => columnState.config.value.groupBy ?? [])
 const groupedMode = computed(() => groupBy.value.length > 0)
-const groupedRows = new GroupedRowsWindow(
-  {
-    groups: async (path, signal) => {
-      const result = await request<RowGroupResult>(
-        `/views/${props.viewId}/groups`,
-        'POST',
-        {
-          path,
-          ...(props.filter ? { filter: props.filter } : {}),
-          ...(searchTerm.value ? { search: searchTerm.value } : {}),
-          ...(columnState.localQuery.value
-            ? { fieldIds: visibleFieldIds.value }
-            : {}),
-        },
-        AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-      )
-      if (result.schemaVersion !== props.schema.schemaVersion) {
-        emit('schemaChanged')
-        throw new RequestError('ERR_SCHEMA_CHANGED', 409)
-      }
-      return result.groups
-    },
-    rows: (path, offset, limit, includeCount, signal) =>
-      fetchPage(offset, limit, includeCount, signal, path),
-  },
-  Math.max(1, Math.min(3, groupBy.value.length)),
-  `pandatable:groups:${props.identity}:${props.viewId}`,
-  () => {
-    if (!ready.value || disposed.value) return
-    if (groupedRows.snapshot().cachedRows > 0) loading.value = false
-    syncSource()
-  },
-  (cause) => {
-    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
-      handleAccessFailure(cause)
-    error.value = cause
-    loading.value = false
-  },
+const groupableFields = computed(() =>
+  [...props.schema.fields]
+    .filter((field) => field.uiType !== 'link')
+    .sort((left, right) => left.position - right.position),
 )
+const availableGroupFields = computed(() =>
+  groupableFields.value.filter((field) => !groupBy.value.includes(field.id)),
+)
+const groupFieldToAdd = ref('')
+const groupEditDisabled = computed(
+  () => !columnState.canPersist.value || columnState.groupPending.value,
+)
+const groupAddDisabled = computed(
+  () => groupEditDisabled.value || groupBy.value.length >= 3,
+)
+function addGroupField() {
+  if (
+    groupAddDisabled.value ||
+    !availableGroupFields.value.some(
+      (field) => field.id === groupFieldToAdd.value,
+    )
+  )
+    return
+  columnState.change({
+    kind: 'group',
+    ids: [...groupBy.value, groupFieldToAdd.value],
+  })
+  groupFieldToAdd.value = ''
+}
+function removeGroupField(id: string) {
+  if (groupEditDisabled.value) return
+  columnState.change({
+    kind: 'group',
+    ids: groupBy.value.filter((fieldId) => fieldId !== id),
+  })
+}
+function createGroupedRows() {
+  return new GroupedRowsWindow(
+    {
+      groups: async (path, signal) => {
+        const result = await request<RowGroupResult>(
+          `/views/${props.viewId}/groups`,
+          'POST',
+          {
+            path,
+            ...(props.filter ? { filter: props.filter } : {}),
+            ...(searchTerm.value ? { search: searchTerm.value } : {}),
+            ...(columnState.localQuery.value
+              ? { fieldIds: visibleFieldIds.value }
+              : {}),
+          },
+          AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+        )
+        if (result.schemaVersion !== props.schema.schemaVersion) {
+          emit('schemaChanged')
+          throw new RequestError('ERR_SCHEMA_CHANGED', 409)
+        }
+        return result.groups
+      },
+      rows: (path, offset, limit, includeCount, signal) =>
+        fetchPage(offset, limit, includeCount, signal, path),
+    },
+    Math.max(1, Math.min(3, groupBy.value.length)),
+    `pandatable:groups:${props.identity}:${props.viewId}:${groupBy.value.join(',')}`,
+    () => {
+      if (!ready.value || disposed.value) return
+      if (groupedRows.snapshot().cachedRows > 0) loading.value = false
+      syncSource()
+    },
+    (cause) => {
+      if (
+        cause instanceof RequestError &&
+        [401, 403, 404].includes(cause.status)
+      )
+        handleAccessFailure(cause)
+      error.value = cause
+      loading.value = false
+    },
+  )
+}
+let groupedRows = createGroupedRows()
 
 async function loadFooterAggregates() {
   footerController?.abort()
@@ -1150,6 +1210,13 @@ const columns = computed<ColumnRegular[]>(() => {
   }
   return definitions
 })
+
+const canCreateField = computed(
+  () => props.identity === auth.user?.id && props.schema.myLevel === 'owner',
+)
+const addFieldOffset = computed(() =>
+  columns.value.reduce((width, column) => width + (column.size ?? 180), 0),
+)
 
 function groupAggregateLabel(aggregate: string) {
   switch (aggregate) {
@@ -1812,7 +1879,9 @@ async function keydown(event: KeyboardEvent) {
     } else {
       const page = Math.max(
         1,
-        Math.floor(((host.value?.$el.clientHeight ?? 352) - 32) / 32),
+        Math.floor(
+          ((host.value?.$el.clientHeight ?? 352) - 32) / rowSize.value,
+        ),
       )
       rowIndex = Math.max(
         0,
@@ -1921,6 +1990,15 @@ function documentKeydown(event: KeyboardEvent) {
     void keydown(event)
 }
 
+function dismissToolbarMenus(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Element) || target.closest('dialog[open]')) return
+  for (const menu of toolbar.value?.querySelectorAll<HTMLDetailsElement>(
+    ':scope > details[open]',
+  ) ?? [])
+    if (!menu.contains(target)) menu.open = false
+}
+
 function syncSource() {
   if (groupedMode.value) {
     groupNodes.clear()
@@ -2022,7 +2100,7 @@ function focusLeft(event: FocusEvent) {
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
   if (event.detail.dimension !== 'rgRow') return
-  const index = Math.max(0, Math.floor(event.detail.coordinate / 32))
+  const index = Math.max(0, Math.floor(event.detail.coordinate / rowSize.value))
   rows.load(index)
   loading.value =
     !groupedMode.value && rows.snapshot().cachedRows === 0 && rows.total > 0
@@ -2289,6 +2367,15 @@ watch(
     if (ready.value) void initialize(0)
   },
 )
+watch(
+  () => JSON.stringify(groupBy.value),
+  () => {
+    const previous = groupedRows
+    groupedRows = createGroupedRows()
+    previous.dispose()
+    if (ready.value) void initialize(0)
+  },
+)
 watch(searchTerm, () => {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
@@ -2365,6 +2452,7 @@ async function deleteSelected() {
 onMounted(() => {
   media.addEventListener('change', resized)
   document.addEventListener('keydown', documentKeydown, true)
+  document.addEventListener('pointerdown', dismissToolbarMenus)
 })
 
 defineExpose({
@@ -2384,6 +2472,7 @@ defineExpose({
     }
     return null
   },
+  toggleField,
   exportQuery: (): ExportViewQuery => ({
     fieldIds: [...visibleFieldIds.value],
     sorts: sortCriteria.value.map((sort) => ({ ...sort })),
@@ -2401,6 +2490,7 @@ onBeforeUnmount(() => {
   footerGeneration++
   media.removeEventListener('change', resized)
   document.removeEventListener('keydown', documentKeydown, true)
+  document.removeEventListener('pointerdown', dismissToolbarMenus)
   for (const controller of mutationControllers) controller.abort()
   mutationControllers.clear()
   removeRealtimeListener()
@@ -2416,98 +2506,100 @@ onBeforeUnmount(() => {
     :aria-label="t('grid.title')"
     @keydown.capture="keydown"
   >
-    <div class="grid-toolbar">
+    <div ref="toolbar" class="grid-toolbar">
       <button
+        v-if="desktop"
         type="button"
-        :disabled="!desktop || !canWrite || saving"
-        @click="addRow"
+        class="grid-toolbar-button grid-fields-trigger"
+        :aria-expanded="!!fieldsOpen"
+        @click="emit('toggleFields')"
       >
-        {{ t('grid.addRow') }}
+        <AppIcon name="fields" />
+        {{ t('grid.fields') }}
       </button>
       <button
+        v-if="desktop"
         type="button"
-        :disabled="!desktop || !canWrite || saving || selectedRows.size === 0"
-        @click="askDelete"
+        class="grid-toolbar-button grid-filter-trigger"
+        :class="{ 'grid-toolbar-active': filterCount }"
+        :aria-expanded="!!filterOpen"
+        @click="emit('toggleFilter')"
       >
-        {{ t('grid.deleteRows', { count: selectedRows.size }) }}
+        <AppIcon name="filter" />
+        {{ t('grid.filter') }}
+        <span v-if="filterCount" class="grid-count">{{ filterCount }}</span>
       </button>
-      <label class="grid-quick-search">
-        <span>{{ t('grid.quickSearch') }}</span>
-        <input
-          v-model="searchTerm"
-          type="search"
-          maxlength="512"
-          :aria-label="t('grid.quickSearch')"
-          :placeholder="t('grid.quickSearchPlaceholder')"
-        />
-      </label>
-      <details v-if="desktop" class="grid-fields">
-        <summary>{{ t('grid.fields') }}</summary>
+      <details v-if="desktop" class="grid-groups">
+        <summary>
+          <AppIcon name="group" />
+          {{ t('grid.group') }}
+          <span v-if="groupBy.length" class="grid-count">{{
+            groupBy.length
+          }}</span>
+        </summary>
         <fieldset>
-          <legend>{{ t('grid.visibleFields') }}</legend>
-          <div
-            v-for="field in columnFields"
-            :key="field.id"
-            class="grid-column-control"
-          >
-            <label>
-              <input
-                type="checkbox"
-                :checked="selectedField(field.id)"
-                @change="
-                  toggleField(
-                    field.id,
-                    ($event.target as HTMLInputElement).checked,
-                  )
+          <legend>{{ t('grid.groupFields') }}</legend>
+          <ol class="grid-group-fields">
+            <li v-for="id in groupBy" :key="id">
+              <span>{{
+                groupableFields.find((field) => field.id === id)?.name ?? id
+              }}</span>
+              <button
+                type="button"
+                :disabled="groupEditDisabled"
+                :aria-label="
+                  t('grid.removeGroupField', {
+                    name:
+                      groupableFields.find((field) => field.id === id)?.name ??
+                      id,
+                  })
                 "
-              />
-              <span>{{ field.name }}</span>
-            </label>
-            <input
-              type="number"
-              :min="minColumnWidth"
-              :max="maxColumnWidth"
-              :value="columnWidthDrafts[field.id] ?? field.width ?? 180"
-              :aria-label="t('grid.columnWidth', { name: field.name })"
-              @input="
-                columnWidthDrafts[field.id] = (
-                  $event.target as HTMLInputElement
-                ).value
-              "
-              @change="commitColumnWidth(field.id, $event)"
-            />
-            <button
-              type="button"
-              :disabled="!columnNeighbor(field.id, -1)"
-              :aria-label="t('grid.columnLeft', { name: field.name })"
-              @click="moveColumn(field.id, -1)"
-            >
-              {{ t('grid.moveLeft') }}
-            </button>
-            <button
-              type="button"
-              :disabled="!columnNeighbor(field.id, 1)"
-              :aria-label="t('grid.columnRight', { name: field.name })"
-              @click="moveColumn(field.id, 1)"
-            >
-              {{ t('grid.moveRight') }}
-            </button>
-          </div>
+                @click="removeGroupField(id)"
+              >
+                {{ t('grid.remove') }}
+              </button>
+            </li>
+          </ol>
           <label>
-            <span>{{ t('grid.frozenColumns') }}</span>
-            <input
-              type="number"
-              min="0"
-              :max="visibleFieldIds.length"
-              :value="frozenDraft ?? columnState.config.value.frozen"
-              @input="frozenDraft = ($event.target as HTMLInputElement).value"
-              @change="commitFrozen"
-            />
+            <span>{{ t('grid.addGroupField') }}</span>
+            <select v-model="groupFieldToAdd" :disabled="groupAddDisabled">
+              <option value="">{{ t('grid.selectSortField') }}</option>
+              <option
+                v-for="field in availableGroupFields"
+                :key="field.id"
+                :value="field.id"
+              >
+                {{ field.name }}
+              </option>
+            </select>
           </label>
+          <button
+            type="button"
+            :disabled="groupAddDisabled || !groupFieldToAdd"
+            @click="addGroupField"
+          >
+            {{ t('grid.addGroup') }}
+          </button>
+          <p v-if="!columnState.canPersist.value">
+            {{ t('grid.groupReadOnly') }}
+          </p>
+          <p v-if="columnState.groupPending.value" role="status">
+            {{ t('grid.groupPending') }}
+          </p>
+          <button
+            v-if="columnState.groupPending.value && !columnState.saving.value"
+            type="button"
+            @click="columnState.cancelGrouping"
+          >
+            {{ t('grid.cancelGroupChange') }}
+          </button>
         </fieldset>
       </details>
       <details v-if="desktop" class="grid-sorts">
-        <summary>{{ t('grid.sort') }}</summary>
+        <summary>
+          <AppIcon name="sort" />
+          {{ t('grid.sort') }}
+        </summary>
         <fieldset>
           <legend>{{ t('grid.sortPriority') }}</legend>
           <ol>
@@ -2630,48 +2722,14 @@ onBeforeUnmount(() => {
           </button>
         </fieldset>
       </details>
-      <details v-if="desktop" class="grid-aggregate-settings">
-        <summary>{{ t('grid.footerAggregates') }}</summary>
-        <fieldset>
-          <legend>{{ t('grid.footerAggregates') }}</legend>
-          <label
-            v-for="item in footerAggregateFields"
-            :key="item.field.id"
-            class="grid-aggregate-control"
-          >
-            <span>{{ item.field.name }}</span>
-            <select
-              :aria-label="
-                t('grid.aggregateForField', { field: item.field.name })
-              "
-              :value="selectedFooterAggregate(item.field.id)"
-              @change="
-                changeFooterAggregate(
-                  item.field.id,
-                  ($event.target as HTMLSelectElement).value,
-                )
-              "
-            >
-              <option value="none">{{ t('grid.aggregateLabels.none') }}</option>
-              <option
-                v-for="aggregate in item.aggregates"
-                :key="aggregate"
-                :value="aggregate"
-              >
-                {{ groupAggregateLabel(aggregate) }}
-              </option>
-            </select>
-          </label>
-          <p v-if="footerAggregateFields.length === 0" role="status">
-            {{ t('grid.noFooterAggregateFields') }}
-          </p>
-        </fieldset>
-      </details>
       <details
         v-if="desktop && columnState.canPersist.value"
         class="grid-highlights"
       >
-        <summary>{{ t('grid.highlightRules') }}</summary>
+        <summary :aria-label="t('grid.highlightRules')">
+          <AppIcon name="colour" />
+          {{ t('grid.colour') }}
+        </summary>
         <fieldset>
           <legend>{{ t('grid.highlightRules') }}</legend>
           <ol class="grid-highlight-rules">
@@ -2817,6 +2875,157 @@ onBeforeUnmount(() => {
           </button>
         </fieldset>
       </details>
+      <details v-if="desktop" class="grid-row-height">
+        <summary :aria-label="t('grid.rowHeight')" :title="t('grid.rowHeight')">
+          <AppIcon name="height" />
+        </summary>
+        <fieldset>
+          <legend>{{ t('grid.rowHeight') }}</legend>
+          <button
+            v-for="height in rowHeightOptions"
+            :key="height.value"
+            type="button"
+            :aria-pressed="
+              (columnState.config.value.rowHeight ?? 'short') === height.value
+            "
+            @click="
+              columnState.change({ kind: 'height', height: height.value })
+            "
+          >
+            {{ height.label }}
+          </button>
+        </fieldset>
+      </details>
+      <details v-if="desktop" class="grid-more">
+        <summary :aria-label="t('grid.more')" :title="t('grid.more')">
+          <AppIcon name="more" />
+        </summary>
+        <div class="grid-more-menu">
+          <label class="grid-quick-search">
+            <span>{{ t('grid.quickSearch') }}</span>
+            <input
+              v-model="searchTerm"
+              type="search"
+              maxlength="512"
+              :aria-label="t('grid.quickSearch')"
+              :placeholder="t('grid.quickSearchPlaceholder')"
+            />
+          </label>
+          <button
+            type="button"
+            :disabled="!canWrite || saving || selectedRows.size === 0"
+            @click="askDelete"
+          >
+            {{ t('grid.deleteRows', { count: selectedRows.size }) }}
+          </button>
+          <details class="grid-column-options">
+            <summary>{{ t('grid.columnOptions') }}</summary>
+            <fieldset>
+              <legend>{{ t('grid.visibleFields') }}</legend>
+              <div
+                v-for="field in columnFields"
+                :key="field.id"
+                class="grid-column-control"
+              >
+                <label>
+                  <input
+                    type="checkbox"
+                    :checked="selectedField(field.id)"
+                    @change="
+                      toggleField(
+                        field.id,
+                        ($event.target as HTMLInputElement).checked,
+                      )
+                    "
+                  />
+                  <span>{{ field.name }}</span>
+                </label>
+                <input
+                  type="number"
+                  :min="minColumnWidth"
+                  :max="maxColumnWidth"
+                  :value="columnWidthDrafts[field.id] ?? field.width ?? 180"
+                  :aria-label="t('grid.columnWidth', { name: field.name })"
+                  @input="
+                    columnWidthDrafts[field.id] = (
+                      $event.target as HTMLInputElement
+                    ).value
+                  "
+                  @change="commitColumnWidth(field.id, $event)"
+                />
+                <button
+                  type="button"
+                  :disabled="!columnNeighbor(field.id, -1)"
+                  :aria-label="t('grid.columnLeft', { name: field.name })"
+                  @click="moveColumn(field.id, -1)"
+                >
+                  {{ t('grid.moveLeft') }}
+                </button>
+                <button
+                  type="button"
+                  :disabled="!columnNeighbor(field.id, 1)"
+                  :aria-label="t('grid.columnRight', { name: field.name })"
+                  @click="moveColumn(field.id, 1)"
+                >
+                  {{ t('grid.moveRight') }}
+                </button>
+              </div>
+              <label>
+                <span>{{ t('grid.frozenColumns') }}</span>
+                <input
+                  type="number"
+                  min="0"
+                  :max="visibleFieldIds.length"
+                  :value="frozenDraft ?? columnState.config.value.frozen"
+                  @input="
+                    frozenDraft = ($event.target as HTMLInputElement).value
+                  "
+                  @change="commitFrozen"
+                />
+              </label>
+            </fieldset>
+          </details>
+          <details class="grid-aggregate-settings">
+            <summary>{{ t('grid.footerAggregates') }}</summary>
+            <fieldset>
+              <legend>{{ t('grid.footerAggregates') }}</legend>
+              <label
+                v-for="item in footerAggregateFields"
+                :key="item.field.id"
+                class="grid-aggregate-control"
+              >
+                <span>{{ item.field.name }}</span>
+                <select
+                  :aria-label="
+                    t('grid.aggregateForField', { field: item.field.name })
+                  "
+                  :value="selectedFooterAggregate(item.field.id)"
+                  @change="
+                    changeFooterAggregate(
+                      item.field.id,
+                      ($event.target as HTMLSelectElement).value,
+                    )
+                  "
+                >
+                  <option value="none">
+                    {{ t('grid.aggregateLabels.none') }}
+                  </option>
+                  <option
+                    v-for="aggregate in item.aggregates"
+                    :key="aggregate"
+                    :value="aggregate"
+                  >
+                    {{ groupAggregateLabel(aggregate) }}
+                  </option>
+                </select>
+              </label>
+              <p v-if="footerAggregateFields.length === 0" role="status">
+                {{ t('grid.noFooterAggregateFields') }}
+              </p>
+            </fieldset>
+          </details>
+        </div>
+      </details>
       <span v-if="!columnState.canPersist.value" role="status">{{
         t('grid.columnsLocal')
       }}</span>
@@ -2853,41 +3062,74 @@ onBeforeUnmount(() => {
     <button v-if="error" type="button" @click="() => initialize()">
       {{ t('auth.retry') }}
     </button>
-    <p v-if="rows.total === 0 && !loading && !error" role="status">
+    <p
+      v-if="rows.total === 0 && !loading && !error"
+      class="visually-hidden"
+      role="status"
+    >
       {{ t('grid.empty') }}
     </p>
     <p v-if="!desktop" class="grid-mobile-notice" role="status">
       {{ t('grid.mobileNotice') }}
     </p>
-    <RevoGrid
-      v-if="desktop"
-      ref="host"
-      tabindex="0"
-      :source="gridSource"
-      :columns="columns"
-      :editors="editors"
-      :plugins="[ColumnMovePlugin]"
-      :theme="preferences.isDark ? 'darkCompact' : 'compact'"
-      :row-size="32"
-      :range="true"
-      :resize="true"
-      :readonly="!canWrite"
-      :use-clipboard="true"
-      :hide-attribution="true"
-      @created="created"
-      @viewportscroll="scroll"
-      @beforeedit="edit"
-      @afterfocus="focusChanged"
-      @focusout="focusLeft"
-      @beforecopyregion="beforeCopyRegion"
-      @beforecopyapply="copy"
-      @beforepasteapply="paste"
-      @beforecut="beforeCut"
-      @clearregion="clearCutRange"
-      @beforerangeedit="rangeEdit"
-      @aftercolumnresize="resizeColumns"
-      @columndragend="dragColumns"
-    />
+    <div
+      class="grid-surface"
+      :class="{
+        'grid-is-empty': rows.total === 0 && !loading && !error,
+        'grid-has-field-action': desktop && canCreateField,
+      }"
+    >
+      <RevoGrid
+        v-if="desktop"
+        ref="host"
+        tabindex="0"
+        :source="gridSource"
+        :columns="columns"
+        :editors="editors"
+        :plugins="[ColumnMovePlugin]"
+        :theme="preferences.isDark ? 'darkCompact' : 'compact'"
+        :row-size="rowSize"
+        :range="true"
+        :resize="true"
+        :readonly="!canWrite"
+        :use-clipboard="true"
+        :hide-attribution="true"
+        @created="created"
+        @viewportscroll="scroll"
+        @beforeedit="edit"
+        @afterfocus="focusChanged"
+        @focusout="focusLeft"
+        @beforecopyregion="beforeCopyRegion"
+        @beforecopyapply="copy"
+        @beforepasteapply="paste"
+        @beforecut="beforeCut"
+        @clearregion="clearCutRange"
+        @beforerangeedit="rangeEdit"
+        @aftercolumnresize="resizeColumns"
+        @columndragend="dragColumns"
+      />
+      <button
+        v-if="desktop && canCreateField"
+        type="button"
+        class="grid-add-field"
+        :style="{ left: `min(${addFieldOffset}px, calc(100% - 52px))` }"
+        :aria-label="t('field.panel.add')"
+        :title="t('field.panel.add')"
+        @click="emit('createField')"
+      >
+        <AppIcon name="plus" />
+      </button>
+      <button
+        v-if="desktop && canWrite"
+        type="button"
+        class="grid-add-row"
+        :disabled="saving"
+        :aria-label="t('grid.addRow')"
+        @click="addRow"
+      >
+        <AppIcon name="plus" />
+      </button>
+    </div>
     <p v-if="footerAggregateError" role="alert">
       {{ t('grid.footerAggregateFailed', { message: footerAggregateError }) }}
     </p>
@@ -2959,7 +3201,12 @@ onBeforeUnmount(() => {
 
 <style>
 .data-grid {
-  margin-top: 16px;
+  min-width: 0;
+}
+.grid-surface {
+  position: relative;
+  min-height: min(65vh, 680px);
+  background: var(--grid-canvas);
 }
 .data-grid revo-grid {
   position: relative;
@@ -2968,6 +3215,42 @@ onBeforeUnmount(() => {
   height: min(65vh, 680px);
   min-height: 320px;
   width: 100%;
+}
+.data-grid .grid-has-field-action revo-grid {
+  width: calc(100% - 52px);
+}
+.data-grid .grid-is-empty revo-grid {
+  height: 40px;
+  min-height: 0;
+}
+.data-grid .grid-add-field {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 40px;
+  padding: 0;
+  color: var(--muted);
+  background: var(--panel-surface);
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+}
+.data-grid .grid-add-row {
+  display: flex;
+  align-items: center;
+  width: min(300px, 100%);
+  min-height: 38px;
+  padding: 8px 14px;
+  text-align: left;
+  background: var(--panel-surface);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
 }
 .grid-toolbar,
 .grid-dialog-actions {
@@ -2980,39 +3263,109 @@ onBeforeUnmount(() => {
 .grid-toolbar {
   position: relative;
   z-index: 1;
+  gap: 2px;
+  min-height: 48px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+.grid-toolbar > details > summary,
+.data-grid .grid-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+.grid-toolbar > details > summary::-webkit-details-marker {
+  display: none;
+}
+.grid-toolbar > details[open] > summary,
+.grid-toolbar > details > summary:hover,
+.data-grid .grid-toolbar-button:hover,
+.data-grid .grid-toolbar-active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.grid-count {
+  min-width: 22px;
+  padding: 2px 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 5px;
+  text-align: center;
 }
 .grid-quick-search {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 6px;
 }
 .grid-quick-search input {
   max-width: min(260px, 40vw);
 }
-.grid-fields {
+.grid-groups,
+.grid-sorts,
+.grid-highlights,
+.grid-row-height,
+.grid-more {
   position: relative;
 }
-.grid-sorts {
-  position: relative;
-}
-.grid-aggregate-settings {
-  position: relative;
-}
-.grid-fields fieldset,
-.grid-sorts fieldset,
-.grid-aggregate-settings fieldset,
-.grid-highlights fieldset {
+.grid-groups > fieldset,
+.grid-sorts > fieldset,
+.grid-highlights > fieldset,
+.grid-row-height > fieldset,
+.grid-more-menu {
   position: absolute;
-  z-index: 2;
+  z-index: 3;
   top: 100%;
   left: 0;
   min-width: min(460px, calc(100vw - 32px));
   max-width: calc(100vw - 32px);
-  max-height: 50vh;
+  max-height: 65vh;
+  margin: 0;
+  padding: 14px;
   overflow: auto;
-  background: var(--surface);
+  background: var(--panel-surface);
   color: var(--text);
   border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+.grid-row-height > fieldset {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+}
+.grid-row-height button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.grid-more-menu {
+  display: grid;
+  gap: 10px;
+}
+.grid-more-menu details > summary {
+  cursor: pointer;
+}
+.grid-more-menu fieldset {
+  min-width: 0;
+  margin: 8px 0 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+}
+.grid-group-fields {
+  display: grid;
+  gap: 6px;
+  padding-left: 24px;
+}
+.grid-group-fields li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .grid-column-control {
   display: grid;
@@ -3023,7 +3376,8 @@ onBeforeUnmount(() => {
 .grid-column-control > input {
   width: 75px;
 }
-.grid-fields label,
+.grid-column-options label,
+.grid-groups label,
 .grid-sorts label,
 .grid-aggregate-control {
   display: flex;

@@ -1,6 +1,7 @@
 import { expect, paceLogin, test } from './fixtures'
 import type { AuthUser, DataRow, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { openFieldTypeActions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { Page } from '@playwright/test'
 
@@ -50,7 +51,6 @@ async function queryRows(page: Page, viewId: string) {
 
 test('AT-409 formula editor, query-time expressions and stable field references', async ({
   page,
-  isMobile,
 }) => {
   test.setTimeout(150_000)
   await signIn(page)
@@ -111,15 +111,7 @@ test('AT-409 formula editor, query-time expressions and stable field references'
   )
 
   await page.goto(`/t/${tableId}/v/${schema.views[0]!.id}`)
-  if (isMobile)
-    await page
-      .getByRole('button', { name: en.mobileRows.options, exact: true })
-      .click()
-  const panel = page.getByRole('region', {
-    name: en.field.panel.title,
-    exact: true,
-  })
-  await expect(panel).toBeVisible()
+  const panel = await openFieldTypeActions(page)
   await panel
     .getByRole('button', { name: en.field.panel.addFormula, exact: true })
     .click()

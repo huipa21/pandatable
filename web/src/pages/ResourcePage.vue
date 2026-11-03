@@ -2,6 +2,7 @@
 import {
   computed,
   defineAsyncComponent,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   ref,
@@ -30,6 +31,7 @@ import { useNavStore } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
 import { useRealtimeStore } from '../stores/realtime'
 import { useUndoStore, viewUndoStep } from '../stores/undo'
+import AppIcon from '../components/AppIcon.vue'
 import PresenceAvatars from '../components/presence/PresenceAvatars.vue'
 
 const { t } = useI18n()
@@ -81,9 +83,18 @@ const ImportDialog = defineAsyncComponent(
 const grid = ref<{
   refresh: () => Promise<void>
   exportQuery: () => ExportViewQuery
+  toggleField?: (id: string, visible: boolean) => void
   navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
 }>()
 const rowWorkspace = ref<HTMLElement>()
+const gridWorkspace = ref<HTMLElement>()
+const fieldPanel = ref<{ openCreate: () => Promise<void> }>()
+const fieldsOpen = ref(false)
+const filterOpen = ref(false)
+const fieldsVisited = ref(false)
+const filterVisited = ref(false)
+const fieldMenuError = ref('')
+const createFieldPending = ref(false)
 const kanban = ref<{
   refresh: () => Promise<void>
   navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
@@ -114,6 +125,13 @@ const newRow = ref(false)
 const filterValue = shallowRef<FilterNode | null>(null)
 const filterDraft = shallowRef<FilterNode | null>(null)
 const filterApplied = ref(false)
+function countConditions(node: FilterNode | null): number {
+  if (!node) return 0
+  return 'items' in node
+    ? node.items.reduce((count, item) => count + countConditions(item), 0)
+    : 1
+}
+const filterCount = computed(() => countConditions(filterValue.value))
 const localViewConfig = shallowRef<ViewColumns | null>(null)
 const hasLocalViewChanges = ref(false)
 const viewError = ref('')
@@ -130,8 +148,77 @@ const viewNameDrafts = ref<Record<string, string>>({})
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
   newRow.value = false
+  fieldsOpen.value = false
+  filterOpen.value = false
+  createFieldPending.value = false
 }
-onMounted(() => media.addEventListener('change', resized))
+function dismissGridMenus(event: PointerEvent) {
+  const target = event.target
+  if (!(target instanceof Element) || target.closest('dialog[open]')) return
+  if (!target.closest('.grid-field-popover, .grid-fields-trigger')) {
+    fieldsOpen.value = false
+    createFieldPending.value = false
+  }
+  if (!target.closest('.grid-filter-popover, .grid-filter-trigger'))
+    filterOpen.value = false
+}
+function closeGridMenus(event: KeyboardEvent) {
+  if (
+    event.key !== 'Escape' ||
+    document.querySelector('dialog[open]') ||
+    (!fieldsOpen.value && !filterOpen.value)
+  )
+    return
+  const trigger = fieldsOpen.value
+    ? '.grid-fields-trigger'
+    : '.grid-filter-trigger'
+  fieldsOpen.value = false
+  filterOpen.value = false
+  createFieldPending.value = false
+  gridWorkspace.value?.querySelector<HTMLButtonElement>(trigger)?.focus()
+  event.preventDefault()
+}
+function toggleFieldsMenu() {
+  fieldsOpen.value = !fieldsOpen.value
+  if (fieldsOpen.value) fieldsVisited.value = true
+  else createFieldPending.value = false
+  filterOpen.value = false
+}
+function toggleFilterMenu() {
+  filterOpen.value = !filterOpen.value
+  if (filterOpen.value) filterVisited.value = true
+  fieldsOpen.value = false
+  createFieldPending.value = false
+}
+async function openFieldCreate() {
+  fieldsOpen.value = true
+  fieldsVisited.value = true
+  filterOpen.value = false
+  createFieldPending.value = true
+  await nextTick()
+  if (fieldPanel.value && createFieldPending.value) {
+    createFieldPending.value = false
+    await fieldPanel.value.openCreate()
+  }
+}
+function toggleGridField(id: string, visible: boolean) {
+  if (!grid.value?.toggleField) {
+    fieldMenuError.value = t('grid.loading')
+    return
+  }
+  fieldMenuError.value = ''
+  grid.value.toggleField(id, visible)
+}
+watch(fieldPanel, (panel) => {
+  if (!panel || !createFieldPending.value) return
+  createFieldPending.value = false
+  void panel.openCreate()
+})
+onMounted(() => {
+  media.addEventListener('change', resized)
+  document.addEventListener('pointerdown', dismissGridMenus)
+  document.addEventListener('keydown', closeGridMenus)
+})
 const loading = ref(false)
 const error = ref<unknown>(null)
 let controller: AbortController | undefined
@@ -404,6 +491,12 @@ watch(
   ],
   () => {
     newRow.value = false
+    fieldsOpen.value = false
+    filterOpen.value = false
+    fieldsVisited.value = false
+    filterVisited.value = false
+    createFieldPending.value = false
+    fieldMenuError.value = ''
   },
 )
 watch(
@@ -797,6 +890,8 @@ onBeforeUnmount(() => {
   exportGeneration++
   exportController?.abort()
   media.removeEventListener('change', resized)
+  document.removeEventListener('pointerdown', dismissGridMenus)
+  document.removeEventListener('keydown', closeGridMenus)
 })
 </script>
 
@@ -823,15 +918,10 @@ onBeforeUnmount(() => {
       <button @click="loadSchema()">{{ t('auth.retry') }}</button>
     </div>
     <template v-else-if="node">
-      <header class="resource-heading">
+      <header v-if="kind !== 'table'" class="resource-heading">
         <h1>{{ schema?.table.name ?? node.name }}</h1>
-        <PresenceAvatars
-          v-if="kind === 'table'"
-          :table-id="node.id"
-          :identity="auth.user?.id ?? ''"
-        />
       </header>
-      <button v-if="canShare" @click="sharing.open(node)">
+      <button v-if="canShare && kind !== 'table'" @click="sharing.open(node)">
         {{ t('sharing.open') }}
       </button>
       <p v-if="node.pathOnly">{{ t('nav.pathNotice') }}</p>
@@ -870,156 +960,183 @@ onBeforeUnmount(() => {
       </template>
 
       <template v-else-if="schema">
-        <dl class="schema-summary">
-          <dt>{{ t('nav.displayField') }}</dt>
-          <dd>{{ displayField?.name ?? t('nav.noDisplayField') }}</dd>
-          <dt>{{ t('nav.access') }}</dt>
-          <dd>{{ accessLevelLabel(schema.myLevel) }}</dd>
-        </dl>
-        <button
-          v-if="schema.myLevel === 'write' || schema.myLevel === 'owner'"
-          type="button"
-          @click="importOpen = true"
-        >
-          {{ t('import.append') }}
-        </button>
-        <details v-if="view" class="view-export">
-          <summary>{{ t('export.title') }}</summary>
-          <button
-            v-if="view.type === 'grid'"
-            type="button"
-            :disabled="exportBusy || !grid"
-            @click="downloadExport('csv')"
-          >
-            {{ t('export.csv') }}
+        <h1 class="visually-hidden">{{ schema.table.name }}</h1>
+        <div class="table-utility">
+          <PresenceAvatars
+            :table-id="node.id"
+            :identity="auth.user?.id ?? ''"
+          />
+          <button v-if="canShare" type="button" @click="sharing.open(node)">
+            {{ t('sharing.open') }}
           </button>
-          <button
-            type="button"
-            :disabled="exportBusy"
-            @click="downloadExport('xlsx')"
-          >
-            {{ t('export.package') }}
-          </button>
-          <p>{{ t('export.packageNotice') }}</p>
-          <p v-if="exportBusy" role="status">{{ t('export.preparing') }}</p>
-          <p v-if="exportError" role="alert">{{ exportError }}</p>
-        </details>
-        <nav class="view-links" :aria-label="t('nav.views')">
-          <div v-for="(item, index) in schema.views" :key="item.id">
-            <RouterLink
-              :to="`/t/${schema.table.id}/v/${item.id}`"
-              :aria-current="view?.id === item.id ? 'page' : undefined"
-            >
-              {{ item.name }}
-            </RouterLink>
-            <span v-if="item.scope === 'shared'">{{
-              t('nav.viewScope.shared')
-            }}</span>
-            <span v-else>{{ t('nav.viewScope.personal') }}</span>
-            <button
-              type="button"
-              :aria-label="t('nav.moveViewUp', { name: item.name })"
-              :disabled="!canMoveView(item, index, 'up')"
-              @click="moveView(item, schema.views[index - 1]!.id)"
-            >
-              {{ t('nav.moveUp') }}
-            </button>
-            <button
-              type="button"
-              :aria-label="t('nav.moveViewDown', { name: item.name })"
-              :disabled="!canMoveView(item, index, 'down')"
-              @click="moveView(item, schema.views[index + 2]?.id ?? null)"
-            >
-              {{ t('nav.moveDown') }}
-            </button>
-            <button
-              v-if="item.scope === 'shared' && !canManageView(item)"
-              type="button"
-              :disabled="viewBusy"
-              @click="duplicateView(item, 'personal')"
-            >
-              {{ t('nav.duplicatePersonalView') }}
-            </button>
-            <details v-if="canManageView(item)">
-              <summary>{{ t('nav.viewActions') }}</summary>
-              <form @submit.prevent="renameView(item)">
+          <details class="table-management">
+            <summary>
+              <AppIcon name="table" />
+              {{ t('nav.tableOptions') }}
+            </summary>
+            <div class="table-management-panel">
+              <dl class="schema-summary">
+                <dt>{{ t('nav.displayField') }}</dt>
+                <dd>{{ displayField?.name ?? t('nav.noDisplayField') }}</dd>
+                <dt>{{ t('nav.access') }}</dt>
+                <dd>{{ accessLevelLabel(schema.myLevel) }}</dd>
+              </dl>
+              <button
+                v-if="schema.myLevel === 'write' || schema.myLevel === 'owner'"
+                type="button"
+                @click="importOpen = true"
+              >
+                {{ t('import.append') }}
+              </button>
+              <details v-if="view" class="view-export">
+                <summary>{{ t('export.title') }}</summary>
+                <button
+                  v-if="view.type === 'grid'"
+                  type="button"
+                  :disabled="exportBusy || !grid"
+                  @click="downloadExport('csv')"
+                >
+                  {{ t('export.csv') }}
+                </button>
+                <button
+                  type="button"
+                  :disabled="exportBusy"
+                  @click="downloadExport('xlsx')"
+                >
+                  {{ t('export.package') }}
+                </button>
+                <p>{{ t('export.packageNotice') }}</p>
+                <p v-if="exportBusy" role="status">
+                  {{ t('export.preparing') }}
+                </p>
+                <p v-if="exportError" role="alert">{{ exportError }}</p>
+              </details>
+              <nav class="view-links" :aria-label="t('nav.views')">
+                <div v-for="(item, index) in schema.views" :key="item.id">
+                  <RouterLink
+                    :to="`/t/${schema.table.id}/v/${item.id}`"
+                    :aria-current="view?.id === item.id ? 'page' : undefined"
+                  >
+                    {{ item.name }}
+                  </RouterLink>
+                  <span v-if="item.scope === 'shared'">{{
+                    t('nav.viewScope.shared')
+                  }}</span>
+                  <span v-else>{{ t('nav.viewScope.personal') }}</span>
+                  <button
+                    type="button"
+                    :aria-label="t('nav.moveViewUp', { name: item.name })"
+                    :disabled="!canMoveView(item, index, 'up')"
+                    @click="moveView(item, schema.views[index - 1]!.id)"
+                  >
+                    {{ t('nav.moveUp') }}
+                  </button>
+                  <button
+                    type="button"
+                    :aria-label="t('nav.moveViewDown', { name: item.name })"
+                    :disabled="!canMoveView(item, index, 'down')"
+                    @click="moveView(item, schema.views[index + 2]?.id ?? null)"
+                  >
+                    {{ t('nav.moveDown') }}
+                  </button>
+                  <button
+                    v-if="item.scope === 'shared' && !canManageView(item)"
+                    type="button"
+                    :disabled="viewBusy"
+                    @click="duplicateView(item, 'personal')"
+                  >
+                    {{ t('nav.duplicatePersonalView') }}
+                  </button>
+                  <details v-if="canManageView(item)">
+                    <summary>{{ t('nav.viewActions') }}</summary>
+                    <form @submit.prevent="renameView(item)">
+                      <label>
+                        {{ t('nav.viewName') }}
+                        <input
+                          v-model="viewNameDrafts[item.id]"
+                          :aria-label="t('nav.viewName')"
+                          :placeholder="item.name"
+                        />
+                      </label>
+                      <button type="submit" :disabled="viewBusy">
+                        {{ t('nav.renameView') }}
+                      </button>
+                    </form>
+                    <button
+                      type="button"
+                      :disabled="viewBusy"
+                      @click="duplicateView(item, 'personal')"
+                    >
+                      {{ t('nav.duplicatePersonalView') }}
+                    </button>
+                    <button
+                      v-if="canCreateSharedView"
+                      type="button"
+                      :disabled="viewBusy"
+                      @click="duplicateView(item, 'shared')"
+                    >
+                      {{ t('nav.duplicateSharedView') }}
+                    </button>
+                    <button
+                      v-if="
+                        schema.myLevel === 'owner' && item.scope === 'shared'
+                      "
+                      type="button"
+                      :disabled="viewBusy"
+                      @click="toggleViewLock(item)"
+                    >
+                      {{
+                        item.locked ? t('nav.unlockView') : t('nav.lockView')
+                      }}
+                    </button>
+                    <button
+                      type="button"
+                      :disabled="viewBusy"
+                      @click="deleteView(item)"
+                    >
+                      {{ t('nav.deleteView') }}
+                    </button>
+                  </details>
+                </div>
+              </nav>
+              <form class="view-create" @submit.prevent="createView">
                 <label>
                   {{ t('nav.viewName') }}
-                  <input
-                    v-model="viewNameDrafts[item.id]"
-                    :aria-label="t('nav.viewName')"
-                    :placeholder="item.name"
-                  />
+                  <input v-model="newViewName" :disabled="viewBusy" required />
                 </label>
-                <button type="submit" :disabled="viewBusy">
-                  {{ t('nav.renameView') }}
+                <label>
+                  {{ t('nav.viewScopeLabel') }}
+                  <select v-model="newViewScope" :disabled="viewBusy">
+                    <option value="personal">
+                      {{ t('nav.viewScope.personal') }}
+                    </option>
+                    <option value="shared" :disabled="!canCreateSharedView">
+                      {{ t('nav.viewScope.shared') }}
+                    </option>
+                  </select>
+                </label>
+                <label>
+                  {{ t('form.viewType') }}
+                  <select v-model="newViewType" :disabled="viewBusy">
+                    <option value="grid">{{ t('form.gridType') }}</option>
+                    <option value="form">{{ t('form.formType') }}</option>
+                    <option value="kanban">{{ t('kanban.viewType') }}</option>
+                    <option value="gallery">{{ t('gallery.viewType') }}</option>
+                  </select>
+                </label>
+                <button
+                  type="submit"
+                  :disabled="viewBusy || !newViewName.trim()"
+                >
+                  {{ t('nav.createView') }}
                 </button>
               </form>
-              <button
-                type="button"
-                :disabled="viewBusy"
-                @click="duplicateView(item, 'personal')"
-              >
-                {{ t('nav.duplicatePersonalView') }}
-              </button>
-              <button
-                v-if="canCreateSharedView"
-                type="button"
-                :disabled="viewBusy"
-                @click="duplicateView(item, 'shared')"
-              >
-                {{ t('nav.duplicateSharedView') }}
-              </button>
-              <button
-                v-if="schema.myLevel === 'owner' && item.scope === 'shared'"
-                type="button"
-                :disabled="viewBusy"
-                @click="toggleViewLock(item)"
-              >
-                {{ item.locked ? t('nav.unlockView') : t('nav.lockView') }}
-              </button>
-              <button
-                type="button"
-                :disabled="viewBusy"
-                @click="deleteView(item)"
-              >
-                {{ t('nav.deleteView') }}
-              </button>
-            </details>
-          </div>
-        </nav>
-        <form class="view-create" @submit.prevent="createView">
-          <label>
-            {{ t('nav.viewName') }}
-            <input v-model="newViewName" :disabled="viewBusy" required />
-          </label>
-          <label>
-            {{ t('nav.viewScopeLabel') }}
-            <select v-model="newViewScope" :disabled="viewBusy">
-              <option value="personal">
-                {{ t('nav.viewScope.personal') }}
-              </option>
-              <option value="shared" :disabled="!canCreateSharedView">
-                {{ t('nav.viewScope.shared') }}
-              </option>
-            </select>
-          </label>
-          <label>
-            {{ t('form.viewType') }}
-            <select v-model="newViewType" :disabled="viewBusy">
-              <option value="grid">{{ t('form.gridType') }}</option>
-              <option value="form">{{ t('form.formType') }}</option>
-              <option value="kanban">{{ t('kanban.viewType') }}</option>
-              <option value="gallery">{{ t('gallery.viewType') }}</option>
-            </select>
-          </label>
-          <button type="submit" :disabled="viewBusy || !newViewName.trim()">
-            {{ t('nav.createView') }}
-          </button>
-        </form>
-        <p v-if="viewError" role="alert">{{ viewError }}</p>
-        <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
-        <details v-if="view?.type === 'grid'" class="view-filter">
+              <p v-if="viewError" role="alert">{{ viewError }}</p>
+              <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
+            </div>
+          </details>
+        </div>
+        <details v-if="view?.type === 'grid' && !desktop" class="view-filter">
           <summary>{{ t('grid.filter') }}</summary>
           <FilterBuilder
             :key="`${schema.table.id}:${view.id}`"
@@ -1060,41 +1177,78 @@ onBeforeUnmount(() => {
           @save="(config) => saveCardView('gallery', config)"
         />
         <FieldPanel
-          v-if="desktop"
+          v-if="desktop && view?.type !== 'grid'"
           :key="schema.table.id"
           :schema="schema"
           @update="applySchema"
           @reload="loadSchema(true)"
         />
         <div ref="rowWorkspace" class="row-workspace">
-          <DataGrid
+          <div
             v-if="view?.type === 'grid' && desktop"
-            ref="grid"
-            :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
-            :schema="schema"
-            :view-id="view.id"
-            :identity="auth.user?.id ?? ''"
-            :filter="filterValue"
-            @schema-changed="loadSchema(true)"
-            @view-updated="
-              (updated) => {
-                if (schema)
-                  schema.views = schema.views.map((item) =>
-                    item.id === updated.id ? updated : item,
-                  )
-              }
-            "
-            @view-config-changed="
-              (config, hasLocalChanges) => {
-                localViewConfig = config
-                hasLocalViewChanges = hasLocalChanges
-              }
-            "
-            @expand="
-              (id) =>
-                router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
-            "
-          />
+            ref="gridWorkspace"
+            class="grid-workspace"
+          >
+            <DataGrid
+              ref="grid"
+              :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
+              :schema="schema"
+              :view-id="view.id"
+              :identity="auth.user?.id ?? ''"
+              :filter="filterValue"
+              :fields-open="fieldsOpen"
+              :filter-open="filterOpen"
+              :filter-count="filterCount"
+              @toggle-fields="toggleFieldsMenu"
+              @toggle-filter="toggleFilterMenu"
+              @create-field="openFieldCreate"
+              @schema-changed="loadSchema(true)"
+              @view-updated="
+                (updated) => {
+                  if (schema)
+                    schema.views = schema.views.map((item) =>
+                      item.id === updated.id ? updated : item,
+                    )
+                }
+              "
+              @view-config-changed="
+                (config, hasLocalChanges) => {
+                  localViewConfig = config
+                  hasLocalViewChanges = hasLocalChanges
+                }
+              "
+              @expand="
+                (id) =>
+                  router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+              "
+            />
+            <div v-show="fieldsOpen" class="grid-field-popover">
+              <FieldPanel
+                v-if="fieldsVisited"
+                :key="schema.table.id"
+                ref="fieldPanel"
+                :schema="schema"
+                :columns="localViewConfig?.fields"
+                menu
+                @visibility="toggleGridField"
+                @update="applySchema"
+                @reload="loadSchema(true)"
+              />
+              <p v-if="fieldMenuError" role="alert">{{ fieldMenuError }}</p>
+            </div>
+            <div v-show="filterOpen" class="grid-filter-popover">
+              <FilterBuilder
+                v-if="filterVisited"
+                :key="`${schema.table.id}:${view.id}`"
+                v-model="filterDraft"
+                :schema="schema"
+                compact
+              />
+              <button type="button" @click="applyFilter">
+                {{ t('filter.apply') }}
+              </button>
+            </div>
+          </div>
           <MobileCardList
             v-else-if="view?.type === 'grid'"
             ref="grid"
@@ -1214,5 +1368,104 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.table-utility {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.table-management {
+  position: relative;
+  z-index: 4;
+}
+
+.table-management > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.table-management > summary::-webkit-details-marker {
+  display: none;
+}
+
+.table-management-panel {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  width: min(460px, calc(100vw - 32px));
+  max-height: 70vh;
+  padding: 16px;
+  overflow: auto;
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+
+.table-management-panel .view-links,
+.table-management-panel .view-create {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.table-management-panel .view-links > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-management-panel .view-create label {
+  display: grid;
+  gap: 4px;
+}
+
+.grid-workspace {
+  position: relative;
+  min-width: 0;
+}
+
+.grid-field-popover,
+.grid-filter-popover {
+  position: absolute;
+  z-index: 10;
+  top: 48px;
+  max-height: min(75vh, 700px);
+  overflow: auto;
+  color: var(--text);
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+
+.grid-field-popover {
+  left: 0;
+  width: min(390px, 100%);
+}
+
+.grid-filter-popover {
+  left: min(100px, 5%);
+  width: min(720px, 95%);
+  padding: 18px;
+}
+
+.grid-filter-popover > button {
+  margin-top: 14px;
+  color: var(--panel-surface);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 </style>

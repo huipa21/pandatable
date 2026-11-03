@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { defineAsyncComponent, defineComponent, type Component } from 'vue'
 import { i18n, loadLocale } from '../i18n'
 import { useNavStore } from '../stores/nav'
 import { useAuthStore } from '../stores/auth'
@@ -27,7 +28,7 @@ afterEach(() => {
   disposePinia(pinia)
   vi.unstubAllGlobals()
 })
-async function setup(path: string) {
+async function setup(path: string, extraStubs: Record<string, Component> = {}) {
   const nav = useNavStore()
   nav.tree = navigation()
   nav.loaded = true
@@ -48,6 +49,8 @@ async function setup(path: string) {
       plugins: [pinia, i18n, router],
       stubs: {
         DataGrid: {
+          props: ['fieldsOpen', 'filterOpen', 'filterCount'],
+          emits: ['toggleFields', 'toggleFilter', 'createField'],
           methods: {
             exportQuery: () => ({
               fieldIds: ['name'],
@@ -55,8 +58,14 @@ async function setup(path: string) {
               groupBy: [],
               search: 'active',
             }),
+            toggleField: vi.fn(),
           },
-          template: '<div data-testid="production-grid" />',
+          template: `
+            <div data-testid="production-grid" :data-filter-count="filterCount">
+              <button class="grid-fields-trigger" @click="$emit('toggleFields')">Fields</button>
+              <button class="grid-filter-trigger" @click="$emit('toggleFilter')">Filter</button>
+              <button class="grid-create-field" @click="$emit('createField')">Add field</button>
+            </div>`,
         },
         MobileCardList: {
           methods: {
@@ -70,6 +79,7 @@ async function setup(path: string) {
           template:
             '<div data-testid="row-dialog" :data-focus-comment="focusComment">{{ rowId }}</div>',
         },
+        ...extraStubs,
       },
     },
   })
@@ -289,6 +299,97 @@ it('shows real schema metadata, levels, view links and the production grid', asy
         signal: expect.any(AbortSignal),
       }),
     )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('opens compact field and filter menus, applies a draft, and dismisses them with Escape', async () => {
+  useAuthStore().setUser(navUser)
+  const schema = tableSchema()
+  schema.fields[0]!.filterable = true
+  schema.fields[0]!.filterOps = ['contains', 'is_empty']
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(schema)))
+  const { wrapper } = await setup('/t/t/v/v')
+  try {
+    expect(wrapper.find('[role="tab"]').exists()).toBe(false)
+    expect(wrapper.find('.field-panel').exists()).toBe(false)
+    expect(
+      (wrapper.get('.grid-field-popover').element as HTMLElement).style.display,
+    ).toBe('none')
+    await wrapper.get('.grid-fields-trigger').trigger('click')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(
+      (wrapper.get('.grid-field-popover').element as HTMLElement).style.display,
+    ).not.toBe('none')
+    expect(wrapper.get('.grid-field-popover').text()).toContain('Name')
+    await wrapper.get('.grid-filter-trigger').trigger('click')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(
+      (wrapper.get('.grid-field-popover').element as HTMLElement).style.display,
+    ).toBe('none')
+    expect(
+      (wrapper.get('.grid-filter-popover').element as HTMLElement).style
+        .display,
+    ).not.toBe('none')
+    await wrapper
+      .get('.grid-filter-popover .filter-actions button')
+      .trigger('click')
+    await wrapper
+      .get('.grid-filter-popover .filter-item input')
+      .setValue('Panda')
+    await wrapper
+      .findAll('.grid-filter-popover button')
+      .find((button) => button.text() === 'Apply filters')!
+      .trigger('click')
+    expect(
+      wrapper
+        .get('[data-testid="production-grid"]')
+        .attributes('data-filter-count'),
+    ).toBe('1')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(
+      (wrapper.get('.grid-filter-popover').element as HTMLElement).style
+        .display,
+    ).toBe('none')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('cancels a pending field editor when another menu opens before it loads', async () => {
+  useAuthStore().setUser(navUser)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(Response.json(tableSchema())),
+  )
+  let release!: (component: Component) => void
+  const openCreate = vi.fn()
+  const lazyPanel = defineAsyncComponent(
+    () =>
+      new Promise<Component>((resolve) => {
+        release = resolve
+      }),
+  )
+  const { wrapper } = await setup('/t/t/v/v', { FieldPanel: lazyPanel })
+  try {
+    await wrapper.get('.grid-create-field').trigger('click')
+    expect(release).toBeTypeOf('function')
+    await wrapper.get('.grid-filter-trigger').trigger('click')
+    release(
+      defineComponent({
+        setup(_props, { expose }) {
+          expose({ openCreate })
+          return () => null
+        },
+      }),
+    )
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(openCreate).not.toHaveBeenCalled()
   } finally {
     wrapper.unmount()
   }

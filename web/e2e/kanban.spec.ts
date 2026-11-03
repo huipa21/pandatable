@@ -7,6 +7,7 @@ import {
   test,
 } from './fixtures'
 import { setLocale } from './app-shell'
+import { openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type {
   AuthUser,
@@ -114,11 +115,13 @@ test('AT-901 persists card moves and updates another connected Kanban client', a
   const row = inserted.rows[0]!
   await page.goto(`/t/${tableId}/v/${schema.views[0]!.id}`)
   await english(page)
+  await openTableOptions(page)
   const createView = page.locator('.view-create')
   await createView.getByLabel(en.nav.viewName, { exact: true }).fill('Board')
   await createView.getByLabel(en.nav.viewScopeLabel).selectOption('shared')
   await createView.getByLabel(en.form.viewType).selectOption('kanban')
   await createView.getByRole('button', { name: en.nav.createView }).click()
+  await page.locator('.table-management > summary').click()
   await expect(page.locator('.kanban-settings')).toBeVisible()
   const builder = page.locator('.kanban-settings')
   await builder.locator('summary').click()

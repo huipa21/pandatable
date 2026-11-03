@@ -227,6 +227,124 @@ it('saves aggregate changes without replacing unrelated view config', async () =
   ])
 })
 
+it('waits for the server to accept grouping and serializes height and column changes', async () => {
+  let release!: (response: Response) => void
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        }),
+    )
+    .mockImplementation(async (_url: unknown, init?: RequestInit) =>
+      Response.json({
+        view: {
+          ...fixture().views[0],
+          version: 3,
+          config: JSON.parse(String(init?.body)).config,
+        },
+      }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted()
+  columns.change({ kind: 'group', ids: ['other'] })
+  expect(columns.groupPending.value).toBe(true)
+  expect(columns.config.value.groupBy).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(columnSaveDelay)
+  const firstConfig = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).config
+  expect(firstConfig.groupBy).toEqual(['other'])
+  columns.change({ kind: 'height', height: 'tall' })
+  columns.change({ kind: 'visible', id: 'name', visible: false })
+  release(
+    Response.json({
+      view: { ...fixture().views[0], version: 2, config: firstConfig },
+    }),
+  )
+  await flushPromises()
+  expect(columns.groupPending.value).toBe(false)
+  expect(columns.config.value.groupBy).toEqual(['other'])
+  expect(columns.config.value.rowHeight).toBe('tall')
+  await debounce()
+  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch.mock.calls[1]?.[1]?.headers['If-Match']).toBe('2')
+  expect(
+    JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).config,
+  ).toMatchObject({
+    groupBy: ['other'],
+    rowHeight: 'tall',
+    fields: expect.arrayContaining([
+      expect.objectContaining({ id: 'name', visible: false }),
+    ]),
+  })
+})
+
+it('does not apply rejected grouping and allows cancelling the pending change', async () => {
+  const schema = fixture()
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ error: { code: 'ERR_VALIDATION' } }, { status: 400 }),
+    )
+    .mockResolvedValueOnce(Response.json(schema))
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted(schema)
+  columns.change({ kind: 'group', ids: ['other'] })
+  await debounce()
+  expect(columns.config.value.groupBy).toBeUndefined()
+  expect(columns.groupPending.value).toBe(true)
+  expect(columns.retryable.value).toBe(true)
+  columns.cancelGrouping()
+  expect(columns.groupPending.value).toBe(false)
+  expect(columns.retryable.value).toBe(false)
+  expect(columns.failure.value).toBe('')
+  expect(fetch).toHaveBeenCalledTimes(2)
+})
+
+it('clears the failure after a grouping retry succeeds', async () => {
+  const schema = fixture()
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ error: { code: 'ERR_VALIDATION' } }, { status: 400 }),
+    )
+    .mockResolvedValueOnce(Response.json(schema))
+    .mockImplementationOnce(async (_url: unknown, init?: RequestInit) =>
+      Response.json({
+        view: {
+          ...schema.views[0],
+          version: 2,
+          config: JSON.parse(String(init?.body)).config,
+        },
+      }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted(schema)
+  columns.change({ kind: 'group', ids: ['other'] })
+  await debounce()
+  expect(columns.failure.value).toBe('translated failure')
+  expect(columns.config.value.groupBy).toBeUndefined()
+  columns.retry()
+  await flushPromises()
+  expect(columns.config.value.groupBy).toEqual(['other'])
+  expect(columns.groupPending.value).toBe(false)
+  expect(columns.retryable.value).toBe(false)
+  expect(columns.failure.value).toBe('')
+})
+
+it('reports grouping as unavailable when the view cannot be saved', async () => {
+  const fetch = vi.fn()
+  vi.stubGlobal('fetch', fetch)
+  const { columns, state } = mounted()
+  state.canWrite = false
+  await flushPromises()
+  columns.change({ kind: 'group', ids: ['other'] })
+  expect(columns.failure.value).toBe('translated failure')
+  expect(columns.config.value.groupBy).toBeUndefined()
+  expect(columns.groupPending.value).toBe(false)
+  expect(fetch).not.toHaveBeenCalled()
+})
+
 it('rebases only user intents against live fields and keeps unrelated server widths', () => {
   const schema = fixture()
   const result = applyColumnIntents(
@@ -462,6 +580,7 @@ it('reloads a conflict, drops removed fields, preserves concurrent changes and r
     columns.config.value.fields.find((field) => field.id === 'system')?.visible,
   ).toBe(true)
   expect(columns.config.value.fields[0]?.width).toBe(480)
+  expect(columns.failure.value).toBe('translated failure')
 })
 
 it.each(['unmount', 'identity', 'permission'])(

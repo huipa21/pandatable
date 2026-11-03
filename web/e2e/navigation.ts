@@ -19,6 +19,7 @@ import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
 import { verifyFieldReader, verifyFields } from './fields'
+import { openFieldPanel, openTableOptions } from './table-controls'
 import { formatTsv } from '../src/components/grid/tsv'
 
 const headers = () => ({
@@ -123,7 +124,7 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     expect(response.status()).toBe(200)
     return (await response.json()) as RowQueryResult
   }
-  const panel = owner.getByRole('region', { name: en.field.panel.title })
+  const panel = await openFieldPanel(owner)
   await panel
     .getByRole('button', { name: en.field.panel.add, exact: true })
     .click()
@@ -161,6 +162,7 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     .getByRole('button', { name: en.field.panel.create, exact: true })
     .click()
   await expect(noteDialog).not.toBeVisible()
+  await owner.locator('.grid-fields-trigger').click()
   const schemaResponse = await owner.request.get(`/api/v1/tables/${tid}/schema`)
   expect(schemaResponse.status()).toBe(200)
   const schema = (await schemaResponse.json()) as TableSchema
@@ -297,10 +299,15 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
     id: string
   }
 
-  const fieldsMenu = owner.locator('details.grid-fields')
-  await fieldsMenu.locator('summary').click()
-  await owner
-    .getByRole('checkbox', { name: updatedBy.name, exact: true })
+  const fieldsMenu = await openFieldPanel(owner)
+  await fieldsMenu
+    .getByRole('button', { name: en.field.panel.systemFields })
+    .click()
+  await fieldsMenu
+    .getByRole('checkbox', {
+      name: en.field.panel.showField.replace('{name}', updatedBy.name),
+      exact: true,
+    })
     .check()
   const updatedByHeader = owner
     .locator('revo-grid')
@@ -642,9 +649,11 @@ export async function verifyNavigation(
     await expect(alice.locator('main')).toContainText(en.nav.emptyTables)
     await create(alice, 'table', 'Table T')
     await expect(alice.locator('.schema-summary')).toContainText('Name')
+    await openTableOptions(alice)
     await expect(
       alice.getByRole('navigation', { name: en.nav.views }),
     ).toContainText('Grid')
+    await alice.locator('.table-management > summary').click()
     const tid = new URL(alice.url()).pathname.split('/')[2]!
     const viewId = new URL(alice.url()).pathname.split('/')[4]!
     const schemaResponse = await alice.request.get(

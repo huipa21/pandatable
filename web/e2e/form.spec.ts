@@ -1,6 +1,7 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
+import { openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
@@ -138,6 +139,7 @@ test('AT-511 configures a form, persists it, submits rows, and disables read-onl
   await page.reload()
   await page.goto(`/t/${tableId}/v/${schema.views[0]!.id}`)
   await page.setViewportSize({ width: 390, height: 844 })
+  await openTableOptions(page)
   await expect(page.locator('.view-create')).toBeVisible()
   const viewCreate = page.locator('.view-create')
   await viewCreate.getByLabel(en.nav.viewName, { exact: true }).fill('Intake')
@@ -145,6 +147,7 @@ test('AT-511 configures a form, persists it, submits rows, and disables read-onl
   await viewCreate.getByLabel(en.form.viewType).selectOption('form')
   await viewCreate.getByRole('button', { name: en.nav.createView }).click()
   await expect(page).toHaveURL(/\/t\/[^/]+\/v\/[^/]+$/)
+  await page.locator('.table-management > summary').click()
   const builder = page.locator('.form-builder')
   await builder.locator('summary').click()
   await builder

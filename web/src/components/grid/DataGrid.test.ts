@@ -424,6 +424,43 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
   return fetch
 }
 
+it('keeps the add-field action outside the selectable grid columns', async () => {
+  await mountGrid(schemaFor('text'))
+  const columns = wrapper!
+    .getComponent({ name: 'RevoGrid' })
+    .props('columns') as { prop: string }[]
+  expect(columns.map((column) => column.prop)).not.toContain('__add_field')
+  const addField = wrapper!.get('button.grid-add-field')
+  expect(addField.attributes('aria-label')).toBe('Add field')
+  await addField.trigger('click')
+  expect(wrapper!.emitted('createField')).toEqual([[]])
+})
+
+it('does not expose the add-field action to readers', async () => {
+  await mountGrid(schemaFor('text', 'read'))
+  expect(wrapper!.find('button.grid-add-field').exists()).toBe(false)
+})
+
+it('dismisses toolbar menus on outside pointer interactions', async () => {
+  await mountGrid(schemaFor('text'))
+  const root = wrapper!.element
+  document.body.appendChild(root)
+  try {
+    const menu = wrapper!.get('details.grid-more').element as HTMLDetailsElement
+    menu.open = true
+    menu
+      .querySelector('input')!
+      .dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }))
+    expect(menu.open).toBe(true)
+    document.body.dispatchEvent(
+      new MouseEvent('pointerdown', { bubbles: true }),
+    )
+    expect(menu.open).toBe(false)
+  } finally {
+    root.remove()
+  }
+})
+
 it('reports grid focus and clears it when focus leaves the grid', async () => {
   await mountGrid(schemaFor('text', 'read'))
   const setFocus = vi.spyOn(useRealtimeStore(), 'setFocus')
@@ -665,7 +702,7 @@ it('shows codec validation in the cell and never sends an invalid integer write'
 it('keeps read access read-only and explicitly fetches a selected system field', async () => {
   const schema = schemaFor('text', 'read')
   const fetch = await mountGrid(schema)
-  expect(wrapper!.get('button').attributes('disabled')).toBeDefined()
+  expect(wrapper!.find('.grid-add-row').exists()).toBe(false)
   const fieldCheckboxes = wrapper!.findAll('input[type="checkbox"]')
   expect(fieldCheckboxes).toHaveLength(2)
   await fieldCheckboxes[1]!.setValue(true)
@@ -1034,6 +1071,38 @@ it('maps Home/End and Ctrl/Cmd+Home/End through loaded row identity, not viewpor
   }
   expect(fetch.mock.calls.every(([, init]) => init?.method !== 'PATCH')).toBe(
     true,
+  )
+})
+
+it('pages by the selected row height', async () => {
+  const schema = schemaFor('text')
+  schema.views[0]!.config.rowHeight = 'medium'
+  gridState.rowCount = 50
+  await mountGrid(schema)
+  Object.defineProperty(
+    wrapper!.get('[data-testid="fake-grid"]').element,
+    'clientHeight',
+    {
+      configurable: true,
+      value: 512,
+    },
+  )
+  Object.assign(gridState.focus, {
+    rowIndex: 3,
+    colIndex: 0,
+    model: { __rowId: String(BigInt('9007199254740993') + 3n) },
+    column: { prop: 'name' },
+  })
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  await wrapper!.get('.data-grid').trigger('keydown', { key: 'PageDown' })
+  await flushPromises()
+  expect(gridState.focusCells).toHaveBeenLastCalledWith(
+    { x: 0, y: 13 },
+    { x: 0, y: 13 },
+    'rgCol',
   )
 })
 

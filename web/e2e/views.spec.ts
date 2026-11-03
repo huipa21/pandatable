@@ -1,7 +1,10 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { expect, observeBrowser, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
+import { openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
+
+test.use({ actionTimeout: 10_000 })
 import type { TableSchema, ViewColumns, ViewMutation } from '../src/api/types'
 
 const headers = () => ({
@@ -94,6 +97,7 @@ async function setLanguageEnglish(page: Page) {
 }
 
 async function viewActions(page: Page, name: string) {
+  await openTableOptions(page)
   const row = page
     .locator('.view-links > div')
     .filter({ has: page.getByRole('link', { name, exact: true }) })
@@ -166,6 +170,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     const writerDiagnostics = await observeBrowser(writerPage)
     await setLanguageEnglish(writerPage)
     await writerPage.goto(`/t/${tableId}/v/${initialView.id}`)
+    await openTableOptions(writerPage)
     await expect(writerPage.locator('.schema-summary')).toContainText(
       en.nav.level.write,
     )
@@ -177,8 +182,10 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     await createForm
       .getByLabel(en.nav.viewScopeLabel)
       .selectOption('personal', { timeout: 10_000 })
+    const initialUrl = writerPage.url()
     await createForm.getByRole('button', { name: en.nav.createView }).click()
-    await expect(writerPage).toHaveURL(/\/t\/[^/]+\/v\/[^/]+$/)
+    await expect(writerPage).not.toHaveURL(initialUrl)
+    await openTableOptions(writerPage)
 
     await createForm
       .getByLabel(en.nav.viewName, { exact: true })
@@ -186,7 +193,9 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     await createForm
       .getByLabel(en.nav.viewScopeLabel)
       .selectOption('shared', { timeout: 10_000 })
+    const personalUrl = writerPage.url()
     await createForm.getByRole('button', { name: en.nav.createView }).click()
+    await expect(writerPage).not.toHaveURL(personalUrl)
     const writerSchemaResponse = await writerPage.request.get(
       `/api/v1/tables/${tableId}/schema`,
     )
@@ -248,7 +257,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     ).toBe(403)
 
     await readerPage.goto(`/t/${tableId}/v/${shared.id}`)
-    await readerPage.locator('.view-filter > summary').click()
+    await readerPage.locator('.grid-filter-trigger').click()
     const filter = readerPage.locator('.filter-group').first()
     await filter
       .getByRole('button', { name: en.filter.addCondition, exact: true })
@@ -263,7 +272,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     })
     await expect(savePersonal).toBeVisible()
     await savePersonal.click()
-    await expect(readerPage).toHaveURL(/\/t\/[^/]+\/v\/[^/]+$/)
+    await expect(readerPage).not.toHaveURL(new RegExp(`/v/${shared.id}$`))
     readerSchemaResponse = await readerPage.request.get(
       `/api/v1/tables/${tableId}/schema`,
     )
@@ -406,7 +415,9 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     expect(duplicateResponse.status()).toBe(201)
     const duplicateMutation = (await duplicateResponse.json()) as ViewMutation
     expect(duplicateMutation.view.scope).toBe('personal')
-    await expect(writerPage).toHaveURL(/\/t\/[^/]+\/v\/[^/]+$/)
+    await expect(writerPage).toHaveURL(
+      new RegExp(`/v/${duplicateMutation.view.id}$`),
+    )
 
     const duplicateSchema = (await (
       await writerPage.request.get(`/api/v1/tables/${tableId}/schema`)

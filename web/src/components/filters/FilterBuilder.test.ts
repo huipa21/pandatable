@@ -127,7 +127,7 @@ it('does not offer groups beyond the supported depth', async () => {
   expect(wrapper.findAll('.filter-group')).toHaveLength(3)
   expect(
     wrapper.findAll('.filter-group')[2]!.find('.filter-actions').text(),
-  ).not.toContain('Add nested group')
+  ).not.toContain('Add filter group')
 })
 
 it('shows and clears a saved root condition whose field is unavailable', async () => {

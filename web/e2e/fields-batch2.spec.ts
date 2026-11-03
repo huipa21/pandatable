@@ -10,6 +10,7 @@ import type {
 } from '../src/api/types'
 import { restoreSettings } from './settings'
 import { setLocale } from './app-shell'
+import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -69,7 +70,7 @@ interface FieldSpec {
 }
 
 async function addField(page: Page, spec: FieldSpec) {
-  const panel = page.getByRole('region', { name: en.field.panel.title })
+  const panel = await openFieldPanel(page)
   await panel
     .getByRole('button', { name: en.field.panel.add, exact: true })
     .click()
@@ -126,6 +127,7 @@ async function addField(page: Page, spec: FieldSpec) {
     await schemaOf(page, new URL(page.url()).pathname.split('/')[2]!)
   ).fields.find((item) => item.name === spec.name)
   if (!field) throw new Error(`Created field ${spec.name} missing from schema`)
+  await page.locator('.grid-fields-trigger').click()
   return field
 }
 
@@ -150,10 +152,7 @@ async function saveGridText(
     { timeout: 10_000 },
   )
   await input.press(field.uiType === 'json' ? 'Control+Enter' : 'Enter')
-  await page
-    .getByRole('region', { name: en.field.panel.title })
-    .getByRole('heading', { name: en.field.panel.title, exact: true })
-    .click()
+  await page.locator('.grid-toolbar').click({ position: { x: 2, y: 2 } })
   expect((await saved).status()).toBe(200)
   await expect
     .poll(async () => (await queryRows(page, viewId)).rows[0]?.fields[field.id])
@@ -382,6 +381,7 @@ test('AT-326 currency default snapshots by field and formats each currency', asy
     await saveGridText(page, viewId, cny, '1234.50')
     await expect(page.getByText(/¥/).first()).toBeVisible()
 
+    await openFieldPanel(page)
     const cnyActions = page.locator(
       `[data-field-id="${cny.id}"] details.field-actions`,
     )

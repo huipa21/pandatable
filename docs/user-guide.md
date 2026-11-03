@@ -43,8 +43,12 @@ control or resource is unavailable, contact its owner.
 ### 3. Work with rows and fields
 
 Open a table's grid, use **Add row**, and edit cells with the appropriate
-editor. Invalid values are reported and not saved. Owners can manage field
-definitions; use **Fields** to control which columns are visible. Attachment
+editor. Invalid values are reported and not saved. On desktop, **Fields**
+searches the field list and controls which columns are visible; choose **System
+fields** to include system columns. Owners can add a field with the plus button
+in the grid header or **Add field** in the field menu, choose its type, and
+optionally set a default value and description. Other field types, including
+relations and formulas, are available under **More field types**. Attachment
 fields support file selection and drag-and-drop; the administrator's upload
 limit applies.
 
@@ -55,16 +59,19 @@ the row editor or use the add-row control to create a row.
 
 ### 4. Use views and forms
 
-Select an existing view or enter a view name, choose **Personal** or **Shared**
-and a **Grid**, **Form**, **Kanban**, or **Gallery** type, then choose **Create view**.
+Open **Views and table options** to select an existing view or enter a view
+name, choose **Personal** or **Shared** and a **Grid**, **Form**, **Kanban**, or
+**Gallery** type, then choose **Create view**.
 Readers can create personal views; shared views require write access. Owners can
 lock shared views. If you cannot save changes to a shared view, you can apply
 temporary changes and use **Save current changes as a personal view**.
 
-Grid controls include **Filter rows**, **Sort rows**, search across visible
-fields, grouping, highlighting, and footer aggregates. In a form view, an owner
-can configure the fields and labels; users with write access can submit new
-rows, while readers cannot submit.
+The desktop grid toolbar provides **Filter**, **Group**, **Sort**, **Colour**
+(highlighting), and row-height controls. Apply a filter to use it temporarily;
+grouping is saved to a view you can edit. Search across visible fields, column
+width and order, freezing, row deletion, and footer aggregates are under **More
+grid options**. In a form view, an owner can configure the fields and labels;
+users with write access can submit new rows, while readers cannot submit.
 
 In Kanban settings, choose a single-select or user field for the columns and
 select the card fields. Unassigned rows have their own column; for user
@@ -106,7 +113,7 @@ this table**; write access is required. Select the file, choose **Analyze
 file**, review the detected columns, types, or mappings, and choose **Start
 import**. Review the result and download the invalid-cell report when offered.
 
-From a grid, **Export → CSV (current view)** downloads the visible fields and
+From a grid, **Views and table options → Export → CSV (current view)** downloads the visible fields and
 respects the current filter, sort, and search. A **PandaTable XLSX package**
 can also be exported and imported, but it is **not a complete backup**:
 nonempty attachment identities and contents are not recovered, distinct
@@ -163,8 +170,10 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 ### 3. 使用行和字段
 
 打开数据表的网格，选择**添加行**，并使用相应的编辑器修改单元格。无效值会显示
-错误且不会保存。所有者可以管理字段定义；使用**字段**控制显示哪些列。附件
-字段支持选择文件和拖放；上传大小受管理员设置的限制。
+错误且不会保存。在桌面端，使用**字段**搜索字段并控制显示哪些列；选择**系统字段**
+可显示系统列。所有者可以通过网格表头的加号或字段菜单中的**添加字段**新建字段，
+选择类型，并按需设置默认值和说明。关联、公式等其他类型位于**更多字段类型**中。
+附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
 
 在桌面端，可以复制粘贴单元格区域、使用 Ctrl+D 向下填充，以及使用 Ctrl+Z 或
 Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需要确认。在窄屏上，行以
@@ -172,14 +181,15 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 
 ### 4. 使用视图和表单
 
-选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**、**表单**、
+打开**视图和数据表选项**，选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**、**表单**、
 **看板**或**画廊**类型，然后选择**创建视图**。读取者可以创建个人视图；共享视图需要写入
 权限。所有者可以锁定共享视图。如果无法保存共享视图的更改，可以临时调整并选择
 **将当前更改保存为个人视图**。
 
-网格控件包括**筛选行**、**排序行**、搜索可见字段、分组、高亮和底部汇总。在
-表单视图中，所有者可以配置字段和标签；有写入权限的用户可以提交新行，读取者
-不能提交。
+桌面网格工具栏提供**筛选**、**分组**、**排序**、**颜色**（高亮）和行高控件。
+应用筛选后可临时使用；分组会保存到有编辑权限的视图。搜索可见字段、列宽和顺序、
+冻结、删除行及底部汇总位于**更多网格选项**中。在表单视图中，所有者可以配置字段
+和标签；有写入权限的用户可以提交新行，读取者不能提交。
 
 在看板设置中，选择单选或用户字段作为列，并选择卡片字段。未分配的行有单独的列；
 按用户分组时，可以搜索数据表用户来添加空的目标列。使用列和卡片的翻页控件查看更多
@@ -211,7 +221,7 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 **分析文件**，检查检测到的列、类型或映射，然后选择**开始导入**。检查结果，并在
 提供报告时下载无效单元格报告。
 
-在网格中，**导出 → CSV（当前视图）**会下载可见字段，并遵循当前筛选、排序和
+在网格中，**视图和数据表选项 → 导出 → CSV（当前视图）**会下载可见字段，并遵循当前筛选、排序和
 搜索。也可以导出和导入 **PandaTable XLSX 数据包**，但它**不是完整备份**：
 非空附件的身份和内容无法恢复，不同时间戳可能合并为同一值，视图锁定状态也不会
 保留。导入数据包后，请检查关联选项和报告的依赖问题。

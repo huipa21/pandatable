@@ -11,6 +11,7 @@ import {
   test,
 } from './fixtures'
 import { setLocale } from './app-shell'
+import { openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type {
   DataRow,
@@ -309,6 +310,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   ).json()) as DataRow
 
   await page.goto(`/t/${source.table.id}/v/${source.views[0]!.id}`)
+  await openTableOptions(page)
   await page.locator('.view-export summary').click()
   const download = page.waitForEvent('download')
   await page
@@ -457,7 +459,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   )
   await page.goto(`/t/${fallbackId}/v/${fallbackView.id}`)
   await failedViewQuery
-  await page.getByText(en.grid.filter, { exact: true }).click()
+  await page.locator('.grid-filter-trigger, .view-filter > summary').click()
   const filter = page.locator('.filter-group').first()
   await expect(filter.locator('.filter-item')).toContainText('Project count')
   await filter
@@ -486,6 +488,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   expect(repairedQuery.status()).toBe(200)
 
   await page.goto(`/t/${restoredId}/v/${packageResult.result.viewId!}`)
+  await openTableOptions(page)
   await page.getByRole('button', { name: en.import.append }).click()
   const packageAppend = page.locator('dialog.import-dialog')
   await packageAppend.locator('input[type=file]').setInputFiles({
@@ -587,6 +590,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   try {
     const viewPath = `/t/${destination.table.id}/v/${destination.views[0]!.id}`
     await collaborator.page.goto(viewPath)
+    await openTableOptions(collaborator.page)
     await expect(
       collaborator.page.getByRole('button', { name: en.import.append }),
     ).toHaveCount(0)
@@ -610,6 +614,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     expect(denied.status()).toBe(403)
     expect([200, 201]).toContain((await grant('write')).status())
     await collaborator.page.reload()
+    await openTableOptions(collaborator.page)
     await collaborator.page
       .getByRole('button', { name: en.import.append })
       .click()

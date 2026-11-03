@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
+import { openGridMore, openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
@@ -111,6 +112,7 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
       .getByRole('button', { name: en.mobileRows.closeOptions, exact: true })
       .click()
   }
+  await openTableOptions(page)
   await page.locator('.view-export summary').click()
   const csvRequest = page.waitForRequest(
     (request) =>
@@ -140,7 +142,10 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     expect(value).toBe(
       `${name.name},Group,Status\r\nOmega,A,Open\r\nAlpha,A,Open\r\n"中文,""引号""",B,Open\r\n`,
     )
+    await page.locator('.table-management > summary').click()
+    await openGridMore(page)
     await page.getByLabel(en.grid.quickSearch, { exact: true }).fill('Alpha')
+    await openTableOptions(page)
     const searchRequest = page.waitForRequest(
       (request) =>
         request.method() === 'POST' &&

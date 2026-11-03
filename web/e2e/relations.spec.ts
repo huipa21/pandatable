@@ -1,6 +1,7 @@
 import { expect, test, paceLogin, expectHTTPFailure } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { openFieldTypeActions, openGridMore } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -174,11 +175,7 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
   const outside = await createTable(page, otherBookId, 'Outside')
 
   await page.goto(`/t/${tasks.table.id}/v/${tasks.views[0]!.id}`)
-  const fieldPanel = page.getByRole('region', {
-    name: en.field.panel.title,
-    exact: true,
-  })
-  await expect(fieldPanel).toBeVisible()
+  const fieldPanel = await openFieldTypeActions(page)
   await fieldPanel
     .getByRole('button', { name: en.relation.add, exact: true })
     .click()
@@ -438,6 +435,7 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
   })
   await rowSelector.focus()
   await rowSelector.press('Space')
+  await openGridMore(page)
   await page
     .getByRole('button', {
       name: en.grid.deleteRows.replace('{count}', '1'),

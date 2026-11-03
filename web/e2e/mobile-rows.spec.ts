@@ -577,9 +577,11 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
       en.errors.ERR_PERMISSION_DENIED,
     )
     await readerDialog.getByRole('button', { name: en.rowExpand.close }).click()
+    await reader.locator('.table-management > summary').click()
     await expect(
       reader.getByText(en.nav.level.read, { exact: true }),
     ).toBeVisible()
+    await reader.locator('.table-management > summary').click()
     await expect(reader.locator('.mobile-card')).toHaveCount(100)
     await expect.poll(() => pendingQueries.size).toBe(0)
     expect(

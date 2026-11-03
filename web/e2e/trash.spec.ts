@@ -7,6 +7,7 @@ import type {
   TableView,
 } from '../src/api/types'
 import { accountLink, setLocale } from './app-shell'
+import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -106,11 +107,7 @@ test('AT-203, AT-325 and AT-610 restore deleted resources and retained data', as
   const row = createdRows.rows[0]!
 
   await page.goto(`/t/${tid}/v/${grid.id}`)
-  if (isMobile)
-    await page
-      .getByRole('button', { name: en.mobileRows.options, exact: true })
-      .click()
-  const panel = page.getByRole('region', { name: en.field.panel.title })
+  const panel = await openFieldPanel(page)
   const fieldActions = panel.locator(`[data-field-id="${field.id}"] details`)
   await fieldActions.locator('summary').click()
   await fieldActions

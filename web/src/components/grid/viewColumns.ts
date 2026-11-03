@@ -41,6 +41,8 @@ export type ColumnIntent =
   | { kind: 'visible'; id: string; visible: boolean }
   | { kind: 'order'; ids: string[] }
   | { kind: 'frozen'; count: number }
+  | { kind: 'height'; height: NonNullable<ViewColumns['rowHeight']> }
+  | { kind: 'group'; ids: string[] }
 
 export function normalizeColumns(
   config: ViewColumns,
@@ -123,6 +125,10 @@ export function applyColumnIntents(
       result.fields = [...ordered, ...byId.values()]
     } else if (intent.kind === 'frozen') {
       result.frozen = intent.count
+    } else if (intent.kind === 'height') {
+      result.rowHeight = intent.height
+    } else if (intent.kind === 'group') {
+      result.groupBy = [...intent.ids]
     } else {
       const field = result.fields.find((field) => field.id === intent.id)
       if (!field) continue
@@ -167,6 +173,7 @@ export function useViewColumns(options: {
   const failure = ref('')
   const retryable = ref(false)
   const localQuery = ref(false)
+  const groupPending = ref(false)
   const canPersist = computed(() => options.canWrite() && !!view())
   let intents: ColumnIntent[] = []
   let pendingHighlights: HighlightRule[] | undefined
@@ -196,9 +203,24 @@ export function useViewColumns(options: {
 
   function change(intent: ColumnIntent) {
     if (disposed || !options.identity()) return
+    if (intent.kind === 'group' && !canPersist.value) {
+      failure.value = options.message(
+        new RequestError('ERR_PERMISSION_DENIED', 403),
+      )
+      return
+    }
     if (
       (intent.kind === 'width' && !Number.isFinite(intent.width)) ||
-      (intent.kind === 'frozen' && !Number.isInteger(intent.count))
+      (intent.kind === 'frozen' && !Number.isInteger(intent.count)) ||
+      (intent.kind === 'group' &&
+        (intent.ids.length > 3 ||
+          new Set(intent.ids).size !== intent.ids.length ||
+          intent.ids.some(
+            (id) =>
+              !liveSchema.fields.some(
+                (field) => field.id === id && field.uiType !== 'link',
+              ),
+          )))
     ) {
       failure.value = options.message(new RequestError('ERR_VALIDATION', 400))
       return
@@ -209,9 +231,26 @@ export function useViewColumns(options: {
       return
     }
     intents.push(intent)
-    if (!retryable.value && !reconciling)
+    if (intent.kind === 'group') groupPending.value = true
+    if (intent.kind !== 'group' && !retryable.value && !reconciling)
       config.value = applyColumnIntents(config.value, [intent], liveSchema)
     schedule()
+  }
+
+  function cancelGrouping() {
+    if (saving.value) return
+    intents = intents.filter((intent) => intent.kind !== 'group')
+    groupPending.value = false
+    if (
+      !intents.length &&
+      pendingHighlights === undefined &&
+      pendingAggregates === undefined
+    ) {
+      clearTimeout(timer)
+      retryable.value = false
+      failure.value = ''
+      reconciling = false
+    }
   }
 
   function changeHighlights(rules: HighlightRule[]) {
@@ -297,9 +336,14 @@ export function useViewColumns(options: {
       options.recorded?.(before, result.view)
       authoritative = result.view
       intents.splice(0, batch.length)
+      groupPending.value = intents.some((intent) => intent.kind === 'group')
       if (pendingHighlights === batchHighlights) pendingHighlights = undefined
       if (pendingAggregates === batchAggregates) pendingAggregates = undefined
-      config.value = applyColumnIntents(result.view.config, intents, liveSchema)
+      config.value = applyColumnIntents(
+        result.view.config,
+        intents.filter((intent) => intent.kind !== 'group'),
+        liveSchema,
+      )
       if (pendingHighlights !== undefined)
         config.value = { ...config.value, highlight: pendingHighlights }
       if (pendingAggregates !== undefined)
@@ -342,6 +386,7 @@ export function useViewColumns(options: {
           (latest.myLevel === 'write' && !next.locked)
         )) {
           intents = []
+          groupPending.value = false
           options.failure(new RequestError('ERR_PERMISSION_DENIED', 403))
         } else if (
           error instanceof RequestError &&
@@ -379,6 +424,7 @@ export function useViewColumns(options: {
       authoritative = view()
       liveSchema = options.schema()
       intents = []
+      groupPending.value = false
       pendingHighlights = undefined
       pendingAggregates = undefined
       retryable.value = false
@@ -403,7 +449,11 @@ export function useViewColumns(options: {
         return
       authoritative = next
       liveSchema = options.schema()
-      config.value = applyColumnIntents(next.config, intents, liveSchema)
+      config.value = applyColumnIntents(
+        next.config,
+        intents.filter((intent) => intent.kind !== 'group'),
+        liveSchema,
+      )
       if (pendingHighlights !== undefined)
         config.value = { ...config.value, highlight: pendingHighlights }
     },
@@ -419,11 +469,14 @@ export function useViewColumns(options: {
     retryable,
     canPersist,
     localQuery,
+    groupPending,
     change,
+    cancelGrouping,
     changeHighlights,
     changeAggregates,
     retry: () => {
       retryable.value = false
+      failure.value = ''
       void save()
     },
   }

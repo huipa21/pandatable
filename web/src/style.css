@@ -10,6 +10,7 @@
   --border: #dce6df;
   --accent: #25836b;
   --panel-surface: #fff;
+  --grid-canvas: #f7f8f8;
   --highlight-red-2-bg: #fee2e2;
   --highlight-red-2-text: #7f1d1d;
   --highlight-orange-2-bg: #ffedd5;
@@ -32,6 +33,7 @@
   --border: #33433a;
   --accent: #79c9a7;
   --panel-surface: #202a26;
+  --grid-canvas: #18211d;
   --highlight-red-2-bg: #5c252b;
   --highlight-red-2-text: #fee2e2;
   --highlight-orange-2-bg: #5b351e;
@@ -1000,6 +1002,161 @@ dialog::backdrop {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
+}
+
+.field-panel-menu {
+  margin: 0;
+  color: var(--text);
+}
+
+.field-menu-search,
+.field-menu-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+}
+
+.field-menu-search {
+  border-bottom: 1px solid var(--border);
+}
+
+.field-menu-search input[type='search'] {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  font: inherit;
+}
+
+.field-panel-menu input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
+.field-panel-menu .field-list {
+  max-height: min(45vh, 400px);
+  margin: 0;
+  padding: 4px 14px;
+  overflow-y: auto;
+}
+
+.field-panel-menu .field-list > li {
+  padding: 10px 0;
+}
+
+.field-panel-menu .field-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.field-panel-menu .field-kind {
+  font-size: 12px;
+}
+
+.field-panel-menu .field-status,
+.field-panel-menu .field-read-only,
+.field-menu-empty {
+  margin: 10px 14px;
+}
+
+.field-panel-menu .field-status:empty {
+  display: none;
+}
+
+.field-menu-empty {
+  padding: 30px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.field-menu-footer {
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+
+.resource-page .field-menu-footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+}
+
+.resource-page .field-menu-footer button:last-child {
+  color: var(--accent);
+}
+
+.field-extra-actions {
+  padding: 0 14px 12px;
+}
+
+.field-extra-actions summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.field-extra-actions .field-panel-actions {
+  margin-top: 10px;
+}
+
+.field-panel-menu .field-dialog {
+  background: var(--panel-surface);
+  box-shadow: 0 12px 36px rgb(0 0 0 / 18%);
+}
+
+.field-panel-menu .field-dialog::backdrop {
+  background: rgb(0 0 0 / 16%);
+}
+
+.field-panel-menu .field-create-form .field-settings {
+  padding: 0;
+  border: 0;
+}
+
+.field-panel-menu .field-create-form .field-settings > legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.field-default > summary,
+.field-description-editor > summary {
+  padding: 8px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.field-default > summary::-webkit-details-marker,
+.field-description-editor > summary::-webkit-details-marker {
+  display: none;
+}
+
+.field-default > summary::before,
+.field-description-editor > summary::before {
+  content: '+';
+  margin-right: 10px;
+}
+
+.field-default[open] > summary::before,
+.field-description-editor[open] > summary::before {
+  content: '−';
+}
+
+.field-create-form .nav-actions {
+  justify-content: flex-end;
+  margin: 0;
+}
+
+.resource-page .field-create-form button[type='submit'] {
+  color: var(--panel-surface);
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .field-kind-fixed {

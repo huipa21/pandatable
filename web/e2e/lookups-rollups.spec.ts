@@ -1,6 +1,7 @@
 import { allowHTTPFailure, expect, test, paceLogin } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { openFieldTypeActions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { Browser, Page } from '@playwright/test'
 
@@ -71,11 +72,7 @@ async function addComputedFromUI(
   targetFieldId: string,
 ) {
   await page.goto(`/t/${schema.table.id}/v/${schema.views[0]!.id}`)
-  const panel = page.getByRole('region', {
-    name: en.field.panel.title,
-    exact: true,
-  })
-  await expect(panel).toBeVisible()
+  const panel = await openFieldTypeActions(page)
   const button =
     kind === 'lookup' ? en.field.panel.addLookup : en.field.panel.addRollup
   await panel.getByRole('button', { name: button, exact: true }).click()

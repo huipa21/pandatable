@@ -3,6 +3,7 @@ import type { Components } from '@revolist/revogrid'
 import {
   test,
   expect,
+  allowHTTPFailure,
   expectHTTPFailure,
   observeBrowser,
   expectBrowserClean,
@@ -10,6 +11,7 @@ import {
 } from './fixtures'
 import type { DataRow, TableSchema, ViewColumns } from '../src/api/types'
 import { setLocale, setTheme } from './app-shell'
+import { openGridMore } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -74,6 +76,21 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   }
   const schema = await schemaOf()
   const viewId = schema.views[0]!.id
+  // Rapid visibility changes can race a view save under snapshot isolation.
+  allowHTTPFailure(page, 'POST', `/api/v1/views/${viewId}/query`, 409)
+  const queryConflicts: Promise<string>[] = []
+  page.on('response', (response) => {
+    if (
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === `/api/v1/views/${viewId}/query` &&
+      response.status() === 409
+    )
+      queryConflicts.push(
+        response
+          .json()
+          .then((body: { error: { code: string } }) => body.error.code),
+      )
+  })
   expect(
     (
       await page.request.patch(`/api/v1/views/${viewId}`, {
@@ -172,7 +189,8 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       (element as HTMLElement & Components.RevoGrid).getSelectedRange(),
     )
   const fieldsMenu = async (target: Page, messages: typeof en | typeof zh) => {
-    const details = target.locator('.grid-fields')
+    await openGridMore(target)
+    const details = target.locator('.grid-column-options')
     if (!(await details.evaluate((element) => element.hasAttribute('open'))))
       await details.locator('summary').click()
     await expect(
@@ -248,6 +266,19 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     await focus(name.id, 0)
     await page.keyboard.press('Control+a')
     await poll(range).toMatchObject({ x: 0, y: 0, x1: 3, y1: data.length - 1 })
+    await focus(note.id, 0)
+    await page.keyboard.press('ArrowRight')
+    await expectFocus(0, note.id)
+    await page.keyboard.press('Shift+ArrowRight')
+    await poll(range).toMatchObject({ x: 3, y: 0, x1: 3, y1: 0 })
+    await focus(name.id, 0, 0, note.id)
+    await page.keyboard.press('Control+c')
+    await poll(
+      async () =>
+        (await page.evaluate(() => navigator.clipboard.readText()))
+          .split('\n')[0]!
+          .split('\t').length,
+    ).toBe(4)
     await focus(name.id, 0)
     await page.keyboard.press('Control+c')
     await poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(
@@ -338,6 +369,18 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   }
   await setLocale(page, 'en')
   await setTheme(page, 'light')
+
+  await expect(
+    page
+      .getByRole('region', { name: en.grid.title })
+      .getByRole('button', { name: en.auth.retry, exact: true }),
+  ).toHaveCount(0)
+  await openGridMore(page)
+  const more = page.locator('.grid-more')
+  await expect(more).toHaveAttribute('open', '')
+  await page.locator('.grid-fields-trigger').click()
+  await expect(more).not.toHaveAttribute('open', '')
+  await page.locator('.grid-fields-trigger').click()
 
   const nameHeader = grid.getByRole('columnheader', {
     name: name.name,
@@ -659,14 +702,25 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
         .filter({ hasText: en.errors.ERR_VERSION_CONFLICT }),
     ).toBeVisible()
     expect(stalePatchSent).toBe(true)
-    const source = await grid.evaluate(
-      async (element) =>
-        (
-          await (element as HTMLElement & Components.RevoGrid).getSource()
-        ).filter((row) => row.__rowId).length,
-    )
-    expect(source).toBeLessThanOrEqual(300)
+    const sourceCount = () =>
+      grid.evaluate(
+        async (element) =>
+          (
+            await (element as HTMLElement & Components.RevoGrid).getSource()
+          ).filter((row) => row.__rowId).length,
+      )
+    await poll(sourceCount).toBeGreaterThan(0)
+    expect(await sourceCount()).toBeLessThanOrEqual(300)
+    await expect(
+      page
+        .getByRole('region', { name: en.grid.title })
+        .getByRole('button', { name: en.auth.retry, exact: true }),
+    ).toHaveCount(0)
   } finally {
     await page.unroute(viewRoute, forceStaleVersion)
   }
+  const observedConflicts = [...queryConflicts]
+  expect(await Promise.all(observedConflicts)).toEqual(
+    observedConflicts.map(() => 'ERR_SCHEMA_CHANGED'),
+  )
 })

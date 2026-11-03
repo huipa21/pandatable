@@ -151,6 +151,82 @@ it('lists fields in position order with badges and gives readers no mutation con
   }
 })
 
+it('searches and toggles visible fields in the compact menu without exposing system fields by default', async () => {
+  stubFetch()
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: schema(),
+      menu: true,
+      columns: [
+        { id: 'name', visible: true },
+        { id: 'qty', visible: true },
+        { id: 'status', visible: false },
+        { id: 'sys', visible: false },
+      ],
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    expect(wrapper.find('[data-field-id="sys"]').exists()).toBe(false)
+    await wrapper.get('input[type="search"]').setValue('qty')
+    expect(wrapper.findAll('.field-name').map((item) => item.text())).toEqual([
+      'Qty',
+    ])
+    await wrapper.get('input[aria-label="Show Qty"]').setValue(false)
+    expect(wrapper.emitted('visibility')).toEqual([['qty', false]])
+    await wrapper.get('input[type="search"]').setValue('')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'System fields')!
+      .trigger('click')
+    expect(wrapper.find('[data-field-id="sys"]').exists()).toBe(true)
+    await wrapper.get('input[aria-label="Show Created time"]').setValue(true)
+    expect(wrapper.emitted('visibility')?.at(-1)).toEqual(['sys', true])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('keeps new-field defaults and descriptions optional and saves their values', async () => {
+  const next = { ...schema(), schemaVersion: 2 }
+  const { calls } = stubFetch(
+    Response.json(
+      { field: next.fields[0], schema: next, eventId: 'e' },
+      { status: 201 },
+    ),
+  )
+  const wrapper = mount(FieldPanel, {
+    props: { schema: schema(), menu: true },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    await buttonByText(wrapper, 'Add field').trigger('click')
+    const dialog = wrapper.get('dialog.field-dialog')
+    expect(dialog.get('.field-default').attributes('open')).toBeUndefined()
+    expect(
+      dialog.get('.field-description-editor').attributes('open'),
+    ).toBeUndefined()
+    await dialog.get('input').setValue('Notes')
+    await dialog.get('select').setValue('long_text')
+    await dialog.get('.field-default summary').trigger('click')
+    await dialog.get('.field-default input').setValue('Default note')
+    await dialog.get('.field-description-editor summary').trigger('click')
+    await dialog.get('.field-description-editor textarea').setValue('Details')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    expect(JSON.parse(String(calls()[0]![1].body))).toMatchObject({
+      name: 'Notes',
+      uiType: 'long_text',
+      default: 'Default note',
+      description: 'Details',
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('creates a select field with canonical options and a label default, then applies the returned schema', async () => {
   const next = { ...schema(), schemaVersion: 2 }
   const { calls } = stubFetch(
