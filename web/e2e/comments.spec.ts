@@ -146,6 +146,9 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
         .click()
     }
     const aliceDialog = page.locator('dialog.row-expand')
+    await aliceDialog
+      .getByRole('tab', { name: en.comments.title, exact: true })
+      .click()
     const draft = aliceDialog.getByLabel(en.comments.compose, { exact: true })
     await draft.fill('@bo')
     const choices = aliceDialog.locator('[role="option"]')

@@ -23,8 +23,32 @@ const paths = {
   chevronRight: ['M9 6l6 6-6 6'],
   plus: ['M12 5v14M5 12h14'],
   more: ['M5 12h.01M12 12h.01M19 12h.01'],
+  fields: ['M4 6h.01M4 12h.01M4 18h.01', 'M8 6h12M8 12h12M8 18h12'],
+  trash: ['M4 7h16M9 4h6M6 7l1 13h10l1-13M10 11v6M14 11v6'],
+  expand: ['M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7'],
+  fullscreen: ['M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4'],
+  close: ['M6 6l12 12M18 6L6 18'],
+  duplicate: ['M9 9h11v11H9z', 'M15 9V4H4v11h5'],
+  chevronUp: ['M6 15l6-6 6 6'],
+  comments: ['M4 4h16v12H9l-5 4z'],
+  history: ['M4 8a9 9 0 1 1-1 8M4 3v5h5', 'M12 7v5l3 2'],
+  compact: ['M4 5h16M4 9h16M4 13h16M4 17h16'],
+  edit: ['M4 20l1-5L16 4l4 4L9 19zM14 6l4 4'],
+  calendar: ['M4 6h16v14H4zM8 3v6M16 3v6M4 11h16'],
+  clock: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2'],
+  check: ['M4 4h16v16H4zM8 12l3 3 5-6'],
+  link: ['M10 8l2-2a4 4 0 0 1 6 6l-2 2M14 16l-2 2a4 4 0 0 1-6-6l2-2M9 15l6-6'],
 } as const
 export type IconName = keyof typeof paths
+export function fieldIconName(kind: string): IconName {
+  if (kind === 'date' || kind.endsWith('_at') || kind === 'datetime')
+    return 'calendar'
+  if (kind === 'time') return 'clock'
+  if (kind === 'checkbox') return 'check'
+  if (kind === 'link' || kind === 'url') return 'link'
+  if (kind.includes('select') || kind.includes('array')) return 'fields'
+  return 'view'
+}
 </script>
 
 <template>

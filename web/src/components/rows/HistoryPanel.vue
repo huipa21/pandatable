@@ -12,6 +12,7 @@ import type {
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore } from '../../stores/realtime'
+import AppIcon, { fieldIconName } from '../AppIcon.vue'
 
 const props = defineProps<{
   tableId: string
@@ -228,6 +229,9 @@ onBeforeUnmount(() => {
     <p v-if="!loading && !error && !items.length">{{ t('history.empty') }}</p>
     <section v-for="group in groups" :key="group.key" class="history-group">
       <div class="history-meta">
+        <span class="history-avatar" aria-hidden="true">{{
+          group.author.slice(0, 2).toLocaleUpperCase(locale)
+        }}</span>
         <strong>{{ group.author }}</strong>
         <time :datetime="group.createdAt">{{
           timestamp(group.createdAt)
@@ -242,14 +246,31 @@ onBeforeUnmount(() => {
           <strong>{{ actionLabel(item.action) }}</strong>
           <dl>
             <template v-for="(change, id) in item.changes" :key="id">
-              <dt>{{ fieldLabel(id) }}</dt>
+              <dt>
+                <AppIcon
+                  :name="
+                    fieldIconName(
+                      fields.find((field) => field.id === id)?.uiType ?? '',
+                    )
+                  "
+                  :size="16"
+                />{{ fieldLabel(id) }}
+              </dt>
               <dd>
-                {{
+                <span class="history-transition">{{
                   t('history.transition', {
                     old: formatValue(change.o),
                     new: formatValue(change.n),
                   })
-                }}
+                }}</span>
+                <span aria-hidden="true" class="history-values">
+                  <del v-if="change.o !== undefined" class="history-old">{{
+                    formatValue(change.o)
+                  }}</del>
+                  <ins v-if="change.n !== undefined" class="history-new">{{
+                    formatValue(change.n)
+                  }}</ins>
+                </span>
               </dd>
             </template>
           </dl>
@@ -279,6 +300,45 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 16px;
+  align-items: center;
+}
+.history-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 12px;
+}
+.history-transition {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.history-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.history-old,
+.history-new {
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+}
+.history-old {
+  color: var(--highlight-red-2-text);
+  background: var(--highlight-red-2-bg);
+}
+.history-new {
+  color: var(--highlight-green-2-text);
+  background: var(--highlight-green-2-bg);
+  text-decoration: none;
 }
 ol {
   padding-left: 24px;
@@ -288,12 +348,19 @@ li {
 }
 dl {
   margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-surface);
 }
 dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
 }
 dd {
-  margin: 0 0 8px;
+  margin: 8px 0 16px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

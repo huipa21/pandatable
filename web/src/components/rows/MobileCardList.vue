@@ -573,6 +573,23 @@ watch(
 )
 defineExpose({
   refresh: () => refresh(),
+  navigateRow: async (id: string, direction: -1 | 1) => {
+    const window = groupedRows ?? remoteRows
+    const index = window?.indexOfRow(id) ?? -1
+    if (!window || index < 0)
+      throw new Error(t('rowExpand.navigationUnavailable'))
+    for (
+      let target = index + direction;
+      target >= 0 && target < window.total;
+      target += direction
+    ) {
+      if (!(await window.ensureLoaded(target)))
+        throw new Error(t('grid.loadError'))
+      const row = window.rowAt(target)
+      if (row) return row.id
+    }
+    return null
+  },
   exportQuery: (): ExportViewQuery => ({
     ...(override.value === null ? {} : { fieldIds: [...override.value] }),
     groupBy: [...groupBy.value],

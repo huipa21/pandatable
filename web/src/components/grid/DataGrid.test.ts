@@ -441,6 +441,27 @@ it('reports grid focus and clears it when focus leaves the grid', async () => {
   expect(setFocus).toHaveBeenLastCalledWith('t', null)
 })
 
+it('keeps row ordinals separate from bigint identity and exposes view-ordered navigation', async () => {
+  gridState.rowCount = 3
+  await mountGrid(schemaFor('text'))
+  const engine = wrapper!.findComponent({ name: 'RevoGrid' })
+  const source = engine.props('source') as {
+    __rowId: string
+    __rowNumber: number
+  }[]
+  expect(source.slice(0, 3).map((row) => row.__rowNumber)).toEqual([1, 2, 3])
+  expect(source[0]!.__rowId).toBe('9007199254740993')
+  expect((engine.props('columns') as { name: string }[])[0]!.name).toBe('#')
+  const grid = wrapper!.vm as unknown as {
+    navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
+  }
+  expect(await grid.navigateRow(source[0]!.__rowId, 1)).toBe(source[1]!.__rowId)
+  expect(await grid.navigateRow(source[0]!.__rowId, -1)).toBeNull()
+  await expect(grid.navigateRow('missing', 1)).rejects.toThrow(
+    'not in the loaded view',
+  )
+})
+
 it('keeps presence on a cell while its editor receives focus', async () => {
   await mountGrid(schemaFor('text'))
   const setFocus = vi.spyOn(useRealtimeStore(), 'setFocus')

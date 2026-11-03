@@ -81,9 +81,26 @@ const ImportDialog = defineAsyncComponent(
 const grid = ref<{
   refresh: () => Promise<void>
   exportQuery: () => ExportViewQuery
+  navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
 }>()
-const kanban = ref<{ refresh: () => Promise<void> }>()
-const gallery = ref<{ refresh: () => Promise<void> }>()
+const rowWorkspace = ref<HTMLElement>()
+const kanban = ref<{
+  refresh: () => Promise<void>
+  navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
+}>()
+const gallery = ref<{
+  refresh: () => Promise<void>
+  navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
+}>()
+const rowNavigator = computed(() =>
+  view.value?.type === 'grid'
+    ? grid.value?.navigateRow
+    : view.value?.type === 'kanban'
+      ? kanban.value?.navigateRow
+      : view.value?.type === 'gallery'
+        ? gallery.value?.navigateRow
+        : undefined,
+)
 
 function refreshVisibleRows() {
   void grid.value?.refresh()
@@ -1049,114 +1066,126 @@ onBeforeUnmount(() => {
           @update="applySchema"
           @reload="loadSchema(true)"
         />
-        <DataGrid
-          v-if="view?.type === 'grid' && desktop"
-          ref="grid"
-          :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
-          :schema="schema"
-          :view-id="view.id"
-          :identity="auth.user?.id ?? ''"
-          :filter="filterValue"
-          @schema-changed="loadSchema(true)"
-          @view-updated="
-            (updated) => {
-              if (schema)
-                schema.views = schema.views.map((item) =>
-                  item.id === updated.id ? updated : item,
-                )
-            }
-          "
-          @view-config-changed="
-            (config, hasLocalChanges) => {
-              localViewConfig = config
-              hasLocalViewChanges = hasLocalChanges
-            }
-          "
-          @expand="
-            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
-          "
-        />
-        <MobileCardList
-          v-else-if="view?.type === 'grid'"
-          ref="grid"
-          :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
-          :schema="schema"
-          :view-id="view.id"
-          :identity="auth.user?.id ?? ''"
-          :filter="filterValue"
-          @schema-changed="loadSchema(true)"
-          @expand="
-            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
-          "
-          @add="newRow = true"
-        >
-          <FieldPanel
+        <div ref="rowWorkspace" class="row-workspace">
+          <DataGrid
+            v-if="view?.type === 'grid' && desktop"
+            ref="grid"
+            :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
             :schema="schema"
-            @update="applySchema"
-            @reload="loadSchema(true)"
+            :view-id="view.id"
+            :identity="auth.user?.id ?? ''"
+            :filter="filterValue"
+            @schema-changed="loadSchema(true)"
+            @view-updated="
+              (updated) => {
+                if (schema)
+                  schema.views = schema.views.map((item) =>
+                    item.id === updated.id ? updated : item,
+                  )
+              }
+            "
+            @view-config-changed="
+              (config, hasLocalChanges) => {
+                localViewConfig = config
+                hasLocalViewChanges = hasLocalChanges
+              }
+            "
+            @expand="
+              (id) =>
+                router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+            "
           />
-        </MobileCardList>
-        <FormView
-          v-else-if="view?.type === 'form'"
-          :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
-          :schema="schema"
-          :view="view"
-          :identity="auth.user?.id ?? ''"
-          @schema-changed="loadSchema(true)"
-        />
-        <KanbanView
-          v-else-if="view?.type === 'kanban'"
-          ref="kanban"
-          :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
-          :schema="schema"
-          :view="view"
-          :identity="auth.user?.id ?? ''"
-          @schema-changed="loadSchema(true)"
-          @expand="
-            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
-          "
-        />
-        <GalleryView
-          v-else-if="view?.type === 'gallery'"
-          ref="gallery"
-          :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
-          :schema="schema"
-          :view="view"
-          :identity="auth.user?.id ?? ''"
-          @schema-changed="loadSchema(true)"
-          @expand="
-            (id) => router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
-          "
-        />
-        <RowExpandDialog
-          v-if="showRowDialog && view"
-          :schema="schema"
-          :view-id="view.id"
-          :row-id="
-            typeof route.params.rowId === 'string' ? route.params.rowId : null
-          "
-          :identity="auth.user?.id ?? ''"
-          :focus-comment="
-            typeof route.query.comment === 'string'
-              ? route.query.comment
-              : undefined
-          "
-          @close="
-            () => {
-              newRow = false
-              router.replace(`/t/${schema!.table.id}/v/${view!.id}`)
-            }
-          "
-          @saved="refreshVisibleRows"
-          @created="
-            (id) => {
-              newRow = false
-              refreshVisibleRows()
-              router.replace(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
-            }
-          "
-          @schema-changed="loadSchema(true)"
-        />
+          <MobileCardList
+            v-else-if="view?.type === 'grid'"
+            ref="grid"
+            :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
+            :schema="schema"
+            :view-id="view.id"
+            :identity="auth.user?.id ?? ''"
+            :filter="filterValue"
+            @schema-changed="loadSchema(true)"
+            @expand="
+              (id) =>
+                router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+            "
+            @add="newRow = true"
+          >
+            <FieldPanel
+              :schema="schema"
+              @update="applySchema"
+              @reload="loadSchema(true)"
+            />
+          </MobileCardList>
+          <FormView
+            v-else-if="view?.type === 'form'"
+            :key="`${schema.table.id}:${view.id}:${auth.user?.id ?? ''}`"
+            :schema="schema"
+            :view="view"
+            :identity="auth.user?.id ?? ''"
+            @schema-changed="loadSchema(true)"
+          />
+          <KanbanView
+            v-else-if="view?.type === 'kanban'"
+            ref="kanban"
+            :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
+            :schema="schema"
+            :view="view"
+            :identity="auth.user?.id ?? ''"
+            @schema-changed="loadSchema(true)"
+            @expand="
+              (id) =>
+                router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+            "
+          />
+          <GalleryView
+            v-else-if="view?.type === 'gallery'"
+            ref="gallery"
+            :key="`${schema.table.id}:${view.id}:${schema.schemaVersion}:${auth.user?.id ?? ''}`"
+            :schema="schema"
+            :view="view"
+            :identity="auth.user?.id ?? ''"
+            @schema-changed="loadSchema(true)"
+            @expand="
+              (id) =>
+                router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+            "
+          />
+          <RowExpandDialog
+            v-if="showRowDialog && view"
+            :schema="schema"
+            :view-id="view.id"
+            :row-id="
+              typeof route.params.rowId === 'string' ? route.params.rowId : null
+            "
+            :identity="auth.user?.id ?? ''"
+            :workspace="rowWorkspace"
+            :navigate-row="rowNavigator"
+            :focus-comment="
+              typeof route.query.comment === 'string'
+                ? route.query.comment
+                : undefined
+            "
+            @close="
+              () => {
+                newRow = false
+                router.replace(`/t/${schema!.table.id}/v/${view!.id}`)
+              }
+            "
+            @saved="refreshVisibleRows"
+            @navigate="
+              (id) =>
+                router.replace(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+            "
+            @created="
+              (id) => {
+                newRow = false
+                refreshVisibleRows()
+                router.replace(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
+              }
+            "
+            @schema-changed="loadSchema(true)"
+          />
+        </div>
       </template>
       <ImportDialog
         v-if="importOpen && (kind === 'book' || kind === 'table')"

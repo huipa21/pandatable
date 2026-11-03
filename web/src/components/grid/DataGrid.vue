@@ -870,6 +870,7 @@ const removeRealtimeListener = realtime.subscribe(
 
 interface GridModel {
   __rowId?: string
+  __rowNumber?: number
   __groupId?: string
   __commentCount?: number
   _hl_row?: HighlightColor
@@ -976,8 +977,8 @@ const columns = computed<ColumnRegular[]>(() => {
   const definitions: ColumnRegular[] = [
     {
       prop: '__selected',
-      name: '',
-      size: 80,
+      name: '#',
+      size: 104,
       pin: 'colPinStart',
       readonly: true,
       cellTemplate: (render, { model }) =>
@@ -985,18 +986,50 @@ const columns = computed<ColumnRegular[]>(() => {
           ? render(
               'span',
               {
-                class: 'grid-highlight-cell',
+                class: 'grid-highlight-cell grid-row-number-cell',
                 'data-row-highlight': rowHighlight(model),
               },
               [
                 render(
+                  'span',
+                  { class: 'grid-row-number' },
+                  String(model.__rowNumber ?? ''),
+                ),
+                render('input', {
+                  type: 'checkbox',
+                  checked: selectedRows.value.has(String(model.__rowId)),
+                  'aria-label': t('grid.selectRow', { id: model.__rowId }),
+                  onChange: (event: Event) =>
+                    selectRow(
+                      String(model.__rowId),
+                      (event.target as HTMLInputElement).checked,
+                    ),
+                }),
+                render(
                   'button',
                   {
                     type: 'button',
+                    class: 'grid-row-expand',
                     'aria-label': t('rowExpand.open', { id: model.__rowId }),
                     onClick: () => emit('expand', String(model.__rowId)),
                   },
-                  '\u2197',
+                  render(
+                    'svg',
+                    {
+                      width: 18,
+                      height: 18,
+                      viewBox: '0 0 24 24',
+                      fill: 'none',
+                      stroke: 'currentColor',
+                      'stroke-width': 2,
+                      'aria-hidden': 'true',
+                    },
+                    [
+                      render('path', {
+                        d: 'M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7',
+                      }),
+                    ],
+                  ),
                 ),
                 typeof model.__commentCount === 'number' &&
                 model.__commentCount > 0
@@ -1011,16 +1044,6 @@ const columns = computed<ColumnRegular[]>(() => {
                       String(model.__commentCount),
                     )
                   : null,
-                render('input', {
-                  type: 'checkbox',
-                  checked: selectedRows.value.has(String(model.__rowId)),
-                  'aria-label': t('grid.selectRow', { id: model.__rowId }),
-                  onChange: (event: Event) =>
-                    selectRow(
-                      String(model.__rowId),
-                      (event.target as HTMLInputElement).checked,
-                    ),
-                }),
               ],
             )
           : null,
@@ -1184,10 +1207,11 @@ const editors = computed(() =>
   ),
 )
 
-function modelFor(row: DataRow | null): GridModel {
+function modelFor(row: DataRow | null, index: number): GridModel {
   if (!row) return emptyModel
   return {
     __rowId: row.id,
+    __rowNumber: index + 1,
     __groupId: '',
     __commentCount: row.commentCount,
     ...(row._hl_row ? { _hl_row: row._hl_row } : {}),
@@ -1900,10 +1924,11 @@ function documentKeydown(event: KeyboardEvent) {
 function syncSource() {
   if (groupedMode.value) {
     groupNodes.clear()
+    let rowNumber = 0
     gridSource.value = groupedRows.entries.map((entry, index) =>
       entry.kind === 'group'
         ? modelForGroup(entry.group)
-        : modelFor(rows.rowAt(index)),
+        : modelFor(rows.rowAt(index), rowNumber++),
     )
     return
   }
@@ -1934,7 +1959,7 @@ function syncSource() {
     for (let index = start; index < end; index++) {
       const row = remoteRows.rowAt(index)
       if (syncedRows[index] === row) continue
-      source[index] = modelFor(row)
+      source[index] = modelFor(row, index)
       syncedRows[index] = row
       changed = true
     }
@@ -2344,6 +2369,21 @@ onMounted(() => {
 
 defineExpose({
   refresh: () => initialize(rows.snapshot().activePage * remotePageSize),
+  navigateRow: async (id: string, direction: -1 | 1) => {
+    const index = rows.indexOfRow(id)
+    if (index < 0) throw new Error(t('rowExpand.navigationUnavailable'))
+    for (
+      let target = index + direction;
+      target >= 0 && target < rows.total;
+      target += direction
+    ) {
+      if (!(await rows.ensureLoaded(target)))
+        throw new Error(t('grid.loadError'))
+      const row = rows.rowAt(target)
+      if (row) return row.id
+    }
+    return null
+  },
   exportQuery: (): ExportViewQuery => ({
     fieldIds: [...visibleFieldIds.value],
     sorts: sortCriteria.value.map((sort) => ({ ...sort })),

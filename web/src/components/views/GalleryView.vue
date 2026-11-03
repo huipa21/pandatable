@@ -271,7 +271,21 @@ onBeforeUnmount(() => {
   readController?.abort()
 })
 
-defineExpose({ refresh })
+defineExpose({
+  refresh,
+  navigateRow: async (id: string, direction: -1 | 1) => {
+    const index = rows.value.findIndex((row) => row.id === id)
+    if (index < 0) throw new Error(t('rowExpand.navigationUnavailable'))
+    const adjacent = rows.value[index + direction]
+    if (adjacent) return adjacent.id
+    const target = page.value + direction
+    if (target < 0 || target >= pageCount.value) return null
+    page.value = target
+    await refresh()
+    if (loadError.value) throw new Error(loadError.value)
+    return (direction === 1 ? rows.value[0] : rows.value.at(-1))?.id ?? null
+  },
+})
 </script>
 
 <template>

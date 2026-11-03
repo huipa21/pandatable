@@ -9,6 +9,7 @@
   --muted: #637870;
   --border: #dce6df;
   --accent: #25836b;
+  --panel-surface: #fff;
   --highlight-red-2-bg: #fee2e2;
   --highlight-red-2-text: #7f1d1d;
   --highlight-orange-2-bg: #ffedd5;
@@ -30,6 +31,7 @@
   --muted: #9fb3a7;
   --border: #33433a;
   --accent: #79c9a7;
+  --panel-surface: #202a26;
   --highlight-red-2-bg: #5c252b;
   --highlight-red-2-text: #fee2e2;
   --highlight-orange-2-bg: #5b351e;
@@ -832,6 +834,17 @@ dialog::backdrop {
   font: inherit;
 }
 
+.grid-row-number-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.grid-row-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .resource-page h1 {
   overflow-wrap: anywhere;
 }

@@ -60,6 +60,158 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/home$/)
 }
 
+test('row workspace controls, overlays and unsaved duplication persist only on confirmation', async ({
+  page,
+  isMobile,
+}) => {
+  await login(page)
+  const h = headers()
+  const workspace = await page.request.post('/api/v1/workspaces', {
+    headers: h,
+    data: { name: `Popup ${Date.now()}` },
+  })
+  expect(workspace.status()).toBe(201)
+  const wid = (await workspace.json()).workspace.id as string
+  const book = await page.request.post(`/api/v1/workspaces/${wid}/books`, {
+    headers: h,
+    data: { name: 'Popup book' },
+  })
+  expect(book.status()).toBe(201)
+  const bid = (await book.json()).book.id as string
+  const table = await page.request.post(`/api/v1/books/${bid}/tables`, {
+    headers: h,
+    data: { name: 'Popup table' },
+  })
+  expect(table.status()).toBe(201)
+  const tid = (await table.json()).table.id as string
+  const schemaResponse = await page.request.get(`/api/v1/tables/${tid}/schema`)
+  const schema = (await schemaResponse.json()) as TableSchema
+  const name = schema.fields.find((field) => !field.isSystem)!
+  const viewId = schema.views[0]!.id
+  const inserted = await page.request.post(`/api/v1/tables/${tid}/rows`, {
+    headers: h,
+    data: {
+      rows: [
+        { fields: { [name.id]: 'First entry' } },
+        { fields: { [name.id]: 'Second entry' } },
+      ],
+    },
+  })
+  expect(inserted.status()).toBe(201)
+  const originals = (await inserted.json()).rows as DataRow[]
+  const base = `/t/${tid}/v/${viewId}`
+  const queryRows = async () => {
+    const result = await page.request.post(`/api/v1/views/${viewId}/query`, {
+      headers: h,
+      data: { limit: 100 },
+    })
+    expect(result.status()).toBe(200)
+    return (await result.json()).rows as DataRow[]
+  }
+  await page.goto(base)
+  if (isMobile)
+    await page
+      .locator(`[data-row-id="${originals[0]!.id}"] button.mobile-card`)
+      .click()
+  else {
+    await expect(page.locator('.grid-row-number').first()).toHaveText('1')
+    await expect(
+      page
+        .locator('revo-grid')
+        .getByRole('columnheader', { name: 'ID', exact: true }),
+    ).toHaveCount(0)
+    await page
+      .getByRole('button', {
+        name: en.rowExpand.open.replace('{id}', originals[0]!.id),
+        exact: true,
+      })
+      .click()
+  }
+  const dialog = page.locator('dialog.row-expand')
+  await expect(dialog.locator('header h2')).toHaveText('First entry')
+  const search = dialog.getByRole('searchbox', {
+    name: en.rowExpand.search,
+    exact: true,
+  })
+  await search.fill('Name')
+  await expect(dialog.locator('.row-field')).toHaveCount(1)
+  await search.fill('')
+  await expect(dialog.locator('.row-field')).toHaveCount(schema.fields.length)
+  await dialog
+    .getByRole('button', { name: en.rowExpand.compact, exact: true })
+    .click()
+  await expect(dialog).toHaveClass(/row-expand-compact/)
+  for (const label of [en.comments.title, en.history.title]) {
+    await dialog.getByRole('tab', { name: label, exact: true }).click()
+    await expect(dialog.locator('.row-form')).not.toBeVisible()
+    await dialog
+      .getByRole('button', { name: en.rowExpand.returnToFields, exact: true })
+      .click()
+    await expect(dialog.locator('.row-form')).toBeVisible()
+  }
+  if (!isMobile) {
+    await dialog
+      .getByRole('button', { name: en.rowExpand.fullscreen, exact: true })
+      .click()
+    const area = await page.locator('.row-workspace').boundingBox()
+    const popup = await dialog.boundingBox()
+    expect(area).not.toBeNull()
+    expect(popup).not.toBeNull()
+    for (const key of ['x', 'y', 'width', 'height'] as const)
+      expect(Math.abs(area![key] - popup![key])).toBeLessThan(2)
+    await dialog
+      .getByRole('button', { name: en.rowExpand.fullscreen, exact: true })
+      .click()
+  }
+  await dialog
+    .getByRole('button', { name: en.rowExpand.next, exact: true })
+    .click()
+  await expect(dialog.locator('header h2')).toHaveText('Second entry')
+  await dialog
+    .getByRole('button', { name: en.rowExpand.previous, exact: true })
+    .click()
+  await expect(dialog.locator('header h2')).toHaveText('First entry')
+  await dialog
+    .getByRole('button', { name: en.rowExpand.duplicate, exact: true })
+    .click()
+  expect(await queryRows()).toHaveLength(2)
+  const field = dialog.locator(`[data-field-id="${name.id}"]`)
+  await field.getByRole('button').click()
+  await field.locator('.field-editor input').fill('Draft copy')
+  await field
+    .getByRole('button', { name: en.field.editor.apply, exact: true })
+    .click()
+  expect(await queryRows()).toHaveLength(2)
+  await dialog
+    .getByRole('button', { name: en.rowExpand.saveDuplicate, exact: true })
+    .click()
+  await expect(dialog.locator('.create-row')).toHaveCount(0)
+  const rows = await queryRows()
+  expect(rows).toHaveLength(3)
+  const copy = rows.find((row) => row.fields[name.id] === 'Draft copy')!
+  expect(originals.map((row) => row.id)).not.toContain(copy.id)
+  await dialog
+    .getByRole('button', { name: en.rowExpand.delete, exact: true })
+    .click()
+  const confirmation = page.locator('.row-delete-dialog')
+  await expect(confirmation).toBeVisible()
+  expect(await queryRows()).toHaveLength(3)
+  await confirmation
+    .getByRole('button', { name: en.admin.cancel, exact: true })
+    .click()
+  expect(await queryRows()).toHaveLength(3)
+  await dialog
+    .getByRole('button', { name: en.rowExpand.delete, exact: true })
+    .click()
+  await confirmation
+    .getByRole('button', { name: en.rowExpand.delete, exact: true })
+    .click()
+  await expect(dialog).toHaveCount(0)
+  expect((await queryRows()).map((row) => row.id)).toEqual(
+    originals.map((row) => row.id),
+  )
+})
+
 test('AT-310 real row expand, exact editors, deep links, ACL and stale responses', async ({
   page,
   browser,
@@ -327,7 +479,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     .click()
   await expect(
     dialog.getByRole('heading', {
-      name: zh.rowExpand.title.replace('{id}', row.id),
+      name: 'Row 中文',
       exact: true,
     }),
   ).toBeVisible()

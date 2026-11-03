@@ -115,6 +115,167 @@ it('reports field focus in the row dialog and clears it on blur', async () => {
   expect(setFocus).toHaveBeenLastCalledWith('t', null)
 })
 
+it('uses column one as the title and searches every field by name and displayed value', async () => {
+  const schema = tableSchema()
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'notes',
+    name: 'Notes',
+    position: 2048,
+  })
+  stored.fields.notes = 'Hidden column content'
+  const { wrapper } = await setup(schema)
+  expect(wrapper.get('header h2').text()).toBe('Original')
+  await wrapper.get('.row-search input').setValue('hidden COLUMN')
+  expect(
+    wrapper
+      .findAll('.row-field')
+      .map((field) => field.attributes('data-field-id')),
+  ).toEqual(['notes'])
+  await wrapper.get('.row-search input').setValue('name')
+  expect(wrapper.findAll('.row-field')).toHaveLength(1)
+  await wrapper.get('.row-search input').setValue('missing')
+  expect(wrapper.text()).toContain('No matching fields.')
+})
+
+it('overlays comments and history, returns to fields, and preserves the active draft', async () => {
+  const { wrapper } = await setup()
+  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.field-editor input').setValue('Unsaved')
+  await wrapper.get('[id^="row-comments-tab"]').trigger('click')
+  expect(wrapper.get('.row-form').isVisible()).toBe(false)
+  expect(wrapper.get('[id^="row-comments-panel"]').isVisible()).toBe(true)
+  await wrapper.get('[aria-label="Return to row fields"]').trigger('click')
+  expect(wrapper.get('.row-form').isVisible()).toBe(true)
+  expect(
+    (wrapper.get('.field-editor input').element as HTMLInputElement).value,
+  ).toBe('Unsaved')
+  await wrapper.get('[id^="row-comments-tab"]').trigger('click')
+  await wrapper.get('dialog.row-expand').trigger('cancel')
+  expect(wrapper.get('.row-form').isVisible()).toBe(true)
+  expect(wrapper.emitted('close')).toBeUndefined()
+})
+
+it('opens notification deep links directly in the comments overlay', async () => {
+  const { wrapper } = await setup()
+  await wrapper.setProps({ focusComment: 'comment-1' })
+  expect(
+    wrapper.get('[id^="row-comments-tab"]').attributes('aria-selected'),
+  ).toBe('true')
+  expect(wrapper.get('.row-form').isVisible()).toBe(false)
+})
+
+it('toggles compact presentation and fullscreen only inside the table workspace', async () => {
+  const { wrapper } = await setup()
+  const workspace = document.createElement('div')
+  vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
+    new DOMRect(220, 120, 900, 500),
+  )
+  await wrapper.setProps({ workspace })
+  await wrapper.get('[aria-label="Toggle compact view"]').trigger('click')
+  expect(wrapper.get('dialog.row-expand').classes()).toContain(
+    'row-expand-compact',
+  )
+  await wrapper.get('[aria-label="Toggle table fullscreen"]').trigger('click')
+  const dialog = wrapper.get('dialog.row-expand').element as HTMLDialogElement
+  expect([
+    dialog.style.left,
+    dialog.style.top,
+    dialog.style.width,
+    dialog.style.height,
+  ]).toEqual(['220px', '120px', '900px', '500px'])
+  await wrapper.get('[aria-label="Toggle table fullscreen"]').trigger('click')
+  expect(dialog.style.width).toBe('')
+})
+
+it('keeps duplication entirely local until Save duplicate and generates a new identity', async () => {
+  const schema = tableSchema()
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'id',
+    name: 'ID',
+    uiType: 'id',
+    isSystem: true,
+    position: 3,
+  })
+  stored.fields.id = id
+  const { wrapper, fetcher } = await setup(schema)
+  fetcher.mockClear()
+  await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(wrapper.text()).toContain('Unsaved duplicate')
+  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.field-editor input').setValue('Copied name')
+  await wrapper.get('.field-editor button').trigger('click')
+  expect(fetcher).not.toHaveBeenCalled()
+  fetcher.mockResolvedValueOnce(
+    Response.json({ rows: [{ id: '2', fields: { name: 'Copied name' } }] }),
+  )
+  await wrapper.get('.create-row').trigger('click')
+  await flushPromises()
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+    rows: [{ fields: { name: 'Copied name' } }],
+  })
+  expect(wrapper.emitted('created')).toEqual([['2']])
+})
+
+it('closing a duplicate never inserts a row', async () => {
+  const { wrapper, fetcher } = await setup()
+  fetcher.mockClear()
+  await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
+  await wrapper.get('[aria-label="Close row"]').trigger('click')
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(wrapper.emitted('close')).toHaveLength(1)
+})
+
+it('deletes only after confirmation and surfaces deletion failure without closing the row', async () => {
+  const { wrapper, fetcher } = await setup()
+  fetcher.mockClear()
+  await wrapper.get('.row-actions [aria-label="Delete row"]').trigger('click')
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(wrapper.get('.row-delete-dialog').attributes('open')).toBeDefined()
+  fetcher.mockResolvedValueOnce(
+    Response.json(
+      { error: { code: 'ERR_RESTRICT_VIOLATION' } },
+      { status: 409 },
+    ),
+  )
+  await wrapper.get('.row-delete-dialog button').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).not.toBe('')
+  expect(wrapper.emitted('close')).toBeUndefined()
+  fetcher.mockResolvedValueOnce(Response.json({ rows: [stored] }))
+  await wrapper.get('.row-actions [aria-label="Delete row"]').trigger('click')
+  await wrapper.get('.row-delete-dialog button').trigger('click')
+  await flushPromises()
+  expect(fetcher.mock.calls.at(-1)?.[1]?.method).toBe('DELETE')
+  expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({
+    ids: [id],
+  })
+  expect(wrapper.emitted('saved')).toHaveLength(1)
+  expect(wrapper.emitted('close')).toHaveLength(1)
+})
+
+it('navigates by row identity, reports boundaries and disables navigation during edits', async () => {
+  const { wrapper } = await setup()
+  const navigateRow = vi
+    .fn()
+    .mockResolvedValueOnce('2')
+    .mockResolvedValueOnce(null)
+  await wrapper.setProps({ navigateRow })
+  await wrapper.get('[aria-label="Next row"]').trigger('click')
+  await flushPromises()
+  expect(navigateRow).toHaveBeenCalledWith(id, 1)
+  expect(wrapper.emitted('navigate')).toEqual([['2']])
+  await wrapper.get('[aria-label="Previous row"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('This is the first row.')
+  await wrapper.get('.row-field button').trigger('click')
+  expect(
+    wrapper.get('[aria-label="Next row"]').attributes('disabled'),
+  ).toBeDefined()
+})
+
 it('opens the localized History tab with keyboard navigation', async () => {
   const fetcher = vi.fn(async (url: string) => {
     if (url.endsWith('/history'))
@@ -135,18 +296,27 @@ it('opens the localized History tab with keyboard navigation', async () => {
   })
   const { wrapper } = await setup(tableSchema(), fetcher)
   const tabs = wrapper.findAll('[role="tab"]')
-  expect(tabs.map((tab) => tab.text())).toEqual(['Details', 'History'])
+  expect(tabs.map((tab) => tab.text())).toEqual([
+    'Details',
+    'Comments',
+    'History',
+  ])
   expect(tabs[0]!.attributes('aria-selected')).toBe('true')
   await wrapper
     .get('[role="tablist"]')
     .trigger('keydown', { key: 'ArrowRight' })
-  await flushPromises()
   expect(tabs[1]!.attributes('aria-selected')).toBe('true')
+  await wrapper
+    .get('[role="tablist"]')
+    .trigger('keydown', { key: 'ArrowRight' })
+  await flushPromises()
+  expect(tabs[2]!.attributes('aria-selected')).toBe('true')
   expect(wrapper.get('.history').text()).toContain('Original → Changed')
   expect(wrapper.get('.history').text()).toContain('Alice')
   i18n.global.locale.value = 'zh-CN'
   await flushPromises()
   expect(wrapper.get('.history').text()).toContain('历史记录')
+  await wrapper.get('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
   await wrapper.get('[role="tablist"]').trigger('keydown', { key: 'ArrowLeft' })
   expect(tabs[0]!.attributes('aria-selected')).toBe('true')
 })
@@ -354,7 +524,7 @@ it('omits untouched defaults, permits explicit null, and preserves drafts after 
   const { wrapper } = await setup(schema, fetcher, null)
   expect(wrapper.text()).toContain('Default name')
   await wrapper.get('.row-field button').trigger('click')
-  await wrapper.get('input').setValue('')
+  await wrapper.get('.field-editor input').setValue('')
   await wrapper.get('.field-editor button').trigger('click')
   await wrapper.get('.create-row').trigger('click')
   await flushPromises()
@@ -365,7 +535,9 @@ it('omits untouched defaults, permits explicit null, and preserves drafts after 
   expect(wrapper.get('[role="alert"]').text()).toContain('required field')
   expect(wrapper.text()).toContain('Creation has not been confirmed')
   await wrapper.get('.row-field button').trigger('click')
-  expect((wrapper.get('input').element as HTMLInputElement).value).toBe('')
+  expect(
+    (wrapper.get('.field-editor input').element as HTMLInputElement).value,
+  ).toBe('')
 })
 
 it.each(['view', 'schema', 'identity', 'permission', 'close'])(
@@ -414,7 +586,8 @@ it.each(['checkbox', 'single_select', 'multi_select'])(
     stored.fields.name = kind === 'checkbox' ? false : null
     const { wrapper } = await setup(schema)
     await wrapper.get('.row-field button').trigger('click')
-    if (kind === 'checkbox') await wrapper.get('input').setValue(true)
+    if (kind === 'checkbox')
+      await wrapper.get('.field-editor input').setValue(true)
     else
       await wrapper
         .get('select')
@@ -550,7 +723,7 @@ it('keeps failed writes explicit, preserves the editor, and never reports succes
   )
   const { wrapper } = await setup(tableSchema(), fetcher)
   await wrapper.get('.row-field button').trigger('click')
-  await wrapper.get('input').setValue('Conflict')
+  await wrapper.get('.field-editor input').setValue('Conflict')
   await wrapper.get('.field-editor button').trigger('click')
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).toContain('unique field')
@@ -687,7 +860,7 @@ it('ignores a late successful PATCH on row and identity changes', async () => {
   })
   const { wrapper } = await setup(tableSchema(), fetcher)
   await wrapper.get('.row-field button').trigger('click')
-  await wrapper.get('input').setValue('Late secret')
+  await wrapper.get('.field-editor input').setValue('Late secret')
   await wrapper.get('.field-editor button').trigger('click')
   await wrapper.setProps({ rowId: '2' })
   useAuthStore().setUser({ ...navUser, id: 'other' })
@@ -700,8 +873,8 @@ it('ignores a late successful PATCH on row and identity changes', async () => {
 it('cancels the current draft and closes with native Escape cancellation', async () => {
   const { wrapper, fetcher } = await setup()
   await wrapper.get('.row-field button').trigger('click')
-  await wrapper.get('input').setValue('Unsaved')
-  await wrapper.get('input').trigger('keydown', { key: 'Escape' })
+  await wrapper.get('.field-editor input').setValue('Unsaved')
+  await wrapper.get('.field-editor input').trigger('keydown', { key: 'Escape' })
   expect(wrapper.find('.field-editor').exists()).toBe(false)
   await wrapper.get('dialog').trigger('cancel')
   expect(wrapper.emitted('close')).toHaveLength(1)
@@ -721,7 +894,7 @@ it.each(['table', 'view', 'schema', 'permission', 'identity', 'unmount'])(
     })
     const { wrapper } = await setup(tableSchema(), fetcher)
     await wrapper.get('.row-field button').trigger('click')
-    await wrapper.get('input').setValue('Late secret')
+    await wrapper.get('.field-editor input').setValue('Late secret')
     await wrapper.get('.field-editor button').trigger('click')
     if (change === 'table')
       await wrapper.setProps({

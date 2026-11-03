@@ -445,6 +445,27 @@ and FieldPanel mounted. Closing replaces the URL with the containing view;
 browser Back/Forward and direct reload use the same schema-authorized route.
 
 The dialog reads the full row, not just visible columns or cached page values.
+The pinned `#` grid gutter is a view-position ordinal, not the database ID;
+the unique system ID stays hidden by default. The gutter contains selection
+and a labeled expand icon. The popup heading uses the first non-system field
+in metadata order (D-211), with a localized fallback for blank primary values.
+Search beneath the heading matches all field names and formatted values.
+Normal mode uses bordered field values; compact mode removes those borders.
+Comments and history replace the form area, never sit beside it. Their close
+control or Escape returns to the preserved form. Notification links open the
+comments overlay directly. Fullscreen fills only the table workspace and tracks
+its resize/scroll geometry.
+
+Previous/next use the active view order and existing paging; boundaries are
+reported, and controls are disabled while editing, saving, or duplicating.
+Rows outside the loaded view report unavailable navigation. Kanban navigation
+is limited to currently displayed cards. Writers can duplicate editable values
+into a local draft and explicitly save a new identity; system, computed and
+relation fields are not copied, and unique values must be reviewed. Closing
+discards the duplicate without an insert. Deletion requires confirmation and
+records restore snapshots for undo. History displays author avatars, timestamps,
+field cards, removed values in red and added values in green.
+
 All live fields are listed in metadata order; system fields use read-only
 renderers, and authorship stays an unresolved UUID (no sharing-directory lookup).
 Readers have no edit controls. Writers/owners edit one field at a time with the
@@ -464,7 +485,7 @@ cancellation. Identical schema refreshes do not restart failed row reads.
 Locale/theme changes stay reactive; the dialog is viewport-bounded and native
 focus trapping/Escape work without a new dependency. T1.19 adds cards,
 full-screen row layout and FAB as described in section 5; T3.3 adds comments as
-described below. Row history remains deferred.
+described below. Row history uses the field-change overlay described above.
 
 ### T3.3 comments and notifications (D-185)
 

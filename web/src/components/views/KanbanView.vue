@@ -542,7 +542,17 @@ onBeforeUnmount(() => {
   unsubscribe()
 })
 
-defineExpose({ refresh })
+defineExpose({
+  refresh,
+  navigateRow: async (id: string, direction: -1 | 1) => {
+    const rows = visibleColumns.value.flatMap(
+      (column) => rowsByColumn.value[column.key] ?? [],
+    )
+    const index = rows.findIndex((row) => row.id === id)
+    if (index < 0) throw new Error(t('rowExpand.navigationUnavailable'))
+    return rows[index + direction]?.id ?? null
+  },
+})
 </script>
 
 <template>

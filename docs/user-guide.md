@@ -81,6 +81,17 @@ to your access. Other participants' row changes refresh the gallery.
 
 ### 5. Collaborate
 
+The grid's **#** column is the row position, not its unique database ID (hidden
+by default). Use its expand icon to open a row. The first data column supplies
+the popup title. Search fields by name or value, toggle normal/compact layout,
+or expand the popup to fill only the table area. Up/down navigate in view order
+(Kanban uses displayed cards). Finish an active edit before navigating.
+**Duplicate row** creates an unsaved draft: review unique values and choose
+**Save duplicate** to insert it. System, calculated and linked fields are not
+copied. Closing the draft inserts nothing. **Delete row** asks for confirmation
+and supports Undo. Comments/history icons open overlays; their close button or
+Escape returns to the row fields without discarding an active field edit.
+
 Table presence shows other participants and their focused cells. Open a row to
 see **Comments** and **History**. In a comment, type `@`, select an accessible
 user, and choose **Post comment**. The recipient can open notifications from the
@@ -180,6 +191,13 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 **打开行**，根据权限查看或编辑记录。其他参与者的行更改会刷新画廊。
 
 ### 5. 协作
+
+网格的 **#** 列表示行位置，不是默认隐藏的唯一数据库 ID。点击展开图标可打开行，
+首个数据列用作弹窗标题。可按字段名称或值搜索、切换普通/紧凑布局，或仅在数据表
+区域内全屏。上下箭头按视图顺序导航（看板仅导航当前显示的卡片），导航前请完成
+当前编辑。**复制行**创建未保存的草稿，检查唯一字段后点击**保存副本**才会插入；
+系统、计算和关联字段不会复制，关闭草稿不会插入。**删除行**需要确认并支持撤销。
+评论和历史记录以覆盖层显示，点击关闭或按 Escape 返回字段，并保留当前字段草稿。
 
 数据表的在线状态会显示其他参与者及其聚焦的单元格。打开一行可查看**评论**和
 **历史记录**。在评论中输入 `@`，选择有访问权限的用户，然后选择**发表评论**。
