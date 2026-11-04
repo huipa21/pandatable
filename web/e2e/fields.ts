@@ -225,6 +225,7 @@ export async function verifyFields(owner: Page, tid: string) {
   await editor
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill('name')
+  await editor.locator('[data-kind="text"]').click()
   await editor
     .getByRole('button', { name: en.field.panel.create, exact: true })
     .click()

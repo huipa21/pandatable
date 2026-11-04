@@ -47,9 +47,7 @@ async function addAttachmentField(
   await dialog
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill(name)
-  await dialog
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption('attachment')
+  await dialog.locator('[data-kind="attachment"]').click()
   await dialog
     .getByRole('textbox', {
       name: en.field.panel.attachmentMaxFiles,

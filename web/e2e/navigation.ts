@@ -135,9 +135,7 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
   await fieldDialog
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill('Email')
-  await fieldDialog
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption('email')
+  await fieldDialog.locator('[data-kind="email"]').click()
   await fieldDialog
     .getByRole('button', { name: en.field.panel.create, exact: true })
     .click()
@@ -155,9 +153,7 @@ export async function verifyDataGrid(owner: Page, tid: string, viewId: string) {
   await noteDialog
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill('Note')
-  await noteDialog
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption('long_text')
+  await noteDialog.locator('[data-kind="long_text"]').click()
   await noteDialog
     .getByRole('button', { name: en.field.panel.create, exact: true })
     .click()
