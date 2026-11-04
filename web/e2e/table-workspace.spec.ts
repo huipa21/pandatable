@@ -88,9 +88,7 @@ test('new table uses a compact, working field and filter toolbar', async ({
   })
   await expect(editor).toBeVisible()
   await editor.getByLabel(en.field.panel.name, { exact: true }).fill('Notes')
-  await editor
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption('long_text')
+  await editor.locator('[data-kind="long_text"]').click()
   await editor.getByText(en.field.panel.setDefault, { exact: true }).click()
   await editor
     .getByLabel(en.field.panel.defaultValue, { exact: true })
