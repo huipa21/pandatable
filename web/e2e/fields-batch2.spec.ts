@@ -82,9 +82,7 @@ async function addField(page: Page, spec: FieldSpec) {
   await editor
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill(spec.name)
-  await editor
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption(spec.kind)
+  await editor.locator(`[data-kind="${spec.kind}"]`).click()
   if (spec.maxLength !== undefined)
     await editor
       .getByRole('textbox', { name: en.field.panel.maxLength, exact: true })

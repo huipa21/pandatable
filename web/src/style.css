@@ -944,7 +944,7 @@ dialog::backdrop {
 }
 
 .field-dialog {
-  width: min(560px, calc(100vw - 24px));
+  width: min(480px, calc(100vw - 24px));
   max-height: calc(100dvh - 24px);
   color: var(--text);
   background: var(--surface);
@@ -1090,17 +1090,82 @@ dialog::backdrop {
   color: var(--accent);
 }
 
-.field-extra-actions {
-  padding: 0 14px 12px;
+.field-computed-columns,
+.field-relation-types {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
 }
 
-.field-extra-actions summary {
+.field-relation-types {
+  padding: 0;
+  border: 0;
+}
+
+.field-relation-types legend {
+  margin-bottom: 8px;
+}
+
+.field-dialog .field-relation-types label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.field-relation-types label.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.field-relation-types span {
+  flex: 1;
+}
+
+.field-dialog .field-relation-types input[type='radio'] {
+  width: 16px;
+  min-height: 16px;
+  flex: 0 0 16px;
+  accent-color: var(--accent);
+}
+
+.field-advanced-settings > summary {
+  padding: 8px 0;
   color: var(--muted);
   cursor: pointer;
 }
 
-.field-extra-actions .field-panel-actions {
-  margin-top: 10px;
+.field-advanced-settings > label {
+  margin-top: 12px;
+}
+
+.formula-suggestions {
+  display: grid;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.resource-page .formula-suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  text-align: start;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.resource-page .formula-suggestions button:hover {
+  background: var(--surface-hover);
 }
 
 .field-panel-menu .field-dialog {
@@ -1170,6 +1235,10 @@ dialog::backdrop {
 }
 
 @media (max-width: 767px) {
+  .field-computed-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .field-dialog button,
   .field-dialog select,
   .field-dialog input:not([type='checkbox']) {

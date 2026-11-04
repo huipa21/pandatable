@@ -73,9 +73,7 @@ async function addComputedFromUI(
 ) {
   await page.goto(`/t/${schema.table.id}/v/${schema.views[0]!.id}`)
   const panel = await openFieldTypeActions(page)
-  const button =
-    kind === 'lookup' ? en.field.panel.addLookup : en.field.panel.addRollup
-  await panel.getByRole('button', { name: button, exact: true }).click()
+  await panel.locator(`[data-kind="${kind}"]`).click()
   const dialog = page.getByRole('dialog', {
     name: en.field.panel.computedTitle,
     exact: true,
@@ -104,7 +102,7 @@ async function addComputedFromUI(
       })
       .selectOption('sum')
   await dialog
-    .getByRole('button', { name: en.relation.create, exact: true })
+    .getByRole('button', { name: en.field.panel.create, exact: true })
     .click()
   await expect(dialog).not.toBeVisible()
 }

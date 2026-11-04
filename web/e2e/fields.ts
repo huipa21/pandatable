@@ -111,9 +111,7 @@ export async function verifyFields(owner: Page, tid: string) {
   await editor
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill('Qty')
-  await editor
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption('integer')
+  await editor.locator('[data-kind="integer"]').click()
   await editor
     .getByRole('checkbox', { name: en.field.panel.required, exact: true })
     .check()
@@ -154,9 +152,7 @@ export async function verifyFields(owner: Page, tid: string) {
   await editor
     .getByRole('textbox', { name: en.field.panel.name, exact: true })
     .fill('Stage')
-  await editor
-    .getByRole('combobox', { name: en.field.panel.kind, exact: true })
-    .selectOption('single_select')
+  await editor.locator('[data-kind="single_select"]').click()
   for (const [index, label] of ['Todo', 'Doing'].entries()) {
     await editor
       .getByRole('button', { name: en.field.panel.addChoice, exact: true })

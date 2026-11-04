@@ -20,6 +20,7 @@ import { fieldKindLabel } from '../../fields/messages'
 import { isKind, kindConstraints } from '../../fields/registry'
 import type { FieldEnv, Kind } from '../../fields/types'
 import AppIcon from '../AppIcon.vue'
+import FieldTypePicker from './FieldTypePicker.vue'
 import {
   colorLabel,
   createBody,
@@ -117,6 +118,7 @@ const typeChanging = ref<TableField | null>(null)
 const typeChangeKind = ref<Kind>('text')
 const typeChangePreview = ref<TypeChangeDryRun | null>(null)
 const creating = ref(false)
+const choosingType = ref(true)
 const draft = ref<FieldDraft>(draftFrom(null, env.value))
 const conflict = ref(false)
 const deleting = ref<TableField | null>(null)
@@ -149,6 +151,24 @@ const relationDraft = ref({
   sourceSide: 'child',
   onDelete: 'set_null',
 })
+const relationCardinality = computed({
+  get: () =>
+    relationDraft.value.kind === 'one_many'
+      ? relationDraft.value.sourceSide === 'child'
+        ? 'many_one'
+        : 'one_many'
+      : relationDraft.value.kind,
+  set: (value: string) => {
+    relationDraft.value.kind = value === 'many_one' ? 'one_many' : value
+    relationDraft.value.sourceSide = value === 'many_one' ? 'child' : 'parent'
+  },
+})
+const relationChoices = computed(() => [
+  { value: 'many_many', label: t('relation.manyMany'), icon: 'group' as const },
+  { value: 'one_many', label: t('relation.oneMany'), icon: 'fields' as const },
+  { value: 'many_one', label: t('relation.manyOne'), icon: 'sort' as const },
+  { value: 'one_one', label: t('relation.oneOne'), icon: 'link' as const },
+])
 const computedRelations = computed(() =>
   props.schema.relations.flatMap((relation) => {
     const sourceFieldId =
@@ -275,7 +295,11 @@ const formulaSuggestions = computed(() => {
       .map((field) => ({ kind: 'field' as const, value: field.name }))
   }
   const word = /[A-Za-z_][A-Za-z_0-9]*$/.exec(before)?.[0] ?? ''
-  if (!word) return []
+  if (!word)
+    return formulaFunctions.map((value) => ({
+      kind: 'function' as const,
+      value,
+    }))
   return formulaFunctions
     .filter((name) => name.startsWith(word.toUpperCase()))
     .slice(0, 8)
@@ -462,6 +486,7 @@ async function openEditor(field: TableField | null) {
   conflict.value = false
   editing.value = field
   creating.value = field === null
+  choosingType.value = field === null
   draft.value = draftFrom(field, env.value)
   await nextTick()
   editor.value?.showModal()
@@ -546,7 +571,7 @@ async function openRelationEditor() {
   }
   relationDraft.value = {
     name: '',
-    reverseName: '',
+    reverseName: props.schema.table.name,
     targetTableId:
       targetTables.value.find((table) => table.id === props.schema.table.id)
         ?.id ??
@@ -945,6 +970,54 @@ function changeKind() {
   if (kind === 'float') draft.value.size = 'double'
 }
 
+async function selectCreateKind(kind: string) {
+  if (busy.value) return
+  const name = relationCreating.value
+    ? relationDraft.value.name
+    : computedCreating.value
+      ? computedDraft.value.name
+      : formulaCreating.value
+        ? formulaDraft.value.name
+        : draft.value.name
+  const description = formulaCreating.value
+    ? formulaDraft.value.description
+    : draft.value.description
+  if (
+    creating.value &&
+    isKind(kind) &&
+    !['lookup', 'rollup', 'formula'].includes(kind)
+  ) {
+    draft.value.kind = kind
+    changeKind()
+    choosingType.value = false
+    return
+  }
+  closeEditor()
+  closeRelationEditor()
+  closeComputedEditor()
+  closeFormulaEditor()
+  if (kind === 'link') {
+    await openRelationEditor()
+    if (!relationCreating.value) return
+    relationDraft.value.name = name
+  } else if (kind === 'lookup' || kind === 'rollup') {
+    await openComputedEditor(kind)
+    computedDraft.value.name = name
+  } else if (kind === 'formula') {
+    await openFormulaEditor()
+    formulaDraft.value.name = name
+    formulaDraft.value.description = description
+  } else if (isKind(kind)) {
+    await openEditor(null)
+    draft.value.name = name
+    draft.value.description = description
+    draft.value.kind = kind
+    changeKind()
+    choosingType.value = false
+    return
+  } else return
+}
+
 const message = computed(() =>
   typeof error.value === 'string' ? error.value : mutationMessage(error.value),
 )
@@ -989,26 +1062,6 @@ defineExpose({ openCreate: () => openEditor(null) })
       <div v-if="owner" class="field-panel-actions">
         <button type="button" :disabled="busy" @click="openEditor(null)">
           {{ t('field.panel.add') }}
-        </button>
-        <button type="button" :disabled="busy" @click="openRelationEditor">
-          {{ t('relation.add') }}
-        </button>
-        <button
-          type="button"
-          :disabled="busy || !computedRelations.length"
-          @click="openComputedEditor('lookup')"
-        >
-          {{ t('field.panel.addLookup') }}
-        </button>
-        <button
-          type="button"
-          :disabled="busy || !computedRelations.length"
-          @click="openComputedEditor('rollup')"
-        >
-          {{ t('field.panel.addRollup') }}
-        </button>
-        <button type="button" :disabled="busy" @click="openFormulaEditor()">
-          {{ t('field.panel.addFormula') }}
         </button>
       </div>
     </div>
@@ -1209,31 +1262,6 @@ defineExpose({ openCreate: () => openEditor(null) })
         {{ t('field.panel.add') }}
       </button>
     </footer>
-    <details v-if="menu && owner" class="field-extra-actions">
-      <summary>{{ t('field.panel.moreTypes') }}</summary>
-      <div class="field-panel-actions">
-        <button type="button" :disabled="busy" @click="openRelationEditor">
-          {{ t('relation.add') }}
-        </button>
-        <button
-          type="button"
-          :disabled="busy || !computedRelations.length"
-          @click="openComputedEditor('lookup')"
-        >
-          {{ t('field.panel.addLookup') }}
-        </button>
-        <button
-          type="button"
-          :disabled="busy || !computedRelations.length"
-          @click="openComputedEditor('rollup')"
-        >
-          {{ t('field.panel.addRollup') }}
-        </button>
-        <button type="button" :disabled="busy" @click="openFormulaEditor()">
-          {{ t('field.panel.addFormula') }}
-        </button>
-      </div>
-    </details>
 
     <dialog
       ref="editor"
@@ -1248,7 +1276,7 @@ defineExpose({ openCreate: () => openEditor(null) })
         :class="{ 'field-create-form': creating }"
         @submit.prevent="save"
       >
-        <h2 :class="{ 'visually-hidden': creating && menu }">
+        <h2>
           {{
             creating ? t('field.panel.createTitle') : t('field.panel.editTitle')
           }}
@@ -1268,22 +1296,19 @@ defineExpose({ openCreate: () => openEditor(null) })
             :disabled="busy"
           />
         </label>
-        <label v-if="creating">
-          <span :class="{ 'visually-hidden': menu }">{{
-            t('field.panel.kind')
-          }}</span>
-          <select v-model="draft.kind" :disabled="busy" @change="changeKind">
-            <option v-for="kind in USER_KINDS" :key="kind" :value="kind">
-              {{ fieldKindLabel(kind) }}
-            </option>
-          </select>
-        </label>
+        <FieldTypePicker
+          v-if="creating"
+          :model-value="draft.kind"
+          :expanded="choosingType"
+          :disabled="busy"
+          @update:model-value="selectCreateKind"
+        />
         <dl v-else class="field-kind-fixed">
           <dt>{{ t('field.panel.kind') }}</dt>
           <dd>{{ fieldKindLabel(draft.kind) }}</dd>
         </dl>
         <p v-if="systemEdit">{{ t('field.panel.systemNotice') }}</p>
-        <fieldset v-else class="field-settings">
+        <fieldset v-else-if="!creating || !choosingType" class="field-settings">
           <legend>{{ t('field.panel.settings') }}</legend>
           <p v-if="storageFixed && STORAGE_OPTIONS[draft.kind]">
             {{ t('field.panel.storageFixed') }}
@@ -1608,7 +1633,11 @@ defineExpose({ openCreate: () => openEditor(null) })
             <span>{{ t('field.panel.fillEmpty') }}</span>
           </label>
         </fieldset>
-        <details class="field-description-editor" :open="!creating">
+        <details
+          v-if="!creating || !choosingType"
+          class="field-description-editor"
+          :open="!creating"
+        >
           <summary>{{ t('field.panel.addDescription') }}</summary>
           <label>
             <span>{{ t('field.panel.description') }}</span>
@@ -1625,7 +1654,11 @@ defineExpose({ openCreate: () => openEditor(null) })
           <button type="button" :disabled="busy" @click="closeEditor">
             {{ t('field.panel.cancel') }}
           </button>
-          <button type="submit" :disabled="busy">
+          <button
+            v-if="!creating || !choosingType"
+            type="submit"
+            :disabled="busy"
+          >
             {{
               busy
                 ? t('field.panel.saving')
@@ -1729,8 +1762,12 @@ defineExpose({ openCreate: () => openEditor(null) })
       :aria-label="t('field.panel.formulaTitle')"
       @cancel.prevent="closeFormulaEditor"
     >
-      <form v-if="formulaCreating" @submit.prevent="saveFormula">
-        <h2>{{ t('field.panel.formulaTitle') }}</h2>
+      <form
+        v-if="formulaCreating"
+        class="field-create-form"
+        @submit.prevent="saveFormula"
+      >
+        <h2 class="visually-hidden">{{ t('field.panel.formulaTitle') }}</h2>
         <label>
           <span>{{ t('field.panel.name') }}</span>
           <input
@@ -1738,18 +1775,16 @@ defineExpose({ openCreate: () => openEditor(null) })
             autofocus
             required
             maxlength="400"
+            :placeholder="t('field.panel.namePlaceholder')"
             :disabled="busy"
           />
         </label>
-        <label>
-          <span>{{ t('field.panel.description') }}</span>
-          <textarea
-            v-model="formulaDraft.description"
-            rows="2"
-            :maxlength="MAX_DESCRIPTION * 2"
-            :disabled="busy"
-          />
-        </label>
+        <FieldTypePicker
+          v-if="!formulaEditing"
+          model-value="formula"
+          :disabled="busy"
+          @update:model-value="selectCreateKind"
+        />
         <label>
           <span>{{ t('field.panel.formulaExpression') }}</span>
           <textarea
@@ -1778,7 +1813,6 @@ defineExpose({ openCreate: () => openEditor(null) })
             "
           />
         </label>
-        <p>{{ t('field.panel.formulaHint') }}</p>
         <section
           class="formula-suggestions"
           :aria-label="formulaSuggestionLabel"
@@ -1790,6 +1824,9 @@ defineExpose({ openCreate: () => openEditor(null) })
               type="button"
               @click="insertFormulaSuggestion(suggestion)"
             >
+              <AppIcon
+                :name="suggestion.kind === 'function' ? 'formula' : 'fields'"
+              />
               {{ formulaSuggestionText(suggestion) }}
             </button>
           </template>
@@ -1802,7 +1839,22 @@ defineExpose({ openCreate: () => openEditor(null) })
           {{ t('field.panel.formulaType', { type: formulaCheck.type }) }}
         </p>
         <p v-if="formulaStatus" role="alert">{{ formulaStatus }}</p>
+        <details class="field-description-editor" :open="!!formulaEditing">
+          <summary>{{ t('field.panel.addDescription') }}</summary>
+          <label>
+            <span>{{ t('field.panel.description') }}</span>
+            <textarea
+              v-model="formulaDraft.description"
+              rows="2"
+              :maxlength="MAX_DESCRIPTION * 2"
+              :disabled="busy"
+            />
+          </label>
+        </details>
         <div class="nav-actions">
+          <button type="button" :disabled="busy" @click="closeFormulaEditor">
+            {{ t('field.panel.cancel') }}
+          </button>
           <button
             type="submit"
             :disabled="
@@ -1817,9 +1869,6 @@ defineExpose({ openCreate: () => openEditor(null) })
                   : t('field.panel.create')
             }}
           </button>
-          <button type="button" :disabled="busy" @click="closeFormulaEditor">
-            {{ t('field.panel.cancel') }}
-          </button>
         </div>
       </form>
     </dialog>
@@ -1830,8 +1879,12 @@ defineExpose({ openCreate: () => openEditor(null) })
       :aria-label="t('field.panel.computedTitle')"
       @cancel.prevent="closeComputedEditor"
     >
-      <form v-if="computedCreating" @submit.prevent="createComputedField">
-        <h2>{{ t('field.panel.computedTitle') }}</h2>
+      <form
+        v-if="computedCreating"
+        class="field-create-form"
+        @submit.prevent="createComputedField"
+      >
+        <h2 class="visually-hidden">{{ t('field.panel.computedTitle') }}</h2>
         <label>
           <span>{{ t('field.panel.name') }}</span>
           <input
@@ -1839,51 +1892,59 @@ defineExpose({ openCreate: () => openEditor(null) })
             autofocus
             required
             maxlength="400"
+            :placeholder="t('field.panel.namePlaceholder')"
             :disabled="busy"
           />
         </label>
-        <label>
-          <span>{{ t('field.panel.computedRelation') }}</span>
-          <select
-            v-model="computedDraft.relationFieldId"
-            required
-            :disabled="busy || !computedRelations.length"
-            @change="loadComputedTargetFields"
-          >
-            <option
-              v-for="item in computedRelations"
-              :key="item.field.id"
-              :value="item.field.id"
+        <FieldTypePicker
+          :model-value="computedDraft.kind"
+          :disabled="busy"
+          @update:model-value="selectCreateKind"
+        />
+        <div class="field-computed-columns">
+          <label>
+            <span>{{ t('field.panel.computedRelation') }}</span>
+            <select
+              v-model="computedDraft.relationFieldId"
+              required
+              :disabled="busy || !computedRelations.length"
+              @change="loadComputedTargetFields"
             >
-              {{ item.field.name }}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span>{{ t('field.panel.computedTarget') }}</span>
-          <select
-            v-model="computedDraft.targetFieldId"
-            required
-            :disabled="
-              busy || computedTargetLoading || !computedTargetFields.length
-            "
-            @change="
-              computedDraft.aggregate = computedAggregates.includes(
-                computedDraft.aggregate,
-              )
-                ? computedDraft.aggregate
-                : (computedAggregates[0] ?? 'count')
-            "
-          >
-            <option
-              v-for="field in computedTargetFields"
-              :key="field.id"
-              :value="field.id"
+              <option
+                v-for="item in computedRelations"
+                :key="item.field.id"
+                :value="item.field.id"
+              >
+                {{ item.field.name }}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>{{ t('field.panel.computedTarget') }}</span>
+            <select
+              v-model="computedDraft.targetFieldId"
+              required
+              :disabled="
+                busy || computedTargetLoading || !computedTargetFields.length
+              "
+              @change="
+                computedDraft.aggregate = computedAggregates.includes(
+                  computedDraft.aggregate,
+                )
+                  ? computedDraft.aggregate
+                  : (computedAggregates[0] ?? 'count')
+              "
             >
-              {{ field.name }}
-            </option>
-          </select>
-        </label>
+              <option
+                v-for="field in computedTargetFields"
+                :key="field.id"
+                :value="field.id"
+              >
+                {{ field.name }}
+              </option>
+            </select>
+          </label>
+        </div>
         <label v-if="computedDraft.kind === 'rollup'">
           <span>{{ t('field.panel.computedAggregate') }}</span>
           <select v-model="computedDraft.aggregate" :disabled="busy">
@@ -1912,11 +1973,11 @@ defineExpose({ openCreate: () => openEditor(null) })
         </p>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
-          <button type="submit" :disabled="computedEditorDisabled">
-            {{ busy ? t('relation.saving') : t('relation.create') }}
-          </button>
           <button type="button" :disabled="busy" @click="closeComputedEditor">
             {{ t('field.panel.cancel') }}
+          </button>
+          <button type="submit" :disabled="computedEditorDisabled">
+            {{ busy ? t('field.panel.saving') : t('field.panel.create') }}
           </button>
         </div>
       </form>
@@ -1928,8 +1989,45 @@ defineExpose({ openCreate: () => openEditor(null) })
       :aria-label="t('relation.createTitle')"
       @cancel.prevent="closeRelationEditor"
     >
-      <form v-if="relationCreating" @submit.prevent="createRelation">
-        <h2>{{ t('relation.createTitle') }}</h2>
+      <form
+        v-if="relationCreating"
+        class="field-create-form"
+        @submit.prevent="createRelation"
+      >
+        <h2 class="visually-hidden">{{ t('relation.createTitle') }}</h2>
+        <label>
+          <span class="visually-hidden">{{ t('relation.name') }}</span>
+          <input
+            v-model="relationDraft.name"
+            required
+            maxlength="100"
+            :placeholder="t('field.panel.namePlaceholder')"
+            :disabled="busy"
+          />
+        </label>
+        <FieldTypePicker
+          model-value="link"
+          :disabled="busy"
+          @update:model-value="selectCreateKind"
+        />
+        <fieldset class="field-relation-types">
+          <legend>{{ t('relation.kind') }}</legend>
+          <label
+            v-for="choice in relationChoices"
+            :key="choice.value"
+            :class="{ selected: relationCardinality === choice.value }"
+          >
+            <AppIcon :name="choice.icon" />
+            <span>{{ choice.label }}</span>
+            <input
+              v-model="relationCardinality"
+              type="radio"
+              name="relation-cardinality"
+              :value="choice.value"
+              :disabled="busy"
+            />
+          </label>
+        </fieldset>
         <label>
           <span>{{ t('relation.target') }}</span>
           <select
@@ -1946,57 +2044,36 @@ defineExpose({ openCreate: () => openEditor(null) })
             </option>
           </select>
         </label>
-        <label>
-          <span>{{ t('relation.name') }}</span>
-          <input
-            v-model="relationDraft.name"
-            required
-            maxlength="100"
-            :disabled="busy"
-          />
-        </label>
-        <label>
-          <span>{{ t('relation.reverseName') }}</span>
-          <input
-            v-model="relationDraft.reverseName"
-            required
-            maxlength="100"
-            :disabled="busy"
-          />
-        </label>
-        <label>
-          <span>{{ t('relation.kind') }}</span>
-          <select v-model="relationDraft.kind" :disabled="busy">
-            <option value="one_one">{{ t('relation.oneOne') }}</option>
-            <option value="one_many">{{ t('relation.oneMany') }}</option>
-            <option value="many_many">{{ t('relation.manyMany') }}</option>
-          </select>
-        </label>
-        <label v-if="relationDraft.kind === 'one_many'">
-          <span>{{ t('relation.thisTableSide') }}</span>
-          <select v-model="relationDraft.sourceSide" :disabled="busy">
-            <option value="child">{{ t('relation.manySide') }}</option>
-            <option value="parent">{{ t('relation.oneSide') }}</option>
-          </select>
-        </label>
-        <label>
-          <span>{{ t('relation.onDelete') }}</span>
-          <select v-model="relationDraft.onDelete" :disabled="busy">
-            <option value="set_null">{{ t('relation.setNull') }}</option>
-            <option value="cascade">{{ t('relation.cascade') }}</option>
-            <option value="restrict">{{ t('relation.restrict') }}</option>
-          </select>
-        </label>
+        <details class="field-advanced-settings">
+          <summary>{{ t('field.panel.advancedSettings') }}</summary>
+          <label>
+            <span>{{ t('relation.reverseName') }}</span>
+            <input
+              v-model="relationDraft.reverseName"
+              required
+              maxlength="100"
+              :disabled="busy"
+            />
+          </label>
+          <label>
+            <span>{{ t('relation.onDelete') }}</span>
+            <select v-model="relationDraft.onDelete" :disabled="busy">
+              <option value="set_null">{{ t('relation.setNull') }}</option>
+              <option value="cascade">{{ t('relation.cascade') }}</option>
+              <option value="restrict">{{ t('relation.restrict') }}</option>
+            </select>
+          </label>
+        </details>
         <p v-if="!targetTables.length" role="alert">
           {{ t('relation.noTables') }}
         </p>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
-          <button type="submit" :disabled="busy || !targetTables.length">
-            {{ busy ? t('relation.saving') : t('relation.create') }}
-          </button>
           <button type="button" :disabled="busy" @click="closeRelationEditor">
             {{ t('field.panel.cancel') }}
+          </button>
+          <button type="submit" :disabled="busy || !targetTables.length">
+            {{ busy ? t('field.panel.saving') : t('field.panel.create') }}
           </button>
         </div>
       </form>

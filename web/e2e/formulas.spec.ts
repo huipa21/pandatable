@@ -112,9 +112,7 @@ test('AT-409 formula editor, query-time expressions and stable field references'
 
   await page.goto(`/t/${tableId}/v/${schema.views[0]!.id}`)
   const panel = await openFieldTypeActions(page)
-  await panel
-    .getByRole('button', { name: en.field.panel.addFormula, exact: true })
-    .click()
+  await panel.locator('[data-kind="formula"]').click()
   const dialog = page.getByRole('dialog', {
     name: en.field.panel.formulaTitle,
     exact: true,
@@ -145,9 +143,8 @@ test('AT-409 formula editor, query-time expressions and stable field references'
     (field) => field.name === 'Full name',
   )!
 
-  await panel
-    .getByRole('button', { name: en.field.panel.addFormula, exact: true })
-    .click()
+  const newField = await openFieldTypeActions(page)
+  await newField.locator('[data-kind="formula"]').click()
   const invalidDialog = page.getByRole('dialog', {
     name: en.field.panel.formulaTitle,
     exact: true,

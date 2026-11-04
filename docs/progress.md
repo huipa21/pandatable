@@ -18,6 +18,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| Field creation redesign | Searchable icon picker and type-specific settings | ✅ | 2026-11-04 | D-212; repository gate and affected fast browser gate pass. [Record](task-prompts/field-creation-redesign.md). |
 | Shell redesign | Sketch-based header/sidebar/avatar menu | ✅ | 2026-11-02 | D-209 shell layout; `ptdev check` and the fast e2e gate (all 37 specs, run in batches) pass. [Record](task-prompts/shell-redesign.md). |
 | Setup origin fix | Local dev setup 403 | ✅ | 2026-11-02 | D-208 canonical dev navigation and localized CSRF feedback; full check, AT-101 fast E2E and live browser verification pass. [Record](task-prompts/fix-setup-origin.md). |
 | T0.1 | Repo scaffold & ptdev | ✅ | 2026-10-24 | Scoped completion approved: scaffold, stdlib ptdev, unit tests, Windows/Podman check, PowerShell + Git Bash entry points, native + Linux builds. Go 1.27.0; Podman client/server 5.8.2/5.8.4; Node 24.15.0; PostgreSQL 18.6. golangci-lint absent (warning). Full AT-006 pending Linux/Docker + T0.7 harness. |
@@ -116,6 +117,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | Completed field creation redesign (D-212); check and affected fast browser gate pass. |
 | 2026-11-02 | Shell redesign Done: sketch-based header, workspace sidebar tree and avatar menu; e2e specs migrated and both task gates pass (D-209). | loopback navigation uses the configured origin; strict CSRF is preserved and both task gates pass (D-208). |
 | 2026-11-02 | T5.2 Done: SMTP, self-service password reset and opt-in mention email pass AT-904 and both task gates. |
 | 2026-11-02 | T4.2 Done: Gallery covers and selected card fields pass AT-902 and both task gates. |

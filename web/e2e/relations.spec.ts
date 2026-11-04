@@ -176,9 +176,7 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
 
   await page.goto(`/t/${tasks.table.id}/v/${tasks.views[0]!.id}`)
   const fieldPanel = await openFieldTypeActions(page)
-  await fieldPanel
-    .getByRole('button', { name: en.relation.add, exact: true })
-    .click()
+  await fieldPanel.locator('[data-kind="link"]').click()
   const relationDialog = page.getByRole('dialog', {
     name: en.relation.createTitle,
     exact: true,
@@ -201,16 +199,16 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
     .getByRole('textbox', { name: en.relation.name, exact: true })
     .fill('Project')
   await relationDialog
+    .getByText(en.field.panel.advancedSettings, { exact: true })
+    .click()
+  await relationDialog
     .getByRole('textbox', { name: en.relation.reverseName, exact: true })
     .fill('Tasks')
   await relationDialog
-    .getByRole('combobox', { name: en.relation.kind, exact: true })
-    .selectOption('one_many')
+    .getByRole('radio', { name: en.relation.manyOne, exact: true })
+    .check()
   await relationDialog
-    .getByRole('combobox', { name: en.relation.thisTableSide, exact: true })
-    .selectOption('child')
-  await relationDialog
-    .getByRole('button', { name: en.relation.create, exact: true })
+    .getByRole('button', { name: en.field.panel.create, exact: true })
     .click()
   await expect(relationDialog).not.toBeVisible()
 

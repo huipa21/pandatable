@@ -129,6 +129,64 @@ const buttonByText = (
 const row = (wrapper: Awaited<ReturnType<typeof setup>>, id: string) =>
   wrapper.get(`[data-field-id="${id}"]`)
 
+async function openType(
+  wrapper: Awaited<ReturnType<typeof setup>>,
+  kind: string,
+) {
+  await buttonByText(wrapper, 'Add field').trigger('click')
+  await wrapper.get(`[data-kind="${kind}"]`).trigger('click')
+  await flushPromises()
+}
+
+it('searches icon-bearing types and carries the name into advanced editors', async () => {
+  stubFetch()
+  const wrapper = await setup()
+  try {
+    await buttonByText(wrapper, 'Add field').trigger('click')
+    const dialog = wrapper.get('dialog[aria-label="New field"]')
+    expect(wrapper.find('.field-extra-actions').exists()).toBe(false)
+    expect(dialog.findAll('[data-kind]')).toHaveLength(32)
+    expect(dialog.findAll('[data-kind] svg')).toHaveLength(32)
+    expect(dialog.find('.field-settings').exists()).toBe(false)
+    await dialog.get('input').setValue('Related value')
+    await dialog.get('input[type="search"]').setValue('look')
+    expect(
+      dialog.findAll('[data-kind]').map((item) => item.attributes('data-kind')),
+    ).toEqual(['lookup'])
+    await dialog.get('[data-kind="lookup"]').trigger('click')
+    await flushPromises()
+    const lookup = wrapper.get('dialog[aria-label="Create computed field"]')
+    expect((lookup.element as HTMLDialogElement).open).toBe(true)
+    expect((lookup.get('input').element as HTMLInputElement).value).toBe(
+      'Related value',
+    )
+    expect(lookup.text()).toContain('Create a relation field')
+    expect(
+      lookup.get('button[type="submit"]').attributes('disabled'),
+    ).toBeDefined()
+    await lookup.get('.field-type-selected').trigger('click')
+    await lookup.get('[data-kind="formula"]').trigger('click')
+    await flushPromises()
+    const formula = wrapper.get('dialog[aria-label="Formula field"]')
+    expect((formula.get('input').element as HTMLInputElement).value).toBe(
+      'Related value',
+    )
+    expect(
+      formula.findAll('.formula-suggestions button').length,
+    ).toBeGreaterThan(8)
+    await formula.get('.field-type-selected').trigger('click')
+    await formula.get('[data-kind="text"]').trigger('click')
+    await flushPromises()
+    expect(dialog.find('.field-type-list').exists()).toBe(false)
+    expect(dialog.find('.field-settings').exists()).toBe(true)
+    expect((dialog.get('input').element as HTMLInputElement).value).toBe(
+      'Related value',
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('lists fields in position order with badges and gives readers no mutation controls', async () => {
   stubFetch()
   const wrapper = await setup(schema('read'))
@@ -204,12 +262,12 @@ it('keeps new-field defaults and descriptions optional and saves their values', 
   try {
     await buttonByText(wrapper, 'Add field').trigger('click')
     const dialog = wrapper.get('dialog.field-dialog')
+    await dialog.get('[data-kind="long_text"]').trigger('click')
     expect(dialog.get('.field-default').attributes('open')).toBeUndefined()
     expect(
       dialog.get('.field-description-editor').attributes('open'),
     ).toBeUndefined()
     await dialog.get('input').setValue('Notes')
-    await dialog.get('select').setValue('long_text')
     await dialog.get('.field-default summary').trigger('click')
     await dialog.get('.field-default input').setValue('Default note')
     await dialog.get('.field-description-editor summary').trigger('click')
@@ -241,7 +299,7 @@ it('creates a select field with canonical options and a label default, then appl
     const dialog = wrapper.get('dialog.field-dialog')
     expect((dialog.element as HTMLDialogElement).open).toBe(true)
     await dialog.get('input').setValue('  Stage  ')
-    await dialog.get('select').setValue('single_select')
+    await dialog.get('[data-kind="single_select"]').trigger('click')
     await buttonByText(wrapper, 'Add option').trigger('click')
     await buttonByText(wrapper, 'Add option').trigger('click')
     const labels = dialog.findAll('.field-choice input')
@@ -307,12 +365,12 @@ it('creates an ID-bound formula through the editor with field and function sugge
   )
   const wrapper = await setup()
   try {
-    await buttonByText(wrapper, 'Add formula').trigger('click')
+    await openType(wrapper, 'formula')
     const dialog = wrapper
       .findAll('dialog.field-dialog')
       .find((item) => item.attributes('aria-label') === 'Formula field')!
     await dialog.find('input').setValue('Double quantity')
-    const expression = dialog.findAll('textarea')[1]!
+    const expression = dialog.get('textarea')
     await expression.setValue('CON')
     expect(dialog.text()).toContain('CONCAT(')
     await expression.setValue('{Qty')
@@ -348,11 +406,11 @@ it('shows formula validation positions inline without rendering server messages'
   )
   const wrapper = await setup()
   try {
-    await buttonByText(wrapper, 'Add formula').trigger('click')
+    await openType(wrapper, 'formula')
     const dialog = wrapper
       .findAll('dialog.field-dialog')
       .find((item) => item.attributes('aria-label') === 'Formula field')!
-    await dialog.findAll('textarea')[1]!.setValue('{Qty} +')
+    await dialog.get('textarea').setValue('{Qty} +')
     await new Promise((resolve) => setTimeout(resolve, 350))
     await flushPromises()
     expect(dialog.get('[role="alert"]').text()).toBe(
@@ -402,9 +460,9 @@ it('rebinds the formula editor expression to renamed stable field references', a
     const dialog = wrapper
       .findAll('dialog.field-dialog')
       .find((item) => item.attributes('aria-label') === 'Formula field')!
-    expect(
-      (dialog.findAll('textarea')[1]!.element as HTMLTextAreaElement).value,
-    ).toBe('{Units} * 2')
+    expect((dialog.get('textarea').element as HTMLTextAreaElement).value).toBe(
+      '{Units} * 2',
+    )
   } finally {
     wrapper.unmount()
   }
@@ -695,7 +753,7 @@ it('creates a same-book relation from the owner field panel', async () => {
   )
   const wrapper = await setup()
   try {
-    await buttonByText(wrapper, 'Add relation').trigger('click')
+    await openType(wrapper, 'link')
     const dialog = wrapper.get('dialog[aria-label="Create relation"]')
     await flushPromises()
     expect(
@@ -705,7 +763,7 @@ it('creates a same-book relation from the owner field panel', async () => {
         .map((option) => option.attributes('value')),
     ).toEqual(['t'])
     await dialog.get('input').setValue('Manager')
-    await dialog.findAll('input')[1]!.setValue('Reports')
+    await dialog.get('.field-advanced-settings input').setValue('Reports')
     await dialog.get('select').setValue('t')
     await dialog.get('form').trigger('submit')
     await flushPromises()
@@ -725,6 +783,36 @@ it('creates a same-book relation from the owner field panel', async () => {
     wrapper.unmount()
   }
 })
+
+it.each([
+  ['many_many', 'many_many', 'parent'],
+  ['one_many', 'one_many', 'parent'],
+  ['many_one', 'one_many', 'child'],
+  ['one_one', 'one_one', 'parent'],
+])(
+  'maps the %s relation choice to the existing API',
+  async (choice, kind, sourceSide) => {
+    const { calls } = stubFetch(
+      Response.json({ schema: schema(), eventId: 'relation-event' }),
+    )
+    const wrapper = await setup()
+    try {
+      await openType(wrapper, 'link')
+      const dialog = wrapper.get('dialog[aria-label="Create relation"]')
+      await dialog.get('input').setValue('Related records')
+      await dialog.get(`input[type="radio"][value="${choice}"]`).setValue(true)
+      await dialog.get('form').trigger('submit')
+      await flushPromises()
+      expect(JSON.parse(String(calls()[0]![1].body))).toMatchObject({
+        kind,
+        sourceSide,
+        reverseName: 'Table',
+      })
+    } finally {
+      wrapper.unmount()
+    }
+  },
+)
 
 it('configures a lookup from an existing same-book relation', async () => {
   const next = schema()
@@ -761,7 +849,7 @@ it('configures a lookup from an existing same-book relation', async () => {
   )
   const wrapper = await setup(next)
   try {
-    await buttonByText(wrapper, 'Add lookup').trigger('click')
+    await openType(wrapper, 'lookup')
     const dialog = wrapper.get('dialog[aria-label="Create computed field"]')
     await flushPromises()
     await dialog.get('input').setValue('Project name')

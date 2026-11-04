@@ -138,6 +138,14 @@ Routes:
   Edit, Move up/down (non-system), Use as display field (eligible non-system,
   non-checkbox kinds) and Delete (confirm dialog, soft delete). System fields
   allow name/description edits only.
+- Creation starts with a name and a searchable, height-bounded icon list of all
+  supported types, including Link, Lookup, Rollup and Formula (D-212). Selecting
+  a type opens its settings; the type picker remains available and preserves
+  the name when switching. There is no separate "More field types" section.
+  Link uses four cardinality radio choices and a same-book target selector;
+  reverse-field naming and deletion policy live under Advanced settings.
+  Lookup/Rollup use relation and target selectors, with compatible aggregates
+  for Rollup. Formula shows the supported function list even before typing.
 - The native modal editor (`fieldForm.ts` keeps pure draft/body logic) shows
   name, kind (create only), description, kind options from the registry
   (length/size/precision/scale, date/time formats, zone, choices with label/

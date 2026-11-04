@@ -47,12 +47,43 @@ const paths = {
   clock: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2'],
   check: ['M4 4h16v16H4zM8 12l3 3 5-6'],
   link: ['M10 8l2-2a4 4 0 0 1 6 6l-2 2M14 16l-2 2a4 4 0 0 1-6-6l2-2M9 15l6-6'],
+  text: ['M5 5h14M12 5v15M8 20h8'],
+  number: ['M9 3L7 21M17 3l-2 18M4 9h17M3 15h17'],
+  formula: ['M18 4H7l6 8-6 8h11'],
+  lookup: [
+    'M3 5h12M3 9h8M3 13h6',
+    'M16 12a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM19 19l3 3',
+  ],
+  rollup: ['M4 7h6v6H4zM14 14h6v6h-6zM14 4h6v6h-6zM10 10l4 4M10 7h4'],
+  attachment: ['M8 13l7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l9-9M6 15l9-9'],
+  mail: ['M3 5h18v14H3zM3 5l9 8 9-8'],
+  star: ['M12 3l3 6 6 1-4.5 4.5 1 6.5-5.5-3-5.5 3 1-6.5L3 10l6-1z'],
+  phone: ['M5 3l4 5-2 3a14 14 0 0 0 6 6l3-2 5 4-2 3C10 22 2 14 2 5z'],
+  code: ['M8 6l-6 6 6 6M16 6l6 6-6 6M14 3l-4 18'],
+  user: ['M12 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 21v-2a8 8 0 0 1 16 0v2'],
+  percent: [
+    'M5 19L19 5M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM18 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  ],
+  currency: ['M12 2v20M17 6H9a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8H5'],
 } as const
 export type IconName = keyof typeof paths
 export function fieldIconName(kind: string): IconName {
+  if (kind === 'text') return 'text'
+  if (kind === 'lookup' || kind === 'rollup' || kind === 'formula') return kind
+  if (kind === 'attachment') return 'attachment'
+  if (kind === 'email') return 'mail'
+  if (kind === 'rating') return 'star'
+  if (kind === 'phone') return 'phone'
+  if (kind === 'json' || kind === 'uuid' || kind === 'inet' || kind === 'cidr')
+    return 'code'
+  if (kind === 'user' || kind === 'multi_user' || kind.endsWith('_by'))
+    return 'user'
+  if (kind === 'currency' || kind === 'percent') return kind
+  if (['integer', 'decimal', 'float', 'autonumber'].includes(kind))
+    return 'number'
   if (kind === 'date' || kind.endsWith('_at') || kind === 'datetime')
     return 'calendar'
-  if (kind === 'time') return 'clock'
+  if (kind === 'time' || kind === 'duration') return 'clock'
   if (kind === 'checkbox') return 'check'
   if (kind === 'link' || kind === 'url') return 'link'
   if (kind.includes('select') || kind.includes('array')) return 'fields'

@@ -584,16 +584,23 @@ test('AT-806 table dialogs at 390px in both languages', async ({
 
       for (const editor of [
         {
-          open: locale.relation.add,
+          open: 'link',
           title: locale.relation.createTitle,
         },
         {
-          open: locale.field.panel.addFormula,
+          open: 'formula',
           title: locale.field.panel.formulaTitle,
         },
       ]) {
         await options
-          .getByRole('button', { name: editor.open, exact: true })
+          .getByRole('button', { name: locale.field.panel.add, exact: true })
+          .click()
+        await page
+          .getByRole('dialog', {
+            name: locale.field.panel.createTitle,
+            exact: true,
+          })
+          .locator(`[data-kind="${editor.open}"]`)
           .click()
         const dialog = page.getByRole('dialog', {
           name: editor.title,

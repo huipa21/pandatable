@@ -24,10 +24,13 @@ export async function openFieldPanel(page: Page) {
 
 export async function openFieldTypeActions(page: Page) {
   const panel = await openFieldPanel(page)
-  const actions = panel.locator('.field-extra-actions')
-  if ((await actions.count()) && (await actions.getAttribute('open')) === null)
-    await actions.locator('summary').click()
-  return panel
+  await panel
+    .getByRole('button', { name: en.field.panel.add, exact: true })
+    .click()
+  return page.getByRole('dialog', {
+    name: en.field.panel.createTitle,
+    exact: true,
+  })
 }
 
 export async function openTableOptions(page: Page) {
