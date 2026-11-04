@@ -2,12 +2,88 @@ package main
 
 import (
 	"context"
+	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestDevPortAvailable(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+	address := listener.Addr().String()
+	for _, name := range []string{"backend (PT_LISTEN)", "Vite"} {
+		err := devPortAvailable(name, address)
+		if err == nil || !strings.Contains(err.Error(), name) ||
+			!strings.Contains(err.Error(), address) || !strings.Contains(err.Error(), "stop the existing listener") {
+			t.Fatalf("occupied %s port: %v", name, err)
+		}
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := devPortAvailable("backend (PT_LISTEN)", address); err != nil {
+		t.Fatal(err)
+	}
+	rebound, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("probe retained the port: %v", err)
+	}
+	if err := rebound.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := devPortAvailable("backend (PT_LISTEN)", "invalid"); err == nil {
+		t.Fatal("invalid address accepted")
+	}
+}
+
+func TestDevRejectsOccupiedPortBeforeBuild(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	t.Setenv("PT_LISTEN", listener.Addr().String())
+	t.Setenv("PT_DATABASE_URL", dbDSN)
+	t.Setenv("PT_BASE_URL", "http://127.0.0.1:5173")
+	root := t.TempDir()
+	vite := filepath.Join(root, "web", "node_modules", "vite", "bin", "vite.js")
+	if err := os.MkdirAll(filepath.Dir(vite), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(vite, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = (runner{root: root}).dev(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "backend (PT_LISTEN) address") {
+		t.Fatalf("expected port preflight before building in the empty repo: %v", err)
+	}
+}
+
+func TestRemoveDevDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "ptdev")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "binary"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeDevDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("temporary directory remains: %v", err)
+	}
+	if err := removeDevDir(dir); err != nil {
+		t.Fatalf("already removed directory: %v", err)
+	}
+}
 
 func TestAPITarget(t *testing.T) {
 	for listen, want := range map[string]string{

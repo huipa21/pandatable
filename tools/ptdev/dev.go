@@ -59,6 +59,15 @@ func (runner runner) dev(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
+	if err := devPortAvailable("backend (PT_LISTEN)", cfg.Listen); err != nil {
+		return err
+	}
+	if err := devPortAvailable("Vite", "127.0.0.1:5173"); err != nil {
+		return err
+	}
+	if err := bindChildrenToProcess(); err != nil {
+		return err
+	}
 	if _, ok := os.LookupEnv("PT_DATABASE_URL"); !ok {
 		if err := runner.db(ctx, "up", false); err != nil {
 			return err
@@ -68,7 +77,7 @@ func (runner runner) dev(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, os.RemoveAll(dir)) }()
+	defer func() { err = errors.Join(err, removeDevDir(dir)) }()
 	binary := filepath.Join(dir, binaryName(runtime.GOOS, false))
 	// Do not supervise "go run" or "pnpm dev": their grandchildren can outlive them.
 	if err := runner.run(ctx, "go", "build", "-o", binary, "./cmd/pandatable"); err != nil {
@@ -93,6 +102,17 @@ func (runner runner) dev(ctx context.Context) (err error) {
 			}, "node", vite)
 		},
 	)
+}
+
+func devPortAvailable(name, address string) error {
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("%s address %s is unavailable: %w; stop the existing listener before restarting ptdev dev", name, address, err)
+	}
+	if err := listener.Close(); err != nil {
+		return fmt.Errorf("close %s port probe: %w", name, err)
+	}
+	return nil
 }
 
 // Every launched process is a direct child and is reaped before returning.

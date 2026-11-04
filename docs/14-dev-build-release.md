@@ -54,6 +54,16 @@ Vite's API target is derived from `PT_LISTEN` (wildcard hosts mapped to loopback
 port zero is rejected. Standalone `pnpm dev` uses `PT_DEV_API_TARGET` or
 `http://127.0.0.1:8080`. No WebSocket server is implemented.
 
+Before DB startup or compilation, `ptdev dev` checks that the backend and Vite
+addresses can be bound. An occupied address fails with an instruction to stop
+the existing listener; it never kills another dev session or silently changes
+ports. Stop the earlier `ptdev dev` with Ctrl+C in its terminal before restarting.
+On Windows, identify listeners with
+`Get-NetTCPConnection -LocalPort 8080,5173 -State Listen | Select-Object LocalPort,OwningProcess`.
+Check those PIDs before stopping anything; an existing dev session may already
+be serving the UI. The probes release their ports immediately, so a later bind
+race still fails through normal child supervision.
+
 Vite redirects browser page navigation between loopback aliases (`localhost`,
 `127.0.0.1`, `[::1]`) to the exact local HTTP `PT_BASE_URL` origin (D-208).
 `ptdev dev` passes the resolved base URL to both processes and prints that URL.
@@ -70,6 +80,12 @@ Interrupt is attempted where supported, with forced termination otherwise;
 the backend has a 12-second wait bound (covering its 10-second HTTP drain),
 Vite three seconds. Windows does not support Go's `os.Interrupt` delivery to
 children, so cancellation forcibly stops the direct children there.
+After reaping, temporary-directory deletion retries Windows sharing/lock and permission errors
+for up to two seconds because executable image mappings can briefly remain
+locked. Persistent cleanup failures are still reported with the directory path.
+On Windows, `ptdev dev` also places itself in a kill-on-close Job Object that its
+children inherit, so closing or killing the terminal (or the `go run` wrapper)
+terminates the backend and Vite instead of leaving them holding the ports.
 
 For backend-only development, set `PT_DATABASE_URL` and
 `PT_BASE_URL` and run `go run ./cmd/pandatable serve` (optionally `--listen
