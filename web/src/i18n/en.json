@@ -332,7 +332,7 @@
     "groupReadOnly": "Grouping can be changed only in a view you can edit.",
     "groupPending": "Waiting for the grouping change to be saved.",
     "cancelGroupChange": "Cancel grouping change",
-    "colour": "Colour",
+    "highlightMenuLabel": "Highlight",
     "rowHeight": "Row height",
     "rowHeights": {
       "short": "Short",
@@ -352,6 +352,8 @@
     "aggregateNoValue": "No value",
     "sort": "Sort",
     "highlightRules": "Highlight rules",
+    "highlightDescription": "Add independent rules, each with a condition, a target (entire row or selected cells), and a color.",
+    "highlightOrderHelp": "Rules are checked from top to bottom. The first matching rule wins for each row and each cell. A cell match overrides the row color. Drag a rule heading or use Move up and Move down to change the order.",
     "highlightRule": "Highlight rule {position}",
     "addHighlightRule": "Add highlight rule",
     "removeHighlightRule": "Remove highlight rule {position}",

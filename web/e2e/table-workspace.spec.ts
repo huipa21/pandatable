@@ -65,7 +65,9 @@ test('new table uses a compact, working field and filter toolbar', async ({
     en.grid.sort,
   ])
     await expect(toolbar.getByText(name, { exact: true })).toBeVisible()
-  await expect(toolbar.getByText(en.grid.colour, { exact: true })).toBeVisible()
+  await expect(
+    toolbar.getByText(en.grid.highlightMenuLabel, { exact: true }),
+  ).toBeVisible()
   await expect(
     page.getByRole('tab', { name: /^(data|details)$/i }),
   ).toHaveCount(0)

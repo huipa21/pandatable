@@ -72,12 +72,19 @@ Readers can create personal views; shared views require write access. Owners can
 lock shared views. If you cannot save changes to a shared view, you can apply
 temporary changes and use **Save current changes as a personal view**.
 
-The desktop grid toolbar provides **Filter**, **Group**, **Sort**, **Colour**
-(highlighting), and row-height controls. Apply a filter to use it temporarily;
+The desktop grid toolbar provides **Filter**, **Group**, **Sort**, **Highlight**,
+and row-height controls. Apply a filter to use it temporarily;
 grouping is saved to a view you can edit. Search across visible fields, column
 width and order, freezing, row deletion, and footer aggregates are under **More
 grid options**. In a form view, an owner can configure the fields and labels;
 users with write access can submit new rows, while readers cannot submit.
+
+In an editable view, use **Highlight** to add up to 20 independent rules. Each
+rule has a condition, a color, and a target of the whole row or selected cells.
+Rules are checked from top to bottom: the first match wins independently for
+each row and each cell, and a cell match overrides the row color. Drag a rule
+heading or use **Move up** and **Move down** to reorder; incomplete drafts stay
+local until complete.
 
 In Kanban settings, choose a single-select or user field for the columns and
 select the card fields. Unassigned rows have their own column; for user
@@ -195,10 +202,15 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 权限。所有者可以锁定共享视图。如果无法保存共享视图的更改，可以临时调整并选择
 **将当前更改保存为个人视图**。
 
-桌面网格工具栏提供**筛选**、**分组**、**排序**、**颜色**（高亮）和行高控件。
+桌面网格工具栏提供**筛选**、**分组**、**排序**、**高亮**和行高控件。
 应用筛选后可临时使用；分组会保存到有编辑权限的视图。搜索可见字段、列宽和顺序、
 冻结、删除行及底部汇总位于**更多网格选项**中。在表单视图中，所有者可以配置字段
 和标签；有写入权限的用户可以提交新行，读取者不能提交。
+
+在可编辑的视图中，使用**高亮**添加最多 20 条独立规则。每条规则都有条件、颜色和目标
+（整行或所选单元格）。规则从上到下依次检查，每一行和每个单元格分别使用第一条匹配的
+规则；单元格匹配会覆盖行颜色。拖动规则标题，或使用**上移**和**下移**调整顺序；未完成的
+草稿会保留在本地，直到填写完整。
 
 在看板设置中，选择单选或用户字段作为列，并选择卡片字段。未分配的行有单独的列；
 按用户分组时，可以搜索数据表用户来添加空的目标列。使用列和卡片的翻页控件查看更多

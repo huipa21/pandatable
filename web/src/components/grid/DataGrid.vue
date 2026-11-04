@@ -347,18 +347,6 @@ const highlightDrafts = shallowRef<HighlightDraft[]>(
         : { type: 'row' },
   })),
 )
-watch(
-  () => columnState.config.value.highlight,
-  (rules) => {
-    highlightDrafts.value = (rules ?? []).map((rule) => ({
-      ...rule,
-      target:
-        rule.target.type === 'cells'
-          ? { type: 'cells', fields: [...rule.target.fields] }
-          : { type: 'row' },
-    }))
-  },
-)
 const highlightableFields = computed(() =>
   [...props.schema.fields]
     .filter(
@@ -372,12 +360,69 @@ const highlightTargetFields = computed(() =>
     (left, right) => left.position - right.position,
   ),
 )
+const highlightListOperators = new Set([
+  'is_any_of',
+  'is_none_of',
+  'has_any_of',
+  'has_all_of',
+  'has_none_of',
+  'is_exactly',
+])
+
+function hasIncompleteHighlightValues(node: FilterNode | null): boolean {
+  if (!node) return false
+  if ('items' in node) return node.items.some(hasIncompleteHighlightValues)
+  const value = node.value
+  if (node.cmp === 'path_equals')
+    return (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      !Array.isArray(value.path) ||
+      value.path.length === 0
+    )
+  if (node.cmp === 'between') return !Array.isArray(value) || value.length !== 2
+  if (!highlightListOperators.has(node.cmp)) return false
+  if (
+    node.cmp === 'has_any_of' &&
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    value.rel === 'me'
+  )
+    return false
+  return !Array.isArray(value) || value.length === 0
+}
+
 const highlightIncomplete = computed(() =>
   highlightDrafts.value.some(
     (rule) =>
       !isCompleteFilter(rule.when) ||
+      hasIncompleteHighlightValues(rule.when) ||
       (rule.target.type === 'cells' && rule.target.fields.length === 0),
   ),
+)
+watch(
+  () =>
+    [
+      columnState.config.value.highlight,
+      props.viewId,
+      props.identity,
+      columnState.canPersist.value,
+    ] as const,
+  (
+    [rules, viewId, identity, canPersist],
+    [, previousViewId, previousIdentity, previousCanPersist],
+  ) => {
+    if (
+      highlightIncomplete.value &&
+      viewId === previousViewId &&
+      identity === previousIdentity &&
+      canPersist === previousCanPersist
+    )
+      return
+    highlightDrafts.value = cloneHighlightDrafts(rules ?? [])
+  },
 )
 let draggedHighlightIndex: number | null = null
 
@@ -416,6 +461,14 @@ function changeFooterAggregate(fieldId: string, value: string) {
   columnState.changeAggregates(aggregates)
 }
 
+function serializeHighlightFilter(node: FilterNode): FilterNode {
+  if ('items' in node)
+    return { ...node, items: node.items.map(serializeHighlightFilter) }
+  return node.value === undefined && isCompleteFilter(node)
+    ? { ...node, value: null }
+    : node
+}
+
 function persistHighlightDrafts() {
   if (highlightIncomplete.value) return
   const rules: HighlightRule[] = []
@@ -424,7 +477,7 @@ function persistHighlightDrafts() {
     if (rule.target.type === 'cells' && rule.target.fields.length === 0) return
     rules.push({
       ...rule,
-      when: rule.when,
+      when: serializeHighlightFilter(rule.when),
       target:
         rule.target.type === 'cells'
           ? { type: 'cells', fields: [...rule.target.fields] }
@@ -2739,12 +2792,14 @@ onBeforeUnmount(() => {
         v-if="desktop && columnState.canPersist.value"
         class="grid-highlights"
       >
-        <summary :aria-label="t('grid.highlightRules')">
+        <summary :aria-label="t('grid.highlightMenuLabel')">
           <AppIcon name="colour" />
-          {{ t('grid.colour') }}
+          {{ t('grid.highlightMenuLabel') }}
         </summary>
         <fieldset>
           <legend>{{ t('grid.highlightRules') }}</legend>
+          <p>{{ t('grid.highlightDescription') }}</p>
+          <p>{{ t('grid.highlightOrderHelp') }}</p>
           <ol class="grid-highlight-rules">
             <li
               v-for="(rule, index) in highlightDrafts"
@@ -3456,32 +3511,37 @@ onBeforeUnmount(() => {
   align-items: center;
   box-sizing: border-box;
 }
-.grid-highlight-cell[data-row-highlight='red-2'],
+.grid-highlight-cell[data-row-highlight],
+.grid-highlight-cell[data-cell-highlight] {
+  --muted: currentColor;
+  --accent: currentColor;
+}
+.grid-highlight-cell[data-row-highlight='red-2']:not([data-cell-highlight]),
 .grid-highlight-cell[data-cell-highlight='red-2'] {
   background-color: var(--highlight-red-2-bg);
   color: var(--highlight-red-2-text);
 }
-.grid-highlight-cell[data-row-highlight='orange-2'],
+.grid-highlight-cell[data-row-highlight='orange-2']:not([data-cell-highlight]),
 .grid-highlight-cell[data-cell-highlight='orange-2'] {
   background-color: var(--highlight-orange-2-bg);
   color: var(--highlight-orange-2-text);
 }
-.grid-highlight-cell[data-row-highlight='amber-3'],
+.grid-highlight-cell[data-row-highlight='amber-3']:not([data-cell-highlight]),
 .grid-highlight-cell[data-cell-highlight='amber-3'] {
   background-color: var(--highlight-amber-3-bg);
   color: var(--highlight-amber-3-text);
 }
-.grid-highlight-cell[data-row-highlight='green-2'],
+.grid-highlight-cell[data-row-highlight='green-2']:not([data-cell-highlight]),
 .grid-highlight-cell[data-cell-highlight='green-2'] {
   background-color: var(--highlight-green-2-bg);
   color: var(--highlight-green-2-text);
 }
-.grid-highlight-cell[data-row-highlight='blue-2'],
+.grid-highlight-cell[data-row-highlight='blue-2']:not([data-cell-highlight]),
 .grid-highlight-cell[data-cell-highlight='blue-2'] {
   background-color: var(--highlight-blue-2-bg);
   color: var(--highlight-blue-2-text);
 }
-.grid-highlight-cell[data-row-highlight='purple-2'],
+.grid-highlight-cell[data-row-highlight='purple-2']:not([data-cell-highlight]),
 .grid-highlight-cell[data-cell-highlight='purple-2'] {
   background-color: var(--highlight-purple-2-bg);
   color: var(--highlight-purple-2-text);
@@ -3494,6 +3554,14 @@ onBeforeUnmount(() => {
 .grid-highlight-cell[data-cell-highlight='purple-2'] {
   position: relative;
   z-index: 1;
+}
+.grid-highlight-cell[data-row-highlight] .grid-cell-invalid,
+.grid-highlight-cell[data-cell-highlight] .grid-cell-invalid {
+  color: var(--highlight-red-2-text);
+}
+.grid-highlight-cell[data-row-highlight] .relation-edit,
+.grid-highlight-cell[data-cell-highlight] .relation-edit {
+  text-decoration: underline;
 }
 .grid-sort-criterion {
   display: flex;

@@ -332,7 +332,7 @@
     "groupReadOnly": "只能在有权编辑的视图中更改分组。",
     "groupPending": "正在等待分组更改保存。",
     "cancelGroupChange": "取消分组更改",
-    "colour": "颜色",
+    "highlightMenuLabel": "高亮",
     "rowHeight": "行高",
     "rowHeights": {
       "short": "紧凑",
@@ -352,6 +352,8 @@
     "aggregateNoValue": "无值",
     "sort": "排序",
     "highlightRules": "高亮规则",
+    "highlightDescription": "添加独立的规则，每条规则都有条件、目标（整行或所选单元格）和颜色。",
+    "highlightOrderHelp": "规则从上到下依次检查，每一行和每个单元格分别使用第一条匹配的规则。单元格匹配会覆盖行颜色。拖动规则标题，或使用上移和下移来调整顺序。",
     "highlightRule": "高亮规则 {position}",
     "addHighlightRule": "添加高亮规则",
     "removeHighlightRule": "移除高亮规则 {position}",

@@ -61,6 +61,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.7 | Sort | ✅ | 2026-10-30 | AT-503/410 and task gates pass: ordered transient sort controls, NULLS LAST deterministic paging, and formula/rollup sorting; D-175 preserves the legacy request. [Record](task-prompts/T2.7.md#record-2026-10-30). |
 | T2.8 | Grouping | ✅ | 2026-10-30 | AT-504 and task gates pass: filtered three-level buckets, empty and sorted multi-select keys, grouped row paging, localized desktop/mobile headers, and persistent expansion; D-176 records view-config storage. [Record](task-prompts/T2.8.md#record-2026-10-30). |
 | T2.9 | Highlight | ✅ | 2026-10-30 | D-177: ordered, filter-backed row/cell rules use first-match semantics and light/dark palette tokens. AT-505 and both task gates pass. [Record](task-prompts/T2.9.md#record-2026-10-30). |
+| UI-HIGHLIGHT | Highlight rules clarity | ✅ | 2026-11-04 | Highlight menu clarifies ordered rules; persistence, precedence, contrast and task gates pass. [Record](task-prompts/ui-highlight-rules.md#record-2026-11-04). |
 | UI-FIELD-TILES | Fields dropdown tiles | ✅ | 2026-11-04 | D-215: compact draggable field tiles, anchored ⋯ menu, Edit reuses the Add layout with safe type conversion, and reorder persists schema plus active-view order after flushing pending column changes. Check and fast browser gate pass. [Record](task-prompts/ui-field-tiles.md#record-2026-11-04). |
 | UI-VISIBILITY | Sharing in Visibility menu | ✅ | 2026-11-04 | D-214: table Share moves into an eye-icon Visibility menu after Highlight; mobile/non-Grid keep it in the table utility area. Check and fast browser gate pass. [Record](task-prompts/ui-visibility-sharing.md#record-2026-11-04). |
 | T2.10 | View management | ✅ | 2026-10-30 | D-178; AT-506–508 and task gates pass. Shared/personal lifecycle, locks, ordering, local overrides, and version conflicts are implemented; no migration. |
@@ -119,6 +120,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | UI-HIGHLIGHT Done: clarify Highlight rules and verify persistence, precedence and contrast. |
 | 2026-11-04 | UI-FIELD-TILES Done: Fields dropdown uses draggable tiles with a ⋯ menu and unified Add/Edit; reorder saves schema and active-view order (D-215); check and fast browser gate pass. |
 | 2026-11-04 | UI-VISIBILITY Done: table sharing moves into the Visibility toolbar menu (D-214); check and fast browser gate pass. |
 | 2026-11-04 | Completed field creation redesign (D-212); check and affected fast browser gate pass. |

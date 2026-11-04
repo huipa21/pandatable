@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import type { Component } from 'vue'
+import { markRaw, type Component } from 'vue'
 import { i18n, loadLocale } from '../../i18n'
 import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
@@ -459,6 +459,641 @@ it('dismisses toolbar menus on outside pointer interactions', async () => {
   } finally {
     root.remove()
   }
+})
+
+it('keeps an incomplete highlight draft while an earlier rule save finishes', async () => {
+  const schema = schemaFor('text')
+  schema.fields[0]!.filterOps = ['is']
+  schema.views[0]!.config.highlight = [
+    {
+      id: 'saved',
+      when: { field: 'name', cmp: 'is', value: 'Saved' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ]
+  const fetch = await mountGrid(markRaw(schema))
+  await wrapper!
+    .get(
+      '.grid-highlight-rule .grid-highlight-controls label:last-child select',
+    )
+    .setValue('blue-2')
+  await wrapper!.get('.grid-highlights > fieldset > button').trigger('click')
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(2)
+
+  const saves = () =>
+    fetch.mock.calls.filter(
+      ([path, init]) =>
+        String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+    )
+  await vi.waitFor(() =>
+    expect(wrapper!.emitted('viewUpdated')).toHaveLength(1),
+  )
+  const savedConfig = (
+    JSON.parse(String(saves()[0]?.[1]?.body)) as {
+      config: TableSchema['views'][number]['config']
+    }
+  ).config
+  expect(savedConfig.highlight).toMatchObject([
+    { id: 'saved', color: 'blue-2' },
+  ])
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(2)
+  expect(wrapper!.get('.grid-highlights [role="status"]').text()).toContain(
+    'Complete each condition',
+  )
+
+  const draft = wrapper!.findAll('.grid-highlight-rule')[1]!
+  await draft.get('.filter-actions button').trigger('click')
+  await draft.get('.filter-item input').setValue('New')
+  await vi.waitFor(() => expect(saves()).toHaveLength(2))
+  const completedConfig = (
+    JSON.parse(String(saves()[1]?.[1]?.body)) as {
+      config: TableSchema['views'][number]['config']
+    }
+  ).config
+  expect(completedConfig.highlight).toHaveLength(2)
+  expect(completedConfig.highlight?.[0]).toMatchObject({
+    id: 'saved',
+    color: 'blue-2',
+  })
+  expect(completedConfig.highlight?.[1]).toMatchObject({
+    when: {
+      op: 'and',
+      items: [{ field: 'name', cmp: 'is', value: 'New' }],
+    },
+    target: { type: 'row' },
+    color: 'red-2',
+  })
+})
+
+it.each([
+  { kind: 'text_array', operator: 'has_any_of' },
+  { kind: 'json', operator: 'path_equals' },
+] as const)(
+  'keeps incomplete $kind highlight filter values local',
+  async ({ kind, operator }) => {
+    vi.useFakeTimers()
+    try {
+      const schema = schemaFor(kind)
+      schema.fields[0]!.filterOps = [operator]
+      const fetch = await mountGrid(markRaw(schema))
+      await wrapper!
+        .get('.grid-highlights > fieldset > button')
+        .trigger('click')
+      const draft = wrapper!.get('.grid-highlight-rule')
+      await draft
+        .get(
+          kind === 'text_array'
+            ? '.filter-actions button:nth-child(2)'
+            : '.filter-actions button',
+        )
+        .trigger('click')
+      const inputs = draft.findAll('.filter-item input')
+      if (kind === 'json') await inputs[1]!.setValue('value')
+
+      const saves = () =>
+        fetch.mock.calls.filter(
+          ([path, init]) =>
+            String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+        )
+      await vi.advanceTimersByTimeAsync(350)
+      expect(saves()).toHaveLength(0)
+      expect(wrapper!.get('.grid-highlights [role="status"]').text()).toContain(
+        'Complete each condition',
+      )
+
+      await inputs[0]!.setValue(
+        kind === 'json' ? 'project.name' : 'first,second',
+      )
+      await vi.advanceTimersByTimeAsync(350)
+      expect(saves()).toHaveLength(1)
+      const config = (
+        JSON.parse(String(saves()[0]?.[1]?.body)) as {
+          config: TableSchema['views'][number]['config']
+        }
+      ).config
+      const condition = {
+        field: 'name',
+        cmp: operator,
+        value:
+          kind === 'json'
+            ? { path: ['project', 'name'], value: 'value' }
+            : ['first', 'second'],
+      }
+      expect(config.highlight?.[0]?.when).toEqual({
+        op: 'and',
+        items:
+          kind === 'json' ? [condition] : [{ op: 'and', items: [condition] }],
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
+
+it.each([
+  { kind: 'text', operator: 'is_empty' },
+  { kind: 'text', operator: 'is_not_empty' },
+  { kind: 'checkbox', operator: 'is_checked' },
+  { kind: 'checkbox', operator: 'is_not_checked' },
+] as const)(
+  'serializes a value-less $operator highlight condition for the server',
+  async ({ kind, operator }) => {
+    vi.useFakeTimers()
+    try {
+      const schema = schemaFor(kind)
+      schema.fields[0]!.filterOps = [operator]
+      const fetch = await mountGrid(markRaw(schema))
+      await wrapper!
+        .get('.grid-highlights > fieldset > button')
+        .trigger('click')
+      await wrapper!
+        .get('.grid-highlight-rule .filter-actions button:nth-child(2)')
+        .trigger('click')
+      await vi.advanceTimersByTimeAsync(350)
+      const save = fetch.mock.calls.find(
+        ([path, init]) =>
+          String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+      )
+      expect(save).toBeDefined()
+      const config = (
+        JSON.parse(String(save?.[1]?.body)) as {
+          config: TableSchema['views'][number]['config']
+        }
+      ).config
+      expect(config.highlight?.[0]?.when).toEqual({
+        op: 'and',
+        items: [
+          {
+            op: 'and',
+            items: [{ field: 'name', cmp: operator, value: null }],
+          },
+        ],
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
+
+it.each([
+  { kind: 'single_select', operator: 'is_any_of' },
+  { kind: 'single_select', operator: 'is_none_of' },
+  { kind: 'text_array', operator: 'has_any_of' },
+  { kind: 'text_array', operator: 'has_all_of' },
+  { kind: 'text_array', operator: 'has_none_of' },
+  { kind: 'text_array', operator: 'is_exactly' },
+] as const)(
+  'does not save an empty $operator highlight operand',
+  async ({ kind, operator }) => {
+    vi.useFakeTimers()
+    try {
+      const schema = schemaFor(kind)
+      schema.fields[0]!.filterOps = [operator]
+      schema.views[0]!.config.highlight = [
+        {
+          id: 'empty-list',
+          when: {
+            op: 'and',
+            items: [{ field: 'name', cmp: operator, value: [] }],
+          },
+          target: { type: 'row' },
+          color: 'red-2',
+        },
+      ]
+      const fetch = await mountGrid(markRaw(schema))
+      await wrapper!
+        .get(
+          '.grid-highlight-rule .grid-highlight-controls label:last-child select',
+        )
+        .setValue('blue-2')
+      await vi.advanceTimersByTimeAsync(350)
+      expect(
+        fetch.mock.calls.filter(
+          ([path, init]) =>
+            String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+        ),
+      ).toHaveLength(0)
+      expect(wrapper!.get('.grid-highlights [role="status"]').text()).toContain(
+        'Complete each condition',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
+
+it.each([
+  { kind: 'single_select', operator: 'is_none_of' },
+  { kind: 'multi_select', operator: 'has_all_of' },
+  { kind: 'multi_select', operator: 'has_none_of' },
+  { kind: 'multi_select', operator: 'is_exactly' },
+] as const)(
+  'waits for a list selection for a new $operator highlight condition',
+  async ({ kind, operator }) => {
+    vi.useFakeTimers()
+    try {
+      const schema = schemaFor(kind)
+      schema.fields[0]!.filterOps = [operator]
+      schema.fields[0]!.options = {
+        choices: [{ label: 'first' }, { label: 'second' }],
+      }
+      const fetch = await mountGrid(markRaw(schema))
+      await wrapper!
+        .get('.grid-highlights > fieldset > button')
+        .trigger('click')
+      await wrapper!
+        .get('.grid-highlight-rule .filter-actions button')
+        .trigger('click')
+      const saves = () =>
+        fetch.mock.calls.filter(
+          ([path, init]) =>
+            String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+        )
+      await vi.advanceTimersByTimeAsync(350)
+      expect(saves()).toHaveLength(0)
+      expect(wrapper!.get('.grid-highlights [role="status"]').text()).toContain(
+        'Complete each condition',
+      )
+
+      await wrapper!
+        .get('.grid-highlight-rule .filter-item select[multiple]')
+        .setValue(['first', 'second'])
+      await vi.advanceTimersByTimeAsync(350)
+      expect(saves()).toHaveLength(1)
+      const config = (
+        JSON.parse(String(saves()[0]?.[1]?.body)) as {
+          config: TableSchema['views'][number]['config']
+        }
+      ).config
+      expect(config.highlight?.[0]?.when).toEqual({
+        op: 'and',
+        items: [{ field: 'name', cmp: operator, value: ['first', 'second'] }],
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  },
+)
+
+it('keeps an incomplete highlight range local until both bounds are present', async () => {
+  vi.useFakeTimers()
+  try {
+    const schema = schemaFor('integer')
+    schema.fields[0]!.filterOps = ['between']
+    schema.views[0]!.config.highlight = [
+      {
+        id: 'range',
+        when: { field: 'name', cmp: 'between', value: ['1'] },
+        target: { type: 'row' },
+        color: 'red-2',
+      },
+    ]
+    const fetch = await mountGrid(markRaw(schema))
+    await wrapper!
+      .get(
+        '.grid-highlight-rule .grid-highlight-controls label:last-child select',
+      )
+      .setValue('blue-2')
+    await vi.advanceTimersByTimeAsync(350)
+    const saves = () =>
+      fetch.mock.calls.filter(
+        ([path, init]) =>
+          String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+      )
+    expect(saves()).toHaveLength(0)
+    expect(wrapper!.get('.grid-highlights [role="status"]').text()).toContain(
+      'Complete each condition',
+    )
+
+    await wrapper!
+      .findAll('.grid-highlight-rule .filter-item input')[1]!
+      .setValue('10')
+    await vi.advanceTimersByTimeAsync(350)
+    expect(saves()).toHaveLength(1)
+    const config = (
+      JSON.parse(String(saves()[0]?.[1]?.body)) as {
+        config: TableSchema['views'][number]['config']
+      }
+    ).config
+    expect(config.highlight?.[0]?.when).toEqual({
+      op: 'and',
+      items: [{ field: 'name', cmp: 'between', value: ['1', '10'] }],
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('preserves relative-user, bigint, and datetime filter values when preparing highlight saves', async () => {
+  vi.useFakeTimers()
+  try {
+    const schema = schemaFor('text')
+    schema.fields[0]!.filterOps = ['is_empty']
+    addField(schema, 'amount', 'integer')
+    addField(schema, 'due', 'datetime')
+    addField(schema, 'owner', 'user')
+    schema.fields.find((field) => field.id === 'amount')!.filterOps = ['gte']
+    schema.fields.find((field) => field.id === 'due')!.filterOps = ['before']
+    schema.fields.find((field) => field.id === 'owner')!.filterOps = [
+      'has_any_of',
+    ]
+    schema.views[0]!.config.highlight = [
+      {
+        id: 'precise',
+        when: {
+          op: 'and',
+          items: [
+            { field: 'name', cmp: 'is_empty' },
+            { field: 'amount', cmp: 'gte', value: '9007199254740993' },
+            {
+              field: 'due',
+              cmp: 'before',
+              value: '2026-03-29T01:15:12.123456Z',
+            },
+            { field: 'owner', cmp: 'has_any_of', value: { rel: 'me' } },
+          ],
+        },
+        target: { type: 'row' },
+        color: 'red-2',
+      },
+    ]
+    const fetch = await mountGrid(markRaw(schema))
+    await wrapper!
+      .get(
+        '.grid-highlight-rule .grid-highlight-controls label:last-child select',
+      )
+      .setValue('blue-2')
+    await vi.advanceTimersByTimeAsync(350)
+    const save = fetch.mock.calls.find(
+      ([path, init]) =>
+        String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+    )
+    expect(save).toBeDefined()
+    const config = (
+      JSON.parse(String(save?.[1]?.body)) as {
+        config: TableSchema['views'][number]['config']
+      }
+    ).config
+    expect(config.highlight?.[0]?.when).toEqual({
+      op: 'and',
+      items: [
+        { field: 'name', cmp: 'is_empty', value: null },
+        { field: 'amount', cmp: 'gte', value: '9007199254740993' },
+        {
+          field: 'due',
+          cmp: 'before',
+          value: '2026-03-29T01:15:12.123456Z',
+        },
+        { field: 'owner', cmp: 'has_any_of', value: { rel: 'me' } },
+      ],
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('preserves valid empty JSON arrays in highlight equality conditions', async () => {
+  vi.useFakeTimers()
+  try {
+    const schema = schemaFor('json')
+    schema.fields[0]!.filterOps = ['is']
+    schema.views[0]!.config.highlight = [
+      {
+        id: 'empty-json-array',
+        when: { field: 'name', cmp: 'is', value: [] },
+        target: { type: 'row' },
+        color: 'red-2',
+      },
+    ]
+    const fetch = await mountGrid(markRaw(schema))
+    expect(wrapper!.find('.grid-highlights [role="status"]').exists()).toBe(
+      false,
+    )
+    await wrapper!
+      .get(
+        '.grid-highlight-rule .grid-highlight-controls label:last-child select',
+      )
+      .setValue('blue-2')
+    await vi.advanceTimersByTimeAsync(350)
+    const save = fetch.mock.calls.find(
+      ([path, init]) =>
+        String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+    )
+    expect(save).toBeDefined()
+    const config = (
+      JSON.parse(String(save?.[1]?.body)) as {
+        config: TableSchema['views'][number]['config']
+      }
+    ).config
+    expect(config.highlight?.[0]?.when).toEqual({
+      field: 'name',
+      cmp: 'is',
+      value: [],
+    })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('labels the highlight menu and its rule help in both locales', async () => {
+  const schema = schemaFor('text')
+  schema.fields[0]!.filterOps = ['is']
+  await mountGrid(schema)
+  const summary = wrapper!.get('.grid-highlights > summary')
+  expect(summary.attributes('aria-label')).toBe('Highlight')
+  expect(summary.text()).toBe('Highlight')
+  expect(summary.find('svg').exists()).toBe(true)
+  expect(wrapper!.get('.grid-highlights').text()).toContain(
+    'The first matching rule wins for each row and each cell.',
+  )
+  expect(wrapper!.get('.grid-highlights').text()).toContain(
+    'A cell match overrides the row color.',
+  )
+
+  await wrapper!.get('.grid-highlights > fieldset > button').trigger('click')
+  expect(
+    wrapper!.get('.grid-highlight-controls label:last-child').text(),
+  ).toContain('Color for rule 1')
+  i18n.global.locale.value = 'zh-CN'
+  await flushPromises()
+  expect(summary.attributes('aria-label')).toBe('高亮')
+  expect(summary.text()).toBe('高亮')
+  expect(wrapper!.get('.grid-highlights').text()).toContain(
+    '每一行和每个单元格分别使用第一条匹配的规则',
+  )
+  expect(wrapper!.get('.grid-highlights').text()).toContain(
+    '单元格匹配会覆盖行颜色',
+  )
+  expect(
+    wrapper!.get('.grid-highlight-controls label:last-child').text(),
+  ).toContain('规则 1 的颜色')
+})
+
+it.each([
+  { level: 'read', scope: 'shared', locked: false, visible: false },
+  { level: 'write', scope: 'shared', locked: true, visible: false },
+  { level: 'read', scope: 'personal', locked: false, visible: true },
+  { level: 'owner', scope: 'shared', locked: true, visible: true },
+] as const)(
+  'keeps highlight editing permission for $level / $scope / locked=$locked',
+  async ({ level, scope, locked, visible }) => {
+    const schema = schemaFor('text', level)
+    schema.views[0]!.scope = scope
+    schema.views[0]!.locked = locked
+    await mountGrid(schema)
+    expect(wrapper!.find('.grid-highlights').exists()).toBe(visible)
+  },
+)
+
+it('discards local highlight drafts when view-edit permissions change', async () => {
+  const schema = schemaFor('text')
+  schema.fields[0]!.filterOps = ['is']
+  schema.views[0]!.config.highlight = [
+    {
+      id: 'saved',
+      when: { field: 'name', cmp: 'is', value: 'Saved' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ]
+  await mountGrid(markRaw(schema))
+  await wrapper!.get('.grid-highlights > fieldset > button').trigger('click')
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(2)
+
+  await wrapper!.setProps({ schema: markRaw({ ...schema, myLevel: 'read' }) })
+  expect(wrapper!.find('.grid-highlights').exists()).toBe(false)
+  await wrapper!.setProps({ schema: markRaw(schema) })
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(1)
+  expect(
+    (
+      wrapper!.get('.grid-highlight-rule .filter-item input')
+        .element as HTMLInputElement
+    ).value,
+  ).toBe('Saved')
+})
+
+it('enforces the 20-rule boundary without saving an incomplete replacement', async () => {
+  const schema = schemaFor('text')
+  schema.fields[0]!.filterOps = ['is']
+  schema.views[0]!.config.highlight = Array.from(
+    { length: 20 },
+    (_, index) => ({
+      id: `saved-${index}`,
+      when: { field: 'name', cmp: 'is', value: `Value ${index}` },
+      target: { type: 'row' },
+      color: 'red-2',
+    }),
+  )
+  const fetch = await mountGrid(markRaw(schema))
+  const add = wrapper!.get('.grid-highlights > fieldset > button')
+  expect(add.attributes('disabled')).toBeDefined()
+  expect(wrapper!.get('.grid-highlights').text()).toContain(
+    'A view can have up to 20 highlight rules.',
+  )
+  await wrapper!
+    .get('button[aria-label="Remove highlight rule 20"]')
+    .trigger('click')
+  expect(add.attributes('disabled')).toBeUndefined()
+  await add.trigger('click')
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(20)
+  expect(add.attributes('disabled')).toBeDefined()
+
+  await vi.waitFor(() =>
+    expect(wrapper!.emitted('viewUpdated')).toHaveLength(1),
+  )
+  const save = fetch.mock.calls.find(
+    ([path, init]) =>
+      String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+  )
+  const config = (
+    JSON.parse(String(save?.[1]?.body)) as {
+      config: TableSchema['views'][number]['config']
+    }
+  ).config
+  expect(config.highlight).toHaveLength(19)
+  expect(config.highlight?.map((rule) => rule.id)).not.toContain('saved-19')
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(20)
+})
+
+it('keeps highlight drafts through a version conflict and preserves concurrent view settings', async () => {
+  const schema = schemaFor('text')
+  schema.fields[0]!.filterOps = ['is']
+  schema.views[0]!.config.highlight = [
+    {
+      id: 'saved',
+      when: { field: 'name', cmp: 'is', value: 'Saved' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ]
+  const latest = structuredClone(schema)
+  latest.views[0]!.version = 7
+  latest.views[0]!.config.rowHeight = 'tall'
+  const fetch = await mountGrid(markRaw(schema))
+  const fallback = fetch.getMockImplementation()!
+  let patches = 0
+  fetch.mockImplementation(async (input, init) => {
+    const path = String(input)
+    if (path === '/api/v1/views/v' && init?.method === 'PATCH') {
+      patches++
+      if (patches === 1)
+        return Response.json(
+          { error: { code: 'ERR_VERSION_CONFLICT' } },
+          { status: 409 },
+        )
+      const { config } = JSON.parse(String(init.body)) as {
+        config: TableSchema['views'][number]['config']
+      }
+      return Response.json({
+        view: { ...latest.views[0], version: 8, config },
+        eventId: 'event',
+      })
+    }
+    if (path === '/api/v1/tables/t/schema') return Response.json(latest)
+    return fallback(input, init)
+  })
+
+  await wrapper!
+    .get(
+      '.grid-highlight-rule .grid-highlight-controls label:last-child select',
+    )
+    .setValue('blue-2')
+  await wrapper!.get('.grid-highlights > fieldset > button').trigger('click')
+  await vi.waitFor(
+    () => expect(wrapper!.emitted('viewUpdated')).toHaveLength(2),
+    { timeout: 5000 },
+  )
+  const saves = () =>
+    fetch.mock.calls.filter(
+      ([path, init]) =>
+        String(path) === '/api/v1/views/v' && init?.method === 'PATCH',
+    )
+  expect(saves()).toHaveLength(2)
+  expect(saves()[0]?.[1]?.headers).toMatchObject({ 'If-Match': '1' })
+  expect(saves()[1]?.[1]?.headers).toMatchObject({ 'If-Match': '7' })
+  const retried = (
+    JSON.parse(String(saves()[1]?.[1]?.body)) as {
+      config: TableSchema['views'][number]['config']
+    }
+  ).config
+  expect(retried.rowHeight).toBe('tall')
+  expect(retried.highlight).toMatchObject([{ id: 'saved', color: 'blue-2' }])
+  expect(wrapper!.find('[role="alert"]').exists()).toBe(true)
+  expect(wrapper!.findAll('.grid-highlight-rule')).toHaveLength(2)
+
+  const draft = wrapper!.findAll('.grid-highlight-rule')[1]!
+  await draft.get('.filter-actions button').trigger('click')
+  await draft.get('.filter-item input').setValue('New')
+  await vi.waitFor(() => expect(saves()).toHaveLength(3))
+  const completed = (
+    JSON.parse(String(saves()[2]?.[1]?.body)) as {
+      config: TableSchema['views'][number]['config']
+    }
+  ).config
+  expect(saves()[2]?.[1]?.headers).toMatchObject({ 'If-Match': '8' })
+  expect(completed.rowHeight).toBe('tall')
+  expect(completed.highlight).toHaveLength(2)
 })
 
 it('reports grid focus and clears it when focus leaves the grid', async () => {
