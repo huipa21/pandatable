@@ -7,6 +7,7 @@ import { i18n, loadLocale } from '../i18n'
 import { useNavStore } from '../stores/nav'
 import { useAuthStore } from '../stores/auth'
 import { useRealtimeStore } from '../stores/realtime'
+import { useSharingStore } from '../stores/sharing'
 import { navigation, navUser, tableSchema } from '../test/navigation'
 import ResourcePage from './ResourcePage.vue'
 import { errorMessage, RequestError } from '../api/client'
@@ -28,7 +29,11 @@ afterEach(() => {
   disposePinia(pinia)
   vi.unstubAllGlobals()
 })
-async function setup(path: string, extraStubs: Record<string, Component> = {}) {
+async function setup(
+  path: string,
+  extraStubs: Record<string, Component> = {},
+  attachTo?: HTMLElement,
+) {
   const nav = useNavStore()
   nav.tree = navigation()
   nav.loaded = true
@@ -45,6 +50,7 @@ async function setup(path: string, extraStubs: Record<string, Component> = {}) {
   })
   await router.push(path)
   const wrapper = mount(ResourcePage, {
+    attachTo,
     global: {
       plugins: [pinia, i18n, router],
       stubs: {
@@ -65,6 +71,9 @@ async function setup(path: string, extraStubs: Record<string, Component> = {}) {
               <button class="grid-fields-trigger" @click="$emit('toggleFields')">Fields</button>
               <button class="grid-filter-trigger" @click="$emit('toggleFilter')">Filter</button>
               <button class="grid-create-field" @click="$emit('createField')">Add field</button>
+              <details class="grid-highlights"><summary>Colour</summary></details>
+              <slot name="after-highlight" />
+              <details class="grid-row-height"><summary>Height</summary></details>
             </div>`,
         },
         MobileCardList: {
@@ -419,6 +428,98 @@ it('refreshes unchanged-route schema on nav revision and removes sharing when th
     expect(
       wrapper.findAll('button').some((button) => button.text() === 'Share'),
     ).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('moves table sharing into the Grid Visibility menu with Escape, outside dismissal and focus return', async () => {
+  useAuthStore().setUser(navUser)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) =>
+      Promise.resolve(
+        String(input).includes('/grants')
+          ? Response.json({
+              effectiveLevel: 'owner',
+              direct: [],
+              inherited: [],
+            })
+          : Response.json(tableSchema()),
+      ),
+    ),
+  )
+  const { wrapper } = await setup('/t/t/v/v', {}, document.body)
+  const sharing = useSharingStore()
+  try {
+    expect(wrapper.find('.table-utility .visibility-menu').exists()).toBe(false)
+    expect(
+      wrapper
+        .findAll('.table-utility > button')
+        .some((button) => button.text() === 'Share'),
+    ).toBe(false)
+    const toolbar = wrapper.get('[data-testid="production-grid"]')
+    expect(
+      [...toolbar.element.children]
+        .filter((element) => element.tagName === 'DETAILS')
+        .map((element) => element.className),
+    ).toEqual([
+      'grid-highlights',
+      'visibility-menu visibility-menu--toolbar',
+      'grid-row-height',
+    ])
+    const menu = toolbar.get('.visibility-menu')
+    const details = menu.element as HTMLDetailsElement
+    const summary = menu.get('summary')
+    expect(summary.attributes('aria-label')).toBe('Visibility')
+    expect(summary.find('svg.app-icon').exists()).toBe(true)
+
+    details.open = true
+    await menu.trigger('keydown', { key: 'Escape' })
+    expect(details.open).toBe(false)
+    expect(document.activeElement).toBe(summary.element)
+
+    details.open = true
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(details.open).toBe(false)
+
+    details.open = true
+    await menu.get('button').trigger('click')
+    expect(details.open).toBe(false)
+    expect(sharing.target).toEqual({ kind: 'table', id: 't', name: 'Table' })
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    sharing.close(true)
+    await flushPromises()
+    expect(document.activeElement).toBe(summary.element)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('keeps Visibility sharing on mobile and non-Grid views and hides it from non-owners', async () => {
+  useAuthStore().setUser(navUser)
+  let level = 'owner'
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() =>
+      Promise.resolve(Response.json({ ...tableSchema(), myLevel: level })),
+    ),
+  )
+  media.matches = false
+  const { wrapper, nav } = await setup('/t/t/v/v')
+  try {
+    expect(wrapper.find('[data-testid="mobile-cards"]').exists()).toBe(true)
+    const menu = wrapper.get('.table-utility .visibility-menu--utility')
+    expect(menu.get('summary').attributes('aria-label')).toBe('Visibility')
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(menu.get('summary').attributes('aria-label')).toBe('可见性')
+    expect(menu.get('button').text()).toBe('共享')
+    i18n.global.locale.value = 'en'
+    level = 'write'
+    nav.revision++
+    await flushPromises()
+    expect(wrapper.find('.visibility-menu').exists()).toBe(false)
   } finally {
     wrapper.unmount()
   }

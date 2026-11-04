@@ -282,6 +282,10 @@
   },
   "grid": {
     "title": "Data grid",
+    "visibilityMenu": {
+      "label": "Visibility",
+      "actions": "Visibility actions"
+    },
     "fields": "Fields",
     "visibleFields": "Visible fields",
     "columnWidth": "Width of {name}",

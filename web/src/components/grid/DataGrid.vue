@@ -1832,7 +1832,7 @@ async function keydown(event: KeyboardEvent) {
     event.isComposing ||
     (event.target instanceof Element &&
       event.target.closest(
-        'input, textarea, select, button, [contenteditable="true"]',
+        'input, textarea, select, button, summary, [contenteditable="true"]',
       ))
   )
     return
@@ -2875,6 +2875,7 @@ onBeforeUnmount(() => {
           </button>
         </fieldset>
       </details>
+      <slot name="after-highlight" />
       <details v-if="desktop" class="grid-row-height">
         <summary :aria-label="t('grid.rowHeight')" :title="t('grid.rowHeight')">
           <AppIcon name="height" />

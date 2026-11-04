@@ -33,6 +33,7 @@ import { useRealtimeStore } from '../stores/realtime'
 import { useUndoStore, viewUndoStep } from '../stores/undo'
 import AppIcon from '../components/AppIcon.vue'
 import PresenceAvatars from '../components/presence/PresenceAvatars.vue'
+import VisibilityMenu from '../components/sharing/VisibilityMenu.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -966,9 +967,11 @@ onBeforeUnmount(() => {
             :table-id="node.id"
             :identity="auth.user?.id ?? ''"
           />
-          <button v-if="canShare" type="button" @click="sharing.open(node)">
-            {{ t('sharing.open') }}
-          </button>
+          <VisibilityMenu
+            v-if="canShare && !(view?.type === 'grid' && desktop)"
+            :target="node"
+            placement="utility"
+          />
           <details class="table-management">
             <summary>
               <AppIcon name="table" />
@@ -1221,7 +1224,11 @@ onBeforeUnmount(() => {
                 (id) =>
                   router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
               "
-            />
+            >
+              <template #after-highlight>
+                <VisibilityMenu v-if="canShare && node" :target="node" />
+              </template>
+            </DataGrid>
             <div v-show="fieldsOpen" class="grid-field-popover">
               <FieldPanel
                 v-if="fieldsVisited"

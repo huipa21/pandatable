@@ -43,8 +43,12 @@ function waitForGrantRefresh(page: Page, kind: ResourceKind, id: string) {
 }
 async function open(page: Page, path: string, locale = en) {
   await page.goto(path)
-  await page
-    .locator('main')
+  const main = page.locator('main')
+  if (path.startsWith('/t/'))
+    await main
+      .getByLabel(locale.grid.visibilityMenu.label, { exact: true })
+      .click()
+  await main
     .getByRole('button', { name: locale.sharing.open, exact: true })
     .click()
   await expect(dialog(page, locale)).toBeVisible()

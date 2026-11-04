@@ -61,6 +61,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.7 | Sort | ✅ | 2026-10-30 | AT-503/410 and task gates pass: ordered transient sort controls, NULLS LAST deterministic paging, and formula/rollup sorting; D-175 preserves the legacy request. [Record](task-prompts/T2.7.md#record-2026-10-30). |
 | T2.8 | Grouping | ✅ | 2026-10-30 | AT-504 and task gates pass: filtered three-level buckets, empty and sorted multi-select keys, grouped row paging, localized desktop/mobile headers, and persistent expansion; D-176 records view-config storage. [Record](task-prompts/T2.8.md#record-2026-10-30). |
 | T2.9 | Highlight | ✅ | 2026-10-30 | D-177: ordered, filter-backed row/cell rules use first-match semantics and light/dark palette tokens. AT-505 and both task gates pass. [Record](task-prompts/T2.9.md#record-2026-10-30). |
+| UI-VISIBILITY | Sharing in Visibility menu | ✅ | 2026-11-04 | D-214: table Share moves into an eye-icon Visibility menu after Highlight; mobile/non-Grid keep it in the table utility area. Check and fast browser gate pass. [Record](task-prompts/ui-visibility-sharing.md#record-2026-11-04). |
 | T2.10 | View management | ✅ | 2026-10-30 | D-178; AT-506–508 and task gates pass. Shared/personal lifecycle, locks, ordering, local overrides, and version conflicts are implemented; no migration. |
 | T2.11 | Search & aggregates | ✅ | 2026-10-30 | D-179; AT-509/510 and task gates pass. Visible-field quick search and filtered footer aggregates are complete. [Record](task-prompts/T2.11.md#record-2026-10-30). |
 | T2.12 | Type change | ✅ | 2026-10-31 | D-180; AT-323/324 and both task gates pass. Owner-only atomic conversions, dependency error propagation, choice/default/filter rewrites, and localized wizard are complete. [Record](task-prompts/T2.12.md#record-2026-10-31). |
@@ -117,6 +118,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | UI-VISIBILITY Done: table sharing moves into the Visibility toolbar menu (D-214); check and fast browser gate pass. |
 | 2026-11-04 | Completed field creation redesign (D-212); check and affected fast browser gate pass. |
 | 2026-11-02 | Shell redesign Done: sketch-based header, workspace sidebar tree and avatar menu; e2e specs migrated and both task gates pass (D-209). | loopback navigation uses the configured origin; strict CSRF is preserved and both task gates pass (D-208). |
 | 2026-11-02 | T5.2 Done: SMTP, self-service password reset and opt-in mention email pass AT-904 and both task gates. |

@@ -98,6 +98,10 @@ Routes:
 - Sidebar actions and resource pages expose Share only for target effective
   owner, including book/table-only owners who cannot rename/delete that resource
   without parent ownership. No Share on path-only/read/write/admin-only nodes.
+- Table pages host Share in the eye-icon Visibility menu (D-214): inside the
+  desktop Grid toolbar after Highlight, otherwise (mobile, non-Grid views) in
+  the table utility area. It launches the same dialog and returns focus to the
+  menu opener; workspace/book pages keep their direct Share button.
 - A viewport-bounded, scrollable native modal separates direct grants from
   read-only inherited grants and identifies principal type/status and source
   scope/id/level. Missing principals show an honest missing label/id; disabled

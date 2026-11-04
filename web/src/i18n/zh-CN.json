@@ -282,6 +282,10 @@
   },
   "grid": {
     "title": "数据网格",
+    "visibilityMenu": {
+      "label": "可见性",
+      "actions": "可见性操作"
+    },
     "fields": "字段",
     "visibleFields": "可见字段",
     "columnWidth": "{name}的宽度",
