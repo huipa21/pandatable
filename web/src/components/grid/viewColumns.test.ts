@@ -399,6 +399,181 @@ it('coalesces resize/order/hide/freeze and sends one versioned bounded config sa
   expect(columns.saving.value).toBe(false)
 })
 
+it('flushes pending columns, highlights and aggregates without waiting for the debounce', async () => {
+  const fetch = vi.fn(async (_url: unknown, init?: RequestInit) =>
+    Response.json({
+      view: {
+        ...fixture().views[0],
+        version: 2,
+        config: JSON.parse(String(init?.body)).config,
+      },
+    }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted()
+  columns.change({ kind: 'visible', id: 'name', visible: false })
+  columns.changeHighlights([
+    {
+      id: 'hl-flush',
+      when: { field: 'name', cmp: 'is', value: 'ready' },
+      target: { type: 'row' },
+      color: 'red-2',
+    },
+  ])
+  columns.changeAggregates([{ fieldId: 'other', aggregate: 'count' }])
+
+  expect(await columns.flush()).toBe(true)
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ 'If-Match': '1' })
+  expect(
+    JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).config,
+  ).toMatchObject({
+    fields: expect.arrayContaining([
+      expect.objectContaining({ id: 'name', visible: false }),
+    ]),
+    highlight: [expect.objectContaining({ id: 'hl-flush' })],
+    aggregates: [{ fieldId: 'other', aggregate: 'count' }],
+  })
+  await vi.advanceTimersByTimeAsync(columnSaveDelay)
+  expect(fetch).toHaveBeenCalledTimes(1)
+})
+
+it('waits for an in-flight save and flushes later intents against its returned version', async () => {
+  let release!: (response: Response) => void
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        }),
+    )
+    .mockImplementationOnce(async (_url: unknown, init?: RequestInit) =>
+      Response.json({
+        view: {
+          ...fixture().views[0],
+          version: 3,
+          config: JSON.parse(String(init?.body)).config,
+        },
+      }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted()
+  columns.change({ kind: 'width', id: 'name', width: 250 })
+  await vi.advanceTimersByTimeAsync(columnSaveDelay)
+  expect(columns.saving.value).toBe(true)
+  columns.change({ kind: 'visible', id: 'other', visible: false })
+  const flushing = columns.flush()
+  const firstConfig = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body)).config
+  release(
+    Response.json({
+      view: { ...fixture().views[0], version: 2, config: firstConfig },
+    }),
+  )
+
+  expect(await flushing).toBe(true)
+  expect(fetch).toHaveBeenCalledTimes(2)
+  expect(fetch.mock.calls[1]?.[1]?.headers['If-Match']).toBe('2')
+  expect(
+    JSON.parse(String(fetch.mock.calls[1]?.[1]?.body)).config.fields,
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'name', width: 250 }),
+      expect.objectContaining({ id: 'other', visible: false }),
+    ]),
+  )
+})
+
+it('reports a rejected flush and retains the pending changes for retry', async () => {
+  const schema = fixture()
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ error: { code: 'ERR_VALIDATION' } }, { status: 400 }),
+    )
+    .mockResolvedValueOnce(Response.json(schema))
+    .mockImplementationOnce(async (_url: unknown, init?: RequestInit) =>
+      Response.json({
+        view: {
+          ...schema.views[0],
+          version: 2,
+          config: JSON.parse(String(init?.body)).config,
+        },
+      }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const { columns, failure } = mounted(schema)
+  columns.change({ kind: 'visible', id: 'name', visible: false })
+  expect(await columns.flush()).toBe(false)
+  expect(columns.retryable.value).toBe(true)
+  expect(failure).toHaveBeenCalled()
+  expect(columns.config.value.fields[0]?.visible).toBe(true)
+
+  columns.retry()
+  await flushPromises()
+  expect(columns.retryable.value).toBe(false)
+  expect(columns.config.value.fields[0]?.visible).toBe(false)
+})
+
+it('flushes a version conflict after rebasing against the latest view', async () => {
+  const latest = fixture()
+  latest.views[0]!.version = 2
+  latest.views[0]!.config.fields[1]!.width = 325
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json(
+        { error: { code: 'ERR_VERSION_CONFLICT' } },
+        { status: 409 },
+      ),
+    )
+    .mockResolvedValueOnce(Response.json(latest))
+    .mockImplementationOnce(async (_url: unknown, init?: RequestInit) =>
+      Response.json({
+        view: {
+          ...latest.views[0],
+          version: 3,
+          config: JSON.parse(String(init?.body)).config,
+        },
+      }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const { columns } = mounted()
+  columns.change({ kind: 'visible', id: 'name', visible: false })
+  expect(await columns.flush()).toBe(true)
+  expect(fetch).toHaveBeenCalledTimes(3)
+  expect(fetch.mock.calls[2]?.[1]?.headers['If-Match']).toBe('2')
+  expect(columns.config.value.fields).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: 'name', visible: false }),
+      expect.objectContaining({ id: 'other', width: 325 }),
+    ]),
+  )
+})
+
+it('rejects a flush when the current identity changes while saving', async () => {
+  let release!: (response: Response) => void
+  const fetch = vi.fn(
+    () =>
+      new Promise<Response>((resolve) => {
+        release = resolve
+      }),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const { columns, state, updated } = mounted()
+  columns.change({ kind: 'width', id: 'name', width: 250 })
+  const flushing = columns.flush()
+  state.identity = 'another-actor'
+  await flushPromises()
+  release(
+    Response.json({
+      view: { ...fixture().views[0], version: 2 },
+    }),
+  )
+  expect(await flushing).toBe(false)
+  expect(updated).not.toHaveBeenCalled()
+})
+
 it.each(['reader', 'locked'])(
   'keeps %s column changes strictly local without saved state',
   async (mode) => {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Field list and editor on the real table schema shell (D-130). Lazy-loaded;
 // every mutation returns or reloads the authoritative schema.
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { request, RequestError } from '../../api/client'
 import type {
@@ -45,11 +45,15 @@ const props = defineProps<{
   schema: TableSchema
   menu?: boolean
   columns?: ViewColumns['fields']
+  prepareReorder?: () => Promise<boolean>
+  persistReorder?: (ids: string[]) => Promise<boolean>
+  finishReorder?: () => void
 }>()
 const emit = defineEmits<{
   update: [schema: TableSchema]
   reload: []
   visibility: [id: string, visible: boolean]
+  reorder: [ids: string[]]
 }>()
 
 const { t, locale } = useI18n()
@@ -67,23 +71,25 @@ const fields = computed(() =>
 const userFields = computed(() => fields.value.filter((f) => !f.isSystem))
 const fieldSearch = ref('')
 const showSystemFields = ref(false)
-const displayedFields = computed(() => {
+const orderedFields = computed(() => {
   if (!props.menu) return fields.value
   const order = new Map(
     (props.columns ?? []).map((column, index) => [column.id, index]),
   )
+  return [...fields.value].sort(
+    (a, b) =>
+      (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  )
+})
+const displayedFields = computed(() => {
+  if (!props.menu) return orderedFields.value
   const query = fieldSearch.value.trim().toLocaleLowerCase()
-  return fields.value
-    .filter(
-      (field) =>
-        (showSystemFields.value || !field.isSystem) &&
-        field.name.toLocaleLowerCase().includes(query),
-    )
-    .sort(
-      (a, b) =>
-        (order.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
-        (order.get(b.id) ?? Number.MAX_SAFE_INTEGER),
-    )
+  return orderedFields.value.filter(
+    (field) =>
+      (showSystemFields.value || !field.isSystem) &&
+      field.name.toLocaleLowerCase().includes(query),
+  )
 })
 function fieldVisible(field: TableField) {
   return (
@@ -101,10 +107,20 @@ function toggleDisplayedFields(visible: boolean) {
     if (fieldVisible(field) !== visible) emit('visibility', field.id, visible)
 }
 
-const busy = ref(false)
+const mutationBusy = ref(false)
+const reordering = ref(false)
+const busy = computed(() => mutationBusy.value || reordering.value)
 const error = ref<unknown>(null)
 const status = ref('')
 let controller: AbortController | undefined
+
+const openMenuId = ref<string | null>(null)
+const menuPosition = ref({ left: '0px', top: '0px' })
+let menuDetails: HTMLDetailsElement | null = null
+const pressedFieldId = ref<string | null>(null)
+const draggedFieldId = ref<string | null>(null)
+const dropTarget = ref<{ id: string; edge: 'before' | 'after' } | null>(null)
+let pressedPointerId: number | null = null
 
 const editor = ref<HTMLDialogElement>()
 const typeChangeEditor = ref<HTMLDialogElement>()
@@ -123,7 +139,9 @@ const draft = ref<FieldDraft>(draftFrom(null, env.value))
 const conflict = ref(false)
 const deleting = ref<TableField | null>(null)
 const relationCreating = ref(false)
+const relationEditing = ref<TableField | null>(null)
 const computedCreating = ref(false)
+const computedEditing = ref<TableField | null>(null)
 const formulaCreating = ref(false)
 const formulaEditing = ref<TableField | null>(null)
 const formulaDraft = ref({ name: '', description: '', expression: '' })
@@ -133,6 +151,7 @@ const formulaChecking = ref(false)
 const formulaCursor = ref(0)
 const computedDraft = ref({
   name: '',
+  description: '',
   kind: 'lookup' as 'lookup' | 'rollup',
   relationFieldId: '',
   targetFieldId: '',
@@ -145,12 +164,15 @@ let formulaController: AbortController | undefined
 let formulaTimer: ReturnType<typeof setTimeout> | undefined
 const relationDraft = ref({
   name: '',
+  description: '',
   reverseName: '',
   targetTableId: '',
   kind: 'one_many',
   sourceSide: 'child',
   onDelete: 'set_null',
 })
+const relationTargetLoading = ref(false)
+let relationController: AbortController | undefined
 const relationCardinality = computed({
   get: () =>
     relationDraft.value.kind === 'one_many'
@@ -170,24 +192,31 @@ const relationChoices = computed(() => [
   { value: 'one_one', label: t('relation.oneOne'), icon: 'link' as const },
 ])
 const computedRelations = computed(() =>
-  props.schema.relations.flatMap((relation) => {
-    const sourceFieldId =
-      relation.parentTableId === props.schema.table.id
-        ? relation.parentFieldId
-        : relation.childTableId === props.schema.table.id
-          ? relation.childFieldId
-          : ''
-    const targetTableId =
-      relation.parentTableId === props.schema.table.id
-        ? relation.childTableId
-        : relation.childTableId === props.schema.table.id
-          ? relation.parentTableId
-          : ''
-    const field = props.schema.fields.find(
-      (item) => item.id === sourceFieldId && item.uiType === 'link',
-    )
-    return field ? [{ field, targetTableId }] : []
-  }),
+  props.schema.relations.flatMap((relation) =>
+    [
+      ...(relation.parentTableId === props.schema.table.id
+        ? [
+            {
+              fieldId: relation.parentFieldId,
+              targetTableId: relation.childTableId,
+            },
+          ]
+        : []),
+      ...(relation.childTableId === props.schema.table.id
+        ? [
+            {
+              fieldId: relation.childFieldId,
+              targetTableId: relation.parentTableId,
+            },
+          ]
+        : []),
+    ].flatMap(({ fieldId, targetTableId }) => {
+      const field = props.schema.fields.find(
+        (item) => item.id === fieldId && item.uiType === 'link',
+      )
+      return field ? [{ field, targetTableId }] : []
+    }),
+  ),
 )
 const computedAggregates = computed(() => {
   const type = computedTargetFields.value.find(
@@ -226,9 +255,10 @@ const computedAggregates = computed(() => {
 const computedEditorDisabled = computed(
   () =>
     busy.value ||
-    computedTargetLoading.value ||
-    !computedRelations.value.length ||
-    !computedTargetFields.value.length,
+    (!computedEditing.value &&
+      (computedTargetLoading.value ||
+        !computedRelations.value.length ||
+        !computedTargetFields.value.length)),
 )
 const formulaFunctions = [
   'IF',
@@ -387,18 +417,69 @@ function computedAggregateLabel(aggregate: string) {
       return aggregate
   }
 }
-const targetTables = computed(() => {
+const bookTables = computed(() => {
   for (const workspace of nav.tree.workspaces) {
     const book = workspace.books.find(
       (item) => item.id === props.schema.table.bookId,
     )
-    if (book)
-      return book.tables
-        .filter((table) => table.level === 'owner')
-        .map((table) => ({ id: table.id, name: table.name }))
+    if (book) return book.tables
   }
   return []
 })
+const targetTables = computed(() =>
+  bookTables.value
+    .filter((table) => table.level === 'owner')
+    .map((table) => ({ id: table.id, name: table.name })),
+)
+const relationTargetTables = computed(() =>
+  relationEditing.value
+    ? bookTables.value.map((table) => ({ id: table.id, name: table.name }))
+    : targetTables.value,
+)
+const relationTargetUnavailable = computed(
+  () =>
+    !!relationEditing.value &&
+    !!relationDraft.value.targetTableId &&
+    !relationTargetTables.value.some(
+      (table) => table.id === relationDraft.value.targetTableId,
+    ),
+)
+const computedRelationUnavailable = computed(
+  () =>
+    !!computedEditing.value &&
+    !!computedDraft.value.relationFieldId &&
+    !computedRelations.value.some(
+      (item) => item.field.id === computedDraft.value.relationFieldId,
+    ),
+)
+const computedTargetUnavailable = computed(
+  () =>
+    !!computedEditing.value &&
+    !!computedDraft.value.targetFieldId &&
+    !computedTargetFields.value.some(
+      (field) => field.id === computedDraft.value.targetFieldId,
+    ),
+)
+const computedAggregateUnavailable = computed(
+  () =>
+    !!computedEditing.value &&
+    !!computedDraft.value.aggregate &&
+    !computedAggregates.value.includes(computedDraft.value.aggregate),
+)
+const computedTargetDisabled = computed(
+  () =>
+    busy.value ||
+    !!computedEditing.value ||
+    computedTargetLoading.value ||
+    !computedTargetFields.value.length,
+)
+const editingRelation = computed(() =>
+  props.schema.relations.find(
+    (relation) =>
+      relation.parentFieldId === relationEditing.value?.id ||
+      relation.childFieldId === relationEditing.value?.id,
+  ),
+)
 
 const constraints = computed(() => kindConstraints(draft.value.kind))
 const typeChangeKinds = computed(() =>
@@ -414,6 +495,17 @@ const canChangeType = (field: TableField) =>
   !['link', 'lookup', 'rollup', 'formula', 'attachment', 'autonumber'].includes(
     field.uiType,
   )
+const editableTypeKinds = computed(() => {
+  const field = editing.value
+  if (!field || !canChangeType(field)) return []
+  return [
+    field.uiType,
+    ...USER_KINDS.filter(
+      (kind) =>
+        kind !== field.uiType && kind !== 'attachment' && kind !== 'autonumber',
+    ),
+  ]
+})
 const storageFixed = computed(() => editing.value !== null)
 const systemEdit = computed(() => editing.value?.isSystem ?? false)
 const sizes = computed(() =>
@@ -442,9 +534,10 @@ async function mutate<T>(
   method: 'POST' | 'PATCH' | 'DELETE',
   body: unknown,
   version?: number,
+  forReorder = false,
 ): Promise<T | null> {
-  if (busy.value) return null
-  busy.value = true
+  if (mutationBusy.value || (reordering.value && !forReorder)) return null
+  mutationBusy.value = true
   error.value = null
   status.value = ''
   controller?.abort()
@@ -475,7 +568,7 @@ async function mutate<T>(
   } finally {
     if (controller === own) {
       controller = undefined
-      busy.value = false
+      mutationBusy.value = false
     }
   }
 }
@@ -492,14 +585,33 @@ async function openEditor(field: TableField | null) {
   editor.value?.showModal()
 }
 
-async function openTypeChange(field: TableField) {
+async function openTypeChange(field: TableField, kind: Kind) {
   error.value = null
   status.value = ''
   typeChanging.value = field
   typeChangePreview.value = null
-  typeChangeKind.value = typeChangeKinds.value[0] ?? (USER_KINDS[0] as Kind)
+  typeChangeKind.value = kind
   await nextTick()
   typeChangeEditor.value?.showModal()
+}
+
+function selectEditKind(kind: string) {
+  const field = editing.value
+  if (
+    !field ||
+    !canChangeType(field) ||
+    !isKind(kind) ||
+    !editableTypeKinds.value.includes(kind) ||
+    kind === field.uiType
+  )
+    return
+  if (
+    JSON.stringify(draft.value) !== JSON.stringify(draftFrom(field, env.value))
+  ) {
+    error.value = t('field.panel.saveBeforeTypeChange')
+    return
+  }
+  void openTypeChange(field, kind)
 }
 
 function closeTypeChange() {
@@ -547,10 +659,18 @@ async function saveTypeChange() {
     field.version,
   )
   if (!result) return
+  const updated = result.schema.fields.find((item) => item.id === field.id)
+  if (!updated) {
+    error.value = t('field.panel.configurationUnavailable')
+    emit('reload')
+    return
+  }
   emit('update', result.schema)
   typeChangeEditor.value?.close()
   typeChanging.value = null
   typeChangePreview.value = null
+  editing.value = updated
+  draft.value = draftFrom(updated, env.value)
   status.value = t('field.panel.saved')
 }
 
@@ -562,45 +682,90 @@ function closeEditor() {
   error.value = null
 }
 
-async function openRelationEditor() {
+async function loadReverseField(targetTableId: string, fieldId: string) {
+  relationController?.abort()
+  const own = new AbortController()
+  relationController = own
+  relationTargetLoading.value = true
+  try {
+    const target =
+      targetTableId === props.schema.table.id
+        ? props.schema
+        : await request<TableSchema>(
+            `/tables/${targetTableId}/schema`,
+            'GET',
+            undefined,
+            AbortSignal.any([own.signal, AbortSignal.timeout(10_000)]),
+          )
+    if (relationController !== own) return
+    const reverse = target.fields.find((item) => item.id === fieldId)
+    if (reverse) relationDraft.value.reverseName = reverse.name
+    else error.value = t('field.panel.configurationUnavailable')
+  } catch (cause) {
+    if (!own.signal.aborted) error.value = cause
+  } finally {
+    if (relationController === own) {
+      relationController = undefined
+      relationTargetLoading.value = false
+    }
+  }
+}
+
+async function openRelationEditor(field: TableField | null = null) {
   error.value = null
   status.value = ''
   if (!nav.loaded && !(await nav.refresh())) {
     error.value = nav.error ?? new Error(t('relation.noTables'))
     return
   }
+  relationEditing.value = field
+  const relation = editingRelation.value
+  const parent = relation?.parentFieldId === field?.id
   relationDraft.value = {
-    name: '',
-    reverseName: props.schema.table.name,
-    targetTableId:
-      targetTables.value.find((table) => table.id === props.schema.table.id)
-        ?.id ??
-      targetTables.value[0]?.id ??
-      '',
-    kind: 'one_many',
-    sourceSide: 'child',
-    onDelete: 'set_null',
+    name: field?.name ?? '',
+    description: field?.description ?? '',
+    reverseName: field ? '' : props.schema.table.name,
+    targetTableId: field
+      ? ((parent ? relation?.childTableId : relation?.parentTableId) ?? '')
+      : (targetTables.value.find((table) => table.id === props.schema.table.id)
+          ?.id ??
+        targetTables.value[0]?.id ??
+        ''),
+    kind: field ? (relation?.kind ?? '') : 'one_many',
+    sourceSide: field ? (parent ? 'parent' : 'child') : 'child',
+    onDelete: field ? (relation?.onDelete ?? '') : 'set_null',
   }
   relationCreating.value = true
   await nextTick()
   relationEditor.value?.showModal()
+  if (field && relation && relationDraft.value.targetTableId)
+    void loadReverseField(
+      relationDraft.value.targetTableId,
+      parent ? relation.childFieldId : relation.parentFieldId,
+    )
 }
 
 function closeRelationEditor() {
   if (busy.value) return
+  relationController?.abort()
+  relationController = undefined
+  relationTargetLoading.value = false
   relationEditor.value?.close()
   relationCreating.value = false
+  relationEditing.value = null
   error.value = null
 }
 
-async function loadComputedTargetFields() {
+async function loadComputedTargetFields(selectedId = '') {
+  computedController?.abort()
+  computedController = undefined
+  computedTargetLoading.value = false
   const relation = computedRelations.value.find(
     (item) => item.field.id === computedDraft.value.relationFieldId,
   )
   computedTargetFields.value = []
-  computedDraft.value.targetFieldId = ''
+  computedDraft.value.targetFieldId = selectedId
   if (!relation) return
-  computedController?.abort()
   const controller = new AbortController()
   computedController = controller
   computedTargetLoading.value = true
@@ -619,7 +784,9 @@ async function loadComputedTargetFields() {
         field.uiType !== 'lookup' &&
         field.uiType !== 'rollup',
     )
-    computedDraft.value.targetFieldId = computedTargetFields.value[0]?.id ?? ''
+    if (!computedEditing.value)
+      computedDraft.value.targetFieldId =
+        computedTargetFields.value[0]?.id ?? ''
   } catch (cause) {
     if (!controller.signal.aborted) error.value = cause
   } finally {
@@ -630,18 +797,34 @@ async function loadComputedTargetFields() {
   }
 }
 
-async function openComputedEditor(kind: 'lookup' | 'rollup') {
+async function openComputedEditor(
+  kind: 'lookup' | 'rollup',
+  field: TableField | null = null,
+) {
   error.value = null
   status.value = ''
+  computedEditing.value = field
   computedCreating.value = true
   computedDraft.value = {
-    name: '',
+    name: field?.name ?? '',
+    description: field?.description ?? '',
     kind,
-    relationFieldId: computedRelations.value[0]?.field.id ?? '',
-    targetFieldId: '',
-    aggregate: kind === 'lookup' ? '' : 'count',
+    relationFieldId:
+      typeof field?.options.relationFieldId === 'string'
+        ? field.options.relationFieldId
+        : (computedRelations.value[0]?.field.id ?? ''),
+    targetFieldId:
+      typeof field?.options.targetFieldId === 'string'
+        ? field.options.targetFieldId
+        : '',
+    aggregate:
+      typeof field?.options.aggregate === 'string'
+        ? field.options.aggregate
+        : kind === 'lookup'
+          ? ''
+          : 'count',
   }
-  await loadComputedTargetFields()
+  await loadComputedTargetFields(computedDraft.value.targetFieldId)
   await nextTick()
   computedEditor.value?.showModal()
 }
@@ -651,11 +834,34 @@ function closeComputedEditor() {
   computedController?.abort()
   computedEditor.value?.close()
   computedCreating.value = false
+  computedEditing.value = null
   computedTargetFields.value = []
   error.value = null
 }
 
-async function createComputedField() {
+async function saveComputedField() {
+  const field = computedEditing.value
+  if (field) {
+    const metadata = draftFrom(field, env.value)
+    metadata.name = computedDraft.value.name
+    metadata.description = computedDraft.value.description
+    const body = patchBody(field, metadata, env.value)
+    if (!body.ok) {
+      error.value = body.message
+      return
+    }
+    const result = await mutate<FieldMutation>(
+      `/fields/${field.id}`,
+      'PATCH',
+      body.value,
+      field.version,
+    )
+    if (!result) return
+    emit('update', result.schema)
+    closeComputedEditor()
+    status.value = t('field.panel.saved')
+    return
+  }
   const options = {
     relationFieldId: computedDraft.value.relationFieldId,
     targetFieldId: computedDraft.value.targetFieldId,
@@ -668,6 +874,9 @@ async function createComputedField() {
     'POST',
     {
       name: computedDraft.value.name,
+      ...(computedDraft.value.description.trim()
+        ? { description: computedDraft.value.description.trim() }
+        : {}),
       uiType: computedDraft.value.kind,
       options,
     },
@@ -676,6 +885,7 @@ async function createComputedField() {
   emit('update', result.schema)
   computedEditor.value?.close()
   computedCreating.value = false
+  computedEditing.value = null
   status.value = t('field.panel.saved')
 }
 
@@ -824,10 +1034,39 @@ async function saveFormula() {
 }
 
 async function createRelation() {
+  const field = relationEditing.value
+  if (field) {
+    const metadata = draftFrom(field, env.value)
+    metadata.name = relationDraft.value.name
+    metadata.description = relationDraft.value.description
+    const body = patchBody(field, metadata, env.value)
+    if (!body.ok) {
+      error.value = body.message
+      return
+    }
+    const result = await mutate<FieldMutation>(
+      `/fields/${field.id}`,
+      'PATCH',
+      body.value,
+      field.version,
+    )
+    if (!result) return
+    emit('update', result.schema)
+    closeRelationEditor()
+    status.value = t('field.panel.saved')
+    return
+  }
   const result = await mutate<RelationMutation>(
     `/tables/${props.schema.table.id}/relations`,
     'POST',
-    relationDraft.value,
+    {
+      name: relationDraft.value.name,
+      reverseName: relationDraft.value.reverseName,
+      targetTableId: relationDraft.value.targetTableId,
+      kind: relationDraft.value.kind,
+      sourceSide: relationDraft.value.sourceSide,
+      onDelete: relationDraft.value.onDelete,
+    },
   )
   if (!result) return
   emit('update', result.schema)
@@ -837,12 +1076,76 @@ async function createRelation() {
   void nav.refresh(true)
 }
 
+function openFieldEditor(field: TableField) {
+  if (field.uiType === 'formula') void openFormulaEditor(field)
+  else if (field.uiType === 'link') void openRelationEditor(field)
+  else if (field.uiType === 'lookup' || field.uiType === 'rollup')
+    void openComputedEditor(field.uiType, field)
+  else void openEditor(field)
+}
+
 // After a version conflict, reseed the open editor from the latest metadata.
 watch(
   () => props.schema,
   () => {
     if (!conflict.value) return
     conflict.value = false
+    if (typeChanging.value) {
+      const latest = stable(typeChanging.value)
+      typeChangePreview.value = null
+      if (!latest || !canChangeType(latest)) {
+        typeChangeEditor.value?.close()
+        typeChanging.value = null
+      } else {
+        typeChanging.value = latest
+        if (typeChangeKind.value === latest.uiType)
+          typeChangeKind.value = typeChangeKinds.value[0] ?? 'text'
+      }
+    }
+    if (relationEditing.value) {
+      const latest = stable(relationEditing.value)
+      if (!latest) closeRelationEditor()
+      else {
+        relationEditing.value = latest
+        relationDraft.value.name = latest.name
+        relationDraft.value.description = latest.description
+      }
+    }
+    if (computedEditing.value) {
+      const latest = stable(computedEditing.value)
+      if (!latest) closeComputedEditor()
+      else {
+        computedEditing.value = latest
+        computedDraft.value.name = latest.name
+        computedDraft.value.description = latest.description
+        computedDraft.value.relationFieldId =
+          typeof latest.options.relationFieldId === 'string'
+            ? latest.options.relationFieldId
+            : ''
+        computedDraft.value.aggregate =
+          typeof latest.options.aggregate === 'string'
+            ? latest.options.aggregate
+            : ''
+        void loadComputedTargetFields(
+          typeof latest.options.targetFieldId === 'string'
+            ? latest.options.targetFieldId
+            : '',
+        )
+      }
+    }
+    if (formulaEditing.value) {
+      const latest = stable(formulaEditing.value)
+      if (!latest) closeFormulaEditor()
+      else {
+        formulaEditing.value = latest
+        formulaDraft.value = {
+          name: latest.name,
+          description: latest.description,
+          expression: formulaExpression(latest),
+        }
+        formulaCheck.value = null
+      }
+    }
     if (!editing.value) return
     const latest = stable(editing.value)
     if (!latest) {
@@ -885,16 +1188,124 @@ async function save() {
   status.value = t('field.panel.saved')
 }
 
-async function move(field: TableField, offset: number) {
-  const index = userFields.value.findIndex((item) => item.id === field.id)
-  if (index < 0) return
-  const result = await mutate<FieldMutation>(
-    `/fields/${field.id}`,
-    'PATCH',
-    { index: index + offset },
-    field.version,
+function reorderCandidates(field: TableField) {
+  return displayedFields.value.filter(
+    (item) =>
+      !item.isSystem &&
+      (!props.menu || fieldVisible(item) || item.id === field.id),
   )
-  if (result) emit('update', result.schema)
+}
+
+function moveNeighbor(field: TableField, offset: number) {
+  const candidates = reorderCandidates(field)
+  const index = candidates.findIndex((item) => item.id === field.id)
+  return index < 0 ? undefined : candidates[index + offset]
+}
+
+function reorderPlan(
+  field: TableField,
+  target: TableField,
+  edge: 'before' | 'after',
+) {
+  const candidates = reorderCandidates(field).map((item) => item.id)
+  const sourceIndex = candidates.indexOf(field.id)
+  const targetIndex = candidates.indexOf(target.id)
+  if (sourceIndex < 0 || targetIndex < 0 || field.id === target.id) return null
+
+  const moved = [...candidates]
+  moved.splice(sourceIndex, 1)
+  const insertion = moved.indexOf(target.id) + (edge === 'after' ? 1 : 0)
+  moved.splice(insertion, 0, field.id)
+  if (moved.every((id, index) => id === candidates[index])) return null
+
+  const candidateIds = new Set(candidates)
+  let next = 0
+  const ids = orderedFields.value.map((item) =>
+    candidateIds.has(item.id) ? moved[next++]! : item.id,
+  )
+  const schemaIds = userFields.value.map((item) => item.id)
+  const schemaIndex = schemaIds.indexOf(field.id)
+  const remaining = schemaIds.filter((id) => id !== field.id)
+  const schemaTarget = remaining.indexOf(target.id)
+  if (schemaIndex < 0 || schemaTarget < 0) return null
+  return {
+    ids,
+    currentSchemaIndex: schemaIndex,
+    schemaIndex: schemaTarget + (edge === 'after' ? 1 : 0),
+    position: insertion + 1,
+    total: moved.length,
+  }
+}
+
+async function reorderField(
+  field: TableField,
+  target: TableField,
+  edge: 'before' | 'after',
+) {
+  if (!owner.value || busy.value || field.isSystem || target.isSystem) return
+  if (!reorderPlan(field, target, edge)) return
+
+  const reorderView = props.menu && props.columns !== undefined
+  reordering.value = true
+  error.value = null
+  status.value = t('field.panel.savingOrder')
+  let prepared = false
+  try {
+    if (reorderView && props.prepareReorder) {
+      prepared = true
+      if (!(await props.prepareReorder())) {
+        error.value = t('field.panel.finishViewChanges')
+        return
+      }
+      await nextTick()
+    }
+
+    const current = stable(field)
+    const destination = stable(target)
+    const plan =
+      current && destination && reorderPlan(current, destination, edge)
+    if (!current || !plan) {
+      error.value = t('field.panel.orderChanged')
+      return
+    }
+    if (plan.schemaIndex !== plan.currentSchemaIndex) {
+      const result = await mutate<FieldMutation>(
+        `/fields/${current.id}`,
+        'PATCH',
+        { index: plan.schemaIndex },
+        current.version,
+        true,
+      )
+      if (!result) return
+      emit('update', result.schema)
+      await nextTick()
+    }
+    if (reorderView) {
+      status.value = t('field.panel.savingOrder')
+      if (props.persistReorder) {
+        if (!(await props.persistReorder(plan.ids))) {
+          error.value = t('field.panel.viewOrderFailed')
+          return
+        }
+      } else emit('reorder', plan.ids)
+    }
+    status.value = t('field.panel.moved', {
+      name: current.name,
+      position: plan.position,
+      total: plan.total,
+    })
+  } catch (cause) {
+    error.value = cause
+  } finally {
+    if (prepared) props.finishReorder?.()
+    if (error.value) status.value = ''
+    reordering.value = false
+  }
+}
+
+function move(field: TableField, offset: -1 | 1) {
+  const target = moveNeighbor(field, offset)
+  if (target) void reorderField(field, target, offset < 0 ? 'before' : 'after')
 }
 
 async function setDisplay(field: TableField) {
@@ -938,10 +1349,151 @@ async function confirmDelete() {
   status.value = t('field.panel.deleted')
 }
 
-function closeMenu(event: Event) {
-  ;(event.currentTarget as HTMLElement | null)
-    ?.closest('details')
-    ?.removeAttribute('open')
+function closeFieldMenu(restoreFocus = false) {
+  const summary = menuDetails?.querySelector<HTMLElement>('summary')
+  openMenuId.value = null
+  menuDetails = null
+  if (restoreFocus && summary?.isConnected) summary.focus()
+}
+
+function positionFieldMenu() {
+  const summary = menuDetails?.querySelector<HTMLElement>('summary')
+  const menu = menuDetails?.querySelector<HTMLElement>('.field-menu')
+  if (!summary || !menu) return
+  const anchor = summary.getBoundingClientRect()
+  const size = menu.getBoundingClientRect()
+  const width = size.width || 180
+  const height = size.height || 160
+  const left = Math.max(
+    8,
+    Math.min(anchor.right - width, window.innerWidth - width - 8),
+  )
+  const below = anchor.bottom + 4
+  const top =
+    below + height <= window.innerHeight - 8
+      ? below
+      : Math.max(8, anchor.top - height - 4)
+  menuPosition.value = { left: `${left}px`, top: `${top}px` }
+}
+
+async function toggleFieldMenu(field: TableField, event: MouseEvent) {
+  if (busy.value) return
+  if (openMenuId.value === field.id) {
+    closeFieldMenu()
+    return
+  }
+  const details = (event.currentTarget as HTMLElement).closest('details')
+  if (!(details instanceof HTMLDetailsElement)) return
+  closeFieldMenu()
+  menuDetails = details
+  openMenuId.value = field.id
+  await nextTick()
+  positionFieldMenu()
+}
+
+function clearPress(event?: PointerEvent) {
+  if (
+    event &&
+    pressedPointerId !== null &&
+    event.pointerId !== pressedPointerId
+  )
+    return
+  pressedPointerId = null
+  pressedFieldId.value = null
+}
+
+function clearDrag() {
+  clearPress()
+  draggedFieldId.value = null
+  dropTarget.value = null
+}
+
+function pressField(field: TableField, event: PointerEvent) {
+  if (
+    !owner.value ||
+    busy.value ||
+    field.isSystem ||
+    event.button !== 0 ||
+    event.isPrimary === false
+  )
+    return
+  pressedPointerId = event.pointerId
+  pressedFieldId.value = field.id
+}
+
+function startFieldDrag(field: TableField, event: DragEvent) {
+  if (!owner.value || busy.value || field.isSystem || !event.dataTransfer) {
+    event.preventDefault()
+    clearDrag()
+    return
+  }
+  closeFieldMenu()
+  draggedFieldId.value = field.id
+  dropTarget.value = null
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', field.id)
+  const tile = (event.currentTarget as HTMLElement).closest('li')
+  if (tile) event.dataTransfer.setDragImage(tile, 16, 16)
+}
+
+function overField(field: TableField, event: DragEvent) {
+  const source = fields.value.find((item) => item.id === draggedFieldId.value)
+  if (!source) return
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const edge =
+    event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after'
+  if (!reorderPlan(source, field, edge)) {
+    dropTarget.value = null
+    return
+  }
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  dropTarget.value = { id: field.id, edge }
+}
+
+function leaveField(event: DragEvent) {
+  const current = event.currentTarget as HTMLElement
+  if (
+    event.relatedTarget instanceof Node &&
+    current.contains(event.relatedTarget)
+  )
+    return
+  dropTarget.value = null
+}
+
+function dropField(field: TableField, event: DragEvent) {
+  const source = fields.value.find((item) => item.id === draggedFieldId.value)
+  const target = dropTarget.value
+  if (!source || !target || target.id !== field.id) {
+    clearDrag()
+    return
+  }
+  event.preventDefault()
+  clearDrag()
+  void reorderField(source, field, target.edge)
+}
+
+function dismissFieldMenu(event: PointerEvent) {
+  if (
+    menuDetails &&
+    event.target instanceof Node &&
+    !menuDetails.contains(event.target)
+  )
+    closeFieldMenu()
+}
+
+function fieldKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  if (draggedFieldId.value || pressedFieldId.value) clearDrag()
+  if (!openMenuId.value || dialogOpen.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  closeFieldMenu(true)
+}
+
+function fieldWindowBlur() {
+  clearDrag()
+  closeFieldMenu()
 }
 
 function addChoice() {
@@ -1040,7 +1592,42 @@ const formulaStatus = computed(() => {
   return ''
 })
 
+watch(displayedFields, (visible) => {
+  if (
+    openMenuId.value &&
+    !visible.some((field) => field.id === openMenuId.value)
+  )
+    closeFieldMenu()
+  if (
+    draggedFieldId.value &&
+    !visible.some((field) => field.id === draggedFieldId.value)
+  )
+    clearDrag()
+})
+
+onMounted(() => {
+  document.addEventListener('pointerdown', dismissFieldMenu, true)
+  document.addEventListener('keydown', fieldKeydown, true)
+  document.addEventListener('scroll', positionFieldMenu, true)
+  window.addEventListener('resize', positionFieldMenu)
+  window.addEventListener('pointerup', clearPress)
+  window.addEventListener('pointercancel', clearPress)
+  window.addEventListener('dragend', clearDrag)
+  window.addEventListener('drop', clearDrag)
+  window.addEventListener('blur', fieldWindowBlur)
+})
+
 onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', dismissFieldMenu, true)
+  document.removeEventListener('keydown', fieldKeydown, true)
+  document.removeEventListener('scroll', positionFieldMenu, true)
+  window.removeEventListener('resize', positionFieldMenu)
+  window.removeEventListener('pointerup', clearPress)
+  window.removeEventListener('pointercancel', clearPress)
+  window.removeEventListener('dragend', clearDrag)
+  window.removeEventListener('drop', clearDrag)
+  window.removeEventListener('blur', fieldWindowBlur)
+  relationController?.abort()
   computedController?.abort()
   formulaController?.abort()
   if (formulaTimer) clearTimeout(formulaTimer)
@@ -1070,13 +1657,14 @@ defineExpose({ openCreate: () => openEditor(null) })
       <input
         v-model="fieldSearch"
         type="search"
+        :disabled="busy"
         :aria-label="t('field.panel.search')"
         :placeholder="t('field.panel.search')"
       />
       <input
         type="checkbox"
         :checked="allDisplayedFieldsVisible"
-        :disabled="displayedFields.length === 0"
+        :disabled="busy || displayedFields.length === 0"
         :aria-label="t('field.panel.showMatching')"
         @change="
           toggleDisplayedFields(($event.target as HTMLInputElement).checked)
@@ -1086,7 +1674,7 @@ defineExpose({ openCreate: () => openEditor(null) })
     <p v-if="!owner" class="field-read-only">
       {{ t('field.panel.readOnly') }}
     </p>
-    <p class="field-status" role="status">{{ status }}</p>
+    <p class="field-status" role="status" aria-atomic="true">{{ status }}</p>
     <p v-if="error && !dialogOpen" role="alert">{{ message }}</p>
     <p v-if="menu && !displayedFields.length" class="field-menu-empty">
       {{ t('field.panel.noMatches') }}
@@ -1097,12 +1685,24 @@ defineExpose({ openCreate: () => openEditor(null) })
         :key="field.id"
         :data-field-id="field.id"
         :data-system="field.isSystem ? 'true' : undefined"
+        :class="{
+          'field-tile-pressed': pressedFieldId === field.id,
+          'field-tile-dragging': draggedFieldId === field.id,
+          'field-drop-before':
+            dropTarget?.id === field.id && dropTarget.edge === 'before',
+          'field-drop-after':
+            dropTarget?.id === field.id && dropTarget.edge === 'after',
+        }"
+        @dragover="overField(field, $event)"
+        @dragleave="leaveField"
+        @drop="dropField(field, $event)"
       >
         <div class="field-line">
           <input
             v-if="menu"
             type="checkbox"
             :checked="fieldVisible(field)"
+            :disabled="busy"
             :aria-label="t('field.panel.showField', { name: field.name })"
             @change="
               emit(
@@ -1112,7 +1712,20 @@ defineExpose({ openCreate: () => openEditor(null) })
               )
             "
           />
-          <span class="field-name">{{ field.name }}</span>
+          <button
+            v-if="owner && !field.isSystem"
+            type="button"
+            class="field-drag-handle"
+            :aria-label="t('field.panel.dragField', { name: field.name })"
+            :disabled="busy"
+            :draggable="!busy"
+            @pointerdown="pressField(field, $event)"
+            @dragstart="startFieldDrag(field, $event)"
+            @dragend="clearDrag"
+          >
+            <span class="field-name">{{ field.name }}</span>
+          </button>
+          <span v-else class="field-name">{{ field.name }}</span>
           <span class="field-kind">{{
             field.uiType === 'link'
               ? t('field.kind.link')
@@ -1135,62 +1748,51 @@ defineExpose({ openCreate: () => openEditor(null) })
           <span v-if="field.isUnique && !menu" class="field-badge">
             {{ t('field.panel.unique') }}
           </span>
-          <details v-if="owner" class="node-actions field-actions">
+          <details
+            v-if="owner"
+            class="node-actions field-actions"
+            :open="openMenuId === field.id"
+          >
             <summary
               :aria-label="t('field.panel.actions', { name: field.name })"
+              :aria-expanded="openMenuId === field.id"
+              :aria-disabled="busy"
+              @click.prevent="toggleFieldMenu(field, $event)"
             >
-              <AppIcon v-if="menu" name="more" />
-              <template v-else>
-                {{ t('field.panel.actions', { name: field.name }) }}
-              </template>
+              <AppIcon name="more" />
             </summary>
-            <div class="field-menu">
+            <div class="field-menu" :style="menuPosition">
               <button
-                v-if="field.uiType === 'formula'"
                 type="button"
                 :disabled="busy"
                 @click="
-                  (event) => {
-                    closeMenu(event)
-                    openFormulaEditor(field)
+                  () => {
+                    closeFieldMenu(true)
+                    openFieldEditor(field)
                   }
                 "
               >
                 {{ t('field.panel.edit') }}
-              </button>
-              <button
-                v-else-if="!['link', 'lookup', 'rollup'].includes(field.uiType)"
-                type="button"
-                :disabled="busy"
-                @click="
-                  (event) => {
-                    closeMenu(event)
-                    openEditor(field)
-                  }
-                "
-              >
-                {{ t('field.panel.edit') }}
-              </button>
-              <button
-                v-if="canChangeType(field)"
-                type="button"
-                :disabled="busy"
-                @click="
-                  (event) => {
-                    closeMenu(event)
-                    openTypeChange(field)
-                  }
-                "
-              >
-                {{ t('field.panel.changeType') }}
               </button>
               <template v-if="!field.isSystem">
                 <button
                   type="button"
-                  :disabled="busy || userFields[0]?.id === field.id"
+                  :disabled="busy"
                   @click="
-                    (event) => {
-                      closeMenu(event)
+                    () => {
+                      closeFieldMenu(true)
+                      askDelete(field)
+                    }
+                  "
+                >
+                  {{ t('field.panel.delete') }}
+                </button>
+                <button
+                  type="button"
+                  :disabled="busy || !moveNeighbor(field, -1)"
+                  @click="
+                    () => {
+                      closeFieldMenu(true)
                       move(field, -1)
                     }
                   "
@@ -1199,40 +1801,15 @@ defineExpose({ openCreate: () => openEditor(null) })
                 </button>
                 <button
                   type="button"
-                  :disabled="busy || userFields.at(-1)?.id === field.id"
+                  :disabled="busy || !moveNeighbor(field, 1)"
                   @click="
-                    (event) => {
-                      closeMenu(event)
+                    () => {
+                      closeFieldMenu(true)
                       move(field, 1)
                     }
                   "
                 >
                   {{ t('field.panel.moveDown') }}
-                </button>
-                <button
-                  v-if="canSetDisplay(field)"
-                  type="button"
-                  :disabled="busy"
-                  @click="
-                    (event) => {
-                      closeMenu(event)
-                      setDisplay(field)
-                    }
-                  "
-                >
-                  {{ t('field.panel.setDisplay') }}
-                </button>
-                <button
-                  type="button"
-                  :disabled="busy"
-                  @click="
-                    (event) => {
-                      closeMenu(event)
-                      askDelete(field)
-                    }
-                  "
-                >
-                  {{ t('field.panel.delete') }}
                 </button>
               </template>
             </div>
@@ -1246,6 +1823,7 @@ defineExpose({ openCreate: () => openEditor(null) })
     <footer v-if="menu" class="field-menu-footer">
       <button
         type="button"
+        :disabled="busy"
         :aria-pressed="showSystemFields"
         @click="showSystemFields = !showSystemFields"
       >
@@ -1273,7 +1851,7 @@ defineExpose({ openCreate: () => openEditor(null) })
     >
       <form
         v-if="creating || editing"
-        :class="{ 'field-create-form': creating }"
+        class="field-create-form"
         @submit.prevent="save"
       >
         <h2>
@@ -1282,7 +1860,7 @@ defineExpose({ openCreate: () => openEditor(null) })
           }}
         </h2>
         <label>
-          <span :class="{ 'visually-hidden': creating && menu }">{{
+          <span :class="{ 'visually-hidden': menu }">{{
             t('field.panel.name')
           }}</span>
           <input
@@ -1290,23 +1868,19 @@ defineExpose({ openCreate: () => openEditor(null) })
             autofocus
             maxlength="400"
             required
-            :placeholder="
-              creating && menu ? t('field.panel.namePlaceholder') : undefined
-            "
+            :placeholder="menu ? t('field.panel.namePlaceholder') : undefined"
             :disabled="busy"
           />
         </label>
         <FieldTypePicker
-          v-if="creating"
           :model-value="draft.kind"
-          :expanded="choosingType"
-          :disabled="busy"
-          @update:model-value="selectCreateKind"
+          :expanded="creating && choosingType"
+          :disabled="busy || (!!editing && !canChangeType(editing))"
+          :allowed-kinds="creating ? undefined : editableTypeKinds"
+          @update:model-value="
+            (kind) => (creating ? selectCreateKind(kind) : selectEditKind(kind))
+          "
         />
-        <dl v-else class="field-kind-fixed">
-          <dt>{{ t('field.panel.kind') }}</dt>
-          <dd>{{ fieldKindLabel(draft.kind) }}</dd>
-        </dl>
         <p v-if="systemEdit">{{ t('field.panel.systemNotice') }}</p>
         <fieldset v-else-if="!creating || !choosingType" class="field-settings">
           <legend>{{ t('field.panel.settings') }}</legend>
@@ -1407,7 +1981,7 @@ defineExpose({ openCreate: () => openEditor(null) })
             </select>
           </label>
           <template v-if="draft.kind === 'datetime' || draft.kind === 'time'">
-            <label v-if="draft.kind === 'datetime'">
+            <label>
               <span>{{ t('field.panel.timeFormat') }}</span>
               <select v-model="draft.timeFormat" :disabled="busy">
                 <option
@@ -1627,6 +2201,9 @@ defineExpose({ openCreate: () => openEditor(null) })
                 :disabled="busy"
               />
             </label>
+            <p v-if="draft.defaultArrayJson">
+              {{ t('field.panel.arrayDefaultJSON') }}
+            </p>
           </details>
           <label v-if="showFill" class="field-check">
             <input v-model="draft.fillEmpty" type="checkbox" :disabled="busy" />
@@ -1649,6 +2226,16 @@ defineExpose({ openCreate: () => openEditor(null) })
             />
           </label>
         </details>
+        <details
+          v-if="editing && canSetDisplay(editing)"
+          class="field-advanced-settings"
+        >
+          <summary>{{ t('field.panel.advancedSettings') }}</summary>
+          <button type="button" :disabled="busy" @click="setDisplay(editing)">
+            {{ t('field.panel.setDisplay') }}
+          </button>
+        </details>
+        <p v-if="status" role="status">{{ status }}</p>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
           <button type="button" :disabled="busy" @click="closeEditor">
@@ -1780,9 +2367,8 @@ defineExpose({ openCreate: () => openEditor(null) })
           />
         </label>
         <FieldTypePicker
-          v-if="!formulaEditing"
           model-value="formula"
-          :disabled="busy"
+          :disabled="busy || !!formulaEditing"
           @update:model-value="selectCreateKind"
         />
         <label>
@@ -1839,6 +2425,7 @@ defineExpose({ openCreate: () => openEditor(null) })
           {{ t('field.panel.formulaType', { type: formulaCheck.type }) }}
         </p>
         <p v-if="formulaStatus" role="alert">{{ formulaStatus }}</p>
+        <p v-if="error" role="alert">{{ message }}</p>
         <details class="field-description-editor" :open="!!formulaEditing">
           <summary>{{ t('field.panel.addDescription') }}</summary>
           <label>
@@ -1851,6 +2438,20 @@ defineExpose({ openCreate: () => openEditor(null) })
             />
           </label>
         </details>
+        <details
+          v-if="formulaEditing && canSetDisplay(formulaEditing)"
+          class="field-advanced-settings"
+        >
+          <summary>{{ t('field.panel.advancedSettings') }}</summary>
+          <button
+            type="button"
+            :disabled="busy"
+            @click="setDisplay(formulaEditing)"
+          >
+            {{ t('field.panel.setDisplay') }}
+          </button>
+        </details>
+        <p v-if="status" role="status">{{ status }}</p>
         <div class="nav-actions">
           <button type="button" :disabled="busy" @click="closeFormulaEditor">
             {{ t('field.panel.cancel') }}
@@ -1876,13 +2477,17 @@ defineExpose({ openCreate: () => openEditor(null) })
     <dialog
       ref="computedEditor"
       class="field-dialog"
-      :aria-label="t('field.panel.computedTitle')"
+      :aria-label="
+        computedEditing
+          ? t('field.panel.editTitle')
+          : t('field.panel.computedTitle')
+      "
       @cancel.prevent="closeComputedEditor"
     >
       <form
         v-if="computedCreating"
         class="field-create-form"
-        @submit.prevent="createComputedField"
+        @submit.prevent="saveComputedField"
       >
         <h2 class="visually-hidden">{{ t('field.panel.computedTitle') }}</h2>
         <label>
@@ -1898,18 +2503,25 @@ defineExpose({ openCreate: () => openEditor(null) })
         </label>
         <FieldTypePicker
           :model-value="computedDraft.kind"
-          :disabled="busy"
+          :disabled="busy || !!computedEditing"
           @update:model-value="selectCreateKind"
         />
+        <p v-if="computedEditing">{{ t('field.panel.definitionFixed') }}</p>
         <div class="field-computed-columns">
           <label>
             <span>{{ t('field.panel.computedRelation') }}</span>
             <select
               v-model="computedDraft.relationFieldId"
               required
-              :disabled="busy || !computedRelations.length"
-              @change="loadComputedTargetFields"
+              :disabled="busy || !!computedEditing || !computedRelations.length"
+              @change="loadComputedTargetFields()"
             >
+              <option
+                v-if="computedRelationUnavailable"
+                :value="computedDraft.relationFieldId"
+              >
+                {{ t('field.panel.optionUnavailable') }}
+              </option>
               <option
                 v-for="item in computedRelations"
                 :key="item.field.id"
@@ -1924,9 +2536,7 @@ defineExpose({ openCreate: () => openEditor(null) })
             <select
               v-model="computedDraft.targetFieldId"
               required
-              :disabled="
-                busy || computedTargetLoading || !computedTargetFields.length
-              "
+              :disabled="computedTargetDisabled"
               @change="
                 computedDraft.aggregate = computedAggregates.includes(
                   computedDraft.aggregate,
@@ -1935,6 +2545,12 @@ defineExpose({ openCreate: () => openEditor(null) })
                   : (computedAggregates[0] ?? 'count')
               "
             >
+              <option
+                v-if="computedTargetUnavailable"
+                :value="computedDraft.targetFieldId"
+              >
+                {{ t('field.panel.optionUnavailable') }}
+              </option>
               <option
                 v-for="field in computedTargetFields"
                 :key="field.id"
@@ -1947,7 +2563,16 @@ defineExpose({ openCreate: () => openEditor(null) })
         </div>
         <label v-if="computedDraft.kind === 'rollup'">
           <span>{{ t('field.panel.computedAggregate') }}</span>
-          <select v-model="computedDraft.aggregate" :disabled="busy">
+          <select
+            v-model="computedDraft.aggregate"
+            :disabled="busy || !!computedEditing"
+          >
+            <option
+              v-if="computedAggregateUnavailable"
+              :value="computedDraft.aggregate"
+            >
+              {{ computedAggregateLabel(computedDraft.aggregate) }}
+            </option>
             <option
               v-for="aggregate in computedAggregates"
               :key="aggregate"
@@ -1958,7 +2583,11 @@ defineExpose({ openCreate: () => openEditor(null) })
           </select>
         </label>
         <p v-if="!computedRelations.length" role="alert">
-          {{ t('field.panel.computedNoRelations') }}
+          {{
+            computedEditing
+              ? t('field.panel.configurationUnavailable')
+              : t('field.panel.computedNoRelations')
+          }}
         </p>
         <p
           v-else-if="
@@ -1966,18 +2595,54 @@ defineExpose({ openCreate: () => openEditor(null) })
           "
           role="alert"
         >
-          {{ t('field.panel.computedNoFields') }}
+          {{
+            computedEditing
+              ? t('field.panel.configurationUnavailable')
+              : t('field.panel.computedNoFields')
+          }}
         </p>
         <p v-if="computedTargetLoading" role="status">
           {{ t('field.panel.computedLoading') }}
         </p>
+        <details class="field-description-editor" :open="!!computedEditing">
+          <summary>{{ t('field.panel.addDescription') }}</summary>
+          <label>
+            <span>{{ t('field.panel.description') }}</span>
+            <textarea
+              v-model="computedDraft.description"
+              rows="2"
+              :maxlength="MAX_DESCRIPTION * 2"
+              :disabled="busy"
+            />
+          </label>
+        </details>
+        <details
+          v-if="computedEditing && canSetDisplay(computedEditing)"
+          class="field-advanced-settings"
+        >
+          <summary>{{ t('field.panel.advancedSettings') }}</summary>
+          <button
+            type="button"
+            :disabled="busy"
+            @click="setDisplay(computedEditing)"
+          >
+            {{ t('field.panel.setDisplay') }}
+          </button>
+        </details>
+        <p v-if="status" role="status">{{ status }}</p>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
           <button type="button" :disabled="busy" @click="closeComputedEditor">
             {{ t('field.panel.cancel') }}
           </button>
           <button type="submit" :disabled="computedEditorDisabled">
-            {{ busy ? t('field.panel.saving') : t('field.panel.create') }}
+            {{
+              busy
+                ? t('field.panel.saving')
+                : computedEditing
+                  ? t('field.panel.save')
+                  : t('field.panel.create')
+            }}
           </button>
         </div>
       </form>
@@ -1986,7 +2651,9 @@ defineExpose({ openCreate: () => openEditor(null) })
     <dialog
       ref="relationEditor"
       class="field-dialog"
-      :aria-label="t('relation.createTitle')"
+      :aria-label="
+        relationEditing ? t('field.panel.editTitle') : t('relation.createTitle')
+      "
       @cancel.prevent="closeRelationEditor"
     >
       <form
@@ -2007,9 +2674,10 @@ defineExpose({ openCreate: () => openEditor(null) })
         </label>
         <FieldTypePicker
           model-value="link"
-          :disabled="busy"
+          :disabled="busy || !!relationEditing"
           @update:model-value="selectCreateKind"
         />
+        <p v-if="relationEditing">{{ t('field.panel.definitionFixed') }}</p>
         <fieldset class="field-relation-types">
           <legend>{{ t('relation.kind') }}</legend>
           <label
@@ -2024,7 +2692,7 @@ defineExpose({ openCreate: () => openEditor(null) })
               type="radio"
               name="relation-cardinality"
               :value="choice.value"
-              :disabled="busy"
+              :disabled="busy || !!relationEditing"
             />
           </label>
         </fieldset>
@@ -2033,10 +2701,16 @@ defineExpose({ openCreate: () => openEditor(null) })
           <select
             v-model="relationDraft.targetTableId"
             required
-            :disabled="busy || !targetTables.length"
+            :disabled="busy || !!relationEditing || !targetTables.length"
           >
             <option
-              v-for="table in targetTables"
+              v-if="relationTargetUnavailable"
+              :value="relationDraft.targetTableId"
+            >
+              {{ t('field.panel.optionUnavailable') }}
+            </option>
+            <option
+              v-for="table in relationTargetTables"
               :key="table.id"
               :value="table.id"
             >
@@ -2044,7 +2718,7 @@ defineExpose({ openCreate: () => openEditor(null) })
             </option>
           </select>
         </label>
-        <details class="field-advanced-settings">
+        <details class="field-advanced-settings" :open="!!relationEditing">
           <summary>{{ t('field.panel.advancedSettings') }}</summary>
           <label>
             <span>{{ t('relation.reverseName') }}</span>
@@ -2052,28 +2726,62 @@ defineExpose({ openCreate: () => openEditor(null) })
               v-model="relationDraft.reverseName"
               required
               maxlength="100"
-              :disabled="busy"
+              :placeholder="
+                relationEditing ? t('field.panel.optionUnavailable') : undefined
+              "
+              :disabled="busy || !!relationEditing"
             />
           </label>
           <label>
             <span>{{ t('relation.onDelete') }}</span>
-            <select v-model="relationDraft.onDelete" :disabled="busy">
+            <select
+              v-model="relationDraft.onDelete"
+              :disabled="busy || !!relationEditing"
+            >
               <option value="set_null">{{ t('relation.setNull') }}</option>
               <option value="cascade">{{ t('relation.cascade') }}</option>
               <option value="restrict">{{ t('relation.restrict') }}</option>
             </select>
           </label>
         </details>
-        <p v-if="!targetTables.length" role="alert">
+        <details v-if="relationEditing" class="field-description-editor" open>
+          <summary>{{ t('field.panel.addDescription') }}</summary>
+          <label>
+            <span>{{ t('field.panel.description') }}</span>
+            <textarea
+              v-model="relationDraft.description"
+              rows="2"
+              :maxlength="MAX_DESCRIPTION * 2"
+              :disabled="busy"
+            />
+          </label>
+        </details>
+        <p v-if="relationEditing && !editingRelation" role="alert">
+          {{ t('field.panel.configurationUnavailable') }}
+        </p>
+        <p v-else-if="!relationEditing && !targetTables.length" role="alert">
           {{ t('relation.noTables') }}
         </p>
+        <p v-if="relationTargetLoading" role="status">
+          {{ t('field.panel.computedLoading') }}
+        </p>
+        <p v-if="status" role="status">{{ status }}</p>
         <p v-if="error" role="alert">{{ message }}</p>
         <div class="nav-actions">
           <button type="button" :disabled="busy" @click="closeRelationEditor">
             {{ t('field.panel.cancel') }}
           </button>
-          <button type="submit" :disabled="busy || !targetTables.length">
-            {{ busy ? t('field.panel.saving') : t('field.panel.create') }}
+          <button
+            type="submit"
+            :disabled="busy || (!relationEditing && !targetTables.length)"
+          >
+            {{
+              busy
+                ? t('field.panel.saving')
+                : relationEditing
+                  ? t('field.panel.save')
+                  : t('field.panel.create')
+            }}
           </button>
         </div>
       </form>

@@ -84,6 +84,8 @@ export interface FieldDraft {
   isUnique: boolean
   /** Free-text default for non-select, non-checkbox kinds. */
   defaultText: string
+  /** JSON preserves text-array elements that cannot round-trip comma-separated. */
+  defaultArrayJson: boolean
   /** Selected choice ids (stable across label edits). */
   defaultChoices: string[]
   defaultBool: '' | 'true' | 'false'
@@ -121,7 +123,10 @@ export function draftFrom(field: TableField | null, env: FieldEnv): FieldDraft {
     displayDecimals: text(options.displayDecimals, ''),
     thousandSep: options.thousandSep !== false,
     dateFormat: text(options.dateFormat, 'iso'),
-    timeFormat: text(options.timeFormat, '24h'),
+    timeFormat: text(
+      kind === 'time' ? options.format : options.timeFormat,
+      '24h',
+    ),
     durationFormat: text(options.format, 'h:mm'),
     timezone: text(options.timezone, 'user'),
     fixedTz: text(options.fixedTz, ''),
@@ -136,6 +141,7 @@ export function draftFrom(field: TableField | null, env: FieldEnv): FieldDraft {
     isRequired: field?.isRequired ?? false,
     isUnique: field?.isUnique ?? false,
     defaultText: '',
+    defaultArrayJson: false,
     defaultChoices: [],
     defaultBool: '',
     fillEmpty: false,
@@ -154,6 +160,16 @@ export function draftFrom(field: TableField | null, env: FieldEnv): FieldDraft {
     draft.defaultText = bound.ok
       ? bound.value.formatCopy(value, env)
       : String(value)
+    if (kind === 'text_array' && Array.isArray(value) && bound.ok) {
+      const parsed = bound.value.parsePaste(draft.defaultText, env)
+      if (
+        !parsed.ok ||
+        JSON.stringify(parsed.value) !== JSON.stringify(value)
+      ) {
+        draft.defaultText = JSON.stringify(value)
+        draft.defaultArrayJson = true
+      }
+    }
   }
   return draft
 }
@@ -282,6 +298,18 @@ export function draftDefault(
     return value.ok ? value : failed(value.reason, 'default')
   }
   if (draft.defaultText.trim() === '') return { ok: true, value: null }
+  if (draft.defaultArrayJson) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(draft.defaultText)
+    } catch (cause) {
+      if (cause instanceof SyntaxError)
+        return failed('invalid_array', 'default')
+      throw cause
+    }
+    const value = bound.normalize(parsed)
+    return value.ok ? value : failed(value.reason, 'default')
+  }
   const value = bound.parsePaste(draft.defaultText, env)
   return value.ok ? value : failed(value.reason, 'default')
 }
@@ -348,15 +376,29 @@ export function patchBody(
   if (draft.name.trim() !== field.name) body.name = draft.name.trim()
   if (draft.description.trim() !== field.description)
     body.description = draft.description.trim()
-  if (!field.isSystem) {
+  if (!field.isSystem && !['link', 'lookup', 'rollup'].includes(field.uiType)) {
     const bound = bindDraft(draft)
     if (!bound.ok) return bound
     const previous = bindField(field.uiType, field.options)
     if (!previous.ok || !same(previous.value.options, bound.value.options))
       body.options = bound.value.options
-    const value = draftDefault(draft, bound.value, env)
-    if (!value.ok) return value
-    if (!same(value.value, field.default)) body.default = value.value
+    const initial = draftFrom(field, env)
+    const defaultChanged =
+      draft.defaultText !== initial.defaultText ||
+      draft.defaultBool !== initial.defaultBool ||
+      !same(draft.defaultChoices, initial.defaultChoices)
+    const selectedChoiceChanged =
+      (draft.kind === 'single_select' || draft.kind === 'multi_select') &&
+      draft.defaultChoices.some(
+        (id) =>
+          draft.choices.find((choice) => choice.id === id)?.label !==
+          initial.choices.find((choice) => choice.id === id)?.label,
+      )
+    if (defaultChanged || selectedChoiceChanged) {
+      const value = draftDefault(draft, bound.value, env)
+      if (!value.ok) return value
+      if (!same(value.value, field.default)) body.default = value.value
+    }
     const { constraints } = bound.value
     if (constraints.required && draft.isRequired !== field.isRequired)
       body.isRequired = draft.isRequired
@@ -427,7 +469,7 @@ const CODEC_REASONS = new Set<string>([
 ])
 
 export const displayEligible = (field: TableField) =>
-  !field.isSystem && field.uiType !== 'checkbox'
+  !field.isSystem && field.uiType !== 'checkbox' && field.uiType !== 'link'
 
 export function sizeLabel(size: string): string {
   const { t } = i18n.global

@@ -129,6 +129,33 @@ const buttonByText = (
 const row = (wrapper: Awaited<ReturnType<typeof setup>>, id: string) =>
   wrapper.get(`[data-field-id="${id}"]`)
 
+async function fieldAction(
+  wrapper: Awaited<ReturnType<typeof setup>>,
+  id: string,
+  action: string,
+) {
+  const tile = row(wrapper, id)
+  await tile.get('summary').trigger('click')
+  const button = tile
+    .findAll('.field-menu button')
+    .find((item) => item.text() === action)
+  expect(button, `${action} action`).toBeDefined()
+  await button!.trigger('click')
+  await flushPromises()
+}
+
+async function selectEditType(
+  wrapper: Awaited<ReturnType<typeof setup>>,
+  id: string,
+  kind: string,
+) {
+  await fieldAction(wrapper, id, 'Edit')
+  const editor = wrapper.get('dialog[aria-label="Edit field"]')
+  await editor.get('.field-type-selected').trigger('click')
+  await editor.get(`[data-kind="${kind}"]`).trigger('click')
+  await flushPromises()
+}
+
 async function openType(
   wrapper: Awaited<ReturnType<typeof setup>>,
   kind: string,
@@ -475,7 +502,7 @@ it('patches only changed members with If-Match and keeps storage settings fixed'
   )
   const wrapper = await setup()
   try {
-    await row(wrapper, 'qty').findAll('button')[0]!.trigger('click')
+    await fieldAction(wrapper, 'qty', 'Edit')
     const dialog = wrapper.get('dialog.field-dialog')
     expect(dialog.find('select[disabled]').exists()).toBe(true)
     expect(dialog.text()).toContain(
@@ -508,10 +535,7 @@ it('previews a type change and aborts without sending the conversion request', a
   )
   const wrapper = await setup()
   try {
-    await row(wrapper, 'qty')
-      .findAll('button')
-      .find((button) => button.text() === 'Change type')!
-      .trigger('click')
+    await selectEditType(wrapper, 'qty', 'text')
     const dialog = wrapper
       .findAll('dialog.field-dialog')
       .find((item) => item.attributes('aria-label') === 'Change field type')!
@@ -561,10 +585,7 @@ it('converts only after preview and explicitly selects NULL for failing values',
   )
   const wrapper = await setup()
   try {
-    await row(wrapper, 'qty')
-      .findAll('button')
-      .find((button) => button.text() === 'Change type')!
-      .trigger('click')
+    await selectEditType(wrapper, 'qty', 'text')
     const dialog = wrapper
       .findAll('dialog.field-dialog')
       .find((item) => item.attributes('aria-label') === 'Change field type')!
@@ -601,7 +622,7 @@ it('rejects an invalid default locally with a localized reason and sends nothing
   const { calls } = stubFetch()
   const wrapper = await setup()
   try {
-    await row(wrapper, 'qty').findAll('button')[0]!.trigger('click')
+    await fieldAction(wrapper, 'qty', 'Edit')
     const dialog = wrapper.get('dialog.field-dialog')
     await dialog.findAll('input').at(-1)!.setValue('12.5')
     await dialog.get('form').trigger('submit')
@@ -617,7 +638,7 @@ it('reloads on a version conflict and reseeds the open editor from the newer fie
   const { calls } = stubFetch(failure(409, 'ERR_VERSION_CONFLICT'))
   const wrapper = await setup()
   try {
-    await row(wrapper, 'qty').findAll('button')[0]!.trigger('click')
+    await fieldAction(wrapper, 'qty', 'Edit')
     const dialog = wrapper.get('dialog.field-dialog')
     await dialog.get('input').setValue('Count')
     await dialog.get('form').trigger('submit')
@@ -643,7 +664,7 @@ it('localizes preflight counts and validation reasons in both locales without se
   )
   const wrapper = await setup()
   try {
-    await row(wrapper, 'status').findAll('button')[0]!.trigger('click')
+    await fieldAction(wrapper, 'status', 'Edit')
     const dialog = wrapper.get('dialog.field-dialog')
     const required = dialog
       .findAll('label.field-check')
@@ -678,24 +699,23 @@ it('moves, sets the display field and deletes with the field version', async () 
   )
   const wrapper = await setup()
   try {
-    const qty = row(wrapper, 'qty')
     expect(buttonByText(wrapper, 'Move up').exists()).toBe(true)
-    await qty
+    await fieldAction(wrapper, 'qty', 'Move down')
+    await fieldAction(wrapper, 'qty', 'Edit')
+    const editor = wrapper.get('dialog[aria-label="Edit field"]')
+    await editor.get('.field-advanced-settings summary').trigger('click')
+    await editor
       .findAll('button')
-      .find((b) => b.text() === 'Move down')!
-      .trigger('click')
-    await flushPromises()
-    await qty
-      .findAll('button')
-      .find((b) => b.text() === 'Use as display field')!
+      .find((button) => button.text() === 'Use as display field')!
       .trigger('click')
     await flushPromises()
     expect(wrapper.emitted('reload')).toHaveLength(1)
     expect(wrapper.get('[role="status"]').text()).toBe('Display field updated.')
-    await qty
+    await editor
       .findAll('button')
-      .find((b) => b.text() === 'Delete')!
+      .find((button) => button.text() === 'Cancel')!
       .trigger('click')
+    await fieldAction(wrapper, 'qty', 'Delete')
     const remover = wrapper.findAll('dialog.field-dialog').at(-1)!
     expect(remover.text()).toContain('“Qty”')
     await remover.get('form').trigger('submit')
@@ -875,19 +895,12 @@ it('reconciles permission loss and uncertain outcomes with an authoritative relo
   const { fetch } = stubFetch(failure(403, 'ERR_PERMISSION_DENIED'))
   const wrapper = await setup()
   try {
-    const qty = row(wrapper, 'qty')
-    await qty
-      .findAll('button')
-      .find((b) => b.text() === 'Move down')!
-      .trigger('click')
+    await fieldAction(wrapper, 'qty', 'Move down')
     await flushPromises()
     expect(wrapper.emitted('reload')).toHaveLength(1)
     expect(fetch).toHaveBeenCalledWith('/api/v1/nav', expect.anything())
     expect(wrapper.get('[role="alert"]').text()).toContain('permission')
-    await qty
-      .findAll('button')
-      .find((b) => b.text() === 'Move down')!
-      .trigger('click')
+    await fieldAction(wrapper, 'qty', 'Move down')
     await flushPromises()
     expect(wrapper.emitted('reload')).toHaveLength(2)
   } finally {
@@ -905,10 +918,7 @@ it('aborts an in-flight mutation on unmount', async () => {
     }),
   )
   const wrapper = await setup()
-  await row(wrapper, 'qty')
-    .findAll('button')
-    .find((b) => b.text() === 'Move down')!
-    .trigger('click')
+  await fieldAction(wrapper, 'qty', 'Move down')
   wrapper.unmount()
   expect(signal?.aborted).toBe(true)
 })
@@ -930,4 +940,555 @@ it('keeps select defaults across label edits by choice id', () => {
       default: 'Opened',
     },
   })
+})
+
+it.each([
+  {
+    uiType: 'text_array',
+    options: {},
+    default: ['value, with a comma', ' padded '],
+  },
+  { uiType: 'time', options: { format: '12h' }, default: '13:30:00' },
+  { uiType: 'date', options: { dateFormat: 'us' }, default: '2026-03-16' },
+  {
+    uiType: 'datetime',
+    options: {
+      dateFormat: 'eu',
+      timeFormat: '12h',
+      timezone: 'fixed',
+      fixedTz: 'UTC',
+    },
+    default: '2026-03-16T13:30:00.123456Z',
+  },
+  {
+    uiType: 'currency',
+    options: { currency: 'USD', scale: 2 },
+    default: '12.30',
+  },
+])('does not rewrite an unchanged $uiType default on rename', (spec) => {
+  const original = field(spec)
+  const draft = draftFrom(original, { timeZone: 'UTC', locale: 'en' })
+  draft.name = 'Renamed'
+  expect(patchBody(original, draft, { timeZone: 'UTC', locale: 'en' })).toEqual(
+    {
+      ok: true,
+      value: { name: 'Renamed' },
+    },
+  )
+})
+
+it('edits text-array defaults containing commas without losing elements', () => {
+  const original = field({
+    uiType: 'text_array',
+    default: ['value, with a comma', ' padded '],
+  })
+  const draft = draftFrom(original, {})
+  expect(draft.defaultArrayJson).toBe(true)
+  expect(draft.defaultText).toBe('["value, with a comma"," padded "]')
+  draft.defaultText = '["value, with a comma","new"]'
+  expect(patchBody(original, draft, {})).toEqual({
+    ok: true,
+    value: { default: ['value, with a comma', 'new'] },
+  })
+  draft.defaultText = '[invalid]'
+  expect(patchBody(original, draft, {}).ok).toBe(false)
+})
+
+it('preserves a time field format when editing metadata', async () => {
+  const value = schema()
+  value.fields.push(
+    field({
+      id: 'time',
+      name: 'Time',
+      uiType: 'time',
+      options: { format: '12h' },
+      default: '13:30:00',
+      position: 4096,
+    }),
+  )
+  const { calls } = stubFetch(
+    Response.json({ field: value.fields.at(-1), schema: value, eventId: 'e' }),
+  )
+  const wrapper = await setup(value)
+  try {
+    await fieldAction(wrapper, 'time', 'Edit')
+    const editor = wrapper.get('dialog[open]')
+    const format = editor
+      .findAll('label')
+      .find((label) => label.text().includes('Time format'))!
+      .get('select')
+    expect((format.element as HTMLSelectElement).value).toBe('12h')
+    await editor.get('input').setValue('Meeting time')
+    await editor.get('form').trigger('submit')
+    await flushPromises()
+    expect(JSON.parse(String(calls()[0]![1].body))).toEqual({
+      name: 'Meeting time',
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('opens one anchored action menu, dismisses it, and restores keyboard focus', async () => {
+  const { calls } = stubFetch()
+  const wrapper = mount(FieldPanel, {
+    props: { schema: schema(), menu: true },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    const first = row(wrapper, 'name').get('details')
+    const second = row(wrapper, 'qty').get('details')
+    expect(first.attributes('open')).toBeUndefined()
+    expect(first.get('summary').attributes('aria-expanded')).toBe('false')
+    expect(first.text()).not.toContain('Change type')
+    await first.get('summary').trigger('click')
+    expect(first.attributes('open')).toBeDefined()
+    expect(first.get('summary').attributes('aria-expanded')).toBe('true')
+    await second.get('summary').trigger('click')
+    expect(first.attributes('open')).toBeUndefined()
+    expect(second.attributes('open')).toBeDefined()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(second.attributes('open')).toBeUndefined()
+    expect(document.activeElement).toBe(second.get('summary').element)
+    await second.get('summary').trigger('click')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(second.attributes('open')).toBeUndefined()
+    await wrapper.get('input[aria-label="Show Qty"]').setValue(false)
+    expect(wrapper.emitted('visibility')).toEqual([['qty', false]])
+    expect(wrapper.find('.field-tile-pressed').exists()).toBe(false)
+    expect(calls()).toHaveLength(0)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('shows press feedback and reorders filtered visible slots without moving hidden slots', async () => {
+  const value = schema()
+  value.fields = [
+    value.fields[0]!,
+    field({ id: 'a', name: 'Alpha first', position: 2048 }),
+    field({ id: 'hidden', name: 'Hidden', position: 3072 }),
+    field({ id: 'c', name: 'Alpha third', position: 4096 }),
+    field({ id: 'other', name: 'Other', position: 5120 }),
+    field({
+      id: 'sys',
+      name: 'Created time',
+      uiType: 'created_at',
+      isSystem: true,
+      position: 1_000_000_000,
+    }),
+  ]
+  const next = {
+    ...value,
+    schemaVersion: value.schemaVersion + 1,
+    fields: value.fields.map((item) =>
+      item.id === 'a' ? { ...item, position: 4500, version: 2 } : item,
+    ),
+  }
+  const { calls } = stubFetch(
+    Response.json({
+      field: next.fields.find((item) => item.id === 'a'),
+      schema: next,
+      eventId: 'e',
+    }),
+  )
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: value,
+      menu: true,
+      columns: value.fields.map((item) => ({
+        id: item.id,
+        visible: item.id !== 'hidden' && !item.isSystem,
+      })),
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  const transfer = {
+    effectAllowed: 'none',
+    dropEffect: 'none',
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+  }
+  try {
+    await wrapper.get('input[type="search"]').setValue('Alpha')
+    const first = row(wrapper, 'a')
+    const last = row(wrapper, 'c')
+    const handle = first.get('.field-drag-handle')
+    const down = new MouseEvent('pointerdown', { bubbles: true, button: 0 })
+    Object.defineProperties(down, {
+      pointerId: { value: 7 },
+      isPrimary: { value: true },
+    })
+    handle.element.dispatchEvent(down)
+    await flushPromises()
+    expect(first.classes()).toContain('field-tile-pressed')
+    const cancel = new Event('pointercancel')
+    Object.defineProperty(cancel, 'pointerId', { value: 7 })
+    window.dispatchEvent(cancel)
+    await flushPromises()
+    expect(first.classes()).not.toContain('field-tile-pressed')
+
+    await handle.trigger('dragstart', { dataTransfer: transfer })
+    expect(first.classes()).toContain('field-tile-dragging')
+    await last.trigger('dragover', { dataTransfer: transfer, clientY: -1 })
+    await last.trigger('drop', { dataTransfer: transfer })
+    await flushPromises()
+    expect(calls()).toHaveLength(0)
+    expect(wrapper.emitted('reorder')).toBeUndefined()
+
+    await handle.trigger('dragstart', { dataTransfer: transfer })
+    await last.trigger('dragover', { dataTransfer: transfer, clientY: 1 })
+    expect(last.classes()).toContain('field-drop-after')
+    await last.trigger('drop', { dataTransfer: transfer })
+    await flushPromises()
+    expect(transfer.setDragImage).toHaveBeenCalled()
+    expect(JSON.parse(String(calls()[0]![1].body))).toEqual({ index: 3 })
+    expect(wrapper.emitted('update')?.[0]?.[0]).toEqual(next)
+    expect(wrapper.emitted('reorder')).toEqual([
+      [['name', 'c', 'hidden', 'a', 'other', 'sys']],
+    ])
+    expect(wrapper.get('.field-status').text()).toBe(
+      'Moved Alpha first to position 2 of 2.',
+    )
+    expect(wrapper.find('.field-tile-dragging').exists()).toBe(false)
+    expect(wrapper.find('.field-drop-after').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('reorders the active view without a no-op schema write when their orders differ', async () => {
+  const { calls } = stubFetch()
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: schema(),
+      menu: true,
+      columns: [
+        { id: 'status', visible: true },
+        { id: 'qty', visible: true },
+        { id: 'name', visible: true },
+        { id: 'sys', visible: false },
+      ],
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    await fieldAction(wrapper, 'status', 'Move down')
+    expect(calls()).toHaveLength(0)
+    expect(wrapper.emitted('update')).toBeUndefined()
+    expect(wrapper.emitted('reorder')).toEqual([
+      [['qty', 'status', 'name', 'sys']],
+    ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('waits for pending view changes before moving and releases the guard on failure', async () => {
+  const { calls } = stubFetch()
+  let release!: (saved: boolean) => void
+  const prepareReorder = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        release = resolve
+      }),
+  )
+  const persistReorder = vi.fn(async () => true)
+  const finishReorder = vi.fn()
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: schema(),
+      menu: true,
+      columns: [
+        { id: 'name', visible: true },
+        { id: 'qty', visible: true },
+        { id: 'status', visible: true },
+        { id: 'sys', visible: false },
+      ],
+      prepareReorder,
+      persistReorder,
+      finishReorder,
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    await fieldAction(wrapper, 'name', 'Move down')
+    expect(prepareReorder).toHaveBeenCalledTimes(1)
+    expect(
+      row(wrapper, 'qty').get('input[type="checkbox"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(calls()).toHaveLength(0)
+    release(false)
+    await flushPromises()
+    expect(calls()).toHaveLength(0)
+    expect(persistReorder).not.toHaveBeenCalled()
+    expect(finishReorder).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'Save or retry pending view changes before moving fields.',
+    )
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+    expect(
+      row(wrapper, 'qty').get('input[type="checkbox"]').attributes('disabled'),
+    ).toBeUndefined()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('rechecks the order after pending view changes finish', async () => {
+  const { calls } = stubFetch()
+  let release!: (saved: boolean) => void
+  const prepareReorder = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        release = resolve
+      }),
+  )
+  const persistReorder = vi.fn(async () => true)
+  const finishReorder = vi.fn()
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: schema(),
+      menu: true,
+      columns: [
+        { id: 'name', visible: true },
+        { id: 'qty', visible: true },
+        { id: 'status', visible: true },
+      ],
+      prepareReorder,
+      persistReorder,
+      finishReorder,
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    await fieldAction(wrapper, 'name', 'Move down')
+    await wrapper.setProps({
+      columns: [
+        { id: 'qty', visible: true },
+        { id: 'name', visible: true },
+        { id: 'status', visible: true },
+      ],
+    })
+    release(true)
+    await flushPromises()
+    expect(calls()).toHaveLength(0)
+    expect(persistReorder).not.toHaveBeenCalled()
+    expect(finishReorder).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'Field order changed. Try moving the field again.',
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('surfaces a failed view-order save rather than announcing a completed move', async () => {
+  const next = schema()
+  const { calls } = stubFetch(
+    Response.json({ field: next.fields[0], schema: next, eventId: 'e' }),
+  )
+  const prepareReorder = vi.fn(async () => true)
+  const persistReorder = vi.fn(async () => false)
+  const finishReorder = vi.fn()
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: schema(),
+      menu: true,
+      columns: [
+        { id: 'name', visible: true },
+        { id: 'qty', visible: true },
+        { id: 'status', visible: true },
+        { id: 'sys', visible: false },
+      ],
+      prepareReorder,
+      persistReorder,
+      finishReorder,
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    await fieldAction(wrapper, 'name', 'Move down')
+    expect(calls()).toHaveLength(1)
+    expect(persistReorder).toHaveBeenCalledWith([
+      'qty',
+      'name',
+      'status',
+      'sys',
+    ])
+    expect(finishReorder).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('update')).toEqual([[next]])
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'The field order could not be saved in this view. Retry the view save, or reload and try again.',
+    )
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('does not discard an edited draft when a different type is chosen', async () => {
+  const { calls } = stubFetch()
+  const wrapper = await setup()
+  try {
+    await fieldAction(wrapper, 'qty', 'Edit')
+    const editor = wrapper.get('dialog[aria-label="Edit field"]')
+    await editor.get('input').setValue('Unsaved name')
+    await editor.get('.field-type-selected').trigger('click')
+    await editor.get('[data-kind="text"]').trigger('click')
+    await flushPromises()
+    expect(editor.get('[role="alert"]').text()).toBe(
+      'Save or discard field changes before changing its type.',
+    )
+    expect(
+      (
+        wrapper.get('dialog[aria-label="Change field type"]')
+          .element as HTMLDialogElement
+      ).open,
+    ).toBe(false)
+    expect((editor.get('input').element as HTMLInputElement).value).toBe(
+      'Unsaved name',
+    )
+    expect(calls()).toHaveLength(0)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('edits relation metadata in its creation layout without changing its definition', async () => {
+  const value = schema()
+  value.fields.push(
+    field({
+      id: 'link',
+      name: 'Manager',
+      description: 'Existing description',
+      uiType: 'link',
+      options: { relationId: 'r', targetTableId: 't', side: 'child' },
+      position: 4096,
+    }),
+    field({
+      id: 'reverse',
+      name: 'Reports',
+      uiType: 'link',
+      options: { relationId: 'r', targetTableId: 't', side: 'parent' },
+      position: 5120,
+    }),
+  )
+  value.relations = [
+    {
+      id: 'r',
+      kind: 'one_many',
+      parentTableId: 't',
+      childTableId: 't',
+      parentFieldId: 'reverse',
+      childFieldId: 'link',
+      onDelete: 'restrict',
+    },
+  ]
+  const { calls } = stubFetch(
+    Response.json({ field: value.fields[4], schema: value, eventId: 'e' }),
+  )
+  const wrapper = await setup(value)
+  try {
+    await fieldAction(wrapper, 'link', 'Edit')
+    const editor = wrapper.get('dialog[open]')
+    expect(
+      editor.get('.field-type-selected').attributes('disabled'),
+    ).toBeDefined()
+    expect(
+      editor.get('input[type="radio"][value="many_one"]').element,
+    ).toHaveProperty('checked', true)
+    expect(
+      (editor.get('.field-advanced-settings input').element as HTMLInputElement)
+        .value,
+    ).toBe('Reports')
+    expect(editor.text()).toContain(
+      'This field configuration cannot be changed after creation.',
+    )
+    expect(editor.text()).not.toContain('Use as display field')
+    await editor.get('input:not([type="radio"])').setValue('Supervisor')
+    await editor.get('textarea').setValue('Updated description')
+    await editor.get('form').trigger('submit')
+    await flushPromises()
+    expect(calls()[0]![0]).toBe('/api/v1/fields/link')
+    expect(JSON.parse(String(calls()[0]![1].body))).toEqual({
+      name: 'Supervisor',
+      description: 'Updated description',
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('prefills computed settings as read-only while allowing metadata edits', async () => {
+  const value = schema()
+  value.fields.push(
+    field({
+      id: 'link',
+      name: 'Project',
+      uiType: 'link',
+      options: { relationId: 'r', targetTableId: 't', side: 'child' },
+      position: 4096,
+    }),
+    field({
+      id: 'lookup',
+      name: 'Project quantity',
+      description: 'Original',
+      uiType: 'lookup',
+      options: { relationFieldId: 'link', targetFieldId: 'qty' },
+      position: 5120,
+    }),
+  )
+  value.relations = [
+    {
+      id: 'r',
+      kind: 'one_many',
+      parentTableId: 't',
+      childTableId: 't',
+      parentFieldId: 'reverse',
+      childFieldId: 'link',
+      onDelete: 'set_null',
+    },
+  ]
+  const { calls } = stubFetch(
+    Response.json(value),
+    Response.json({ field: value.fields.at(-1), schema: value, eventId: 'e' }),
+  )
+  const wrapper = await setup(value)
+  try {
+    await fieldAction(wrapper, 'lookup', 'Edit')
+    const editor = wrapper.get('dialog[open]')
+    const selectors = editor.findAll('.field-computed-columns select')
+    expect(selectors.map((item) => item.attributes('disabled'))).toEqual([
+      '',
+      '',
+    ])
+    expect((selectors[0]!.element as HTMLSelectElement).value).toBe('link')
+    expect((selectors[1]!.element as HTMLSelectElement).value).toBe('qty')
+    expect((editor.get('textarea').element as HTMLTextAreaElement).value).toBe(
+      'Original',
+    )
+    await editor.get('input').setValue('Project units')
+    await editor.get('textarea').setValue('Revised')
+    await editor.get('form').trigger('submit')
+    await flushPromises()
+    expect(calls().map(([url]) => url)).toEqual([
+      '/api/v1/tables/t/schema',
+      '/api/v1/fields/lookup',
+    ])
+    expect(JSON.parse(String(calls()[1]![1].body))).toEqual({
+      name: 'Project units',
+      description: 'Revised',
+    })
+  } finally {
+    wrapper.unmount()
+  }
 })

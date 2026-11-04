@@ -187,6 +187,11 @@ export function useViewColumns(options: {
   const valid = (own: number) =>
     !disposed && own === generation && canPersist.value
 
+  const hasPending = () =>
+    intents.length > 0 ||
+    pendingHighlights !== undefined ||
+    pendingAggregates !== undefined
+
   function cancel() {
     generation++
     clearTimeout(timer)
@@ -417,6 +422,39 @@ export function useViewColumns(options: {
     }
   }
 
+  async function flush(): Promise<boolean> {
+    const own = generation
+    const identity = options.identity()
+    const viewId = options.viewId()
+    const current = () =>
+      !!identity &&
+      valid(own) &&
+      options.identity() === identity &&
+      options.viewId() === viewId
+    for (let batch = 0; batch < 4; batch++) {
+      if (!current()) return false
+      clearTimeout(timer)
+      if (saving.value) {
+        await new Promise<void>((resolve) => {
+          const stop = watch(
+            saving,
+            (active) => {
+              if (!active) {
+                stop()
+                resolve()
+              }
+            },
+            { flush: 'sync' },
+          )
+        })
+      }
+      if (!current() || !authoritative || retryable.value) return false
+      if (!hasPending()) return true
+      await save()
+    }
+    return current() && !saving.value && !retryable.value && !hasPending()
+  }
+
   watch(
     () => [options.viewId(), options.identity(), canPersist.value],
     () => {
@@ -474,6 +512,7 @@ export function useViewColumns(options: {
     cancelGrouping,
     changeHighlights,
     changeAggregates,
+    flush,
     retry: () => {
       retryable.value = false
       failure.value = ''

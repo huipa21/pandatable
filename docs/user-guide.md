@@ -47,8 +47,14 @@ editor. Invalid values are reported and not saved. On desktop, **Fields**
 searches the field list and controls which columns are visible; choose **System
 fields** to include system columns. Owners can add a field with the plus button
 in the grid header or **Add field** in the field menu, choose its type, and
-optionally set a default value and description. Other field types, including
-relations and formulas, are available under **More field types**. Attachment
+optionally set a default value and description. The searchable type list also
+includes relations, lookups, rollups and formulas. In **Fields**, each field is
+a compact tile: drag its name to change the order of the current grid (owners
+also save the table's field order), use its checkbox to show or hide it, or
+open its **⋯** menu to edit, move or delete it. **Edit** uses the same layout
+as **Add field**, including the display-field option under advanced settings;
+owners can change a field's type there when a safe conversion
+exists. Attachment
 fields support file selection and drag-and-drop; the administrator's upload
 limit applies.
 
@@ -172,7 +178,10 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 打开数据表的网格，选择**添加行**，并使用相应的编辑器修改单元格。无效值会显示
 错误且不会保存。在桌面端，使用**字段**搜索字段并控制显示哪些列；选择**系统字段**
 可显示系统列。所有者可以通过网格表头的加号或字段菜单中的**添加字段**新建字段，
-选择类型，并按需设置默认值和说明。关联、公式等其他类型位于**更多字段类型**中。
+选择类型，并按需设置默认值和说明。可搜索的类型列表也包含关联、查找、汇总和公式。
+在**字段**中，每个字段显示为紧凑的磁贴：拖动字段名可调整当前网格的列顺序（所有者
+同时保存数据表的字段顺序），用复选框显示或隐藏它，或打开 **⋯** 菜单编辑、移动或删除。
+**编辑**与**添加字段**使用相同布局，高级设置中可设为显示字段；存在安全转换时，所有者可在其中更改字段类型。
 附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
 
 在桌面端，可以复制粘贴单元格区域、使用 Ctrl+D 向下填充，以及使用 Ctrl+Z 或

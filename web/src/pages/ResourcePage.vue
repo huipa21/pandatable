@@ -85,6 +85,8 @@ const grid = ref<{
   refresh: () => Promise<void>
   exportQuery: () => ExportViewQuery
   toggleField?: (id: string, visible: boolean) => void
+  flushColumnChanges?: () => Promise<boolean>
+  reorderFields?: (ids: string[]) => Promise<boolean>
   navigateRow: (id: string, direction: -1 | 1) => Promise<string | null>
 }>()
 const rowWorkspace = ref<HTMLElement>()
@@ -95,6 +97,9 @@ const filterOpen = ref(false)
 const fieldsVisited = ref(false)
 const filterVisited = ref(false)
 const fieldMenuError = ref('')
+const fieldReordering = ref(false)
+let reorderOrigin:
+  { tableId: string; viewId: string; identity: string } | undefined
 const createFieldPending = ref(false)
 const kanban = ref<{
   refresh: () => Promise<void>
@@ -210,6 +215,36 @@ function toggleGridField(id: string, visible: boolean) {
   fieldMenuError.value = ''
   grid.value.toggleField(id, visible)
 }
+function isReorderOriginCurrent() {
+  return (
+    !!reorderOrigin &&
+    route.params.tableId === reorderOrigin.tableId &&
+    schema.value?.table.id === reorderOrigin.tableId &&
+    view.value?.id === reorderOrigin.viewId &&
+    auth.user?.id === reorderOrigin.identity
+  )
+}
+async function prepareFieldReorder() {
+  const current = grid.value
+  const tableId = schema.value?.table.id
+  const viewId = view.value?.id
+  const identity = auth.user?.id
+  if (!current?.flushColumnChanges || !tableId || !viewId || !identity)
+    return false
+  fieldReordering.value = true
+  reorderOrigin = { tableId, viewId, identity }
+  const saved = await current.flushColumnChanges()
+  return saved && isReorderOriginCurrent()
+}
+async function persistFieldReorder(ids: string[]) {
+  if (!isReorderOriginCurrent() || !grid.value?.reorderFields) return false
+  const saved = await grid.value.reorderFields(ids)
+  return saved && isReorderOriginCurrent()
+}
+function finishFieldReorder() {
+  reorderOrigin = undefined
+  fieldReordering.value = false
+}
 watch(fieldPanel, (panel) => {
   if (!panel || !createFieldPending.value) return
   createFieldPending.value = false
@@ -293,6 +328,14 @@ function applySchema(next: TableSchema) {
     next.schemaVersion < shown.schemaVersion
   )
     return
+  const previousViews = new Map(shown.views.map((item) => [item.id, item]))
+  next = {
+    ...next,
+    views: next.views.map((item) => {
+      const previous = previousViews.get(item.id)
+      return previous && previous.version > item.version ? previous : item
+    }),
+  }
   for (const previousField of shown.fields) {
     if (!['single_select', 'multi_select'].includes(previousField.uiType))
       continue
@@ -1198,6 +1241,8 @@ onBeforeUnmount(() => {
               :schema="schema"
               :view-id="view.id"
               :identity="auth.user?.id ?? ''"
+              :inert="fieldReordering ? '' : undefined"
+              :aria-busy="fieldReordering"
               :filter="filterValue"
               :fields-open="fieldsOpen"
               :filter-open="filterOpen"
@@ -1210,7 +1255,9 @@ onBeforeUnmount(() => {
                 (updated) => {
                   if (schema)
                     schema.views = schema.views.map((item) =>
-                      item.id === updated.id ? updated : item,
+                      item.id === updated.id && updated.version >= item.version
+                        ? updated
+                        : item,
                     )
                 }
               "
@@ -1236,6 +1283,9 @@ onBeforeUnmount(() => {
                 ref="fieldPanel"
                 :schema="schema"
                 :columns="localViewConfig?.fields"
+                :prepare-reorder="prepareFieldReorder"
+                :persist-reorder="persistFieldReorder"
+                :finish-reorder="finishFieldReorder"
                 menu
                 @visibility="toggleGridField"
                 @update="applySchema"

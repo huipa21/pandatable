@@ -625,8 +625,16 @@ test('AT-323/324 previews type changes, converts explicitly, and propagates choi
   }
   const conversionField = await actions(textField.id)
   await conversionField
-    .getByRole('button', { name: en.field.panel.changeType, exact: true })
+    .getByRole('button', { name: en.field.panel.edit, exact: true })
     .click()
+  const conversionEditor = page.getByRole('dialog', {
+    name: en.field.panel.editTitle,
+    exact: true,
+  })
+  await conversionEditor
+    .getByRole('button', { name: en.field.panel.kind, exact: true })
+    .click()
+  await conversionEditor.locator('[data-kind="integer"]').click()
   const conversionDialog = page.getByRole('dialog', {
     name: en.field.panel.typeChangeTitle,
     exact: true,
@@ -659,10 +667,10 @@ test('AT-323/324 previews type changes, converts explicitly, and propagates choi
     expect.arrayContaining(['1', '2', 'x']),
   )
 
-  const retryField = await actions(textField.id)
-  await retryField
-    .getByRole('button', { name: en.field.panel.changeType, exact: true })
+  await conversionEditor
+    .getByRole('button', { name: en.field.panel.kind, exact: true })
     .click()
+  await conversionEditor.locator('[data-kind="integer"]').click()
   await conversionDialog
     .getByRole('combobox', { name: en.field.panel.targetType, exact: true })
     .selectOption('integer')
@@ -688,6 +696,9 @@ test('AT-323/324 previews type changes, converts explicitly, and propagates choi
   expect(rows.rows.map((row) => row.fields[textField.id])).toEqual(
     expect.arrayContaining([1, 2, null]),
   )
+  await conversionEditor
+    .getByRole('button', { name: en.field.panel.cancel, exact: true })
+    .click()
 
   const choiceFieldRow = await actions(selectField.id)
   await choiceFieldRow

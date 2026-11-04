@@ -10,6 +10,7 @@ const props = defineProps<{
   modelValue: string
   expanded?: boolean
   disabled?: boolean
+  allowedKinds?: readonly string[]
 }>()
 const emit = defineEmits<{ 'update:modelValue': [kind: string] }>()
 const { t } = useI18n()
@@ -25,10 +26,12 @@ const kinds = ['link', 'lookup', 'rollup', 'formula', ...USER_KINDS] as const
 const label = (kind: string) =>
   isKind(kind) ? fieldKindLabel(kind) : t('field.panel.linkType')
 const filtered = computed(() =>
-  kinds.filter((kind) =>
-    label(kind)
-      .toLocaleLowerCase()
-      .includes(search.value.trim().toLocaleLowerCase()),
+  kinds.filter(
+    (kind) =>
+      (!props.allowedKinds || props.allowedKinds.includes(kind)) &&
+      label(kind)
+        .toLocaleLowerCase()
+        .includes(search.value.trim().toLocaleLowerCase()),
   ),
 )
 function select(kind: string) {

@@ -2293,6 +2293,17 @@ function toggleField(id: string, visible: boolean) {
   columnState.change({ kind: 'visible', id, visible })
 }
 
+async function reorderFields(ids: string[]) {
+  if (
+    !props.identity ||
+    props.identity !== auth.user?.id ||
+    !columnState.canPersist.value
+  )
+    return false
+  columnState.change({ kind: 'order', ids })
+  return columnState.flush()
+}
+
 function selectedField(id: string) {
   return visibleFieldIds.value.includes(id)
 }
@@ -2473,6 +2484,8 @@ defineExpose({
     return null
   },
   toggleField,
+  flushColumnChanges: columnState.flush,
+  reorderFields,
   exportQuery: (): ExportViewQuery => ({
     fieldIds: [...visibleFieldIds.value],
     sorts: sortCriteria.value.map((sort) => ({ ...sort })),

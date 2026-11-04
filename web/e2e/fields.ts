@@ -246,8 +246,18 @@ export async function verifyFields(owner: Page, tid: string) {
     error: { code: 'ERR_VERSION_CONFLICT' },
   })
 
-  // Display field, reorder and soft delete through the menu.
-  await fieldAction(owner, qty.id, en.field.panel.setDisplay)
+  // Display field in the editor, then reorder and soft delete through the menu.
+  await fieldAction(owner, qty.id, en.field.panel.edit)
+  editor = dialog(owner, en.field.panel.editTitle)
+  await editor
+    .getByText(en.field.panel.advancedSettings, { exact: true })
+    .click()
+  await editor
+    .getByRole('button', { name: en.field.panel.setDisplay, exact: true })
+    .click()
+  await editor
+    .getByRole('button', { name: en.field.panel.cancel, exact: true })
+    .click()
   if (owner.viewportSize()!.width < 768)
     await expect(row).toContainText(en.field.panel.display)
   await expect(owner.locator('.schema-summary')).toContainText('数量')

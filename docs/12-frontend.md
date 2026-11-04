@@ -161,6 +161,17 @@ Routes:
   reload the schema, and 403/404 also refresh nav. Errors are translated from
   code/reason/option/count, never server text. Nav-revision refreshes keep the
   current schema visible and only replace it with a same-table, not-older one.
+- UI-FIELD-TILES (D-215) replaces the list rows with compact tiles inside the
+  grid **Fields** dropdown: the field name is the pointer drag handle (press,
+  drag and drop-target feedback; reduced-motion aware), the checkbox toggles
+  visibility, and a **⋯** button opens an anchored, viewport-clamped actions
+  menu (Edit, Delete, Move up/down). "Use as display field" moves to Edit's
+  Advanced settings. Edit reuses the Add
+  layout; the type picker offers only the safe conversions for the field and
+  type change requires saving pending edits first. Relation/lookup/rollup edit
+  their own settings with unavailable options kept visible. Reorder flushes
+  pending view-column changes, PATCHes the field index only when schema order
+  changes, then saves the active view order (`DataGrid.reorderFields`).
 
 ### T1.15 row/query API boundary (D-132..D-135)
 

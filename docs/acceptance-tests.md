@@ -501,9 +501,9 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 
 ## AT-3xx Fields & Grid (M1, M2)
 
-- **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema).
+- **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema). **Evidence (UI-FIELD-TILES, 2026-11-04):** still PASS through the redesigned tile/⋯-menu Field panel — fast production-browser `fields-acceptance.spec.ts` creates and edits fields via the unified Add/Edit layout.
 - **AT-302 — Validation** · M1 · Entering "abc" in integer, "x@" in email → cell shows error and value is not saved.
-- **AT-303 — Required / unique / default** · M1 · Setting `required` on a field with empty cells reports count and requires a default or abort; unique rejects duplicates with translated error; default applied to new rows.
+- **AT-303 — Required / unique / default** · M1 · Setting `required` on a field with empty cells reports count and requires a default or abort; unique rejects duplicates with translated error; default applied to new rows. **Evidence (UI-FIELD-TILES, 2026-11-04):** still PASS — the same spec sets required/unique/default through the redesigned Edit; `fields-menu.spec.ts` adds menu, editor, reader, theme/locale and reorder persistence coverage.
 - **AT-304 — System fields** · M1 · New views hide id/created/updated fields; "Fields" menu can show them; values correct (updated_by = last editor).
 - **AT-305 — Keyboard navigation** · M1 · Arrows/Tab/Enter/Esc/F2/Delete/Ctrl+Home/End behave per 12-frontend.md §4.
 - **AT-306 — Copy/paste from Excel** · M1 · Copying a 3×4 range from Excel/Google Sheets (incl. a quoted multi-line cell and Chinese text) and pasting at a cell updates 12 cells in one request; invalid cells reported, others saved.

@@ -896,9 +896,13 @@ dialog::backdrop {
 }
 
 .field-list > li {
+  position: relative;
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
+  transition:
+    transform 120ms ease,
+    box-shadow 120ms ease;
 }
 
 .field-line {
@@ -911,6 +915,65 @@ dialog::backdrop {
 .field-name {
   font-weight: 600;
   min-width: 0;
+}
+
+.field-panel .field-drag-handle,
+.resource-page .field-drag-handle {
+  min-width: 0;
+  padding: 2px 0;
+  overflow: hidden;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: grab;
+  user-select: none;
+}
+
+.field-panel .field-drag-handle:active {
+  cursor: grabbing;
+}
+
+.field-drag-handle .field-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-list > .field-tile-pressed:not(.field-tile-dragging) {
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  box-shadow: 0 6px 16px rgb(0 0 0 / 18%);
+  transform: translateY(-2px);
+}
+
+.field-list > .field-tile-dragging {
+  outline: 1px dashed var(--accent);
+  opacity: 0.5;
+}
+
+.field-list > .field-drop-before::before,
+.field-list > .field-drop-after::after {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  content: '';
+  pointer-events: none;
+}
+
+.field-list > .field-drop-before::before {
+  top: -5px;
+}
+
+.field-list > .field-drop-after::after {
+  bottom: -5px;
 }
 
 .field-kind,
@@ -934,13 +997,41 @@ dialog::backdrop {
 
 .field-actions {
   margin-inline-start: auto;
+  flex: 0 0 auto;
 }
 
 .field-menu {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  position: fixed;
+  z-index: 40;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(190px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 6px;
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
+
+.field-actions:not([open]) > .field-menu {
+  display: none;
+}
+
+.field-panel .field-menu button,
+.resource-page .field-menu button {
+  width: 100%;
+  padding: 7px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: start;
+}
+
+.field-menu button:hover:not(:disabled),
+.field-menu button:focus-visible {
+  border-color: var(--border);
 }
 
 .field-dialog {
@@ -1038,21 +1129,53 @@ dialog::backdrop {
 .field-panel-menu .field-list {
   max-height: min(45vh, 400px);
   margin: 0;
-  padding: 4px 14px;
+  padding: 8px 14px;
   overflow-y: auto;
 }
 
 .field-panel-menu .field-list > li {
-  padding: 10px 0;
+  margin-bottom: 6px;
+  padding: 8px;
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+
+.field-panel-menu .field-line {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.field-panel-menu .field-drag-handle {
+  flex: 1;
 }
 
 .field-panel-menu .field-name {
   flex: 1;
+  overflow: hidden;
   font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field-panel-menu .field-kind {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 35%;
+  overflow: hidden;
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .field-list > li {
+    transition: none;
+  }
+
+  .field-list > .field-tile-pressed:not(.field-tile-dragging) {
+    transform: none;
+  }
 }
 
 .field-panel-menu .field-status,
