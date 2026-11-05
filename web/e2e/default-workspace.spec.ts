@@ -7,7 +7,13 @@ import type {
   WorkspacePreferenceMutation,
 } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
-import { expect, paceLogin, test } from './fixtures'
+import {
+  expect,
+  expectBrowserClean,
+  observeBrowser,
+  paceLogin,
+  test,
+} from './fixtures'
 
 const preferencePath = '/api/v1/auth/workspace-preference'
 const headers = () => ({
@@ -49,24 +55,27 @@ test('UX-01: default workspaces persist, respect access and recover once', async
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 
   const adminUser = (await (
     await page.request.get('/api/v1/auth/me')
   ).json()) as AuthUser
   const adminPreference = await readPreference(page.request)
   expect(adminPreference.workspaceId).toBeTruthy()
-  const adminStarter = adminPreference.workspaceId!
+  const adminPreferred = adminPreference.workspaceId!
+  expect(new URL(page.url()).pathname).toBe(`/w/${adminPreferred}`)
   const adminNav = (await (
     await page.request.get('/api/v1/nav')
   ).json()) as Navigation
   expect(adminNav.workspaces).toContainEqual(
     expect.objectContaining({
-      id: adminStarter,
-      name: 'Default',
-      level: 'owner',
+      id: adminPreferred,
     }),
   )
+  const firstEligible = adminNav.workspaces.find(
+    (workspace) => !workspace.pathOnly && workspace.level !== 'none',
+  )?.id
+  expect(firstEligible).toBeTruthy()
 
   const created = await page.request.post('/api/v1/admin/users', {
     headers: headers(),
@@ -107,6 +116,18 @@ test('UX-01: default workspaces persist, respect access and recover once', async
 
     const userStarter = (await readPreference(userRequest)).workspaceId
     expect(userStarter).toBeTruthy()
+    const starterPage = await userContext.newPage()
+    const starterDiagnostics = await observeBrowser(starterPage)
+    await starterPage.goto('/home')
+    await expect(starterPage).toHaveURL(new RegExp(`/w/${userStarter}$`))
+    await expect(
+      starterPage.locator('main').getByRole('heading', { name: 'Default' }),
+    ).toBeVisible()
+    await expect(starterPage.locator('main')).not.toContainText(
+      en.auth.homeTitle,
+    )
+    expectBrowserClean(starterPage, starterDiagnostics)
+    await starterPage.close()
     const userNav = (await (
       await userRequest.get('/api/v1/nav')
     ).json()) as Navigation
@@ -129,7 +150,7 @@ test('UX-01: default workspaces persist, respect access and recover once', async
       (
         await userRequest.put(preferencePath, {
           headers: headers(),
-          data: { workspaceId: adminStarter },
+          data: { workspaceId: adminPreferred },
         })
       ).status(),
     ).toBe(404)
@@ -159,7 +180,9 @@ test('UX-01: default workspaces persist, respect access and recover once', async
       ).status(),
     ).toBe(200)
     expect((await readPreference(userRequest)).workspaceId).toBe(anotherID)
-    expect((await readPreference(page.request)).workspaceId).toBe(adminStarter)
+    expect((await readPreference(page.request)).workspaceId).toBe(
+      adminPreferred,
+    )
 
     const grant = await userRequest.put('/api/v1/grants', {
       headers: headers(),
@@ -190,7 +213,7 @@ test('UX-01: default workspaces persist, respect access and recover once', async
       ).status(),
     ).toBe(200)
     expect((await readPreference(page.request)).workspaceId).toBeNull()
-    expect(await resolvePreference(page.request)).toBe(adminStarter)
+    expect(await resolvePreference(page.request)).toBe(firstEligible)
 
     expect(
       (
@@ -226,5 +249,10 @@ test('UX-01: default workspaces persist, respect access and recover once', async
     ])
   } finally {
     await userContext.close()
+    const restored = await page.request.put(preferencePath, {
+      headers: headers(),
+      data: { workspaceId: adminPreferred },
+    })
+    expect(restored.status()).toBe(200)
   }
 })

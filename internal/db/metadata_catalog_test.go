@@ -52,6 +52,8 @@ var metadataColumns = map[string][]columnSpec{
 		{"created_at", "timestamp with time zone", false, "now()"},
 		{"deleted_at", "timestamp with time zone", true, ""},
 		{"deleted_by", "uuid", true, ""},
+		{"icon", "text", true, ""},
+		{"fallback_icon", "text", false, "(ARRAY['book'::text, 'table'::text, 'view'::text, 'fields'::text, 'calendar'::text, 'star'::text, 'group'::text, 'link'::text])[((floor((random() * (8)::double precision)))::integer + 1)]"},
 	},
 	"tables": {
 		{"id", "uuid", false, "uuidv7()"},

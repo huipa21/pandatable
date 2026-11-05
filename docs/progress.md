@@ -18,6 +18,9 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| UX-08 | One-click checkbox and choice editing | 🟨 | 2026-11-05 | Gates pass; checkbox undo/error and zh-CN/dark acceptance gaps remain. [Record](task-prompts/workspace-grid-08-choice-editing.md). |
+| UX-03 | Workbook icon metadata and stable fallback | ✅ | 2026-11-05 | Coordinated task gate passed; card rendering follows in UX-04. [Record](task-prompts/workspace-grid-03-workbook-icons.md). |
+| UX-02 | Workspace sidebar and default landing navigation | ✅ | 2026-11-05 | Task gate passed; phase gate and commits deferred. [Record](task-prompts/workspace-grid-02-workspace-navigation.md). |
 | UX-01 | Persistent default-workspace lifecycle | ✅ | 2026-11-05 | Task gate passed; UX-02 API handoff in [record](task-prompts/workspace-grid-01-default-workspace.md). |
 | UX-07 | Single-click scalar editing and commit on leave | 🟨 | 2026-11-05 | Implementation started; [record](task-prompts/workspace-grid-07-inline-editing.md). |
 | Dev DB startup recovery | Automatic engine readiness and free database port | ✅ | 2026-11-05 | D-216; full check, live port-conflict recovery and fast shell browser gate pass. [Record](task-prompts/dev-startup-recovery.md). |
@@ -123,6 +126,11 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-05 | Completed UX-03: workbook icon metadata and stable fallback (D-220); task gate passed. |
+| 2026-11-05 | Completed UX-02: workspace sidebar and preferred-workspace entry navigation (D-219); task gate passed. |
+| 2026-11-05 | Started UX-08: grid checkbox and choice interactions. |
+| 2026-11-05 | Started UX-03: workbook icon metadata and stable fallback. |
+| 2026-11-05 | Started UX-02: workspace sidebar and preferred-workspace entry navigation. |
 | 2026-11-05 | Completed UX-01: default-workspace lifecycle and preference API (D-218); task gate passed. |
 | 2026-11-05 | Started UX-01: persistent per-user default-workspace lifecycle and API. |
 | 2026-11-05 | Started UX-07: grid-only scalar editor activation and commit-on-leave. |

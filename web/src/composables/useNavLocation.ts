@@ -39,9 +39,13 @@ export function useNavLocation() {
       null,
   )
   const workspace = computed(() => {
+    const resourceRoute =
+      typeof route.params.tableId === 'string' ||
+      typeof route.params.bookId === 'string' ||
+      typeof route.params.workspaceId === 'string' ||
+      typeof route.params.wid === 'string'
     const id =
-      routeWorkspaceId.value ??
-      (route.path === '/home' ? null : nav.lastWorkspaceId)
+      routeWorkspaceId.value ?? (resourceRoute ? null : nav.lastWorkspaceId)
     return id ? nav.items.find((item) => item.id === id) : undefined
   })
   const view = computed(() => {

@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/auth'
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', redirect: '/login' },
+    { path: '/', redirect: '/home' },
     { path: '/setup', component: () => import('../pages/SetupPage.vue') },
     { path: '/login', component: () => import('../pages/LoginPage.vue') },
     {

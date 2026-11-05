@@ -16,6 +16,15 @@ const sharing = useSharingStore()
 const canShare = computed(
   () => !props.item.pathOnly && props.item.level === 'owner',
 )
+const canSetDefault = computed(
+  () =>
+    props.item.kind === 'workspace' &&
+    !props.item.pathOnly &&
+    props.item.level !== 'none',
+)
+const isDefault = computed(
+  () => nav.preferenceLoaded && nav.preferredWorkspaceId === props.item.id,
+)
 const root = ref<HTMLDetailsElement>()
 
 function close() {
@@ -31,8 +40,21 @@ function onOutside(event: Event) {
 }
 
 function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape' && root.value?.contains(event.target as Node))
+  if (event.key === 'Escape' && root.value?.contains(event.target as Node)) {
+    event.preventDefault()
     close()
+    root.value.querySelector('summary')?.focus()
+  }
+}
+
+async function setDefault() {
+  close()
+  root.value?.querySelector('summary')?.focus()
+  try {
+    await nav.setPreferredWorkspace(props.item.id)
+  } catch {
+    // The store exposes the failure and retry beside the tree.
+  }
 }
 
 function listen(on: boolean) {
@@ -59,7 +81,7 @@ onBeforeUnmount(() => listen(false))
 
 <template>
   <details
-    v-if="item.canEdit || item.canCreate || canShare"
+    v-if="item.canEdit || item.canCreate || canShare || canSetDefault"
     ref="root"
     class="node-actions"
     @toggle="onToggle"
@@ -71,6 +93,13 @@ onBeforeUnmount(() => listen(false))
       }}</span>
     </summary>
     <div class="nav-actions">
+      <button
+        v-if="canSetDefault"
+        :disabled="nav.preferenceBusy || isDefault"
+        @click="setDefault"
+      >
+        {{ t('workspaceGrid.ux02.setDefault') }}
+      </button>
       <button v-if="canShare" @click="sharing.open(item)">
         {{ t('sharing.open') }}
       </button>

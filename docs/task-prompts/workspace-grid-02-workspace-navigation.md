@@ -68,4 +68,34 @@ needs selectors updated later by UX-11.
 
 ## Record
 
-Not started.
+Started 2026-11-05: implementing the accessible workspace sidebar and
+preferred-workspace entry navigation using UX-01's API handoff.
+
+Implementation handoff: the sidebar renders all authorized contexts in server
+order with separate workspace selection/expansion, owner structure controls and
+a named default marker/action for eligible readers. `/home` resolves and replaces
+itself with the preferred workspace; explicit links, history and identity changes
+are guarded against stale requests. Preference and navigation failures retain
+retry affordances even with the sidebar collapsed or the mobile drawer open
+(D-219). Shared UX-03 navigation fixture now supplies its required icon fields.
+
+Verification: focused navigation/sharing/header/home/router Vitest checks passed
+33 tests. The combined `ptdev check` passed lint, required PG18 tests and build
+(816 frontend tests; 1,269 matching locale keys). The requested UX-03 PG18 icon,
+upgrade, API and migration-regression selectors also passed. Fast browser
+coverage for `default-workspace`, `workspace-navigation`, `workbook-icons`,
+`grid-inline-editing` and `shell` passed 12 tests, with 3 intentional mobile
+skips (two desktop-grid scenarios and viewport-independent icon metadata).
+The focused default/navigation browser rerun passed 5 desktop/mobile cases.
+
+Stabilization: the first check exposed pre-0008 migration expectations, corrected
+by the UX-03 owner. The first matched browser batch had three failures from
+test timing and leaked shared preference; the scenarios now wait for the exact
+creation response and restore preference/workspaces even after failure. The
+first browser invocation also matched no tests with backslash path selectors;
+spec-name selectors were used for the passing runs.
+
+Status: task gate passed. UX-04 may consume the navigation handoff. Some older
+multi-scenario browser fixtures still expect the retired `/home` chooser and
+need coordinated selector updates in UX-11. The complete production-image
+phase gate and coordinated commits remain deferred to UX-11 (D-158).

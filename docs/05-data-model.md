@@ -116,7 +116,12 @@ CREATE TABLE meta.books (
   created_by    uuid REFERENCES meta.users(id) ON DELETE SET NULL,
   created_at    timestamptz NOT NULL DEFAULT now(),
   deleted_at    timestamptz,
-  deleted_by    uuid REFERENCES meta.users(id) ON DELETE SET NULL
+  deleted_by    uuid REFERENCES meta.users(id) ON DELETE SET NULL,
+  icon          text,                     -- optional local icon override
+  fallback_icon text NOT NULL DEFAULT (
+    (ARRAY['book', 'table', 'view', 'fields', 'calendar', 'star', 'group', 'link'])
+      [floor(random() * 8)::integer + 1]
+  )
 );
 
 CREATE TABLE meta.tables (
@@ -362,6 +367,11 @@ are still future work and must use that lock/revocation contract.
   virtual fields. System fields use their documented fixed column names.
   Identifier generation/validation belongs to T1.9; this migration does not pick
   a new base32 alphabet or create physical book schemas/tables.
+- Book `icon` is an optional local icon override; `fallback_icon` is assigned
+  once from the eight-icon local palette and is shared by authorized readers.
+  Migration 0008 backfills existing books with the same default and constrains
+  both vocabularies. Rename, reorder and clearing the override preserve the
+  fallback; see the [Structure API](09-api.md#structure) for allowed values.
 - Only active **field** names have case-insensitive uniqueness; deleting a field
   frees its display name, not its physical column name. Group names and backup
   filenames retain ordinary case-sensitive uniqueness. No additional

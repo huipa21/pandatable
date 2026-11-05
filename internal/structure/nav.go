@@ -30,12 +30,14 @@ type NavTable struct {
 }
 
 type NavBook struct {
-	ID       string     `json:"id"`
-	Name     string     `json:"name"`
-	Position float64    `json:"position"`
-	Level    string     `json:"level"`
-	PathOnly bool       `json:"pathOnly"`
-	Tables   []NavTable `json:"tables"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Icon         *string    `json:"icon"`
+	FallbackIcon string     `json:"fallbackIcon"`
+	Position     float64    `json:"position"`
+	Level        string     `json:"level"`
+	PathOnly     bool       `json:"pathOnly"`
+	Tables       []NavTable `json:"tables"`
 }
 
 type NavWorkspace struct {
@@ -157,7 +159,8 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 			visible = []NavTable{}
 		}
 		booksByWorkspace[row.WorkspaceID] = append(booksByWorkspace[row.WorkspaceID], NavBook{ID: row.ID.String(),
-			Name: row.Name, Position: row.Position, Level: levelName(level), PathOnly: level == 0, Tables: visible})
+			Name: row.Name, Icon: textPointer(row.Icon), FallbackIcon: row.FallbackIcon,
+			Position: row.Position, Level: levelName(level), PathOnly: level == 0, Tables: visible})
 	}
 	for _, row := range workspaces {
 		level := workspaceLevel[row.ID]

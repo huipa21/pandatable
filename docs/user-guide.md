@@ -23,14 +23,23 @@ enable mention emails; in-app notifications remain available.
 
 PandaTable organizes data as workspaces (a company or program), books (a project
 whose tables can relate to each other), tables, and views (filtered or sorted
-tables). On the home page choose **New workspace**, open it and choose **New
-book**, then open the book and choose **New table**. A new table has a default grid and a
-display field named Name or 名称 according to the creator's profile language.
-The sidebar shows the selected workspace: select a book to show its tables,
+tables). Signing in opens your default workspace. New accounts start with a
+workspace named **Default**, which its owner can rename. The **Workspaces**
+sidebar lists every workspace available to you; select a name to open it or its
+arrow to expand its books. Use the heading's **New workspace** button to create
+another workspace. In an accessible workspace's **⋯** menu, choose **Set as
+default** to make it your startup workspace; simply visiting another workspace
+does not change that preference.
+
+Open a workspace and choose **New book**, then open the book and choose **New
+table**. A new table has a default grid and a display field named Name or 名称
+according to the creator's profile language. Select a book to show its tables,
 select a table name to open its default view, or point at the table icon to list
-its views. The header shows where you are and its search button (Ctrl+K) jumps
-to any workspace, book, table, or view by name. The arrow next to the logo hides
-the sidebar; on a narrow screen it opens the navigation drawer.
+its views. A path-only workspace is context for shared descendants, not an
+eligible default or an invitation to manage its structure. The header shows
+where you are and its search button (Ctrl+K) jumps to any workspace, book,
+table, or view by name. The arrow next to the logo hides the sidebar; on a
+narrow screen it opens the navigation drawer.
 
 An owner can use **Share** on a workspace, book, or table to find a user or
 group, choose **Read**, **Write**, or **Owner** access, and review and confirm
@@ -57,6 +66,10 @@ owners can change a field's type there when a safe conversion
 exists. Attachment
 fields support file selection and drag-and-drop; the administrator's upload
 limit applies.
+
+In the desktop grid, click a checkbox to toggle it or click a select cell to
+choose an option. Multi-select choices stay open while you make changes; leave
+the editor or press Enter to save them, or press Escape to cancel.
 
 On desktop, copy and paste cell ranges, use Ctrl+D to fill down, and use Ctrl+Z
 or Ctrl+Y to undo or redo. An undo can ask for confirmation if another user
@@ -167,13 +180,18 @@ guide.
 ### 2. 导航和共享
 
 PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其中的数据表可以相互
-关联）、数据表和视图（经过筛选或排序的数据表）组织数据。在首页选择
-**新建工作区**，打开后选择**新建工作簿**，再打开工作簿并选择**新建数据表**。
-新表默认包含一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或
-名称。侧边栏显示当前工作区：选择工作簿可展开其数据表，选择数据表名称可打开默认
-视图，指向数据表图标可列出其视图。页眉显示当前位置，搜索按钮（Ctrl+K）可按名称
-跳转到任意工作区、工作簿、数据表或视图。徽标旁的箭头可隐藏侧边栏；在窄屏上它会
-打开导航抽屉。
+关联）、数据表和视图（经过筛选或排序的数据表）组织数据。登录后会打开你的默认
+工作区。新账户最初有一个名为 **Default** 的工作区，所有者可将其重命名。侧边栏的
+**工作区**列出你可访问的所有工作区；选择名称可打开工作区，选择箭头可展开工作簿。
+使用标题右侧的**新建工作区**按钮可创建其他工作区。在可访问工作区的 **⋯** 菜单中
+选择**设为默认工作区**可更改启动时打开的工作区；仅访问其他工作区不会更改此设置。
+
+打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。新表默认包含
+一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或名称。选择工作簿
+可展开其数据表，选择数据表名称可打开默认视图，指向数据表图标可列出其视图。仅路径
+工作区只为共享的下级资源提供上下文，不能设为默认工作区，也不能管理其结构。页眉
+显示当前位置，搜索按钮（Ctrl+K）可按名称跳转到任意工作区、工作簿、数据表或视图。
+徽标旁的箭头可隐藏侧边栏；在窄屏上它会打开导航抽屉。
 
 所有者可在工作区、工作簿或数据表上使用**共享**，查找用户或用户组，选择**只读**、
 **读写**或**所有者**权限，并在审核后确认更改。读取者可以查看数据；写入者可以编辑行；

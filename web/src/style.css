@@ -287,19 +287,54 @@ a {
   margin: 2px 0;
 }
 
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.workspace-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.workspace-heading .icon-button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
 .workspace-box {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-height: 36px;
-  padding: 6px 36px 6px 10px;
-  border: 1.5px solid var(--text);
-  border-radius: 8px;
+  padding: 4px 34px 4px 2px;
+  border-radius: 6px;
   font-weight: 600;
-  text-decoration: none;
+}
+
+.workspace-box:hover,
+.workspace-box.current {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.workspace-toggle {
+  display: grid;
+  flex: 0 0 24px;
+  place-items: center;
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .workspace-link {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -307,10 +342,10 @@ a {
   text-decoration: none;
 }
 
-.workspace-placeholder {
-  color: var(--muted);
-  font-weight: 500;
-  padding-right: 10px;
+.workspace-default {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 11px;
 }
 
 .workspace-section {
@@ -353,7 +388,7 @@ a {
 
 .nav-row.current .nav-name,
 .nav-tree a.nav-row.router-link-exact-active,
-.nav-tree .workspace-link.router-link-exact-active {
+.nav-tree .workspace-box.current .workspace-link {
   color: var(--accent);
   font-weight: 700;
 }
@@ -510,6 +545,18 @@ button:disabled {
 .nav-error {
   padding: 12px;
   overflow-wrap: anywhere;
+}
+
+.nav-error-floating {
+  position: fixed;
+  z-index: 50;
+  bottom: 12px;
+  right: 12px;
+  width: min(340px, calc(100vw - 24px));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
 }
 
 .user-menu {
@@ -1409,6 +1456,33 @@ dialog::backdrop {
   .drawer-content {
     min-height: 100%;
     padding: 16px;
+  }
+
+  .nav-drawer .workspace-heading .icon-button,
+  .nav-drawer .workspace-section .icon-button {
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .nav-drawer .workspace-box {
+    min-height: 44px;
+    padding-right: 48px;
+  }
+
+  .nav-drawer .workspace-toggle {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .nav-drawer [data-kind='workspace'] > .node-actions {
+    top: 0;
+    right: 0;
+  }
+
+  .nav-drawer [data-kind='workspace'] > .node-actions summary {
+    width: 44px;
+    height: 44px;
   }
 }
 

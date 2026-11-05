@@ -128,6 +128,18 @@
     "focusedCell": "{name} is focused on this cell",
     "unavailable": "Presence is unavailable. Reconnect or reload to try again."
   },
+  "workspaceGrid": {
+    "ux02": {
+      "workspaces": "Workspaces",
+      "resolving": "Opening your default workspace",
+      "resolveError": "Unable to open your default workspace",
+      "preferenceError": "Unable to load or update your default workspace.",
+      "default": "Default",
+      "defaultMarker": "Default workspace: {name}",
+      "setDefault": "Set as default",
+      "preferenceStale": "The default workspace could not be refreshed and may be out of date."
+    }
+  },
   "nav": {
     "notFoundTitle": "Nothing here yet",
     "notFoundDescription": "This page is not available. Return to the welcome page to get started.",

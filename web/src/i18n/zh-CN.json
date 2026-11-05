@@ -128,6 +128,18 @@
     "focusedCell": "{name} 正聚焦于此单元格",
     "unavailable": "在线状态不可用，请重新连接或刷新后重试。"
   },
+  "workspaceGrid": {
+    "ux02": {
+      "workspaces": "工作区",
+      "resolving": "正在打开你的默认工作区",
+      "resolveError": "无法打开你的默认工作区",
+      "preferenceError": "无法加载或更新你的默认工作区。",
+      "default": "默认",
+      "defaultMarker": "默认工作区：{name}",
+      "setDefault": "设为默认工作区",
+      "preferenceStale": "无法刷新默认工作区，显示的信息可能已过期。"
+    }
+  },
   "nav": {
     "notFoundTitle": "这里还没有内容",
     "notFoundDescription": "此页面暂不可用，请返回欢迎页。",

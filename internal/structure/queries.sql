@@ -78,14 +78,19 @@ WHERE workspace_id = $1 AND deleted_at IS NULL
 ORDER BY position, id;
 
 -- name: InsertBook :one
-INSERT INTO meta.books (workspace_id, name, pg_schema, position, created_by)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, name, position, created_at;
+INSERT INTO meta.books (workspace_id, name, icon, pg_schema, position, created_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, workspace_id, name, icon, fallback_icon, position, created_at;
 
 -- name: GetBook :one
-SELECT id, workspace_id, name, pg_schema, position, created_at
+SELECT id, workspace_id, name, icon, fallback_icon, pg_schema, position, created_at
 FROM meta.books
 WHERE id = $1 AND deleted_at IS NULL;
+
+-- name: SetBookIcon :one
+UPDATE meta.books SET icon = $2
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id;
 
 -- name: RenameBook :one
 UPDATE meta.books SET name = $2
@@ -458,7 +463,7 @@ FROM meta.workspaces
 WHERE id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NULL;
 
 -- name: NavBooks :many
-SELECT id, workspace_id, name, position
+SELECT id, workspace_id, name, icon, fallback_icon, position
 FROM meta.books
 WHERE workspace_id = ANY(sqlc.arg(workspace_ids)::uuid[]) AND deleted_at IS NULL;
 

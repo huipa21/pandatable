@@ -2,10 +2,11 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { errorMessage, RequestError } from '../../api/client'
+import { RequestError } from '../../api/client'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import NavContents from './NavContents.vue'
+import NavErrors from './NavErrors.vue'
 import StructureDialog from './StructureDialog.vue'
 import ShareDialog from '../sharing/ShareDialog.vue'
 import UserMenu from '../account/UserMenu.vue'
@@ -14,6 +15,7 @@ import { usePreferencesStore } from '../../stores/preferences'
 const { t } = useI18n()
 const nav = useNavStore()
 const auth = useAuthStore()
+const identity = auth.user?.id
 const router = useRouter()
 const route = useRoute()
 const preferences = usePreferencesStore()
@@ -23,11 +25,10 @@ const drawer = ref<HTMLDialogElement>()
 let timer: ReturnType<typeof setInterval> | undefined
 
 function refresh() {
-  if (document.visibilityState !== 'hidden') void nav.refresh()
-}
-function retry() {
-  nav.mutationError = null
-  void nav.refresh(true)
+  if (document.visibilityState !== 'hidden') {
+    void nav.refresh()
+    void nav.refreshPreference()
+  }
 }
 function visibility() {
   if (document.visibilityState === 'hidden') {
@@ -55,20 +56,23 @@ watch(
   (value) => (value ? void open() : close()),
 )
 watch(() => route.fullPath, close)
-watch([() => nav.error, () => nav.mutationError], async (errors) => {
-  for (const cause of errors) {
-    if (!(cause instanceof RequestError)) continue
-    if (cause.code === 'ERR_UNAUTHENTICATED') {
-      auth.setUser(null)
-      await router.replace('/login')
-      break
+watch(
+  [() => nav.error, () => nav.mutationError, () => nav.preferenceError],
+  async (errors) => {
+    for (const cause of errors) {
+      if (!(cause instanceof RequestError)) continue
+      if (cause.code === 'ERR_UNAUTHENTICATED') {
+        auth.setUser(null)
+        await router.replace('/login')
+        break
+      }
+      if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
+        await router.replace('/change-password')
+        break
+      }
     }
-    if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
-      await router.replace('/change-password')
-      break
-    }
-  }
-})
+  },
+)
 visibility()
 window.addEventListener('focus', refresh)
 document.addEventListener('visibilitychange', visibility)
@@ -78,7 +82,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', refresh)
   document.removeEventListener('visibilitychange', visibility)
   media.removeEventListener('change', resize)
-  nav.reset()
+  if (!auth.user || auth.user.id === identity) nav.reset()
 })
 </script>
 
@@ -94,6 +98,7 @@ onBeforeUnmount(() => {
       class="sidebar-desktop"
     >
       <NavContents />
+      <NavErrors />
       <div class="sidebar-footer"><UserMenu placement="top" /></div>
     </aside>
     <dialog
@@ -105,16 +110,14 @@ onBeforeUnmount(() => {
     >
       <div v-if="nav.drawerOpen" class="drawer-content">
         <button @click="close">{{ t('nav.close') }}</button>
+        <NavErrors />
         <NavContents @navigate="close" />
       </div>
     </dialog>
-    <div v-if="nav.error || nav.mutationError" class="nav-error" role="alert">
-      <p>{{ errorMessage(nav.mutationError ?? nav.error) }}</p>
-      <p v-if="nav.error && nav.mutationError">{{ errorMessage(nav.error) }}</p>
-      <button :disabled="nav.loading" @click="retry">
-        {{ t('auth.retry') }}
-      </button>
-    </div>
+    <NavErrors
+      v-if="(mobile || preferences.sidebarCollapsed) && !nav.drawerOpen"
+      class="nav-error-floating"
+    />
     <StructureDialog />
     <ShareDialog />
   </div>

@@ -30,6 +30,8 @@ export function navigation(): Navigation {
           {
             id: 'b',
             name: 'Book',
+            icon: null,
+            fallbackIcon: 'book',
             position: 1024,
             level: 'owner',
             pathOnly: false,

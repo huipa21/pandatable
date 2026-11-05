@@ -46,10 +46,9 @@ const otherLocaleName = computed(() =>
 )
 
 watch(
-  [routeWorkspaceId, () => route.path],
-  ([id, path]) => {
+  routeWorkspaceId,
+  (id) => {
     if (id) nav.lastWorkspaceId = id
-    else if (path === '/home') nav.lastWorkspaceId = null
   },
   { immediate: true },
 )

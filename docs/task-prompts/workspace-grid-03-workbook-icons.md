@@ -61,4 +61,36 @@ Central docs, gates and commits follow the execution index.
 
 ## Record
 
-Not started.
+Started 2026-11-05. Implemented book-level `icon` (nullable custom selection)
+and persisted `fallbackIcon` across structure DTOs, create/update APIs and
+permitted `/nav` entries. Allowed custom identifiers mirror `AppIcon.vue`;
+fallbacks use the local palette `book`, `table`, `view`, `fields`, `calendar`,
+`star`, `group`, `link`. Name-only creation remains supported; PATCH omission
+preserves the custom icon and `icon: null` clears it without changing fallback.
+Migration `0008` backfills existing books once and constrains both vocabularies.
+
+Verification (coordinator's serialized PG18/gate slot, 2026-11-05):
+pinned sqlc generation; required-PG18 `TestBookIcon*`,
+`TestCreateBookWithCustomIcon` and migration backfill/rerun tests pass, and so do
+the migration-coupled regressions updated for version 8 (serve restart, admin
+system, HTTP system, metadata catalog/upgrade). `ptdev check` passed
+lint/test/build. The combined `ptdev e2e --fast` batch passed 12 with 3
+intentional mobile skips. `workbook-icons.spec.ts` passed on desktop and skips
+mobile by design (API-metadata contract). The production-image phase gate and
+commits are deferred to UX-11 (D-158).
+
+Remaining acceptance notes (not UX-03 gaps): rendering custom and fallback icons
+on workbook cards, plus the matching browser assertion, belongs to UX-04. The
+full-image E2E for AT-201/202/208/212 runs at the UX-11 phase gate.
+
+Coordinator handoff: add the `icon` / `fallbackIcon` nullable/required contract
+and allowed identifiers above to the data-model and Structure API docs; extend
+AT-201/202/208/212 with stable fallback, custom/clear, preservation and hidden
+navigation assertions. UX-04's workbook-card browser spec should also verify
+that a custom icon overrides and clearing it reveals the persisted fallback.
+Proposed decision: persist custom and fallback icons
+separately; assign the fallback once from the local eight-icon palette with a
+database insert default, use that same default for the one-time backfill, and
+share both values across authorized users. This also preserves existing direct
+book inserts. Update the UX-03
+progress row and finish log only after the combined gates complete.

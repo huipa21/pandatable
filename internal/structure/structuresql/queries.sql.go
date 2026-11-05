@@ -251,18 +251,20 @@ func (q *Queries) FindRowComment(ctx context.Context, id pgtype.UUID) (FindRowCo
 }
 
 const getBook = `-- name: GetBook :one
-SELECT id, workspace_id, name, pg_schema, position, created_at
+SELECT id, workspace_id, name, icon, fallback_icon, pg_schema, position, created_at
 FROM meta.books
 WHERE id = $1 AND deleted_at IS NULL
 `
 
 type GetBookRow struct {
-	ID          pgtype.UUID
-	WorkspaceID pgtype.UUID
-	Name        string
-	PgSchema    string
-	Position    float64
-	CreatedAt   pgtype.Timestamptz
+	ID           pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	FallbackIcon string
+	PgSchema     string
+	Position     float64
+	CreatedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) GetBook(ctx context.Context, id pgtype.UUID) (GetBookRow, error) {
@@ -272,6 +274,8 @@ func (q *Queries) GetBook(ctx context.Context, id pgtype.UUID) (GetBookRow, erro
 		&i.ID,
 		&i.WorkspaceID,
 		&i.Name,
+		&i.Icon,
+		&i.FallbackIcon,
 		&i.PgSchema,
 		&i.Position,
 		&i.CreatedAt,
@@ -486,31 +490,35 @@ func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (GetWorkspac
 }
 
 const insertBook = `-- name: InsertBook :one
-INSERT INTO meta.books (workspace_id, name, pg_schema, position, created_by)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, workspace_id, name, position, created_at
+INSERT INTO meta.books (workspace_id, name, icon, pg_schema, position, created_by)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, workspace_id, name, icon, fallback_icon, position, created_at
 `
 
 type InsertBookParams struct {
 	WorkspaceID pgtype.UUID
 	Name        string
+	Icon        pgtype.Text
 	PgSchema    string
 	Position    float64
 	CreatedBy   pgtype.UUID
 }
 
 type InsertBookRow struct {
-	ID          pgtype.UUID
-	WorkspaceID pgtype.UUID
-	Name        string
-	Position    float64
-	CreatedAt   pgtype.Timestamptz
+	ID           pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	FallbackIcon string
+	Position     float64
+	CreatedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) InsertBook(ctx context.Context, arg InsertBookParams) (InsertBookRow, error) {
 	row := q.db.QueryRow(ctx, insertBook,
 		arg.WorkspaceID,
 		arg.Name,
+		arg.Icon,
 		arg.PgSchema,
 		arg.Position,
 		arg.CreatedBy,
@@ -520,6 +528,8 @@ func (q *Queries) InsertBook(ctx context.Context, arg InsertBookParams) (InsertB
 		&i.ID,
 		&i.WorkspaceID,
 		&i.Name,
+		&i.Icon,
+		&i.FallbackIcon,
 		&i.Position,
 		&i.CreatedAt,
 	)
@@ -1855,16 +1865,18 @@ func (q *Queries) MoveManagedView(ctx context.Context, arg MoveManagedViewParams
 }
 
 const navBooks = `-- name: NavBooks :many
-SELECT id, workspace_id, name, position
+SELECT id, workspace_id, name, icon, fallback_icon, position
 FROM meta.books
 WHERE workspace_id = ANY($1::uuid[]) AND deleted_at IS NULL
 `
 
 type NavBooksRow struct {
-	ID          pgtype.UUID
-	WorkspaceID pgtype.UUID
-	Name        string
-	Position    float64
+	ID           pgtype.UUID
+	WorkspaceID  pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	FallbackIcon string
+	Position     float64
 }
 
 func (q *Queries) NavBooks(ctx context.Context, workspaceIds []pgtype.UUID) ([]NavBooksRow, error) {
@@ -1880,6 +1892,8 @@ func (q *Queries) NavBooks(ctx context.Context, workspaceIds []pgtype.UUID) ([]N
 			&i.ID,
 			&i.WorkspaceID,
 			&i.Name,
+			&i.Icon,
+			&i.FallbackIcon,
 			&i.Position,
 		); err != nil {
 			return nil, err
@@ -2338,6 +2352,24 @@ type SaveViewConfigForTypeChangeParams struct {
 func (q *Queries) SaveViewConfigForTypeChange(ctx context.Context, arg SaveViewConfigForTypeChangeParams) error {
 	_, err := q.db.Exec(ctx, saveViewConfigForTypeChange, arg.Config, arg.ID)
 	return err
+}
+
+const setBookIcon = `-- name: SetBookIcon :one
+UPDATE meta.books SET icon = $2
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id
+`
+
+type SetBookIconParams struct {
+	ID   pgtype.UUID
+	Icon pgtype.Text
+}
+
+func (q *Queries) SetBookIcon(ctx context.Context, arg SetBookIconParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, setBookIcon, arg.ID, arg.Icon)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const setBookPosition = `-- name: SetBookPosition :one

@@ -303,10 +303,72 @@ export interface NavTable {
 export interface NavBook {
   id: string
   name: string
+  icon: BookIconName | null
+  fallbackIcon: BookIconName
   position: number
   level: AccessLevel
   pathOnly: boolean
   tables: NavTable[]
+}
+
+export type BookIconName =
+  | 'panelClose'
+  | 'panelOpen'
+  | 'search'
+  | 'sun'
+  | 'moon'
+  | 'undo'
+  | 'redo'
+  | 'table'
+  | 'book'
+  | 'view'
+  | 'chevronDown'
+  | 'chevronRight'
+  | 'plus'
+  | 'more'
+  | 'fields'
+  | 'filter'
+  | 'group'
+  | 'sort'
+  | 'colour'
+  | 'height'
+  | 'trash'
+  | 'eye'
+  | 'expand'
+  | 'fullscreen'
+  | 'close'
+  | 'duplicate'
+  | 'chevronUp'
+  | 'comments'
+  | 'history'
+  | 'compact'
+  | 'edit'
+  | 'calendar'
+  | 'clock'
+  | 'check'
+  | 'link'
+  | 'text'
+  | 'number'
+  | 'formula'
+  | 'lookup'
+  | 'rollup'
+  | 'attachment'
+  | 'mail'
+  | 'star'
+  | 'phone'
+  | 'code'
+  | 'user'
+  | 'percent'
+  | 'currency'
+
+export interface Book {
+  id: string
+  workspaceId: string
+  name: string
+  icon: BookIconName | null
+  fallbackIcon: BookIconName
+  position: number
+  createdAt: string
 }
 
 export interface NavWorkspace {

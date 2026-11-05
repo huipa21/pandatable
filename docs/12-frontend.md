@@ -12,14 +12,13 @@ Shell per D-209 (supersedes the earlier sketch):
 ┌────────────────────────────────────────────────────────────────────────┐
 │ PT PandaTable ⇤ │ Workspace › Book › Table [› View]   🔍  中文/EN  ☀/🌙 │  ← header
 ├─────────────────┬──────────────────────────────────────────────────────┤
-│ ┌─────────────┐ │ ↶ ↷  (view subheader, table routes only)             │
-│ │ Workspace ⋯ │ ├──────────────────────────────────────────────────────┤
-│ └─────────────┘ │ View tabs:  Shared | Personal | + View               │
-│ 3 books       + │ Toolbar: Fields · Filter · Sort · Group · …          │
-│ ▾ 📘 Book     ⋯ │ ┌──────────────────────────────────────────────────┐ │
-│    ▦ Table    ⋯ │ │ Grid / Form / Kanban …                           │ │
-│    ▾ Table 2    │ │                                                  │ │
-│       ◫ View    │ └──────────────────────────────────────────────────┘ │
+│ Workspaces    + │ ↶ ↷  (view subheader, table routes only)             │
+│ ▾ Workspace  ⋯ │ View tabs:  Shared | Personal | + View               │
+│   ▾ 📘 Book   ⋯ │ Toolbar: Fields · Filter · Sort · Group · …          │
+│      ▦ Table  ⋯ │ ┌──────────────────────────────────────────────────┐ │
+│      ▾ Table 2  │ │ Grid / Form / Kanban …                           │ │
+│         ◫ View  │ │                                                  │ │
+│ ▾ Workspace 2 ⋯ │ └──────────────────────────────────────────────────┘ │
 │ (A)³ avatar menu│                                                      │
 └─────────────────┴──────────────────────────────────────────────────────┘
 ```
@@ -30,13 +29,18 @@ Shell per D-209 (supersedes the earlier sketch):
   mobile drawer; breadcrumb (view segment only when the URL names one); 🔍
   quick-jump palette (Ctrl/Cmd+K, client-side over the nav tree); language and
   light↔dark toggles. When the sidebar is hidden the avatar moves to the header.
-- Sidebar: the selected workspace (route, else last visited) as a box linking to
-  its page, "+" creates a book; books toggle their tables; hovering/focusing a
-  table's icon turns it into the views dropdown; the table name opens
-  `/t/:tableId` (default view, no redirect). "⋯" holds share/rename/delete/move.
+- Sidebar: a static Workspaces heading and Add action precede every accessible
+  workspace in server order. A workspace link selects it; a separate control
+  expands its books, tables and views. The selected route/last-visited context is
+  independent of the visibly marked per-user default. Eligible workspace actions
+  set that default; path-only ancestors remain context without owner controls.
+  Books toggle their tables; hovering/focusing a table's icon turns it into the
+  views dropdown; the table name opens `/t/:tableId` (default view, no redirect).
+  "⋯" holds permitted sharing and structure actions.
 - Avatar menu (unread badge): notifications, Profile, Change password, Trash,
   Admin submenu (admins), Sign out. No footer.
-- `/home`: workspace cards plus "New workspace".
+- `/home`: loading/error-aware resolver to the preferred workspace. Retry is
+  explicit; navigating to a resource directly never invokes the resolver.
 
 Routes:
 - `/setup`, `/login`, `/change-password`
@@ -68,12 +72,13 @@ Routes:
   mutations and resource 403/404. Ordinary reads coalesce; forced refresh aborts
   an older read. Requests have ten-second client deadlines. Failed reads keep
   previous data explicitly stale with retry; there is no realtime subsystem.
-- `/home` lists accessible workspace contexts and offers creation. `/w/:workspaceId`
-  and `/w/:wid/b/:bookId` show only visible children, breadcrumbs and explicit
-  empty states. Path-only ancestors are labeled context, with no structure
-  controls. Book creation/rename/delete/reorder needs workspace owner; table
-  creation/rename/delete/reorder needs book owner. Table ownership alone never
-  grants parent-structure controls.
+- The sidebar lists all accessible workspace contexts and offers workspace
+  creation; `/home` resolves the per-user default (D-219). `/w/:workspaceId` and
+  `/w/:wid/b/:bookId` show only visible children, breadcrumbs and explicit empty
+  states. Path-only ancestors are labeled context, with no structure controls or
+  default selection. Book creation/rename/delete/reorder needs workspace owner;
+  table creation/rename/delete/reorder needs book owner. Table ownership alone
+  never grants parent-structure controls.
 - Native modal forms create/rename resources with trimmed 1..100-code-point
   names, no controls. Confirmed deletion honestly describes moving the item and
   descendants to Trash; restore/purge are not implemented. The Trash entry is
@@ -196,8 +201,8 @@ Unknown routes have a localized not-found page after setup.
 ### T1.5 authentication and admin users (D-081..D-083)
 
 - `/login` preserves the welcome copy/card and adjacent local preference controls
-  and adds username/email/password sign-in. `/home` is only a signed-in identity
-  and future-workspace notice, not a workspace dashboard.
+  and adds username/email/password sign-in. Its original `/home` identity notice
+  was replaced by the preferred-workspace resolver in D-219.
 - Router navigation checks setup, then `/auth/me`. Missing sessions are expected
   401s; network/server errors render `/connection-error` with an explicit retry,
   never a success-shaped bypass. Forced users go to `/change-password` before
@@ -352,6 +357,13 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   the separate, permission-checked label resolver (D-161/D-162).
   The real table route lazy-loads these components through T1.16's production
   grid. The synthetic spike stays isolated in `SpikeDataGrid.vue`.
+- UX-08's grid-only choice interactions (D-221) toggle a writable checkbox once
+  when its box is clicked; clicking elsewhere selects the cell and Space also
+  toggles it. One click opens a single- or multi-select listbox. A single choice
+  or clear commits immediately; multiple choices remain open and commit once on
+  leaving the editor or Enter, while Escape cancels. Existing unavailable
+  labels remain visible. Choice wire values are labels in configured order;
+  text/integer lists retain their codec editor and row forms keep explicit Save.
 - T1.16's production grid fetches 100-row query pages and keeps only the active
   page plus its two neighbors in the row cache. It guards queries and writes
   against route/schema/identity changes, uses table `myLevel` for write

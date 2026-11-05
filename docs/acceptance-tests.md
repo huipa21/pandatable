@@ -220,19 +220,19 @@ Tests: `internal/acl` and `internal/httpapi` (required PG18, `-count=3`);
 membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
 [progress](archive/progress-m0-m1.md#t14-acl-verification-and-handoff-2026-10-26).
 
-- **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`.
-- **AT-202 — Rename is metadata only** · M1 *(API)* · Renaming T/field to Chinese names with spaces works; physical names unchanged.
+- **AT-201 — Create hierarchy** · M1 · alice creates workspace W, book B, table T → sidebar shows W ▸ B ▸ T; T has a default Grid view and a primary "Name" field; DB has schema `b_*` and table `t_*`. Book creation also assigns a stable fallback icon shared by authorized readers; the API exposes an override, and clearing it reveals the same fallback.
+- **AT-202 — Rename is metadata only** · M1 *(API)* · Renaming T/field to Chinese names with spaces works; physical names unchanged. Book rename/reorder preserves its custom and fallback icons.
 - **AT-203 — Delete goes to trash** · M1/M3 · alice deletes T → disappears from sidebar; (M3) appears in W's Trash and can be restored with data intact.
   T3.6: **Pass** — fast desktop/mobile browser deletion removes the sidebar node and schema access; Trash restores the table and retained row. PG18 also checks owner filtering, nested restoration and retained attachments. [Record](task-prompts/T3.6.md#record-2026-11-01).
-- **AT-204 — Workspace grant read** · M1 · alice grants bob `read` on W → bob sees W, B, T; can view rows; cannot edit cells (editors disabled), cannot add rows, cannot see field/schema menus; API write → 403.
+- **AT-204 — Workspace grant read** · M1 · alice grants bob `read` on W → bob sees W, B, T; can view rows; cannot edit cells (including checkbox or choices by pointer or keyboard), cannot add rows, cannot see field/schema menus; API write → 403.
 - **AT-205 — Write level** · M1 · bob with `write` on B can add/edit/delete rows in T and create a shared view, but cannot add/delete fields or tables (403).
 - **AT-206 — Raise-only inheritance** · M1 · bob `read` on W + `write` on T → bob can edit T only; other tables read-only. Setting bob `read` on T when he has `write` on W shows warning "inherited level higher" and bob still writes.
 - **AT-207 — Group grants** · M1 · `team-a` gets `write` on B → carol can edit B's tables; removing carol from team-a removes access within 5 s.
-- **AT-208 — Table-only grant visibility** · M1 · carol granted `read` only on T → sidebar shows W ▸ B ▸ T only (no sibling tables/books); W/B settings inaccessible.
+- **AT-208 — Table-only grant visibility** · M1 · carol granted `read` only on T → sidebar shows W ▸ B ▸ T only (no sibling tables/books); W/B settings inaccessible. Visible ancestor book icon metadata is stable; hidden siblings and their icons remain absent.
 - **AT-209 — Scope owner manages sub-scope** · M1 · alice grants bob `owner` on B → bob can grant carol `write` on B or T, but cannot manage grants on W (403) or on another book.
 - **AT-210 — Owner can grant owner** · M1 · alice grants bob `owner` on W → bob can manage all grants in W, including granting `owner` to carol.
 - **AT-211 — Last owner protected** · M1 · alice (only owner of W) cannot remove or downgrade her own owner grant (`ERR_LAST_OWNER`); after granting bob owner, she can.
-- **AT-212 — Hidden resources are 404** · M1 *(API)* · dave (no grants) requesting T's rows gets 404, not 403.
+- **AT-212 — Hidden resources are 404** · M1 *(API)* · dave (no grants) requesting T's rows gets 404, not 403; hidden books and their icon metadata are absent from navigation.
 - **AT-213 — Any user creates workspaces** · M1 · carol creates W2 and is its owner.
 
 UX-01 reran AT-101, AT-201, AT-203, AT-208, AT-212 and AT-213 in its task
@@ -510,10 +510,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 ## AT-3xx Fields & Grid (M1, M2)
 
 - **AT-301 — Basic field types** · M1 · Owner adds each M1 type (text, long text, integer, decimal, float, checkbox, date, datetime, single select, multi select, email, URL); values entered via grid persist after reload and are stored in the expected PG type (API check via information_schema). **Evidence (UI-FIELD-TILES, 2026-11-04):** still PASS through the redesigned tile/⋯-menu Field panel — fast production-browser `fields-acceptance.spec.ts` creates and edits fields via the unified Add/Edit layout.
+  - UX-08 adds one-click checkbox and choice editing; checkbox toggles once, a single choice commits immediately, and multiple choices commit on leave.
 - **AT-302 — Validation** · M1 · Entering "abc" in integer, "x@" in email → cell shows error and value is not saved.
 - **AT-303 — Required / unique / default** · M1 · Setting `required` on a field with empty cells reports count and requires a default or abort; unique rejects duplicates with translated error; default applied to new rows. **Evidence (UI-FIELD-TILES, 2026-11-04):** still PASS — the same spec sets required/unique/default through the redesigned Edit; `fields-menu.spec.ts` adds menu, editor, reader, theme/locale and reorder persistence coverage.
 - **AT-304 — System fields** · M1 · New views hide id/created/updated fields; "Fields" menu can show them; values correct (updated_by = last editor).
-- **AT-305 — Keyboard navigation** · M1 · Arrows/Tab/Enter/Esc/F2/Delete/Ctrl+Home/End behave per 12-frontend.md §4.
+- **AT-305 — Keyboard navigation** · M1 · Arrows/Tab/Enter/Esc/F2/Delete/Ctrl+Home/End behave per 12-frontend.md §4; Space toggles a writable checkbox and Escape cancels a choice draft.
 - **AT-306 — Copy/paste from Excel** · M1 · Copying a 3×4 range from Excel/Google Sheets (incl. a quoted multi-line cell and Chinese text) and pasting at a cell updates 12 cells in one request; invalid cells reported, others saved.
   - **T3.12 evidence: Pass.** A headed Chrome/real Excel check saves 12 valid cells in one PATCH, including quoted multiline and Chinese text; a second paste reports invalid cells. The earlier production-image scenario verifies that valid cells still save alongside invalid cells.
 - **AT-307 — Paste beyond end adds rows** · M1 · Pasting 10 rows at the second-to-last row prompts "Add 9 rows?"; confirming creates them.
@@ -525,11 +526,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-311 — Column ops** · M1 · Resize, reorder, hide column, freeze first 2 columns → persisted in view for all users (write) / local only (read).
 - **AT-312 — Large table scroll** · M1 · With 200k seeded rows, first paint < 1.5 s, scrolling to the middle loads rows < 300 ms per page (NFR-2).
 - **AT-313 — Mobile card list** · M1 · On a 390×844 viewport, table shows card list; tap opens row editor; edit and save works; "+" adds a row.
-- **AT-320 — Remaining field types** · M2 · time, duration, currency, percent, rating, phone, uuid, json, inet, cidr, text list, integer list, user, multi-user, auto-number, varchar(n) round-trip correctly; user field picker lists active users; auto-number read-only and increasing.
+- **AT-320 — Remaining field types** · M2 · time, duration, currency, percent, rating, phone, uuid, json, inet, cidr, text list, integer list, user, multi-user, auto-number, varchar(n) round-trip correctly; user field picker lists active users; auto-number read-only and increasing. Text and integer lists retain their codec editing rules.
 - **AT-321 — Attachments** · M2 · Upload image & PDF to attachment cell (drag-drop and picker) → thumbnail for image, download works; user without access to table gets 404 for file URL.
 - **AT-322 — Upload limit** · M2 · File larger than admin limit is rejected with translated error.
 - **AT-323 — Type change dry-run** · M2 · Text field with values ["1","2","x"] → convert to integer: dry-run shows 1 failing with sample "x"; "Abort" changes nothing; "Convert, set to NULL" results in [1,2,NULL]. Evidence: PG18/API/FieldPanel tests and production-browser E2E; `ptdev check` passes and field acceptance is 5/5.
-- **AT-324 — Select choice rename** · M2 · Renaming choice "Open"→"Active" updates all cells and filters using it. Evidence: PG18 verifies cells, defaults, and shared/personal filters/highlights; production-browser E2E verifies the active saved filter; field acceptance is 5/5.
+- **AT-324 — Select choice rename** · M2 · Renaming choice "Open"→"Active" updates all cells and filters using it; unavailable stored labels remain visible rather than being silently replaced. Evidence: PG18 verifies cells, defaults, and shared/personal filters/highlights; production-browser E2E verifies the active saved filter; field acceptance is 5/5.
 - **AT-325 — Field soft delete** · M2/M3 · Deleting a field hides it everywhere; restoring from Trash brings values back.
   T3.6: **Pass** — desktop/mobile browser deletion hides the field and restores its original value after explicit optional confirmation; PG18 verifies retained configuration, defaults, required-state conflicts and relation storage. [Record](task-prompts/T3.6.md#record-2026-11-01).
 - **AT-326 — Currency default** · M2 · New currency field defaults to CNY (¥ formatting); owner switches it to USD and values display as $; admin changes default currency to EUR → new currency fields default to EUR, existing fields unchanged.

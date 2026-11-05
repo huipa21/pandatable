@@ -8,7 +8,7 @@ import {
   paceLogin,
   test,
 } from './fixtures'
-import { setLocale } from './app-shell'
+import { setLocale, setTheme } from './app-shell'
 import type {
   DataRow,
   FieldMutation,
@@ -16,6 +16,7 @@ import type {
   TableSchema,
 } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
+import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
 const headers = () => ({
   Origin: process.env.PT_E2E_BASE_URL!,
@@ -82,7 +83,7 @@ test('scalar grid editing commits on leave and retains rejected drafts', async (
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 
   const suffix = Date.now()
   const { workspace } = await create<{ workspace: { id: string } }>(
@@ -539,4 +540,244 @@ test('scalar grid editing commits on leave and retains rejected drafts', async (
   } finally {
     await readerContext.close()
   }
+})
+
+test('choice cells toggle and pick with one click and commit once', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Inline grid editing is a desktop interaction.')
+  test.setTimeout(180_000)
+  page.setDefaultTimeout(10_000)
+  await page.setViewportSize({ width: 1440, height: 700 })
+  const diagnostics = await observeBrowser(page)
+  await paceLogin(page)
+  await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await setLocale(page, 'en')
+  await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
+  await page
+    .getByLabel(en.auth.password, { exact: true })
+    .fill('Setup-password-123')
+  await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+
+  const suffix = Date.now()
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    page,
+    '/api/v1/workspaces',
+    { name: `Choice editing ${suffix}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    page,
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: 'Choice editing book' },
+  )
+  const initial = await create<TableSchema>(
+    page,
+    `/api/v1/books/${book.id}/tables`,
+    { name: 'Choice editing table' },
+  )
+  const tableId = initial.table.id
+  const choices = (labels: string[]) => ({
+    choices: labels.map((label, index) => ({
+      id: `c${index}`,
+      label,
+      color: 'gray',
+    })),
+  })
+  const fieldIds = new Map<string, string>()
+  for (const data of [
+    { name: 'Done', uiType: 'checkbox' },
+    {
+      name: 'Status',
+      uiType: 'single_select',
+      options: choices(['Todo', 'Doing', 'Finished']),
+    },
+    {
+      name: 'Tags',
+      uiType: 'multi_select',
+      options: choices(['Alpha', 'Beta', 'Gamma']),
+    },
+  ]) {
+    const result = await create<FieldMutation>(
+      page,
+      `/api/v1/tables/${tableId}/fields`,
+      data,
+    )
+    if (!result.field) throw new Error(`Field ${data.name} was not returned`)
+    fieldIds.set(data.name, result.field.id)
+  }
+  const field = (name: string) => fieldIds.get(name)!
+  const schemaResponse = await page.request.get(
+    `/api/v1/tables/${tableId}/schema`,
+  )
+  const schema = (await schemaResponse.json()) as TableSchema
+  const name = schema.table.displayFieldId!
+  const view = schema.views[0]!
+  const inserted = await create<{ rows: DataRow[] }>(
+    page,
+    `/api/v1/tables/${tableId}/rows`,
+    {
+      rows: Array.from({ length: 40 }, (_, index) => ({
+        fields:
+          index === 0
+            ? {
+                [name]: 'Row 0',
+                [field('Status')]: 'Todo',
+                [field('Tags')]: ['Alpha'],
+              }
+            : { [name]: `Row ${index}` },
+      })),
+    },
+  )
+  const rowPath = `/api/v1/tables/${tableId}/rows/${inserted.rows[0]!.id}`
+  const value = async (fieldId: string) => {
+    const response = await page.request.get(rowPath)
+    expect(response.status()).toBe(200)
+    return ((await response.json()) as DataRow).fields[fieldId]
+  }
+  const patches: Record<string, unknown>[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'PATCH' && request.url().includes('/rows'))
+      patches.push(
+        (request.postDataJSON() as { fields: Record<string, unknown> }).fields,
+      )
+  })
+  const nextPatch = () =>
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        new URL(response.url()).pathname === rowPath,
+    )
+  const textbox = page.getByRole('textbox', {
+    name: en.field.editor.value,
+    exact: true,
+  })
+  const listbox = (label: string) =>
+    page.getByRole('listbox', { name: label, exact: true })
+  const option = (label: string, choice: string) =>
+    listbox(label).locator(`[role="option"][data-choice="${choice}"]`)
+  const leave = () =>
+    page.locator('.grid-toolbar').click({ position: { x: 2, y: 2 } })
+
+  await page.goto(`/t/${tableId}/v/${view.id}`)
+  await expect(page.locator('revo-grid')).toBeVisible()
+
+  // One click on the box toggles; a click elsewhere in the cell only selects.
+  const doneCell = await gridCell(page, field('Done'), 0)
+  await doneCell.click({ position: { x: 4, y: 4 } })
+  await doneCell.locator('.field-check').waitFor()
+  expect(patches).toEqual([])
+  let saved = nextPatch()
+  await doneCell.locator('.field-check').click()
+  expect((await saved).status()).toBe(200)
+  await expect.poll(() => value(field('Done'))).toBe(true)
+  saved = nextPatch()
+  await doneCell.locator('.field-check').click()
+  expect((await saved).status()).toBe(200)
+  await expect.poll(() => value(field('Done'))).toBe(false)
+  expect(patches).toEqual([
+    { [field('Done')]: true },
+    { [field('Done')]: false },
+  ])
+  await expect(textbox).toHaveCount(0)
+  await expect(page.getByRole('listbox')).toHaveCount(0)
+
+  // One click opens the single-select list; picking commits and closes.
+  await (await gridCell(page, field('Status'), 0)).click()
+  await expect(listbox('Status')).toBeFocused()
+  await expect(option('Status', 'Todo')).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  saved = nextPatch()
+  await option('Status', 'Doing').click()
+  expect((await saved).status()).toBe(200)
+  await expect(listbox('Status')).toHaveCount(0)
+  await expect.poll(() => value(field('Status'))).toBe('Doing')
+  await (await gridCell(page, field('Status'), 0)).click()
+  saved = nextPatch()
+  await option('Status', '').click()
+  expect((await saved).status()).toBe(200)
+  await expect.poll(() => value(field('Status'))).toBe(null)
+  expect(patches).toHaveLength(4)
+
+  // Multi-select stays open for several changes and writes once on leave.
+  await (await gridCell(page, field('Tags'), 0)).click()
+  await expect(listbox('Tags')).toHaveAttribute('aria-multiselectable', 'true')
+  await option('Tags', 'Gamma').click()
+  await option('Tags', 'Alpha').click()
+  await option('Tags', 'Beta').click()
+  await expect(listbox('Tags')).toBeVisible()
+  expect(patches).toHaveLength(4)
+  saved = nextPatch()
+  await leave()
+  expect((await saved).status()).toBe(200)
+  await expect(listbox('Tags')).toHaveCount(0)
+  await expect.poll(() => value(field('Tags'))).toEqual(['Beta', 'Gamma'])
+  expect(patches).toHaveLength(5)
+  expect(patches[4]).toEqual({ [field('Tags')]: ['Beta', 'Gamma'] })
+
+  // Escape cancels the open multi-select draft.
+  await (await gridCell(page, field('Tags'), 0)).click()
+  await option('Tags', 'Alpha').click()
+  await page.keyboard.press('Escape')
+  await expect(listbox('Tags')).toHaveCount(0)
+  await leave()
+  expect(patches).toHaveLength(5)
+  expect(await value(field('Tags'))).toEqual(['Beta', 'Gamma'])
+
+  await page.reload()
+  const tagsCell = await gridCell(page, field('Tags'), 0)
+  await expect(tagsCell).toContainText('Beta')
+  await expect(tagsCell).toContainText('Gamma')
+  await expect(tagsCell).not.toContainText('Alpha')
+  await expect(await gridCell(page, field('Status'), 0)).not.toContainText(
+    'Doing',
+  )
+
+  // A list opened on a bottom row stays inside the viewport.
+  await (await gridCell(page, field('Status'), 39)).click()
+  await expect(listbox('Status')).toBeVisible()
+  const box = await page.locator('.grid-choice-popover').evaluate((element) => {
+    const rect = element.getBoundingClientRect()
+    return { top: rect.top, bottom: rect.bottom, height: innerHeight }
+  })
+  expect(box.top).toBeGreaterThanOrEqual(0)
+  expect(box.bottom).toBeLessThanOrEqual(box.height)
+  await expect(option('Status', 'Finished')).toBeInViewport()
+  await page.keyboard.press('Escape')
+  await expect(listbox('Status')).toHaveCount(0)
+  expect(patches).toHaveLength(5)
+
+  // zh-CN and dark theme: translated option text on dark theme surfaces.
+  await setLocale(page, 'zh-CN')
+  await setTheme(page, 'dark')
+  try {
+    await (await gridCell(page, field('Status'), 0)).click()
+    await expect(listbox('Status')).toBeFocused()
+    await expect(option('Status', '')).toHaveText(zh.field.editor.none)
+    const luminance = await page
+      .locator('.grid-choice-popover')
+      .evaluate((element) => {
+        const channels = (color: string) =>
+          (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number)
+        const of = (color: string) => {
+          const [r = 0, g = 0, b = 0] = channels(color)
+          return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+        }
+        const style = getComputedStyle(element)
+        return { bg: of(style.backgroundColor), fg: of(style.color) }
+      })
+    expect(luminance.bg).toBeLessThan(0.3)
+    expect(luminance.fg).toBeGreaterThan(0.6)
+    await page.keyboard.press('Escape')
+    await expect(listbox('Status')).toHaveCount(0)
+  } finally {
+    await setTheme(page, 'light')
+    await setLocale(page, 'en')
+  }
+  expect(patches).toHaveLength(5)
+  expectBrowserClean(page, diagnostics)
 })

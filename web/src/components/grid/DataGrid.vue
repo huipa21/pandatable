@@ -78,7 +78,7 @@ import RelationPicker from '../relations/RelationPicker.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { RealtimeRowSync } from './realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
-import { isGridScalar } from './inlineEditing'
+import { gridPointerAction, isGridToggle } from './inlineEditing'
 import { formatTsv, parseTsv, TsvError } from './tsv'
 import {
   isCompleteFilter,
@@ -2068,7 +2068,7 @@ async function keydown(event: KeyboardEvent) {
     event.isComposing ||
     (event.target instanceof Element &&
       event.target.closest(
-        'input, textarea, select, button, summary, [contenteditable="true"]',
+        'input, textarea, select, button, summary, [contenteditable="true"], .grid-choice-editor',
       ))
   )
     return
@@ -2094,8 +2094,14 @@ async function keydown(event: KeyboardEvent) {
       focused?.column?.prop ??
       clipboardColumn(focused?.colIndex ?? -1)?.field.id
     const item = typeof column === 'string' ? boundFor(column) : undefined
-    if (canWrite.value && item && !item.bound.readOnly && rowIndex >= 0)
-      await host.value?.$el.setCellEdit(rowIndex, item.field.id)
+    if (canWrite.value && item && !item.bound.readOnly && rowIndex >= 0) {
+      checkboxEditorRequested = true
+      try {
+        await host.value?.$el.setCellEdit(rowIndex, item.field.id)
+      } finally {
+        checkboxEditorRequested = false
+      }
+    }
     return
   }
   if (['Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
@@ -2141,21 +2147,8 @@ async function keydown(event: KeyboardEvent) {
     const item = typeof column === 'string' ? boundFor(column) : undefined
     if (row && props.identity === auth.user?.id) {
       if (item?.field.uiType === 'checkbox') {
-        if (canWrite.value) {
-          const value = item.bound.normalize(row.fields[item.field.id] !== true)
-          if (!value.ok) {
-            error.value = fieldErrorMessage(value.reason)
-            return
-          }
-          saving.value = true
-          try {
-            await patchRows([
-              { id: row.id, index, fields: { [item.field.id]: value.value } },
-            ])
-          } finally {
-            if (!disposed.value) saving.value = false
-          }
-        }
+        if (canWrite.value && isGridToggle(item.bound))
+          await toggleCell(row.id, item.field.id, componentEditOrigin)
       } else emit('expand', row.id)
     }
     return
@@ -2323,6 +2316,7 @@ function created() {
 interface CellPointerActivation {
   rowId: string
   fieldId: string
+  action: 'edit' | 'toggle'
   origin: EditOrigin
   x: number
   y: number
@@ -2364,10 +2358,19 @@ function beforeCellFocus(event: CustomEvent<BeforeSaveDataDetails>) {
   )
     return
   const item = boundFor(fieldId)
-  if (!item || !isGridScalar(item.bound) || rows.indexOfRow(rowId) < 0) return
+  const action = item ? gridPointerAction(item.bound) : null
+  if (
+    !item ||
+    !action ||
+    rows.indexOfRow(rowId) < 0 ||
+    // Checkboxes toggle only from their box, so the cell stays selectable.
+    (action === 'toggle' && !original.target.closest('.field-check'))
+  )
+    return
   cellPointerActivation = {
     rowId,
     fieldId,
+    action,
     origin: componentEditOrigin,
     x: original.clientX,
     y: original.clientY,
@@ -2407,11 +2410,13 @@ async function activateCell(event: MouseEvent) {
   if (
     !editOriginCurrent(candidate.origin) ||
     !item ||
-    !isGridScalar(item.bound) ||
+    gridPointerAction(item.bound) !== candidate.action ||
     index < 0
   )
     return
-  await grid.setCellEdit(index, candidate.fieldId)
+  if (candidate.action === 'toggle')
+    await toggleCell(candidate.rowId, candidate.fieldId, candidate.origin)
+  else await grid.setCellEdit(index, candidate.fieldId)
 }
 
 function finishCellPointer(event: MouseEvent) {
@@ -2441,6 +2446,8 @@ function preventCompositionClick(event: MouseEvent) {
   }
 }
 
+let checkboxEditorRequested = false
+
 function beforeEditStart(event: CustomEvent<BeforeSaveDataDetails>) {
   const rowId = event.detail.model?.__rowId
   const item =
@@ -2453,7 +2460,10 @@ function beforeEditStart(event: CustomEvent<BeforeSaveDataDetails>) {
     typeof rowId !== 'string' ||
     rows.indexOfRow(rowId) < 0 ||
     !item ||
-    item.bound.readOnly
+    item.bound.readOnly ||
+    // A click on the box already toggled; double-click/typing must not open
+    // a second checkbox control. F2/Enter keep the codec editor (D-150).
+    (isGridToggle(item.bound) && !checkboxEditorRequested)
   )
     event.preventDefault()
 }
@@ -2575,23 +2585,53 @@ async function routerReplaceLogin() {
   await router.replace('/login')
 }
 
+interface CellCommit {
+  prop: unknown
+  val?: unknown
+  rowIndex: number
+  model?: Record<string, unknown>
+}
+
 async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   event.preventDefault()
+  await commitCell(event.detail)
+}
+
+/** Toggles a writable checkbox through the shared cell commit pipeline. */
+async function toggleCell(rowId: string, fieldId: string, origin: EditOrigin) {
+  if (!editOriginCurrent(origin)) return
+  const item = boundFor(fieldId)
+  const index = rows.indexOfRow(rowId)
+  const row = rows.rowAt(index)
+  if (!item || !isGridToggle(item.bound) || !row) return
+  // Successive toggles flip the newest intended value, not a stale row.
+  const current =
+    cellIntents.get(`${rowId}:${fieldId}`)?.value ??
+    (deferredRows.get(rowId) ?? row).fields[fieldId]
+  await commitCell({
+    prop: fieldId,
+    val: current !== true,
+    rowIndex: index,
+    model: { __rowId: rowId },
+  })
+}
+
+async function commitCell(detail: CellCommit) {
   const origin = componentEditOrigin
   if (!editOriginCurrent(origin)) return
-  if (event.detail.model?.__groupId) return
-  if (typeof event.detail.prop !== 'string') return
-  const item = boundFor(event.detail.prop)
-  const rowId = event.detail.model?.__rowId ?? focused?.model?.__rowId
+  if (detail.model?.__groupId) return
+  if (typeof detail.prop !== 'string') return
+  const item = boundFor(detail.prop)
+  const rowId = detail.model?.__rowId ?? focused?.model?.__rowId
   const rowIndex =
-    typeof rowId === 'string' ? rows.indexOfRow(rowId) : event.detail.rowIndex
+    typeof rowId === 'string' ? rows.indexOfRow(rowId) : detail.rowIndex
   const row = rows.rowAt(rowIndex)
   if (!item || item.bound.readOnly) return
   if (!row) {
     error.value = new Error(t('grid.saveFailed'))
     return
   }
-  const normalized = item.bound.normalize(event.detail.val)
+  const normalized = item.bound.normalize(detail.val)
   const key = `${row.id}:${item.field.id}`
   if (!normalized.ok) {
     cellErrors.value.set(key, fieldErrorMessage(normalized.reason))

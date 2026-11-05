@@ -70,4 +70,41 @@ Gates/docs/commits follow the execution index. Hand off editor sources to UX-09.
 
 ## Record
 
-Not started.
+Status: In progress. Gap coverage was added (see the follow-up below) and
+awaits a coordinated gate re-run. Commit and production-image phase gate are
+deferred to UX-11. Central docs are coordinator-owned.
+
+- Covered: `checkbox` toggles once per primary click on its box (a click
+  elsewhere in the cell only selects; Space toggles). `single_select` and
+  `multi_select` open a grid-only listbox (`GridChoiceEditor.vue`) on one click.
+  Single pick and None commit at once. Multi stays open, commits once on
+  leave/Enter and cancels on Escape. Unconfigured stored labels stay visible and
+  are never silently replaced. `text_array`/`int_array` keep UX-07's codec
+  editor. User, relation and attachment pickers are unchanged.
+- Writes reuse UX-07: `commitCell` (former `edit`) gives the serialized PATCH,
+  undo, drafts, guards and focus. `toggleCell` flips the newest intent, so rapid
+  toggles serialize. The popover is viewport-fixed and flips above bottom rows.
+- Correction: the wire value is the exact label in choice order (07 codec), not
+  the choice ID as scenario 2 says.
+- Fixed `CellCommit.val` optional (`BeforeSaveDataDetails`), DataGrid.vue typecheck.
+- Files: `web/src/components/grid/{DataGrid,GridCellEditor,GridCellContent,
+  GridChoiceEditor}.vue`, `inlineEditing.ts`, `DataGrid.test.ts`,
+  `GridCellEditor.test.ts`, `web/e2e/grid-inline-editing.spec.ts`.
+- Evidence: typecheck, eslint and prettier clean; vitest 815 passed (full web suite);
+  `ptdev e2e --fast -- e2e/grid-inline-editing.spec.ts` 3 passed, 2 mobile skipped.
+  Coordinated gate (after the login URL moved to `/w/<id>`): `ptdev check` passed
+  (816 frontend tests); combined `ptdev e2e --fast` batch 12 passed, 3 intentional
+  mobile skips (both UX-08/UX-07 grid scenarios are desktop-only).
+- Proposed decision (coordinator): one-click choice/checkbox editing is grid-only;
+  F2/Enter on a checkbox still opens the codec editor; no new locale keys.
+- Gap follow-up (after the coordinator kept UX-08 In progress): added
+  DataGrid unit tests for checkbox undo (one guarded `patch` step,
+  `false`→`true` expected) and a rejected toggle (403 error shown, no undo step,
+  stored value kept so the next toggle again requests `true`). Extended the
+  browser spec with a zh-CN/dark pass: None option is `zh.field.editor.none`,
+  and the popover has a dark surface and light text. Locale and theme are
+  restored afterwards. Focused checks: vitest grid+fields 194 passed;
+  typecheck/eslint/prettier clean; `ptdev e2e --fast --
+  e2e/grid-inline-editing.spec.ts` 3 passed, 2 mobile skipped. Needs a
+  coordinated gate re-run. Physical touch is untested.
+  Handoff: editor sources to UX-09.

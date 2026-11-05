@@ -5,7 +5,9 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { nextTick } from 'vue'
 import { i18n, loadLocale } from '../../i18n'
 import { useNavStore } from '../../stores/nav'
-import { navigation } from '../../test/navigation'
+import { useAuthStore } from '../../stores/auth'
+import { usePreferencesStore } from '../../stores/preferences'
+import { navigation, navUser } from '../../test/navigation'
 import { themeMedia } from '../../test/setup'
 import NavContents from './NavContents.vue'
 import NavSidebar from './NavSidebar.vue'
@@ -15,6 +17,7 @@ let pinia: ReturnType<typeof createPinia>
 beforeEach(async () => {
   pinia = createPinia()
   setActivePinia(pinia)
+  useAuthStore().setUser(navUser)
   await loadLocale('en')
   await loadLocale('zh-CN')
   i18n.global.locale.value = 'en'
@@ -24,7 +27,13 @@ beforeEach(async () => {
     'fetch',
     vi
       .fn()
-      .mockImplementation(() => Promise.resolve(Response.json(navigation()))),
+      .mockImplementation((path: string) =>
+        Promise.resolve(
+          Response.json(
+            path.endsWith('/nav') ? navigation() : { workspaceId: 'w' },
+          ),
+        ),
+      ),
   )
   HTMLDialogElement.prototype.showModal = function () {
     this.open = true
@@ -38,21 +47,27 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
 })
-async function setup() {
+async function setup(path = '/w/w') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/w/:workspaceId', component: { template: '<div />' } },
+      {
+        path: '/t/:tableId/v/:viewId/r/:rowId',
+        component: { template: '<div />' },
+      },
+      { path: '/t/:tableId/v/:viewId', component: { template: '<div />' } },
+      { path: '/t/:tableId', component: { template: '<div />' } },
       { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
     ],
   })
-  await router.push('/w/w')
+  await router.push(path)
   await useNavStore().refresh()
-  return { plugins: [pinia, i18n, router] }
+  return { global: { plugins: [pinia, i18n, router] }, router }
 }
 
-it('renders the selected workspace, workbook toggles, table view dropdowns and owner-only reorder', async () => {
-  const global = await setup()
+it('renders all workspaces, separate workspace and workbook toggles, views and owner-only reorder', async () => {
+  const { global } = await setup()
   const nav = useNavStore()
   const tree = navigation()
   const b = tree.workspaces[0]!.books[0]!
@@ -62,12 +77,24 @@ it('renders the selected workspace, workbook toggles, table view dropdowns and o
   const reorder = vi.spyOn(nav, 'reorder').mockResolvedValue()
   const wrapper = mount(NavContents, { global })
   try {
-    const box = wrapper.get('.workspace-box a')
+    const box = wrapper.get('[data-nav-id="w"] > .workspace-box a')
     expect(box.attributes('href')).toBe('/w/w')
     await box.trigger('click')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
-    expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(false)
-    expect(wrapper.findAll('[data-nav-id]')).toHaveLength(4)
+    expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(true)
+    expect(wrapper.findAll('[data-nav-id]')).toHaveLength(5)
+    expect(wrapper.get('.workspace-heading h2').text()).toBe('Workspaces')
+    await wrapper.get('.workspace-heading button').trigger('click')
+    expect(nav.editor).toEqual({ operation: 'create', kind: 'workspace' })
+    nav.editor = null
+    const workspaceToggle = wrapper.get('[data-nav-id="w"] .workspace-toggle')
+    expect(workspaceToggle.attributes('aria-expanded')).toBe('true')
+    await workspaceToggle.trigger('click')
+    expect(workspaceToggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('#workspace-children-w').attributes('style')).toContain(
+      'display: none',
+    )
+    await workspaceToggle.trigger('click')
     expect(wrapper.find('[data-nav-id="w"] > .nav-row').exists()).toBe(false)
     expect(wrapper.get('[data-nav-id="t"] a.nav-name').attributes('href')).toBe(
       '/t/t',
@@ -111,15 +138,117 @@ it('renders the selected workspace, workbook toggles, table view dropdowns and o
     })
     nav.tree = structuredClone(tree)
     await nextTick()
-    expect(wrapper.findAll('summary')).toHaveLength(0)
+    expect(wrapper.find('[data-nav-id="w"] > .node-actions').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-nav-id="b"] > .node-actions').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('[data-nav-id="t"] > .node-actions').exists()).toBe(
+      false,
+    )
     expect(wrapper.text()).toContain('Path only')
   } finally {
     wrapper.unmount()
   }
 })
 
+it('distinguishes the default from the selected deep-link workspace and excludes path-only actions', async () => {
+  const { global, router } = await setup('/t/t/v/v/r/42')
+  const nav = useNavStore()
+  const tree = navigation()
+  tree.workspaces.push(
+    {
+      ...tree.workspaces[0]!,
+      id: 'w2',
+      name: 'Shared workspace',
+      level: 'read',
+      books: [],
+    },
+    {
+      ...tree.workspaces[0]!,
+      id: 'w3',
+      name: 'Path context',
+      level: 'none',
+      pathOnly: true,
+      books: [],
+    },
+  )
+  nav.tree = tree
+  nav.preferenceLoaded = true
+  nav.preferredWorkspaceId = 'w'
+  const setDefault = vi
+    .spyOn(nav, 'setPreferredWorkspace')
+    .mockImplementation(async (id) => {
+      nav.preferredWorkspaceId = id
+      return id
+    })
+  const wrapper = mount(NavContents, { global, attachTo: document.body })
+  try {
+    expect(wrapper.findAll('.workspace-root > li')).toHaveLength(3)
+    expect(
+      wrapper.get('[data-nav-id="w"] > .workspace-box').classes(),
+    ).toContain('current')
+    expect(
+      wrapper
+        .get('[data-nav-id="w"] .workspace-link')
+        .attributes('aria-current'),
+    ).toBe('location')
+    expect(
+      wrapper
+        .get('[data-nav-id="w"] .workspace-default')
+        .attributes('aria-label'),
+    ).toBe('Default workspace: Workspace')
+    expect(
+      wrapper.get('[data-nav-id="w"] .workspace-default').attributes('role'),
+    ).toBe('img')
+    expect(wrapper.find('[data-nav-id="w3"] > .node-actions').exists()).toBe(
+      false,
+    )
+    const sharedActions = wrapper.get('[data-nav-id="w2"] > .node-actions')
+    expect(sharedActions.text()).toContain('Set as default')
+    expect(sharedActions.text()).not.toContain('Rename')
+    expect(sharedActions.text()).not.toContain('Move to Trash')
+    await wrapper.get('[data-nav-id="w2"] .workspace-link').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/w/w2')
+    expect(nav.preferredWorkspaceId).toBe('w')
+    expect(setDefault).not.toHaveBeenCalled()
+    expect(
+      wrapper.get('[data-nav-id="w2"] > .workspace-box').classes(),
+    ).toContain('current')
+    i18n.global.locale.value = 'zh-CN'
+    await nextTick()
+    expect(wrapper.get('.workspace-heading h2').text()).toBe('工作区')
+    expect(sharedActions.text()).toContain('设为默认工作区')
+    await sharedActions.get('button').trigger('click')
+    await flushPromises()
+    expect(setDefault).toHaveBeenCalledWith('w2')
+    expect(document.activeElement).toBe(sharedActions.get('summary').element)
+    expect(sharedActions.get('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-nav-id="w2"] .workspace-default').text()).toBe(
+      '默认',
+    )
+    expect(wrapper.find('[data-nav-id="w"] .workspace-default').exists()).toBe(
+      false,
+    )
+    await router.push('/t/t/v/v/r/42')
+    expect(nav.preferredWorkspaceId).toBe('w2')
+    expect(
+      wrapper.get('[data-nav-id="w"] > .workspace-box').classes(),
+    ).toContain('current')
+    nav.lastWorkspaceId = 'w'
+    await router.push('/t/missing')
+    expect(wrapper.find('.workspace-box.current').exists()).toBe(false)
+    expect(nav.preferredWorkspaceId).toBe('w2')
+  } finally {
+    wrapper.unmount()
+    i18n.global.locale.value = 'en'
+  }
+})
+
 it('keeps one structure action menu open and closes it outside or on Escape', async () => {
-  const global = await setup()
+  const { global } = await setup()
   const wrapper = mount(NavContents, { global, attachTo: document.body })
   try {
     const menu = (id: string) =>
@@ -148,6 +277,7 @@ it('keeps one structure action menu open and closes it outside or on Escape', as
         new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
       )
     expect(menu('t').open).toBe(false)
+    expect(document.activeElement).toBe(menu('t').querySelector('summary'))
     await open('t')
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     expect(menu('t').open).toBe(false)
@@ -157,7 +287,7 @@ it('keeps one structure action menu open and closes it outside or on Escape', as
 })
 
 it('validates code points, retains localized mutation errors and closes confirmed dialogs', async () => {
-  const global = await setup()
+  const { global } = await setup()
   const nav = useNavStore()
   const wrapper = mount(StructureDialog, { global, attachTo: document.body })
   try {
@@ -205,8 +335,73 @@ it('validates code points, retains localized mutation errors and closes confirme
   }
 })
 
+it('keeps stale preference errors and retry accessible in expanded, collapsed and mobile navigation', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  const refreshPreference = vi
+    .spyOn(nav, 'refreshPreference')
+    .mockResolvedValue(false)
+  const preferences = usePreferencesStore()
+  preferences.sidebarCollapsed = false
+  const wrapper = mount(NavSidebar, { global, attachTo: document.body })
+  try {
+    nav.preferenceLoaded = true
+    nav.preferenceError = new TypeError('offline')
+    await flushPromises()
+    expect(wrapper.get('.sidebar-desktop .nav-error').text()).toContain(
+      'Try again',
+    )
+    expect(wrapper.get('.sidebar-desktop .nav-error').text()).toContain(
+      'Unable to load or update your default workspace',
+    )
+    expect(wrapper.get('.nav-tree').text()).toContain(
+      'The default workspace could not be refreshed',
+    )
+    await wrapper.get('.sidebar-desktop .nav-error button').trigger('click')
+    expect(refreshPreference).toHaveBeenLastCalledWith(true)
+    preferences.sidebarCollapsed = true
+    await nextTick()
+    expect(wrapper.get('.nav-error-floating button').isVisible()).toBe(true)
+    themeMedia.setDark(true)
+    await nextTick()
+    nav.drawerOpen = true
+    await flushPromises()
+    expect(wrapper.get('.nav-drawer .nav-error button').isVisible()).toBe(true)
+    expect(wrapper.find('.nav-error-floating').exists()).toBe(false)
+    await wrapper.get('.nav-drawer').trigger('cancel')
+    await nextTick()
+    expect(wrapper.get('.nav-error-floating button').isVisible()).toBe(true)
+  } finally {
+    wrapper.unmount()
+    preferences.sidebarCollapsed = false
+  }
+})
+
+it('does not abort the new identity when the previous sidebar unmounts', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  const wrapper = mount(NavSidebar, { global, attachTo: document.body })
+  await flushPromises()
+  useAuthStore().setUser({ ...navUser, id: 'bob' })
+  let release!: (response: Response) => void
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        }),
+    ),
+  )
+  const resolution = nav.resolvePreference()
+  wrapper.unmount()
+  release(Response.json({ workspaceId: 'bob-default', eventId: 'opaque' }))
+  expect(await resolution).toBe('bob-default')
+  expect(nav.preferredWorkspaceId).toBe('bob-default')
+})
+
 it('refreshes on focus/visible interval, stops hidden/unmounted and closes the mobile drawer on Escape', async () => {
-  const global = await setup()
+  const { global } = await setup()
   vi.useFakeTimers()
   const nav = useNavStore()
   const refresh = vi.spyOn(nav, 'refresh').mockResolvedValue(true)

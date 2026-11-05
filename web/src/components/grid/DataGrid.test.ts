@@ -7,6 +7,7 @@ import { i18n, loadLocale } from '../../i18n'
 import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
+import { useUndoStore } from '../../stores/undo'
 import { navUser, tableSchema } from '../../test/navigation'
 import { ThemeMedia } from '../../test/setup'
 import DataGrid from './DataGrid.vue'
@@ -1303,24 +1304,242 @@ it('activates a scalar on a single click without activating drags, modifiers, or
 it.each([
   ['reader', 'text', 'read'],
   ['system field', 'id', 'owner'],
-  ['checkbox', 'checkbox', 'owner'],
-  ['select', 'single_select', 'owner'],
+  ['reader select', 'single_select', 'read'],
+  ['reader checkbox', 'checkbox', 'read'],
 ] as const)(
   'does not single-click activate a %s',
   async (_label, kind, level) => {
-    await mountGrid(schemaFor(kind, level))
+    const fetch = await mountGrid(schemaFor(kind, level))
+    document.body.appendChild(wrapper!.element)
+    try {
+      const grid = wrapper!.get('[data-testid="fake-grid"]')
+      const box = document.createElement('span')
+      box.className = 'field-check'
+      grid.element.appendChild(box)
+      for (const target of [grid.element, box]) {
+        for (const type of ['mousedown', 'mouseup'])
+          target.dispatchEvent(
+            new MouseEvent(type, {
+              bubbles: true,
+              button: 0,
+              clientX: 20,
+              clientY: 20,
+            }),
+          )
+        await flushPromises()
+      }
+      expect(gridState.editCell).not.toHaveBeenCalled()
+      expect(
+        fetch.mock.calls.some(([, init]) => init?.method === 'PATCH'),
+      ).toBe(false)
+    } finally {
+      wrapper!.element.remove()
+    }
+  },
+)
+
+it.each(['single_select', 'multi_select'])(
+  'opens a writable %s editor on a single click',
+  async (kind) => {
+    await mountGrid(schemaFor(kind))
     document.body.appendChild(wrapper!.element)
     try {
       const grid = wrapper!.get('[data-testid="fake-grid"]')
       await grid.trigger('mousedown', { button: 0, clientX: 20, clientY: 20 })
       await grid.trigger('mouseup', { button: 0, clientX: 20, clientY: 20 })
       await flushPromises()
-      expect(gridState.editCell).not.toHaveBeenCalled()
+      expect(gridState.editCell).toHaveBeenCalledExactlyOnceWith(0, 'name')
     } finally {
       wrapper!.element.remove()
     }
   },
 )
+
+it('toggles a checkbox once per click on its box through the cell pipeline', async () => {
+  gridState.rowFields = [{ name: false }]
+  const fetch = await mountGrid(schemaFor('checkbox'))
+  document.body.appendChild(wrapper!.element)
+  const grid = wrapper!.get('[data-testid="fake-grid"]')
+  const box = document.createElement('span')
+  box.className = 'field-check'
+  grid.element.appendChild(box)
+  const click = async (target: Element) => {
+    for (const type of ['mousedown', 'mouseup'])
+      target.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          button: 0,
+          clientX: 20,
+          clientY: 20,
+        }),
+      )
+    await flushPromises()
+  }
+  const patches = () =>
+    fetch.mock.calls
+      .filter(([, init]) => init?.method === 'PATCH')
+      .map(([, init]) => JSON.parse(String(init?.body)) as unknown)
+  try {
+    // Selecting the cell outside the box does not toggle.
+    await click(grid.element)
+    expect(patches()).toEqual([])
+
+    // The fake PATCH echoes gridState.value as the stored checkbox value.
+    gridState.value = true as unknown as string
+    await click(box)
+    expect(patches()).toEqual([{ fields: { name: true } }])
+
+    gridState.value = false as unknown as string
+    await click(box)
+    expect(patches()).toEqual([
+      { fields: { name: true } },
+      { fields: { name: false } },
+    ])
+    expect(gridState.editCell).not.toHaveBeenCalled()
+  } finally {
+    wrapper!.element.remove()
+  }
+})
+
+function clickCheckBox() {
+  const grid = wrapper!.get('[data-testid="fake-grid"]')
+  let box = grid.element.querySelector('.field-check')
+  if (!box) {
+    box = document.createElement('span')
+    box.className = 'field-check'
+    grid.element.appendChild(box)
+  }
+  for (const type of ['mousedown', 'mouseup'])
+    box.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: 20,
+        clientY: 20,
+      }),
+    )
+  return flushPromises()
+}
+
+it('records a checkbox toggle as one guarded undo step', async () => {
+  gridState.rowFields = [{ name: false }]
+  gridState.value = true as unknown as string
+  await mountGrid(schemaFor('checkbox'))
+  document.body.appendChild(wrapper!.element)
+  try {
+    const undo = useUndoStore()
+    const before = undo.undoStack.length
+    await clickCheckBox()
+    expect(undo.undoStack).toHaveLength(before + 1)
+    expect(undo.undoStack.at(-1)?.steps).toEqual([
+      {
+        kind: 'patch',
+        tableId: tableSchema().table.id,
+        rows: [
+          {
+            id: '9007199254740993',
+            fields: { name: false },
+            expected: { name: true },
+          },
+        ],
+      },
+    ])
+  } finally {
+    wrapper!.element.remove()
+  }
+})
+
+it('shows a rejected toggle honestly and keeps the stored value', async () => {
+  gridState.rowFields = [{ name: false }]
+  const fetch = await mountGrid(schemaFor('checkbox'))
+  const original = fetch.getMockImplementation()!
+  let reject = true
+  fetch.mockImplementation(async (input, init) => {
+    if (init?.method === 'PATCH' && reject)
+      return Response.json(
+        { error: { code: 'ERR_PERMISSION_DENIED' } },
+        { status: 403 },
+      )
+    return original(input, init)
+  })
+  document.body.appendChild(wrapper!.element)
+  try {
+    const undo = useUndoStore()
+    const before = undo.undoStack.length
+    await clickCheckBox()
+    await flushPromises()
+    expect(wrapper!.text()).toContain(
+      i18n.global.t('errors.ERR_PERMISSION_DENIED'),
+    )
+    expect(undo.undoStack).toHaveLength(before)
+    // The cell still holds false, so the next toggle again requests true.
+    reject = false
+    gridState.value = true as unknown as string
+    await clickCheckBox()
+    const patches = fetch.mock.calls
+      .filter(([, init]) => init?.method === 'PATCH')
+      .map(([, init]) => JSON.parse(String(init?.body)) as unknown)
+    expect(patches).toEqual([
+      { fields: { name: true } },
+      { fields: { name: true } },
+    ])
+    expect(wrapper!.text()).not.toContain(
+      i18n.global.t('errors.ERR_PERMISSION_DENIED'),
+    )
+  } finally {
+    wrapper!.element.remove()
+  }
+})
+
+it('flips the newest intended checkbox value for rapid successive toggles', async () => {
+  gridState.rowFields = [{ name: false }]
+  const fetch = await mountGrid(schemaFor('checkbox'))
+  const original = fetch.getMockImplementation()!
+  const releases: ((response: Response) => void)[] = []
+  fetch.mockImplementation((input, init) => {
+    if (init?.method !== 'PATCH') return original(input, init)
+    return new Promise<Response>((resolve) => releases.push(resolve))
+  })
+  document.body.appendChild(wrapper!.element)
+  const grid = wrapper!.get('[data-testid="fake-grid"]')
+  const box = document.createElement('span')
+  box.className = 'field-check'
+  grid.element.appendChild(box)
+  try {
+    for (let index = 0; index < 2; index++)
+      for (const type of ['mousedown', 'mouseup'])
+        box.dispatchEvent(
+          new MouseEvent(type, {
+            bubbles: true,
+            button: 0,
+            clientX: 20,
+            clientY: 20,
+          }),
+        )
+    await flushPromises()
+    releases.shift()!(
+      Response.json({
+        row: { id: '9007199254740993', fields: { name: true } },
+        previous: { name: false },
+      }),
+    )
+    await flushPromises()
+    releases.shift()!(
+      Response.json({
+        row: { id: '9007199254740993', fields: { name: false } },
+        previous: { name: true },
+      }),
+    )
+    await flushPromises()
+    expect(
+      fetch.mock.calls
+        .filter(([, init]) => init?.method === 'PATCH')
+        .map(([, init]) => JSON.parse(String(init?.body)) as unknown),
+    ).toEqual([{ fields: { name: true } }, { fields: { name: false } }])
+  } finally {
+    wrapper!.element.remove()
+  }
+})
 
 it('serializes successive cell saves and keeps the last authoritative response', async () => {
   const fetch = await mountGrid(schemaFor('text'))

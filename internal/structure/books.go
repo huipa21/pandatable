@@ -14,6 +14,7 @@ import (
 type BookPatch struct {
 	Name  *string
 	Index *int
+	Icon  OptionalText
 }
 
 func parentWorkspace(path acl.Path) acl.Resource {
@@ -41,11 +42,20 @@ func reorder(siblings []sibling, moving pgtype.UUID, index int,
 // CreateBook creates a generated PostgreSQL schema and its metadata in one
 // transaction. Only an owner of the live workspace may do so.
 func (s *Service) CreateBook(ctx context.Context, actor Actor, workspaceID, name string) (Book, error) {
+	return s.CreateBookWithIcon(ctx, actor, workspaceID, name, nil)
+}
+
+// CreateBookWithIcon creates a book with an optional user-selected icon.
+func (s *Service) CreateBookWithIcon(ctx context.Context, actor Actor, workspaceID, name string, icon *string) (Book, error) {
 	target, err := resourceOf(acl.Workspace, workspaceID)
 	if err != nil {
 		return Book{}, err
 	}
 	cleaned, err := cleanName(name)
+	if err != nil {
+		return Book{}, err
+	}
+	customIcon, err := cleanOptional(icon, cleanBookIcon)
 	if err != nil {
 		return Book{}, err
 	}
@@ -64,11 +74,11 @@ func (s *Service) CreateBook(ctx context.Context, actor Actor, workspaceID, name
 				return err
 			}
 			row, err := c.q.InsertBook(ctx, structuresql.InsertBookParams{WorkspaceID: target.ID, Name: cleaned,
-				PgSchema: schema, Position: last + positionStep, CreatedBy: c.user})
+				Icon: textValue(customIcon), PgSchema: schema, Position: last + positionStep, CreatedBy: c.user})
 			if err != nil {
 				return fmt.Errorf("insert book: %w", err)
 			}
-			created = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Position, row.CreatedAt)
+			created = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Icon, row.FallbackIcon, row.Position, row.CreatedAt)
 			return nil
 		})
 	})
@@ -85,7 +95,7 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 	if err != nil {
 		return Book{}, err
 	}
-	if patch.Name == nil && patch.Index == nil {
+	if patch.Name == nil && patch.Index == nil && !patch.Icon.Set {
 		return Book{}, validation("At least one book field is required")
 	}
 	var name string
@@ -93,6 +103,10 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 		if name, err = cleanName(*patch.Name); err != nil {
 			return Book{}, err
 		}
+	}
+	icon, err := cleanOptional(patch.Icon.Value, cleanBookIcon)
+	if err != nil {
+		return Book{}, err
 	}
 	if patch.Index != nil && *patch.Index < 0 {
 		return Book{}, validation("Index is outside the sibling range")
@@ -102,6 +116,11 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 		if patch.Name != nil {
 			if _, err := c.q.RenameBook(ctx, structuresql.RenameBookParams{ID: target.ID, Name: name}); err != nil {
 				return notFoundIfNoRows(err, "rename book")
+			}
+		}
+		if patch.Icon.Set {
+			if _, err := c.q.SetBookIcon(ctx, structuresql.SetBookIconParams{ID: target.ID, Icon: textValue(icon)}); err != nil {
+				return notFoundIfNoRows(err, "update book icon")
 			}
 		}
 		if patch.Index != nil {
@@ -126,7 +145,7 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 		if err != nil {
 			return notFoundIfNoRows(err, "read book")
 		}
-		updated = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Position, row.CreatedAt)
+		updated = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Icon, row.FallbackIcon, row.Position, row.CreatedAt)
 		return nil
 	})
 	return updated, err

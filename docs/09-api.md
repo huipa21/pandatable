@@ -557,8 +557,8 @@ identity fields are exposed.
 | GET | `/nav` | full sidebar tree the user may see (workspaces → books → tables → views) with effective levels |
 | POST | `/workspaces` | `{ name, icon?, color? }` → 201 `{ workspace, eventId }`; creator becomes direct owner |
 | PATCH/DELETE | `/workspaces/{id}` | PATCH `{ name?, icon?, color? }` (null clears icon/color); delete → trash |
-| POST | `/workspaces/{id}/books` | `{ name }` → 201 `{ book, eventId }` |
-| PATCH/DELETE | `/books/{id}` | PATCH `{ name?, index? }`; delete → trash |
+| POST | `/workspaces/{id}/books` | `{ name, icon? }` → 201 `{ book, eventId }` |
+| PATCH/DELETE | `/books/{id}` | PATCH `{ name?, index?, icon? }` (null clears icon); delete → trash |
 | POST | `/books/{id}/tables` | `{ name }` → 201 table schema + `eventId` |
 | PATCH/DELETE | `/tables/{id}` | PATCH `{ name?, index?, displayFieldId? }` (display field needs table owner, T1.14); delete → trash |
 | GET | `/tables/{id}/schema` | table, fields, relations, views, schemaVersion, myLevel |
@@ -601,10 +601,26 @@ purge is a retention job, not an immediate-purge API.
   nothing. A hidden/missing/trashed target is 404 (checked first), a visible or
   path-only target without the required parent ownership is 403.
 - **Inputs:** `name` is trimmed, 1..100 Unicode code points, no control
-  characters; `icon` (nullable) ≤16 code points; `color` (nullable) `#RRGGBB`.
+  characters; workspace `icon` (nullable) ≤16 code points; `color` (nullable)
+  `#RRGGBB`.
   `index` is a zero-based integer among the *other live siblings* under the same
   parent (D-101); out of range is 400 and an unchanged index is a 200 no-op.
   PATCH requires at least one known member. Display names are not unique.
+- **Book icons (D-220):** book responses and visible `/nav` books include
+  `icon` (nullable override) and `fallbackIcon` (required). Name-only creation
+  assigns a persistent random fallback; PATCH omission preserves the override
+  and `icon: null` clears it without changing the fallback. The fallback is one
+  of `book`, `table`, `view`, `fields`, `calendar`, `star`, `group` or `link`.
+  The custom icon must be one of the local `BookIconName` identifiers:
+  `panelClose`, `panelOpen`, `search`, `sun`, `moon`, `undo`, `redo`, `table`,
+  `book`, `view`, `chevronDown`, `chevronRight`, `plus`, `more`, `fields`,
+  `filter`, `group`, `sort`, `colour`, `height`, `trash`, `eye`, `expand`,
+  `fullscreen`, `close`, `duplicate`, `chevronUp`, `comments`, `history`,
+  `compact`, `edit`, `calendar`, `clock`, `check`, `link`, `text`, `number`,
+  `formula`, `lookup`, `rollup`, `attachment`, `mail`, `star`, `phone`, `code`,
+  `user`, `percent` or `currency`. Unknown names return validation 400. Rename,
+  reorder and sharing preserve both values; the existing parent-owner check
+  applies to changes.
 - **Responses** carry an opaque `eventId` (D-103). `POST /books/{id}/tables`
   returns the full table schema: `table`, `fields` (Name + five system fields,
   no physical names), `relations: []`, `views` (default Grid), `schemaVersion`
@@ -620,8 +636,9 @@ purge is a retention job, not an immediate-purge API.
   Unexpected database/driver/cancellation errors are redacted 500s with the
   standard correlated log.
 - **`GET /nav`** → `{ workspaces: [{ id, name, icon, color, createdAt, level,
-  pathOnly, books: [{ id, name, position, level, pathOnly, tables: [{ id, name,
-  position, schemaVersion, level, views: [{ id, name, type, scope }] }] }] }] }`.
+  pathOnly, books: [{ id, name, icon, fallbackIcon, position, level, pathOnly,
+  tables: [{ id, name, position, schemaVersion, level, views: [{ id, name, type,
+  scope }] }] }] }] }`.
   `level` is `none|read|write|owner` (max grant on the path, flat groups,
   active users); `none`/`pathOnly` workspaces and books hold only visible
   descendants. Order: workspaces by creation, books/tables by position then id.

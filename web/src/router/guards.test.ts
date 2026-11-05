@@ -26,6 +26,17 @@ function responses(user: { role: string; mustChangePassword: boolean } | null) {
   )
 }
 
+it('routes root through home for authenticated users without replacing explicit deep links', async () => {
+  responses(null)
+  await router.push('/')
+  expect(router.currentRoute.value.path).toBe('/login')
+  responses({ role: 'user', mustChangePassword: false })
+  await router.push('/')
+  expect(router.currentRoute.value.path).toBe('/home')
+  await router.push('/t/table/v/view/r/42')
+  expect(router.currentRoute.value.path).toBe('/t/table/v/view/r/42')
+})
+
 it('redirects unauthenticated and non-admin deep admin routes', async () => {
   responses(null)
   for (const path of [

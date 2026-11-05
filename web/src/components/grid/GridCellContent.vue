@@ -35,6 +35,13 @@ const props = defineProps<{
 const cellState = computed(
   () => props.state?.() ?? { draft: undefined, message: props.message ?? '' },
 )
+// Choice drafts are label lists; render them as chips when they still parse.
+const choiceDraft = computed(() => {
+  const draft = cellState.value.draft
+  if (!draft || props.field.presentation !== 'select') return undefined
+  const parsed = props.field.parsePaste(draft.text, props.env)
+  return parsed.ok ? { value: parsed.value } : undefined
+})
 </script>
 
 <template>
@@ -66,13 +73,13 @@ const cellState = computed(
       class="grid-cell-invalid"
       :aria-invalid="cellState.message ? 'true' : undefined"
     >
-      <span v-if="cellState.draft" class="grid-cell-draft">{{
+      <span v-if="cellState.draft && !choiceDraft" class="grid-cell-draft">{{
         cellState.draft.text
       }}</span>
       <FieldRenderer
         v-else
         :field="field"
-        :value="value"
+        :value="choiceDraft ? choiceDraft.value : value"
         :env="env"
         :table-id="tableId"
         :identity="identity"
