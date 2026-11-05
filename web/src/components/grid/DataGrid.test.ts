@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { markRaw, type Component } from 'vue'
+import { markRaw, watch, type Component } from 'vue'
 import { i18n, loadLocale } from '../../i18n'
 import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
@@ -18,6 +18,9 @@ const gridState = vi.hoisted(() => ({
   value: 'changed',
   rowIndex: 0,
   rowCount: 1,
+  viewportHeight: 100,
+  scrollHeight: 100,
+  scrollTop: 0,
   visibleFieldIds: [] as string[],
   rowFields: [] as Record<string, unknown>[],
   range: { x: 0, y: 0, x1: 0, y1: 0, rgCol: 'rgCol', rgRow: 'rgRow' },
@@ -55,8 +58,9 @@ vi.mock('@revolist/vue3-datagrid', async () => {
         'aftercolumnresize',
         'columndragend',
       ],
-      setup(_props, { emit }) {
+      setup(_props, { emit, slots }) {
         const root = vue.ref<HTMLElement>()
+        const viewport = vue.ref<HTMLElement>()
         vue.onMounted(() => {
           const element = root.value as
             | (HTMLElement & {
@@ -67,11 +71,21 @@ vi.mock('@revolist/vue3-datagrid', async () => {
           if (element) {
             element.getSourceStore = async () => ({ set: vi.fn() })
             element.getSelectedRange = async () => gridState.range
+            Object.defineProperty(element, 'source', {
+              get: () => _props.source,
+            })
             Object.assign(element, {
               setCellEdit: gridState.editCell,
               setCellsFocus: gridState.focusCells,
               scrollToRow: gridState.scrollRow,
               scrollToColumnProp: vi.fn(),
+            })
+          }
+          if (viewport.value) {
+            Object.defineProperties(viewport.value, {
+              clientHeight: { get: () => gridState.viewportHeight },
+              scrollHeight: { get: () => gridState.scrollHeight },
+              scrollTop: { get: () => gridState.scrollTop },
             })
           }
           emit('created')
@@ -82,6 +96,7 @@ vi.mock('@revolist/vue3-datagrid', async () => {
             {
               ref: root,
               'data-testid': 'fake-grid',
+              'aria-rowcount': _props.source.length,
               onMousedown: (originalEvent: MouseEvent) =>
                 emit(
                   'beforecellfocus',
@@ -237,6 +252,23 @@ vi.mock('@revolist/vue3-datagrid', async () => {
                 },
                 'cut',
               ),
+              vue.h('revogr-viewport-scroll', { class: 'rgCol' }, [
+                vue.h('div', { ref: viewport, class: 'vertical-inner' }, [
+                  vue.h(
+                    'revogr-data',
+                    {},
+                    _props.source.length
+                      ? [
+                          vue.h('div', {
+                            class: 'rgRow',
+                            'data-rgrow': _props.source.length - 1,
+                          }),
+                        ]
+                      : [],
+                  ),
+                ]),
+              ]),
+              vue.h('div', {}, slots.default?.()),
             ],
           )
       },
@@ -326,6 +358,9 @@ beforeEach(async () => {
   gridState.value = 'changed'
   gridState.rowIndex = 0
   gridState.rowCount = 1
+  gridState.viewportHeight = 100
+  gridState.scrollHeight = 100
+  gridState.scrollTop = 0
   gridState.visibleFieldIds = ['name']
   gridState.rowFields = []
   gridState.range = { x: 0, y: 0, x1: 0, y1: 0, rgCol: 'rgCol', rgRow: 'rgRow' }
@@ -335,6 +370,7 @@ beforeEach(async () => {
   gridState.editCell.mockReset()
   gridState.focusCells.mockReset()
   gridState.scrollRow.mockReset()
+  gridState.scrollRow.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -389,6 +425,13 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
           body?.limit,
         ),
       )
+    if (path.endsWith('/groups'))
+      return Response.json({
+        groups: gridState.rowCount
+          ? [{ key: null, count: gridState.rowCount, aggregates: [] }]
+          : [],
+        schemaVersion: schema.schemaVersion,
+      })
     if (path.endsWith('/aggregates'))
       return Response.json({
         aggregates: (body?.aggregates ?? []).map((aggregate) => ({
@@ -479,6 +522,601 @@ it('keeps the add-field action outside the selectable grid columns', async () =>
 it('does not expose the add-field action to readers', async () => {
   await mountGrid(schemaFor('text', 'read'))
   expect(wrapper!.find('button.grid-add-field').exists()).toBe(false)
+})
+
+async function waitForAppendVisibility(visible: boolean) {
+  await vi.waitFor(() =>
+    expect(wrapper!.get('.grid-add-row').attributes('aria-hidden')).toBe(
+      String(!visible),
+    ),
+  )
+}
+
+it('creates one blank row, disables repeats, and records the authoritative undo', async () => {
+  gridState.rowCount = 0
+  const fetch = await mountGrid(schemaFor('text'))
+  await waitForAppendVisibility(true)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  let finishCreate: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (String(input).endsWith('/tables/t/rows') && init?.method === 'POST')
+      return new Promise<Response>((resolve) => {
+        finishCreate = resolve
+      })
+    return fallback(input, init)
+  })
+
+  const button = wrapper!.get<HTMLButtonElement>('.grid-add-row')
+  await button.trigger('click')
+  expect(button.element.disabled).toBe(true)
+  button.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  const creates = fetch.mock.calls.filter(
+    ([path, init]) =>
+      String(path).endsWith('/tables/t/rows') && init?.method === 'POST',
+  )
+  expect(creates).toHaveLength(1)
+  expect(JSON.parse(String(creates[0]![1]?.body))).toEqual({
+    rows: [{ fields: {} }],
+  })
+  expect(
+    (wrapper!.getComponent({ name: 'RevoGrid' }).props('source') as unknown[])
+      .length,
+  ).toBe(0)
+
+  gridState.rowCount = 1
+  if (!finishCreate) throw new Error('Create request was not started')
+  finishCreate(
+    Response.json({
+      eventId: 'event',
+      rows: [{ id: '9007199254740993', fields: { name: 'server default' } }],
+    }),
+  )
+  await flushPromises()
+  expect(useUndoStore().undoStack.at(-1)?.steps).toEqual([
+    { kind: 'delete', tableId: 't', ids: ['9007199254740993'] },
+  ])
+  expect(
+    (wrapper!.getComponent({ name: 'RevoGrid' }).props('source') as unknown[])
+      .length,
+  ).toBe(1)
+  expect(button.element.disabled).toBe(false)
+  await vi.waitFor(() => expect(gridState.scrollRow).toHaveBeenCalledWith(0))
+})
+
+it('keeps the append action hidden until the logical end of a paged result', async () => {
+  gridState.rowCount = 205
+  gridState.scrollHeight = 500
+  const fetch = await mountGrid(schemaFor('text'))
+  await waitForAppendVisibility(false)
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  expect((grid.props('source') as unknown[]).length).toBe(205)
+  await wrapper!.get('.grid-add-row').trigger('click')
+  expect(
+    fetch.mock.calls.filter(
+      ([path, init]) =>
+        String(path).endsWith('/tables/t/rows') && init?.method === 'POST',
+    ),
+  ).toHaveLength(0)
+
+  gridState.scrollTop = 400
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 204 * 32 },
+    }),
+  )
+  await flushPromises()
+  await waitForAppendVisibility(true)
+  expect((grid.props('source') as unknown[]).length).toBe(205)
+  const queries = fetch.mock.calls.filter(([path]) =>
+    String(path).endsWith('/query'),
+  )
+  expect(
+    queries.some(([, init]) => JSON.parse(String(init?.body)).offset === 200),
+  ).toBe(true)
+})
+
+it('preserves the appended page when the grid resets its viewport during requery', async () => {
+  gridState.rowCount = 450
+  gridState.scrollHeight = 500
+  const fetch = await mountGrid(schemaFor('text'))
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  gridState.scrollTop = 400
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 449 * 32 },
+    }),
+  )
+  await flushPromises()
+  await waitForAppendVisibility(true)
+
+  const stop = watch(
+    () => (grid.props('source') as unknown[]).length,
+    (count) => {
+      if (count !== 451) return
+      gridState.scrollTop = 0
+      grid.vm.$emit(
+        'viewportscroll',
+        new CustomEvent('viewportscroll', {
+          detail: { dimension: 'rgRow', coordinate: 0 },
+        }),
+      )
+    },
+    { flush: 'sync' },
+  )
+  try {
+    await wrapper!.get('.grid-add-row').trigger('click')
+    await flushPromises()
+    await vi.waitFor(() =>
+      expect(gridState.scrollRow).toHaveBeenCalledWith(450),
+    )
+    expect(
+      fetch.mock.calls.filter(
+        ([path, init]) =>
+          String(path).endsWith('/query') &&
+          (JSON.parse(String(init?.body)) as { offset: number }).offset === 0,
+      ),
+    ).toHaveLength(1)
+  } finally {
+    stop()
+  }
+})
+
+it('keeps empty virtual slots while an append requery is pending', async () => {
+  gridState.rowCount = 450
+  gridState.scrollHeight = 500
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  gridState.scrollTop = 400
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 449 * 32 },
+    }),
+  )
+  await flushPromises()
+  await waitForAppendVisibility(true)
+
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  let finishQuery: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (String(input).endsWith('/query')) {
+      const body = JSON.parse(String(init?.body)) as {
+        offset: number
+        includeCount: boolean
+      }
+      if (body.offset === 400 && body.includeCount)
+        return new Promise<Response>((resolve) => {
+          finishQuery = resolve
+        })
+    }
+    return fallback(input, init)
+  })
+  await wrapper!.get('.grid-add-row').trigger('click')
+  await vi.waitFor(() => expect(finishQuery).toBeDefined())
+  await flushPromises()
+  const source = grid.props('source') as { __rowId?: string }[]
+  expect(source).toHaveLength(450)
+  expect(source.every((row) => !row.__rowId)).toBe(true)
+  await waitForAppendVisibility(false)
+
+  if (!finishQuery) throw new Error('Requery was not started')
+  finishQuery(Response.json(queryResponse(schema, ['name'], 400, 100)))
+  await flushPromises()
+  await vi.waitFor(() => expect(gridState.scrollRow).toHaveBeenCalledWith(450))
+})
+
+it('retains the appended-row reveal through a deferred realtime reload', async () => {
+  let receive: ((event: RealtimeEvent) => void) | undefined
+  vi.spyOn(useRealtimeStore(), 'subscribe').mockImplementation(
+    (_table, listener) => {
+      receive = listener
+      return () => {}
+    },
+  )
+  gridState.rowCount = 450
+  gridState.scrollHeight = 500
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  gridState.scrollTop = 400
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 449 * 32 },
+    }),
+  )
+  await flushPromises()
+  await waitForAppendVisibility(true)
+
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  const finishQueries: ((response: Response) => void)[] = []
+  fetch.mockImplementation((input, init) => {
+    if (String(input).endsWith('/query')) {
+      const body = JSON.parse(String(init?.body)) as {
+        offset: number
+        includeCount: boolean
+      }
+      if (body.offset === 400 && body.includeCount)
+        return new Promise<Response>((resolve) => finishQueries.push(resolve))
+    }
+    return fallback(input, init)
+  })
+
+  await wrapper!.get('.grid-add-row').trigger('click')
+  await vi.waitFor(() => expect(finishQueries).toHaveLength(1))
+  if (!receive) throw new Error('Realtime listener was not registered')
+  receive({ t: 'row.created', tableId: 't' })
+  finishQueries[0]!(Response.json(queryResponse(schema, ['name'], 400, 100)))
+  await vi.waitFor(() => expect(finishQueries).toHaveLength(2))
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  gridState.scrollTop = 0
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 0 },
+    }),
+  )
+  finishQueries[1]!(Response.json(queryResponse(schema, ['name'], 400, 100)))
+  await flushPromises()
+  await vi.waitFor(() => expect(gridState.scrollRow).toHaveBeenCalledWith(450))
+})
+
+it('waits for the viewport to be measurable before revealing an appended row', async () => {
+  gridState.rowCount = 205
+  gridState.scrollHeight = 500
+  await mountGrid(schemaFor('text'))
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  gridState.scrollTop = 400
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 204 * 32 },
+    }),
+  )
+  await flushPromises()
+  await waitForAppendVisibility(true)
+  gridState.viewportHeight = 0
+  gridState.scrollHeight = 0
+
+  await wrapper!.get('.grid-add-row').trigger('click')
+  await flushPromises()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  expect(gridState.scrollRow).not.toHaveBeenCalled()
+  await waitForAppendVisibility(false)
+
+  gridState.viewportHeight = 100
+  gridState.scrollHeight = 500
+  gridState.scrollTop = 0
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 0 },
+    }),
+  )
+  await vi.waitFor(() => expect(gridState.scrollRow).toHaveBeenCalledWith(205))
+})
+
+it('reveals an appended row at the end of an expanded multi-page group', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'status', 'text')
+  schema.views[0]!.config.groupBy = ['status']
+  const storageKey = `pandatable:groups:${navUser.id}:v:status`
+  localStorage.setItem(storageKey, JSON.stringify(['[null]']))
+  gridState.rowCount = 250
+  gridState.scrollHeight = 500
+  try {
+    const fetch = await mountGrid(schema)
+    const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+    gridState.scrollTop = 400
+    grid.vm.$emit(
+      'viewportscroll',
+      new CustomEvent('viewportscroll', {
+        detail: { dimension: 'rgRow', coordinate: 250 * 32 },
+      }),
+    )
+    await flushPromises()
+    await waitForAppendVisibility(true)
+    const fallback = fetch.getMockImplementation()
+    if (!fallback) throw new Error('Missing fetch implementation')
+    let finishGroups: ((response: Response) => void) | undefined
+    fetch.mockImplementation((input, init) =>
+      String(input).endsWith('/groups')
+        ? new Promise<Response>((resolve) => {
+            finishGroups = resolve
+          })
+        : fallback(input, init),
+    )
+    await wrapper!.get('.grid-add-row').trigger('click')
+    await vi.waitFor(() => expect(finishGroups).toBeDefined())
+    await flushPromises()
+    const pendingSource = grid.props('source') as {
+      __rowId?: string
+      __groupId?: string
+    }[]
+    expect(pendingSource).toHaveLength(251)
+    expect(pendingSource.every((row) => !row.__rowId && !row.__groupId)).toBe(
+      true,
+    )
+    if (!finishGroups) throw new Error('Grouped requery was not started')
+    finishGroups(
+      Response.json({
+        groups: [{ key: null, count: 251, aggregates: [] }],
+        schemaVersion: schema.schemaVersion,
+      }),
+    )
+    await flushPromises()
+    await vi.waitFor(() =>
+      expect(gridState.scrollRow).toHaveBeenCalledWith(251),
+    )
+    const source = grid.props('source') as { __rowId?: string }[]
+    expect(source).toHaveLength(252)
+    expect(source.at(-1)?.__rowId).toBe(
+      String(BigInt('9007199254740993') + 250n),
+    )
+  } finally {
+    localStorage.removeItem(storageKey)
+  }
+})
+
+it('waits for the final page to load before showing the append action', async () => {
+  gridState.rowCount = 205
+  gridState.scrollHeight = 500
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  await waitForAppendVisibility(false)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  let finishPage: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (String(input).endsWith('/query')) {
+      const body = JSON.parse(String(init?.body)) as { offset?: number }
+      if (body.offset === 200)
+        return new Promise<Response>((resolve) => {
+          finishPage = resolve
+        })
+    }
+    return fallback(input, init)
+  })
+  gridState.scrollTop = 400
+  wrapper!.getComponent({ name: 'RevoGrid' }).vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 204 * 32 },
+    }),
+  )
+  await vi.waitFor(() => expect(finishPage).toBeDefined())
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await waitForAppendVisibility(false)
+  if (!finishPage) throw new Error('Final page request was not started')
+  finishPage(Response.json(queryResponse(schema, ['name'], 200, 100)))
+  await flushPromises()
+  await waitForAppendVisibility(true)
+})
+
+it('removes and restores the append action with live table permissions', async () => {
+  const schema = schemaFor('text', 'read')
+  const fetch = await mountGrid(schema)
+  expect(wrapper!.find('.grid-add-row').exists()).toBe(false)
+  await wrapper!.setProps({ schema: { ...schema, myLevel: 'write' } })
+  await waitForAppendVisibility(true)
+  await wrapper!.setProps({ schema: { ...schema, myLevel: 'read' } })
+  expect(wrapper!.find('.grid-add-row').exists()).toBe(false)
+  expect(
+    fetch.mock.calls.filter(
+      ([path, init]) =>
+        String(path).endsWith('/tables/t/rows') && init?.method === 'POST',
+    ),
+  ).toHaveLength(0)
+})
+
+it.each([
+  ['ERR_REQUIRED_FIELD', 400],
+  ['ERR_UNIQUE_CONFLICT', 409],
+])(
+  'reports %s on blank creation without an optimistic row',
+  async (code, status) => {
+    i18n.global.mergeLocaleMessage('en', {
+      workspaceGrid: {
+        ux09: {
+          blankCreateHint:
+            'Use New Entry to provide the required or unique values.',
+        },
+      },
+    })
+    gridState.rowCount = 0
+    const fetch = await mountGrid(schemaFor('text'))
+    await waitForAppendVisibility(true)
+    const fallback = fetch.getMockImplementation()
+    if (!fallback) throw new Error('Missing fetch implementation')
+    fetch.mockImplementation((input, init) =>
+      String(input).endsWith('/tables/t/rows') && init?.method === 'POST'
+        ? Promise.resolve(Response.json({ error: { code } }, { status }))
+        : fallback(input, init),
+    )
+    await wrapper!.get('.grid-add-row').trigger('click')
+    await flushPromises()
+    const message =
+      code === 'ERR_REQUIRED_FIELD'
+        ? i18n.global.t('errors.ERR_REQUIRED_FIELD')
+        : i18n.global.t('errors.ERR_UNIQUE_CONFLICT')
+    expect(wrapper!.get('[role="alert"]').text()).toContain(message)
+    expect(wrapper!.get('[role="alert"]').text()).toContain(
+      'Use New Entry to provide the required or unique values.',
+    )
+    expect(wrapper!.find('dialog[open]').exists()).toBe(false)
+    expect(useUndoStore().undoStack).toHaveLength(0)
+    expect(
+      (wrapper!.getComponent({ name: 'RevoGrid' }).props('source') as unknown[])
+        .length,
+    ).toBe(0)
+  },
+)
+
+it('surfaces a network failure without creating an optimistic row or undo step', async () => {
+  gridState.rowCount = 0
+  const fetch = await mountGrid(schemaFor('text'))
+  await waitForAppendVisibility(true)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  fetch.mockImplementation((input, init) =>
+    String(input).endsWith('/tables/t/rows') && init?.method === 'POST'
+      ? Promise.reject(new TypeError('Network unavailable'))
+      : fallback(input, init),
+  )
+  await wrapper!.get('.grid-add-row').trigger('click')
+  await flushPromises()
+  expect(wrapper!.get('[role="alert"]').text()).toContain(
+    i18n.global.t('errors.ERR_INTERNAL'),
+  )
+  expect(gridState.rowCount).toBe(0)
+  expect(useUndoStore().undoStack).toHaveLength(0)
+})
+
+it('hides the action when the authoritative query fails', async () => {
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  await waitForAppendVisibility(true)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  fetch.mockImplementation((input, init) =>
+    String(input).endsWith('/query')
+      ? Promise.resolve(
+          Response.json({ error: { code: 'ERR_INTERNAL' } }, { status: 500 }),
+        )
+      : fallback(input, init),
+  )
+  await wrapper!.setProps({
+    filter: { field: 'name', cmp: 'is', value: 'matching' },
+  })
+  await flushPromises()
+  await waitForAppendVisibility(false)
+  expect(wrapper!.get('[role="alert"]').text()).toContain(
+    i18n.global.t('errors.ERR_INTERNAL'),
+  )
+})
+
+it('hides the action if a later page fails to load at the logical end', async () => {
+  gridState.rowCount = 205
+  gridState.scrollHeight = 500
+  const fetch = await mountGrid(schemaFor('text'))
+  await waitForAppendVisibility(false)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  fetch.mockImplementation((input, init) => {
+    if (String(input).endsWith('/query')) {
+      const body = JSON.parse(String(init?.body)) as { offset?: number }
+      if (body.offset === 200)
+        return Promise.resolve(
+          Response.json({ error: { code: 'ERR_INTERNAL' } }, { status: 500 }),
+        )
+    }
+    return fallback(input, init)
+  })
+  gridState.scrollTop = 400
+  wrapper!.getComponent({ name: 'RevoGrid' }).vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 204 * 32 },
+    }),
+  )
+  await vi.waitFor(() =>
+    expect(wrapper!.get('[role="alert"]').text()).toContain(
+      i18n.global.t('errors.ERR_INTERNAL'),
+    ),
+  )
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await waitForAppendVisibility(false)
+})
+
+it('reconciles a successful create if write access is revoked in flight', async () => {
+  gridState.rowCount = 0
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  await waitForAppendVisibility(true)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  let finishCreate: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (String(input).endsWith('/tables/t/rows') && init?.method === 'POST')
+      return new Promise<Response>((resolve) => {
+        finishCreate = resolve
+      })
+    return fallback(input, init)
+  })
+  await wrapper!.get('.grid-add-row').trigger('click')
+  await wrapper!.setProps({ schema: { ...schema, myLevel: 'read' } })
+  expect(wrapper!.find('.grid-add-row').exists()).toBe(false)
+  gridState.rowCount = 1
+  if (!finishCreate) throw new Error('Create request was not started')
+  finishCreate(
+    Response.json({
+      eventId: 'event',
+      rows: [{ id: '9007199254740993', fields: { name: 'default' } }],
+    }),
+  )
+  await flushPromises()
+  expect(useUndoStore().undoStack.at(-1)?.steps).toEqual([
+    { kind: 'delete', tableId: 't', ids: ['9007199254740993'] },
+  ])
+  expect(
+    (wrapper!.getComponent({ name: 'RevoGrid' }).props('source') as unknown[])
+      .length,
+  ).toBe(1)
+  expect(
+    fetch.mock.calls.filter(
+      ([path, init]) =>
+        String(path).endsWith('/tables/t/rows') && init?.method === 'POST',
+    ),
+  ).toHaveLength(1)
+})
+
+it('requeries a filtered view without inserting a fake visible row', async () => {
+  i18n.global.mergeLocaleMessage('en', {
+    workspaceGrid: {
+      ux09: {
+        createdMayBeHidden:
+          'Row created. Filters, sorting, or collapsed groups may affect where it appears.',
+      },
+    },
+  })
+  gridState.rowCount = 0
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  fetch.mockImplementation((input, init) =>
+    String(input).endsWith('/query')
+      ? Promise.resolve(
+          Response.json({
+            rows: [],
+            fieldIds: ['name'],
+            total: 0,
+            schemaVersion: schema.schemaVersion,
+          }),
+        )
+      : fallback(input, init),
+  )
+  await wrapper!.setProps({
+    filter: { field: 'name', cmp: 'is', value: 'matching' },
+  })
+  await flushPromises()
+  await waitForAppendVisibility(true)
+  await wrapper!.get('.grid-add-row').trigger('click')
+  await flushPromises()
+  expect(gridState.rowCount).toBe(1)
+  expect(
+    (wrapper!.getComponent({ name: 'RevoGrid' }).props('source') as unknown[])
+      .length,
+  ).toBe(0)
+  expect(wrapper!.text()).toContain(
+    'Row created. Filters, sorting, or collapsed groups may affect where it appears.',
+  )
 })
 
 it('dismisses toolbar menus on outside pointer interactions', async () => {
@@ -2307,7 +2945,9 @@ it('cuts editable cells through a bulk patch without changing row IDs', async ()
   gridState.rowFields = [{ name: 'cut me' }]
   const fetch = await mountGrid(schema)
   await wrapper!
-    .get('[data-testid="fake-grid"] button:last-child')
+    .get('[data-testid="fake-grid"]')
+    .findAll('button')
+    .find((button) => button.text() === 'cut')!
     .trigger('click')
   await flushPromises()
 

@@ -268,6 +268,7 @@ async function closeDialogsAndRestoreEnglish(page: Page) {
 }
 
 async function inspectSharing(page: Page, locale: typeof en, search: boolean) {
+  if (search) await page.locator('.visibility-menu > summary').click()
   await page
     .locator('main')
     .getByRole('button', { name: locale.sharing.open, exact: true })
@@ -381,8 +382,16 @@ test('AT-806 main pages remain usable at 390px in both languages', async ({
 
   await login(page)
   const data = await fixture(page, `${testInfo.project.name}-${Date.now()}`, 1)
+  const preference = await page.request.put(
+    '/api/v1/auth/workspace-preference',
+    {
+      headers: headers(),
+      data: { workspaceId: data.workspaceId },
+    },
+  )
+  expect(preference.status()).toBe(200)
   const routes = [
-    { path: '/home', en: en.auth.homeTitle, zh: zh.auth.homeTitle },
+    { path: '/home', en: data.workspaceName, zh: data.workspaceName },
     { path: '/setup', en: en.setup.title, zh: zh.setup.title },
     {
       path: `/w/${data.workspaceId}`,
@@ -440,6 +449,8 @@ test('AT-806 main pages remain usable at 390px in both languages', async ({
       if (locale === 'zh') await setLocale(page, 'zh-CN')
       for (const route of routes) {
         await page.goto(route.path)
+        if (route.path === '/home')
+          await expect(page).toHaveURL(new RegExp(`/w/${data.workspaceId}$`))
         await expect(page.locator('main h1')).toHaveText(route[locale])
         await page.waitForLoadState('networkidle')
         await noPageOverflow(page, route.path)
@@ -478,8 +489,15 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
         { path: `/w/${data.workspaceId}/b/${data.bookId}`, kind: 'table' },
       ] as const) {
         await page.goto(target.path)
-        await page
-          .locator('main')
+        if (target.path === '/home') await expect(page).toHaveURL(/\/w\/[^/]+$/)
+        let scope = page.locator('main')
+        if (target.kind === 'workspace') {
+          await page
+            .getByRole('button', { name: locale.nav.open, exact: true })
+            .click()
+          scope = page.locator('.nav-drawer .workspace-heading')
+        }
+        await scope
           .getByRole('button', {
             name: locale.nav.create[target.kind],
             exact: true,
@@ -497,6 +515,10 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
           .getByRole('button', { name: locale.admin.cancel, exact: true })
           .click()
         await expect(dialog).not.toBeVisible()
+        if (target.kind === 'workspace')
+          await page
+            .getByRole('button', { name: locale.nav.close, exact: true })
+            .click()
         if (target.kind === 'book') await inspectSharing(page, locale, false)
         if (target.kind === 'table')
           await inspectImport(page, locale, 'newTable')
@@ -787,6 +809,7 @@ test('AT-806 notification panel stays within the viewport in both languages', as
   await english(page)
   await login(page)
   await page.goto('/home')
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
   const problems: {
     locale: string
     width: number

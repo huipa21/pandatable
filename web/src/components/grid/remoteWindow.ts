@@ -55,7 +55,10 @@ export class RemoteRowsWindow {
     }
   }
 
-  async initialize(anchor = 0) {
+  async initialize(
+    anchor = 0,
+    { preserveLength = false }: { preserveLength?: boolean } = {},
+  ) {
     if (this.disposed) return
     this.cancelPending()
     this.generation++
@@ -63,9 +66,12 @@ export class RemoteRowsWindow {
     this.initialized = false
     this.activePage = -1
     this.cache.clear()
-    this.slots.length = 0
+    if (preserveLength) this.slots.fill(emptyRow)
+    else {
+      this.slots.length = 0
+      this.total = 0
+    }
     this.fieldIds = []
-    this.total = 0
     this.changed()
     let page = Math.max(0, Math.floor(anchor / remotePageSize))
     await this.fetchPage(page, generation, true)
@@ -77,8 +83,15 @@ export class RemoteRowsWindow {
       page = Math.floor((this.total - 1) / remotePageSize)
       await this.fetchPage(page, generation, false)
     }
-    if (this.disposed || generation !== this.generation || !this.initialized)
+    if (this.disposed || generation !== this.generation) return
+    if (!this.initialized) {
+      if (preserveLength) {
+        this.slots.length = 0
+        this.total = 0
+        this.changed()
+      }
       return
+    }
     this.activePage = page
     this.loadNeighbors(page, generation)
   }
@@ -254,7 +267,11 @@ export class RemoteRowsWindow {
       })
       this.changed()
     } catch (error) {
-      if (!controller.signal.aborted && !this.disposed) this.failed(error)
+      if (!controller.signal.aborted && !this.disposed) {
+        if (includeCount && generation === this.generation)
+          this.initialized = false
+        this.failed(error)
+      }
     } finally {
       if (this.pending.get(page) === controller) this.pending.delete(page)
       if (!this.disposed) this.changed()

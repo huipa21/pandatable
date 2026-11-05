@@ -3,6 +3,7 @@ import type { Components } from '@revolist/revogrid'
 import { test, expect, expectHTTPFailure, paceLogin } from './fixtures'
 import type { DataRow, RowQueryResult, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
+import { create as createResource } from './navigation'
 import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
@@ -23,37 +24,7 @@ async function login(
   await page.getByLabel(en.auth.login, { exact: true }).fill(username)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
-}
-
-async function createResource(
-  page: Page,
-  kind: 'workspace' | 'book' | 'table',
-  name: string,
-) {
-  await page
-    .locator('main')
-    .getByRole('button', { name: en.nav.create[kind], exact: true })
-    .click()
-  const dialog = page.getByRole('dialog', {
-    name: en.nav.dialogTitle,
-    exact: true,
-  })
-  await expect(dialog).toBeVisible()
-  await dialog
-    .getByRole('textbox', { name: en.nav.name, exact: true })
-    .fill(name)
-  await dialog
-    .getByRole('button', { name: en.admin.confirm, exact: true })
-    .click()
-  await expect(dialog).not.toBeVisible()
-  await expect(page).toHaveURL(
-    kind === 'workspace'
-      ? /\/w\/[^/]+$/
-      : kind === 'book'
-        ? /\/w\/[^/]+\/b\/[^/]+$/
-        : /\/t\/[^/]+\/v\/[^/]+$/,
-  )
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 }
 
 async function schemaOf(page: Page, tid: string) {
@@ -167,7 +138,7 @@ test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, vali
   if (isMobile) {
     await page.goto('/login')
     await login(page)
-    await expect(page).toHaveURL(/\/home$/)
+    await expect(page).toHaveURL(/\/w\/[^/]+$/)
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -397,12 +368,13 @@ test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, vali
 
   // 10. Stage (single_select)
   await openCellEditor(page, stageField)
-  const singleSelect = page.getByRole('combobox', {
-    name: en.field.editor.value,
+  const singleSelect = page.getByRole('listbox', {
+    name: stageField.name,
     exact: true,
   })
   await expect(singleSelect).toBeVisible()
-  await singleSelect.selectOption({ label: 'Done' })
+  await singleSelect.press('End')
+  await singleSelect.press('Enter')
   await expect(singleSelect).not.toBeVisible()
   await expect
     .poll(
@@ -412,12 +384,14 @@ test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, vali
 
   // 11. Tags (multi_select)
   await openCellEditor(page, tagsField)
-  const multiSelect = page.locator('.field-editor select[multiple]')
+  const multiSelect = page.getByRole('listbox', {
+    name: tagsField.name,
+    exact: true,
+  })
   await expect(multiSelect).toBeVisible()
-  await multiSelect.selectOption(['Alpha'])
-  await page
-    .getByRole('button', { name: en.field.editor.apply, exact: true })
-    .click()
+  await multiSelect.press('Home')
+  await multiSelect.press('Space')
+  await multiSelect.press('Enter')
   await expect(multiSelect).not.toBeVisible()
   await expect
     .poll(
@@ -755,7 +729,7 @@ test('AT-303: required and unique constraints enforcement and defaults on new ro
   if (isMobile) {
     await page.goto('/login')
     await login(page)
-    await expect(page).toHaveURL(/\/home$/)
+    await expect(page).toHaveURL(/\/w\/[^/]+$/)
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -969,7 +943,7 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
   if (isMobile) {
     await page.goto('/login')
     await login(page)
-    await expect(page).toHaveURL(/\/home$/)
+    await expect(page).toHaveURL(/\/w\/[^/]+$/)
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -1126,7 +1100,7 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
     await bobPage
       .getByRole('button', { name: en.auth.signIn, exact: true })
       .click()
-    await expect(bobPage).toHaveURL(/\/home$/)
+    await expect(bobPage).toHaveURL(/\/w\/[^/]+$/)
 
     await bobPage.goto(`/t/${tableId}/v/${viewId}`)
     await expect(

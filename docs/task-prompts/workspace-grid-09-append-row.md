@@ -64,6 +64,39 @@ bounding-box assertions, a paged result and exact API row-count checks.
 Do not rewrite the unrelated existing AT-307 nine-vs-eight criterion.
 Task gates/central docs/commits follow the execution index.
 
-## Record
+## Record (2026-11-05)
 
-Not started.
+**Completed; coordinated task gates pass.** Changed `DataGrid.vue`,
+`remoteWindow.ts`, their unit tests and `e2e/grid-append-row.spec.ts`.
+The native footer reuses blank create/undo, never becomes data, and waits for
+the writer's loaded visible logical tail. Both locales, frontend section 4
+and D-222..224 are integrated.
+
+Real-stack paged append exposed a viewport reset. Two timing-only fixes failed;
+retaining empty placeholder geometry during authoritative ungrouped/grouped
+requery fixed the reset without retaining stale rows. Grouped reveal loads
+the anchored leaf page and checks identity. Failed counts clear placeholders.
+Browser assertions wait for actual source/viewport readiness, not just ARIA.
+
+Verification after both writers stopped:
+- Focused grid/window/group Vitest: **102 passed**.
+- Final `go run .\tools\ptdev check`: lint, required PG18/backend tests,
+  **841 frontend tests** and build passed.
+- `ptdev e2e --fast --` serialized affected-spec batches:
+  `grid`, `grouping`, `grid-append-row`: **11 passed, 6 skipped**;
+  `grid-columns-keyboard`, `grid-inline-editing`, `undo`, `mobile-rows`:
+  **10 passed, 3 skipped**;
+  `hardening`, `fields-acceptance`, `realtime` (desktop):
+  **18 passed, 1 skipped**;
+  `attachments`, `export`, `fields-batch2`, `row-expand`,
+  `search-aggregates`, `sort`, `table-workspace`: **13 passed, 6 skipped**.
+  Mobile realtime also passed in the preceding query/realtime batch.
+
+Regression tests now follow workspace landing/sidebar creation, visibility
+sharing and grid listboxes. Session-disable diagnostics allow only the exact
+schema 401 race; row-popup timeout accommodates existing login pacing.
+Interrupted infrastructure runs and earlier red batches were superseded by
+the gates above. No production-image gate or commit was run.
+
+UX-11 owns phase verification, acceptance IDs and commits. AT-307's literal
+nine-versus-eight discrepancy and UX-08's recorded gaps remain unchanged.

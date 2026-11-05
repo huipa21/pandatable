@@ -28,7 +28,7 @@ test('new table uses a compact, working field and filter toolbar', async ({
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 
   const create = async (path: string, data: unknown) => {
     const response = await page.request.post(path, { headers: headers(), data })

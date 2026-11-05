@@ -1,40 +1,9 @@
-import type { Page } from '@playwright/test'
 import { test, expect, paceLogin } from './fixtures'
 import { setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyFields } from './fields'
-import { verifyDataGrid } from './navigation'
-
-async function createResource(
-  page: Page,
-  kind: 'workspace' | 'book' | 'table',
-  name: string,
-) {
-  await page
-    .locator('main')
-    .getByRole('button', { name: en.nav.create[kind], exact: true })
-    .click()
-  const dialog = page.getByRole('dialog', {
-    name: en.nav.dialogTitle,
-    exact: true,
-  })
-  await expect(dialog).toBeVisible()
-  await dialog
-    .getByRole('textbox', { name: en.nav.name, exact: true })
-    .fill(name)
-  await dialog
-    .getByRole('button', { name: en.admin.confirm, exact: true })
-    .click()
-  await expect(dialog).not.toBeVisible()
-  await expect(page).toHaveURL(
-    kind === 'workspace'
-      ? /\/w\/[^/]+$/
-      : kind === 'book'
-        ? /\/w\/[^/]+\/b\/[^/]+$/
-        : /\/t\/[^/]+\/v\/[^/]+$/,
-  )
-}
+import { create as createResource, verifyDataGrid } from './navigation'
 
 test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fallback', async ({
   page,
@@ -51,7 +20,7 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 
   const suffix = Date.now()
   await createResource(page, 'workspace', `Grid workspace ${suffix}`)

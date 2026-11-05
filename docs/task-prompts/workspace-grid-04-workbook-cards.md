@@ -59,4 +59,41 @@ editing has stopped.
 
 ## Record
 
-Not started.
+Completed 2026-11-05. Implemented the selected-workspace workbook-card grid in
+`ResourcePage.vue`, mapping the persisted effective icon in `stores/nav.ts`.
+Cards retain server order, real links and path-only labels. Existing owner
+creation/sharing and book/table presentations are preserved. Cached navigation
+stays visibly stale through retry, and a stale empty list is not called empty.
+Scoped styles wrap long names and expose keyboard focus without a dependency.
+
+Focused verification: `pnpm --dir web exec vitest run
+src/pages/ResourcePage.workbook-cards.test.ts src/pages/ResourcePage.test.ts
+src/stores/nav.test.ts` passed 32 tests; the focused sidebar/navigation and
+home-page suites passed another 11. Added
+`web/e2e/workbook-cards.spec.ts` for real-API workspace switching, first-book
+creation, sharing, icon override/clear, access pruning, retry, keyboard,
+responsive, language and theme scenarios.
+
+With both implementation writers stopped, the coordinated task gate passed:
+`go run .\tools\ptdev check` (lint, required PG18/backend tests, **841 frontend
+tests**, build), and `ptdev e2e --fast -- e2e/workbook-cards.spec.ts
+e2e/workbook-icons.spec.ts e2e/workspace-navigation.spec.ts` (**6 passed,
+1 skipped**). Existing translations cover every card label; no UX-04 keys or
+dependencies were added. Frontend section 2 records the card presentation.
+
+ResourcePage is released to UX-05. Shared test helpers now use sidebar workspace
+creation and the stable workspace landing route rather than the removed
+chooser. UX-09's coordinated grid/regression evidence is in its own record.
+
+Late regression follow-up: `admin-users.spec.ts` still assumed the `/home`
+chooser, a workspace-only sidebar tree and no reader preference action. Its
+assertions now wait for the stable starter route, account for starter
+workspaces, accept only reader "set default" in shared workspace actions, and
+allow the existing view-save/query 409 race. The shared `create` helper now waits
+for an actual route change. `ptdev e2e --fast --` reruns passed:
+`admin-users`, `attachments`, `fields-batch2` (**6 passed, 3 skipped**);
+`fields-acceptance`, `grid` (**7 passed**); and the remaining
+navigation/workbook/table/grid-tail batches (**45 passed, 8 skipped**). Final
+`ptdev check` passed again with **841 frontend tests**.
+No known UX-04 task-gate blocker remains. Full production-image verification,
+new acceptance IDs and coordinated commits remain deferred to UX-11.

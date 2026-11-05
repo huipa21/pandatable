@@ -542,6 +542,7 @@ test('AT-601/602/603/605/107: live grid, LWW, reconnect and revocation', async (
     ).toEqual([])
 
     allowHTTPFailure(bob, 'GET', '/api/v1/nav', 401)
+    allowHTTPFailure(bob, 'GET', `/api/v1/tables/${tableId}/schema`, 401)
     const disabledAt = Date.now()
     const disable = await page.request.patch(`/api/v1/admin/users/${userId}`, {
       headers: h,

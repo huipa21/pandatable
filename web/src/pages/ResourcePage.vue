@@ -961,7 +961,25 @@ onBeforeUnmount(() => {
       <p>{{ errorMessage(error) }}</p>
       <button @click="loadSchema()">{{ t('auth.retry') }}</button>
     </div>
+    <div v-else-if="kind === 'workspace' && !node && nav.error" role="alert">
+      <h1>{{ t('nav.unavailable') }}</h1>
+      <p>{{ t('nav.stale') }}</p>
+      <p>{{ errorMessage(nav.error) }}</p>
+      <button :disabled="nav.loading" @click="nav.refresh(true)">
+        {{ t('auth.retry') }}
+      </button>
+    </div>
     <template v-else-if="node">
+      <div
+        v-if="kind === 'workspace' && nav.error"
+        class="workbook-stale"
+        role="status"
+      >
+        <p>{{ t('nav.stale') }}</p>
+        <button :disabled="nav.loading" @click="nav.refresh(true)">
+          {{ t('auth.retry') }}
+        </button>
+      </div>
       <header v-if="kind !== 'table'" class="resource-heading">
         <h1>{{ schema?.table.name ?? node.name }}</h1>
       </header>
@@ -970,12 +988,38 @@ onBeforeUnmount(() => {
       </button>
       <p v-if="node.pathOnly">{{ t('nav.pathNotice') }}</p>
       <template v-if="kind !== 'table'">
-        <p v-if="node.children.length === 0">
+        <p
+          v-if="
+            node.children.length === 0 && (kind !== 'workspace' || !nav.error)
+          "
+        >
           {{
             kind === 'workspace' ? t('nav.emptyBooks') : t('nav.emptyTables')
           }}
         </p>
-        <ul class="resource-list">
+        <ul
+          v-if="kind === 'workspace' && node.children.length"
+          class="workbook-grid"
+        >
+          <li v-for="child in node.children" :key="child.id">
+            <RouterLink :to="child.path" class="workbook-card">
+              <span class="workbook-card-icon">
+                <AppIcon
+                  v-if="child.bookIcon !== null"
+                  :name="child.bookIcon"
+                  :size="28"
+                />
+              </span>
+              <span class="workbook-card-content">
+                <span class="workbook-card-name">{{ child.name }}</span>
+                <span v-if="child.pathOnly" class="workbook-card-context">
+                  {{ t('nav.pathOnly') }}
+                </span>
+              </span>
+            </RouterLink>
+          </li>
+        </ul>
+        <ul v-else-if="kind === 'book'" class="resource-list">
           <li v-for="child in node.children" :key="child.id">
             <RouterLink :to="child.path">{{ child.name }}</RouterLink>
             <span v-if="child.pathOnly">{{ t('nav.pathOnly') }}</span>
@@ -1425,6 +1469,70 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.workbook-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 16px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.workbook-grid > li {
+  min-width: 0;
+}
+
+.workbook-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  min-height: 100px;
+  height: 100%;
+  padding: 16px;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.workbook-card:hover {
+  border-color: var(--accent);
+}
+
+.workbook-card:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.workbook-card-icon {
+  display: grid;
+  flex: 0 0 48px;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-surface));
+  border-radius: 10px;
+}
+
+.workbook-card-content {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.workbook-card-name {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.workbook-card-context {
+  color: var(--muted);
+  font-size: 0.875rem;
 }
 
 .table-utility {

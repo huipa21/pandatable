@@ -4,6 +4,7 @@ import { request, RequestError } from '../api/client'
 import type {
   AccessLevel,
   AuthMutation,
+  BookIconName,
   Navigation,
   NavView,
   ResourceKind,
@@ -19,6 +20,7 @@ export interface NavigationItem {
   kind: ResourceKind
   path: string
   parentId: string | null
+  bookIcon: BookIconName | null
   level: AccessLevel
   pathOnly: boolean
   canEdit: boolean
@@ -104,7 +106,6 @@ export const useNavStore = defineStore('nav', () => {
     controller = own
     const current = ++generation
     loading.value = true
-    error.value = null
     pending = (async () => {
       try {
         const result = await request<Navigation>(
@@ -116,6 +117,7 @@ export const useNavStore = defineStore('nav', () => {
         if (generation !== current) return false
         tree.value = result
         loaded.value = true
+        error.value = null
         revision.value++
         return true
       } catch (cause) {
@@ -338,6 +340,7 @@ export const useNavStore = defineStore('nav', () => {
       kind: 'workspace',
       path: `/w/${w.id}`,
       parentId: null,
+      bookIcon: null,
       level: w.level,
       pathOnly: w.pathOnly,
       canEdit: !w.pathOnly && w.level === 'owner',
@@ -352,6 +355,7 @@ export const useNavStore = defineStore('nav', () => {
         kind: 'book',
         path: `/w/${w.id}/b/${b.id}`,
         parentId: w.id,
+        bookIcon: b.icon ?? b.fallbackIcon,
         level: b.level,
         pathOnly: b.pathOnly,
         canEdit: !b.pathOnly && w.level === 'owner',
@@ -367,6 +371,7 @@ export const useNavStore = defineStore('nav', () => {
           // The bare table route shows the default view (breadcrumb without a view).
           path: `/t/${table.id}`,
           parentId: b.id,
+          bookIcon: null,
           level: table.level,
           pathOnly: false,
           canEdit: b.level === 'owner',

@@ -130,8 +130,12 @@ const toolbar = ref<HTMLElement>()
 const ready = ref(false)
 const disposed = ref(false)
 const loading = ref(false)
+const queryReady = ref(false)
 const saving = ref(false)
 const error = ref<unknown>(null)
+const appendFailure = shallowRef<unknown>(null)
+const appendNotice = ref(false)
+const appendAtEnd = ref(false)
 const searchTerm = ref('')
 const footerAggregates = shallowRef<RowAggregate[]>([])
 const footerAggregateError = ref('')
@@ -350,6 +354,12 @@ const gridError = computed(() =>
       ? errorMessage(error.value)
       : '',
 )
+const appendConstraintFailure = computed(
+  () =>
+    error.value === appendFailure.value &&
+    error.value instanceof RequestError &&
+    ['ERR_REQUIRED_FIELD', 'ERR_UNIQUE_CONFLICT'].includes(error.value.code),
+)
 const canWrite = computed(
   () =>
     props.identity === auth.user?.id &&
@@ -485,6 +495,17 @@ const rowSize = computed(() => {
   const sizes = { short: 32, medium: 48, tall: 64, extra: 96 }
   return sizes[columnState.config.value.rowHeight ?? 'short']
 })
+const gridContentHeight = computed(() =>
+  Math.min(gridSource.value.length * rowSize.value, 680),
+)
+const appendVisible = computed(
+  () =>
+    desktop.value &&
+    canWrite.value &&
+    queryReady.value &&
+    !loading.value &&
+    appendAtEnd.value,
+)
 const rowHeightOptions = computed(() => [
   { value: 'short' as const, label: t('grid.rowHeights.short') },
   { value: 'medium' as const, label: t('grid.rowHeights.medium') },
@@ -863,6 +884,7 @@ const remoteRows = new RemoteRowsWindow(
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
     error.value = cause
+    queryReady.value = false
     loading.value = false
   },
 )
@@ -947,6 +969,7 @@ function createGroupedRows() {
       )
         handleAccessFailure(cause)
       error.value = cause
+      queryReady.value = false
       loading.value = false
     },
   )
@@ -1011,10 +1034,10 @@ const rows = {
   },
   snapshot: () =>
     groupedMode.value ? groupedRows.snapshot() : remoteRows.snapshot(),
-  initialize: (anchor = 0) =>
+  initialize: (anchor = 0, preserveLength = false) =>
     groupedMode.value
       ? groupedRows.initialize()
-      : remoteRows.initialize(anchor),
+      : remoteRows.initialize(anchor, { preserveLength }),
   load: (index: number) =>
     groupedMode.value ? groupedRows.load(index) : remoteRows.load(index),
   ensureLoaded: (index: number) =>
@@ -2231,6 +2254,11 @@ function dismissToolbarMenus(event: PointerEvent) {
 function syncSource() {
   if (groupedMode.value) {
     groupNodes.clear()
+    if (initializing && pendingAppendReveal) {
+      if (gridSource.value.some((model) => model !== emptyModel))
+        gridSource.value = gridSource.value.map(() => emptyModel)
+      return
+    }
     let rowNumber = 0
     gridSource.value = groupedRows.entries.map((entry, index) =>
       entry.kind === 'group'
@@ -2281,21 +2309,37 @@ async function initialize(anchor = 0, preserveCellErrors = false) {
   initializing = true
   realtimeEpoch++
   loading.value = true
+  queryReady.value = false
+  appendAtEnd.value = false
   error.value = null
   if (!preserveCellErrors)
     for (const key of cellErrors.value.keys())
       if (!cellDrafts.value.has(key)) cellErrors.value.delete(key)
   void loadFooterAggregates()
   try {
-    await rows.initialize(anchor)
+    await rows.initialize(anchor, Boolean(pendingAppendReveal))
+    if (
+      !disposed.value &&
+      generation === initializationGeneration &&
+      groupedMode.value &&
+      pendingAppendReveal &&
+      !error.value &&
+      rows.total > 0
+    )
+      await rows.ensureLoaded(Math.min(anchor, rows.total - 1))
     if (!disposed.value && generation === initializationGeneration) {
       initializing = false
+      if (groupedMode.value && pendingAppendReveal) syncSource()
       loading.value = false
-      if (!error.value) flushDeferredRealtime()
+      if (!error.value) {
+        queryReady.value = true
+        flushDeferredRealtime()
+      }
     }
   } catch (cause) {
     if (!disposed.value && generation === initializationGeneration) {
       initializing = false
+      if (groupedMode.value && pendingAppendReveal) syncSource()
       error.value = cause
       loading.value = false
     }
@@ -2310,7 +2354,92 @@ function refreshHighlightedRows() {
 
 function created() {
   ready.value = true
+  void nextTick(observeAppendLayout)
   void initialize()
+}
+
+let appendLayoutFrame: number | undefined
+let appendResizeObserver: ResizeObserver | undefined
+let appendObservedGrid: HTMLElement | undefined
+let pendingAppendReveal: { id: string; origin: EditOrigin } | undefined
+
+function observeAppendLayout() {
+  const grid = host.value?.$el
+  if (!grid || disposed.value) return
+  if (grid !== appendObservedGrid) {
+    appendResizeObserver?.disconnect()
+    appendObservedGrid = grid
+    if (typeof ResizeObserver !== 'undefined') {
+      appendResizeObserver = new ResizeObserver(scheduleAppendLayout)
+      appendResizeObserver.observe(grid)
+    }
+  }
+  scheduleAppendLayout()
+}
+
+function scheduleAppendLayout() {
+  if (disposed.value || appendLayoutFrame !== undefined) return
+  appendLayoutFrame = requestAnimationFrame(() => {
+    appendLayoutFrame = undefined
+    const grid = host.value?.$el
+    const viewport =
+      grid?.querySelector<HTMLElement>(
+        'revogr-viewport-scroll.rgCol .vertical-inner',
+      ) ??
+      grid?.querySelector<HTMLElement>('revogr-viewport-scroll .vertical-inner')
+    if (!grid || !viewport || !desktop.value) {
+      if (!desktop.value) pendingAppendReveal = undefined
+      appendAtEnd.value = false
+      return
+    }
+    const reveal = pendingAppendReveal
+    if (reveal) {
+      if (
+        !sameEditScope(reveal.origin) ||
+        (!queryReady.value && !loading.value && !initializing)
+      ) {
+        pendingAppendReveal = undefined
+      } else if (queryReady.value) {
+        const index = rows.indexOfRow(reveal.id)
+        const model: unknown = grid.source[index]
+        if (index < 0) pendingAppendReveal = undefined
+        else if (
+          grid.getAttribute('aria-rowcount') ===
+            String(gridSource.value.length) &&
+          viewport.clientHeight > 0 &&
+          viewport.scrollHeight > 0 &&
+          typeof model === 'object' &&
+          model !== null &&
+          '__rowId' in model &&
+          model.__rowId === reveal.id
+        ) {
+          pendingAppendReveal = undefined
+          void grid.scrollToRow(index).then(scheduleAppendLayout, (cause) => {
+            if (disposed.value || !sameEditScope(reveal.origin)) return
+            appendNotice.value = true
+            error.value = cause
+          })
+        }
+      }
+    }
+    if (gridSource.value.length === 0) {
+      appendAtEnd.value = queryReady.value && !loading.value && !initializing
+      return
+    }
+    const lastRow = grid.querySelector<HTMLElement>(
+      `revogr-data .rgRow[data-rgrow="${gridSource.value.length - 1}"]`,
+    )
+    const viewportBounds = viewport.getBoundingClientRect()
+    const lastBottom = lastRow?.getBoundingClientRect().bottom
+    const lastModel = gridSource.value.at(-1)
+    appendAtEnd.value =
+      Boolean(lastModel?.__rowId || lastModel?.__groupId) &&
+      lastBottom !== undefined &&
+      viewport.scrollHeight > 0 &&
+      viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - 1 &&
+      lastBottom >= viewportBounds.top &&
+      lastBottom <= viewportBounds.bottom + 1
+  })
 }
 
 interface CellPointerActivation {
@@ -2493,10 +2622,16 @@ function focusLeft(event: FocusEvent) {
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
   if (event.detail.dimension !== 'rgRow') return
+  if (pendingAppendReveal) {
+    // Replacing the source can report row zero before the new tail is rendered.
+    scheduleAppendLayout()
+    return
+  }
   const index = Math.max(0, Math.floor(event.detail.coordinate / rowSize.value))
   rows.load(index)
   loading.value =
     !groupedMode.value && rows.snapshot().cachedRows === 0 && rows.total > 0
+  scheduleAppendLayout()
 }
 
 function updateSortCriteria(next: RowSort[]) {
@@ -2769,31 +2904,50 @@ async function commitCell(detail: CellCommit) {
 }
 
 async function addRow() {
-  if (!canWrite.value || saving.value) return
+  if (!appendVisible.value || saving.value) return
+  const origin = editOrigin()
+  pendingAppendReveal = undefined
   saving.value = true
   error.value = null
+  appendFailure.value = null
+  appendNotice.value = false
   const anchor = rows.total
   try {
     const result = await mutate<RowMutation>(
-      `/tables/${props.schema.table.id}/rows`,
+      `/tables/${origin.tableId}/rows`,
       'POST',
       {
         rows: [{ fields: {} }],
       },
     )
+    if (disposed.value || !sameEditScope(origin)) return
     if (result.rows.length !== 1) throw new Error(t('grid.saveFailed'))
+    const createdId = result.rows[0]!.id
     undo.record([
       {
         kind: 'delete',
-        tableId: props.schema.table.id,
-        ids: [result.rows[0]!.id],
+        tableId: origin.tableId,
+        ids: [createdId],
       },
     ])
+    appendNotice.value = Boolean(
+      props.filter ||
+      columnState.config.value.filter ||
+      searchTerm.value ||
+      sortCriteria.value.length ||
+      groupedMode.value,
+    )
+    pendingAppendReveal = { id: createdId, origin }
     await initialize(anchor)
+    if (!disposed.value && sameEditScope(origin)) scheduleAppendLayout()
+    else pendingAppendReveal = undefined
   } catch (cause) {
+    pendingAppendReveal = undefined
+    if (disposed.value || !sameEditScope(origin)) return
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
     error.value = cause
+    appendFailure.value = cause
   } finally {
     if (!disposed.value) saving.value = false
   }
@@ -2920,6 +3074,11 @@ watch(
   },
 )
 watch(
+  [gridSource, rowSize, loading, queryReady, desktop],
+  scheduleAppendLayout,
+  { flush: 'post' },
+)
+watch(
   () => JSON.stringify(groupBy.value),
   () => {
     const previous = groupedRows
@@ -3042,6 +3201,8 @@ defineExpose({
 
 onBeforeUnmount(() => {
   disposed.value = true
+  if (appendLayoutFrame !== undefined) cancelAnimationFrame(appendLayoutFrame)
+  appendResizeObserver?.disconnect()
   editorBoundary?.editor.captureBeforeUnmount()
   editorBoundary = null
   cellPointerActivation = null
@@ -3616,7 +3777,15 @@ onBeforeUnmount(() => {
     >
       {{ t('grid.columnsRetry') }}
     </button>
-    <p v-if="error" role="alert">{{ gridError }}</p>
+    <p v-if="error" role="alert">
+      {{ gridError }}
+      <span v-if="appendConstraintFailure">{{
+        t('workspaceGrid.ux09.blankCreateHint')
+      }}</span>
+    </p>
+    <p v-if="appendNotice" role="status">
+      {{ t('workspaceGrid.ux09.createdMayBeHidden') }}
+    </p>
     <p v-if="cellErrors.size > 0" class="grid-validation-summary" role="alert">
       {{ [...cellErrors.values()].join(' ') }}
     </p>
@@ -3660,6 +3829,7 @@ onBeforeUnmount(() => {
         :plugins="[ColumnMovePlugin]"
         :theme="preferences.isDark ? 'darkCompact' : 'compact'"
         :row-size="rowSize"
+        :style="{ '--grid-content-height': `${gridContentHeight}px` }"
         :range="true"
         :resize="true"
         :readonly="!canWrite"
@@ -3667,6 +3837,9 @@ onBeforeUnmount(() => {
         :hide-attribution="true"
         @created="created"
         @viewportscroll="scroll"
+        @aftergridrender="scheduleAppendLayout"
+        @afterrender="scheduleAppendLayout"
+        @contentsizechanged="scheduleAppendLayout"
         @beforecellfocus="beforeCellFocus"
         @beforeeditstart="beforeEditStart"
         @beforeedit="edit"
@@ -3680,7 +3853,24 @@ onBeforeUnmount(() => {
         @beforerangeedit="rangeEdit"
         @aftercolumnresize="resizeColumns"
         @columndragend="dragColumns"
-      />
+      >
+        <!-- eslint-disable vue/no-deprecated-slot-attribute -- RevoGrid forwards default children to its native footer slot. -->
+        <button
+          v-if="canWrite"
+          slot="footer"
+          type="button"
+          class="grid-add-row"
+          :style="{ visibility: appendVisible ? 'visible' : 'hidden' }"
+          :disabled="saving"
+          :aria-hidden="!appendVisible"
+          :tabindex="appendVisible ? undefined : -1"
+          :aria-label="t('grid.addRow')"
+          @click="addRow"
+        >
+          <AppIcon name="plus" />
+        </button>
+        <!-- eslint-enable vue/no-deprecated-slot-attribute -->
+      </RevoGrid>
       <button
         v-if="desktop && canCreateField"
         type="button"
@@ -3689,16 +3879,6 @@ onBeforeUnmount(() => {
         :aria-label="t('field.panel.add')"
         :title="t('field.panel.add')"
         @click="emit('createField')"
-      >
-        <AppIcon name="plus" />
-      </button>
-      <button
-        v-if="desktop && canWrite"
-        type="button"
-        class="grid-add-row"
-        :disabled="saving"
-        :aria-label="t('grid.addRow')"
-        @click="addRow"
       >
         <AppIcon name="plus" />
       </button>
@@ -3781,20 +3961,26 @@ onBeforeUnmount(() => {
   min-height: min(65vh, 680px);
   background: var(--grid-canvas);
 }
-.data-grid revo-grid {
+.data-grid .grid-surface > revo-grid {
   position: relative;
   z-index: 0;
-  display: block;
-  height: min(65vh, 680px);
-  min-height: 320px;
+  height: auto;
+  max-height: min(65vh, 680px);
+  min-height: 0;
   width: 100%;
+}
+.data-grid .grid-surface > revo-grid .main-viewport {
+  flex: 0 1 auto;
+  height: calc(
+    var(--rg-theme-header-height, 45px) + var(--grid-content-height)
+  );
+  min-height: 0;
 }
 .data-grid .grid-has-field-action revo-grid {
   width: calc(100% - 52px);
 }
-.data-grid .grid-is-empty revo-grid {
-  height: 40px;
-  min-height: 0;
+.data-grid .grid-surface > revo-grid > revogr-scroll-virtual.horizontal {
+  order: 2;
 }
 .data-grid .grid-add-field {
   position: absolute;
@@ -3815,8 +4001,11 @@ onBeforeUnmount(() => {
 }
 .data-grid .grid-add-row {
   display: flex;
+  order: 1;
+  flex: 0 0 38px;
   align-items: center;
   width: min(300px, 100%);
+  height: 38px;
   min-height: 38px;
   padding: 8px 14px;
   text-align: left;

@@ -41,6 +41,12 @@ Shell per D-209 (supersedes the earlier sketch):
   Admin submenu (admins), Sign out. No footer.
 - `/home`: loading/error-aware resolver to the preferred workspace. Retry is
   explicit; navigating to a resource directly never invokes the resolver.
+- `/w/:workspaceId`: accessible workbooks appear in server order as responsive
+  links with their custom icon or persisted fallback. Path-only books are
+  labeled as context; long names wrap within their cards. Workspace owners
+  retain sharing and first-book creation. A failed navigation refresh is marked
+  stale with retry, including while a retry is pending; a stale empty list is
+  not presented as a confirmed empty workspace.
 
 Routes:
 - `/setup`, `/login`, `/change-password`
@@ -380,6 +386,19 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   bounded bulk insertion. Ctrl+D and the fill handle copy the selection's top
   value down; horizontal fill is not supported. The synthetic spike remains a
   separate lab-only implementation (D-139).
+- UX-09's blank-row action (D-222) sits in RevoGrid's native footer directly
+  after the loaded visible tail, including an empty grid and grouped results.
+  It is available to desktop writers only once the query is ready and the end
+  is visible. It uses the existing row API and undo, then requeries and reveals
+  the created row if present; filters, sorting or collapsed groups may affect
+  its visibility. Required/unique failures show the server error and point to
+  the upcoming New Entry action rather than fabricating values.
+  Append requery keeps the previous logical length as empty, non-data
+  placeholders until authoritative rows arrive, avoiding virtual-scroll resets
+  (D-223). Grouped requery likewise retains geometry and loads the anchored
+  leaf page before checking the created row's identity (D-224). Failed queries
+  clear retained placeholders and surface the error; placeholders never become
+  export, clipboard or selection data.
 - Keyboard (T1.21/D-150):
   - Arrows move between cells; Tab/Shift+Tab move forward/back.
   - Enter starts editing; validated editor Enter commits and moves down.

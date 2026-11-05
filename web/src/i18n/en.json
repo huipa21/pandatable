@@ -138,6 +138,10 @@
       "defaultMarker": "Default workspace: {name}",
       "setDefault": "Set as default",
       "preferenceStale": "The default workspace could not be refreshed and may be out of date."
+    },
+    "ux09": {
+      "blankCreateHint": "Use New Entry to provide the required or unique values.",
+      "createdMayBeHidden": "Row created. Filters, sorting, or collapsed groups may affect where it appears."
     }
   },
   "nav": {

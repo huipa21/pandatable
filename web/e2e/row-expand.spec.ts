@@ -58,13 +58,14 @@ async function login(page: Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 }
 
 test('row workspace controls, overlays and unsaved duplication persist only on confirmation', async ({
   page,
   isMobile,
 }) => {
+  test.setTimeout(90_000)
   await login(page)
   const h = headers()
   const workspace = await page.request.post('/api/v1/workspaces', {

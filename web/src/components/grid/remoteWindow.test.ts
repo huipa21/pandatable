@@ -46,6 +46,83 @@ function source(total = 200_000) {
 afterEach(() => vi.useRealTimers())
 
 describe('production query window', () => {
+  it('retains only empty logical slots while an append requery is pending', async () => {
+    const provider = source(450)
+    const lengths: number[] = []
+    const window = new RemoteRowsWindow(
+      provider,
+      () => lengths.push(window.slots.length),
+      vi.fn(),
+    )
+    await window.initialize(400)
+    await Promise.resolve()
+    expect(window.rowAt(449)?.id).toBe('10000000449')
+
+    let finishQuery: ((result: RowQueryResult) => void) | undefined
+    provider.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishQuery = resolve
+        }),
+    )
+    lengths.length = 0
+    const refresh = window.initialize(450, { preserveLength: true })
+    expect(window.snapshot()).toMatchObject({
+      total: 450,
+      cachedRows: 0,
+      cachedPages: [],
+    })
+    expect(window.slots).toHaveLength(450)
+    expect(window.rowAt(449)).toBeNull()
+    expect(lengths).toEqual([450])
+
+    if (!finishQuery) throw new Error('Requery was not started')
+    finishQuery({
+      rows: Array.from({ length: 51 }, (_, index) => row(400 + index)),
+      fieldIds: ['value'],
+      total: 451,
+      schemaVersion: 1,
+    })
+    await refresh
+    await Promise.resolve()
+    expect(window.total).toBe(451)
+    expect(window.rowAt(450)?.id).toBe('10000000450')
+    expect(lengths.every((length) => length >= 450)).toBe(true)
+    expect(window.snapshot().cachedRows).toBeLessThanOrEqual(300)
+    window.dispose()
+  })
+
+  it('clears retained placeholders and reports a failed append requery', async () => {
+    const provider = source(250)
+    const failed = vi.fn()
+    const window = new RemoteRowsWindow(provider, vi.fn(), failed)
+    await window.initialize(200)
+    provider.fetch.mockRejectedValueOnce(new Error('Requery failed'))
+    await window.initialize(250, { preserveLength: true })
+    expect(failed).toHaveBeenCalledOnce()
+    expect(window.snapshot()).toMatchObject({ total: 0, cachedRows: 0 })
+    expect(window.slots).toHaveLength(0)
+    window.dispose()
+  })
+
+  it('clears retained placeholders if the refreshed count page is malformed', async () => {
+    const provider = source(250)
+    const failed = vi.fn()
+    const window = new RemoteRowsWindow(provider, vi.fn(), failed)
+    await window.initialize(200)
+    provider.fetch.mockResolvedValueOnce({
+      rows: [],
+      fieldIds: ['value'],
+      total: 251,
+      schemaVersion: 1,
+    })
+    await window.initialize(250, { preserveLength: true })
+    expect(failed).toHaveBeenCalledOnce()
+    expect(window.snapshot()).toMatchObject({ total: 0, cachedRows: 0 })
+    expect(window.slots).toHaveLength(0)
+    window.dispose()
+  })
+
   it('loads an uncached keyboard destination without resetting row count, source length or count queries', async () => {
     const provider = source(401)
     const lengths: number[] = []

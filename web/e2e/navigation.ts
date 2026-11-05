@@ -56,10 +56,26 @@ export async function create(
   name: string,
   locale = en,
 ) {
-  await page
-    .locator('main')
-    .getByRole('button', { name: locale.nav.create[kind], exact: true })
-    .click()
+  if (kind === 'workspace') {
+    if (
+      page.viewportSize()!.width >= 768 &&
+      !(await page.locator('.sidebar-desktop .nav-tree').isVisible())
+    )
+      await page
+        .getByRole('button', { name: locale.nav.expandSidebar, exact: true })
+        .click()
+    const nav = await tree(page, locale)
+    await nav
+      .locator('.workspace-heading')
+      .getByRole('button', { name: locale.nav.create.workspace, exact: true })
+      .click()
+  } else {
+    await page
+      .locator('main')
+      .getByRole('button', { name: locale.nav.create[kind], exact: true })
+      .click()
+  }
+  const before = page.url()
   const dialog = page.getByRole('dialog', {
     name: locale.nav.dialogTitle,
     exact: true,
@@ -72,12 +88,15 @@ export async function create(
     .getByRole('button', { name: locale.admin.confirm, exact: true })
     .click()
   await expect(dialog).not.toBeVisible()
-  await expect(page).toHaveURL(
+  const target =
     kind === 'workspace'
       ? /\/w\/[^/]+$/
       : kind === 'book'
         ? /\/w\/[^/]+\/b\/[^/]+$/
-        : /\/t\/[^/]+\/v\/[^/]+$/,
+        : /\/t\/[^/]+\/v\/[^/]+$/
+  // Workspace creation can start from another stable /w/:id route.
+  await expect(page).toHaveURL(
+    (url) => url.href !== before && target.test(url.pathname),
   )
 }
 
@@ -640,9 +659,8 @@ export async function verifyNavigation(
     await alice.request.get('/api/v1/auth/workspace-preference')
   ).json()) as WorkspacePreference
   expect(starter.workspaceId).toBeTruthy()
-  await expect(
-    alice.locator('main').locator(`[href="/w/${starter.workspaceId}"]`),
-  ).toHaveText('Default')
+  await expect(alice).toHaveURL(new RegExp(`/w/${starter.workspaceId}$`))
+  await expect(alice.locator('main h1')).toHaveText('Default')
   await create(alice, 'workspace', 'Workspace W')
   const wid = new URL(alice.url()).pathname.split('/')[2]!
   try {
@@ -677,9 +695,14 @@ export async function verifyNavigation(
         scope: 'shared',
       }),
     ])
+    // Field-driven view saves can race a grid query under snapshot isolation.
+    allowHTTPFailure(alice, 'POST', `/api/v1/views/${viewId}/query`, 409)
     const fieldFixture = await verifyFields(alice, tid)
     const nav = await tree(alice)
-    await expect(nav.locator('[data-nav-id]')).toHaveCount(3)
+    await expect(nav.locator('[data-nav-id]')).toHaveCount(4)
+    await expect(
+      nav.locator(`[data-nav-id="${starter.workspaceId}"]`),
+    ).toHaveCount(1)
     await expect(
       nav.locator(
         `[data-nav-id="${wid}"] [data-nav-id="${bid}"] [data-nav-id="${tid}"]`,
@@ -778,6 +801,7 @@ export async function verifyNavigation(
     await setTheme(alice, 'light')
 
     await admin.goto('/home')
+    await expect(admin).toHaveURL(/\/w\/[^/]+$/)
     const adminTree = await tree(admin)
     await expect(adminTree.locator(`[data-nav-id="${wid}"]`)).toHaveCount(0)
     await closeDrawer(admin)
@@ -854,9 +878,15 @@ export async function verifyNavigation(
         )
         await verifyFieldReader(page, tid, fieldFixture.qty)
         const visibleTree = await tree(page)
-        await expect(visibleTree.locator('.node-actions')).toHaveCount(0)
+        // Readers may choose a readable workspace as their own default only.
+        await expect(
+          visibleTree
+            .locator(`[data-nav-id="${wid}"] .nav-actions button`)
+            .filter({ hasNotText: en.workspaceGrid.ux02.setDefault }),
+        ).toHaveCount(0)
         if (index === 1) {
-          await expect(visibleTree.locator('[data-nav-id]')).toHaveCount(3)
+          // The admin-created participant also owns a starter workspace.
+          await expect(visibleTree.locator('[data-nav-id]')).toHaveCount(4)
           await expect(
             visibleTree.locator('.path-only', { hasText: en.nav.pathOnly }),
           ).toHaveCount(2)
@@ -871,6 +901,7 @@ export async function verifyNavigation(
           await expect(page.locator('main')).toContainText(en.nav.pathNotice)
           await expect(page.locator('main button')).toHaveCount(0)
           await page.goto('/home')
+          await expect(page).toHaveURL(/\/w\/[^/]+$/)
           await create(page, 'workspace', 'Carol W2')
           const carolWid = new URL(page.url()).pathname.split('/')[2]!
           const carolNav = (await (

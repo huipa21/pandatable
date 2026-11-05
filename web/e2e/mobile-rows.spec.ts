@@ -63,7 +63,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
   const h = headers()
   const suffix = Date.now()
   const workspace = await page.request.post('/api/v1/workspaces', {

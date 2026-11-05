@@ -18,7 +18,7 @@ async function signIn(page: import('@playwright/test').Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/(home|change-password)$/)
+  await expect(page).toHaveURL(/\/(?:w\/[^/]+|change-password)$/)
 }
 
 test('AT-504 groups three levels with counts, sums, collapse state, and sticky mobile headers', async ({

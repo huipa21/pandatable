@@ -216,7 +216,9 @@ async function changeSettings(
   await expect(page.locator('.admin-workspaces a')).toHaveCount(0)
   await setLocale(page, 'zh-CN')
   await expect(
-    page.getByRole('heading', { name: zh.workspaces.title, exact: true }),
+    page
+      .locator('main')
+      .getByRole('heading', { name: zh.workspaces.title, exact: true }),
   ).toBeVisible()
   await expect(
     page.getByText(zh.workspaces.notice, { exact: true }),

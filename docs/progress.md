@@ -18,6 +18,8 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| UX-09 | Plus action after the final grid row | ✅ | 2026-11-05 | Coordinated task gates passed; phase gate and commits deferred to UX-11. [Record](task-prompts/workspace-grid-09-append-row.md). |
+| UX-04 | Workspace workbook-card grid | ✅ | 2026-11-05 | Coordinated task gates passed; ResourcePage released to UX-05. [Record](task-prompts/workspace-grid-04-workbook-cards.md). |
 | UX-08 | One-click checkbox and choice editing | 🟨 | 2026-11-05 | Gates pass; checkbox undo/error and zh-CN/dark acceptance gaps remain. [Record](task-prompts/workspace-grid-08-choice-editing.md). |
 | UX-03 | Workbook icon metadata and stable fallback | ✅ | 2026-11-05 | Coordinated task gate passed; card rendering follows in UX-04. [Record](task-prompts/workspace-grid-03-workbook-icons.md). |
 | UX-02 | Workspace sidebar and default landing navigation | ✅ | 2026-11-05 | Task gate passed; phase gate and commits deferred. [Record](task-prompts/workspace-grid-02-workspace-navigation.md). |
@@ -126,6 +128,10 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-05 | Completed UX-09: native grid-tail append and bounded requery stabilization (D-222..224); coordinated task gates passed. |
+| 2026-11-05 | Completed UX-04: responsive workbook cards; coordinated task gates passed and UX-05 handoff released. |
+| 2026-11-05 | Started UX-09: blank-row action after the grid tail (D-222). |
+| 2026-11-05 | Started UX-04: workspace workbook-card grid. |
 | 2026-11-05 | Completed UX-03: workbook icon metadata and stable fallback (D-220); task gate passed. |
 | 2026-11-05 | Completed UX-02: workspace sidebar and preferred-workspace entry navigation (D-219); task gate passed. |
 | 2026-11-05 | Started UX-08: grid checkbox and choice interactions. |
