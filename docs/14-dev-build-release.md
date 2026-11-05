@@ -8,7 +8,7 @@ There is **no hosted CI** (D-048). Everything — checks, tests, image build, im
 |---|---|---|
 | Go | 1.27.0 (module/toolchain floor) | `GOPROXY` may be set to `https://goproxy.cn,direct` if needed |
 | Node.js | >= 22.13 + pnpm 11.2.2 (via Corepack) | Tested with Node 24.15.0; npm registry mirror optional (`.npmrc`) |
-| Podman Desktop / podman | ≥ 5.x, podman machine running (WSL2) | `podman compose` requires `podman-compose` or docker-compose v2 binary as provider |
+| Podman Desktop / podman | ≥ 5.x, WSL2 available | `ptdev` starts the machine automatically; `podman compose` requires `podman-compose` or docker-compose v2 binary as provider |
 | Git, OpenSSH client | built into Windows | `scp`/`ssh` for transfer |
 
 Docker on Linux/macOS works equally (the tooling auto-detects the engine).
@@ -24,7 +24,7 @@ go run ./tools/ptdev <command> [flags]
 | Command | What it does |
 |---|---|
 | `help` / `engine` | List commands and detected engine / show selection reason |
-| `db up` / `db down` / `db reset` | Run dev PostgreSQL 18 container `pt-dev-db` on `127.0.0.1:55432` (volume `pt-dev-pgdata`) |
+| `db up` / `db down` / `db reset` | Run dev PostgreSQL 18 container `pt-dev-db` on IPv4 loopback (prefers port `55432`, automatically selects a free port; volume `pt-dev-pgdata`) |
 | `db status` / `db psql` | Show running/stopped/absent + DSN / open interactive psql |
 | `dev` | Build a temporary backend executable and supervise it plus Vite directly; proxy `/api` (WebSocket-ready) and `/healthz` to the backend |
 | `web build` | `pnpm install --frozen-lockfile && pnpm build`, copy `web/dist` → `internal/web/dist` |
@@ -47,7 +47,9 @@ the build commands perform the frozen install themselves. The workspace allows
 only esbuild's required dependency build script, not arbitrary install scripts.
 
 `ptdev dev` uses `PT_DATABASE_URL` when explicitly set (without starting the
-dev DB); otherwise it starts/reuses the dev DB. Defaults: backend
+dev DB); otherwise it starts/reuses the dev DB and passes its actual published
+port to the backend. `test`/`check` likewise pass the resolved DSN to integration
+tests; no manual environment changes are needed after a DB port fallback. Defaults: backend
 `PT_LISTEN=127.0.0.1:8080`, `PT_BASE_URL=http://127.0.0.1:5173`, Vite on
 `127.0.0.1:5173` with strict-port binding. Explicit app settings retain precedence.
 Vite's API target is derived from `PT_LISTEN` (wildcard hosts mapped to loopback);
@@ -86,6 +88,8 @@ locked. Persistent cleanup failures are still reported with the directory path.
 On Windows, `ptdev dev` also places itself in a kill-on-close Job Object that its
 children inherit, so closing or killing the terminal (or the `go run` wrapper)
 terminates the backend and Vite instead of leaving them holding the ports.
+Automatic engine startup happens before joining that job, so stopping the dev
+supervisor does not terminate a newly launched container engine.
 
 For backend-only development, set `PT_DATABASE_URL` and
 `PT_BASE_URL` and run `go run ./cmd/pandatable serve` (optionally `--listen
@@ -106,8 +110,19 @@ It tests Vite/backend startup, health/API proxying and cancellation, asserting
 both listeners close; the shared helper drops its database afterwards. Ordinary
 runs skip this process-heavy test explicitly.
 
-The dev DB DSN is
+The default dev DB DSN is
 `postgres://postgres:postgres@127.0.0.1:55432/postgres?sslmode=disable`.
+`db up` prints the actual DSN; `db status` reads it from the existing container
+(and prints no DSN when absent). A running DB is reused without probing its
+already-bound port. A stopped DB keeps its current port if available; otherwise
+`ptdev` recreates only its container with the same image and named data volume,
+never deleting the volume. Automatic recreation refuses unexpected mounts.
+New containers prefer `55432`, then use an OS-selected free loopback port.
+Bind races reported by the engine trigger at most three startup attempts;
+unrelated failures remain errors. No existing listener is terminated.
+These fallback rules apply to the database port, not backend/Vite ports, whose
+explicit conflict handling above is unchanged (D-213/D-216).
+
 The PostgreSQL 18 volume is mounted at `/var/lib/postgresql` (not the pre-18
 `/var/lib/postgresql/data` path). Readiness is limited to 60 seconds. `db down`
 keeps data; `db reset` removes the container and volume, then starts fresh,
@@ -127,8 +142,24 @@ pnpm npm/Corepack shims are launched through their Node entry point, not `cmd`.
 An invalid `PT_ENGINE` is a usage error. An explicit valid override that is
 missing from PATH fails engine/DB operations without falling back. Without an
 engine, help still works (reports unavailable), and version, lint, build and
-`test --no-db` remain usable. Engine selection checks PATH, not daemon health;
-DB operations report a stopped/unreachable machine as an operational error.
+`test --no-db` remain usable. Help and `engine` only check PATH and never start services. Before DB, image or
+E2E operations, `ptdev` checks `<engine> info` (five-second probe timeout).
+If unavailable, it automatically starts the selected local engine and waits
+up to two minutes, respecting Ctrl+C (D-216):
+
+- Podman on Windows/macOS: start the default machine (or the only machine);
+  initialize one first if none exists. An already-running or starting machine is given time
+  to reconnect, not restarted. Multiple machines without a default fail explicitly.
+- Docker on Windows/macOS: `docker desktop start` (requires Docker Desktop
+  with its Desktop CLI installed).
+- Docker Engine on Linux: `systemctl start docker`, using existing permissions;
+  no automatic elevation or `sudo`.
+
+Linux Podman is daemonless, so a failed health check reports a configuration/
+remote-connection error rather than starting an unrelated service. Missing
+executables, startup/permission errors, unreachable remote engines and readiness
+timeouts remain explicit errors; `ptdev` does not install engines, switch
+connections or fall back from an explicit `PT_ENGINE`.
 
 Engine-specific flags handled by ptdev:
 

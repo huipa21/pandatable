@@ -99,7 +99,7 @@ func (runner runner) e2e(ctx context.Context, opts options) (err error) {
 	if !exists(cli) {
 		return errors.New("Playwright is missing; run pnpm --dir web install --frozen-lockfile, then pnpm --dir web e2e:install")
 	}
-	selected, err := detectEngine(os.Getenv("PT_ENGINE"), exec.LookPath)
+	selected, err := runner.readyEngine(ctx)
 	if err != nil {
 		return err
 	}

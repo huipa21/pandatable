@@ -12,6 +12,10 @@ Test users used throughout: `admin` (role admin), `alice`, `bob`, `carol` (role 
 - **AT-005 — Laptop → server path** · M0 *(manual)* · `ptdev image build` + `ptdev image save --with-postgres` on Windows/Podman → copy archives → `docker load` on Ubuntu → `docker compose up -d` with `PT_PROXY_NETWORK` = Caddy's network → app reachable at `https://<domain>` through the existing Caddy, WebSocket upgrade succeeds (`/api/v1/ws` once implemented; `/healthz` in M0); app and db publish no host ports.
 - **AT-006 — Local gate cross-platform** · M0 *(manual)* · `go run ./tools/ptdev check` succeeds in Windows PowerShell (Podman) and in Linux bash (Docker); with the DB stopped, `go test ./...` skips integration tests with a clear message instead of failing/hanging.
 
+  Startup recovery follow-up (2026-11-05): Windows/Podman gate and live
+  volume-preserving DB port fallback pass; full Linux/Docker acceptance remains
+  pending. See the [startup recovery record](task-prompts/dev-startup-recovery.md).
+
 ### T0.6 scoped evidence (2026-10-24)
 
 | Test | Status | Evidence / remaining requirement |

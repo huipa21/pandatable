@@ -18,6 +18,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| Dev DB startup recovery | Automatic engine readiness and free database port | ✅ | 2026-11-05 | D-216; full check, live port-conflict recovery and fast shell browser gate pass. [Record](task-prompts/dev-startup-recovery.md). |
 | Field creation redesign | Searchable icon picker and type-specific settings | ✅ | 2026-11-04 | D-212; repository gate and affected fast browser gate pass. [Record](task-prompts/field-creation-redesign.md). |
 | Shell redesign | Sketch-based header/sidebar/avatar menu | ✅ | 2026-11-02 | D-209 shell layout; `ptdev check` and the fast e2e gate (all 37 specs, run in batches) pass. [Record](task-prompts/shell-redesign.md). |
 | Setup origin fix | Local dev setup 403 | ✅ | 2026-11-02 | D-208 canonical dev navigation and localized CSRF feedback; full check, AT-101 fast E2E and live browser verification pass. [Record](task-prompts/fix-setup-origin.md). |
@@ -120,6 +121,8 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-05 | Completed dev DB startup recovery (D-216); engine readiness, volume-preserving port fallback and resolved DSNs verified. [Record](task-prompts/dev-startup-recovery.md). |
+| 2026-11-05 | Started dev DB startup recovery: automatic engine readiness and database port conflict handling. |
 | 2026-11-04 | UI-HIGHLIGHT Done: clarify Highlight rules and verify persistence, precedence and contrast. |
 | 2026-11-04 | UI-FIELD-TILES Done: Fields dropdown uses draggable tiles with a ⋯ menu and unified Add/Edit; reorder saves schema and active-view order (D-215); check and fast browser gate pass. |
 | 2026-11-04 | UI-VISIBILITY Done: table sharing moves into the Visibility toolbar menu (D-214); check and fast browser gate pass. |

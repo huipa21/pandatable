@@ -65,13 +65,16 @@ func (runner runner) dev(ctx context.Context) (err error) {
 	if err := devPortAvailable("Vite", "127.0.0.1:5173"); err != nil {
 		return err
 	}
-	if err := bindChildrenToProcess(); err != nil {
-		return err
-	}
 	if _, ok := os.LookupEnv("PT_DATABASE_URL"); !ok {
-		if err := runner.db(ctx, "up", false); err != nil {
+		dsn, err := runner.database(ctx, "up", false)
+		if err != nil {
 			return err
 		}
+		cfg.DatabaseURL = dsn
+	}
+	// Engine services must outlive the Windows dev job.
+	if err := bindChildrenToProcess(); err != nil {
+		return err
 	}
 	dir, err := os.MkdirTemp("", "ptdev-")
 	if err != nil {

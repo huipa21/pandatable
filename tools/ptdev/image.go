@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,7 +64,7 @@ func imageSaveArgs(engine, image, target string) []string {
 }
 
 func (runner runner) image(ctx context.Context, opts options) error {
-	selected, err := detectEngine(os.Getenv("PT_ENGINE"), exec.LookPath)
+	selected, err := runner.readyEngine(ctx)
 	if err != nil {
 		return err
 	}
