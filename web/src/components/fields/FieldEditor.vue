@@ -33,6 +33,8 @@ const props = withDefaults(
     preserveUploads?: boolean
     identity?: string
     resolveUser?: (id: string) => string | null
+    gridCommitOnLeave?: boolean
+    initialDraft?: string
   }>(),
   {
     env: () => ({}),
@@ -46,12 +48,16 @@ const props = withDefaults(
     preserveUploads: false,
     identity: undefined,
     resolveUser: undefined,
+    gridCommitOnLeave: false,
+    initialDraft: undefined,
   },
 )
 const emit = defineEmits<{
   commit: [value: WireValue]
   preview: [value: WireValue]
   invalidValue: []
+  invalidDraft: [text: string, reason: Reason]
+  compositionFinished: []
   cancel: []
 }>()
 const { t } = useI18n()
@@ -60,8 +66,12 @@ const input = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
 const attachmentInput = ref<HTMLInputElement>()
 const reason = ref<Reason | null>(null)
 const draft = ref(
-  props.field.readOnly ? '' : props.field.formatCopy(props.value, props.env),
+  props.initialDraft ??
+    (props.field.readOnly
+      ? ''
+      : props.field.formatCopy(props.value, props.env)),
 )
+const composing = ref(false)
 const selected = ref<string[]>(
   typeof props.value === 'string'
     ? [props.value]
@@ -165,13 +175,38 @@ watch(
 function finish(result: Result<WireValue>) {
   if (!result.ok) {
     reason.value = result.reason
-    return
+    if (props.gridCommitOnLeave)
+      emit('invalidDraft', currentDraft(), result.reason)
+    return false
   }
   reason.value = null
   emit('commit', result.value)
+  return true
 }
 
-const commitText = () => finish(props.field.parsePaste(draft.value, props.env))
+function currentDraft() {
+  const element = input.value
+  return element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement
+    ? element.value
+    : draft.value
+}
+
+function compositionEnded() {
+  composing.value = false
+  emit('compositionFinished')
+}
+
+function commitText() {
+  draft.value = currentDraft()
+  return finish(props.field.parsePaste(draft.value, props.env))
+}
+
+defineExpose({
+  commitDraft: commitText,
+  currentDraft,
+  isComposing: () => composing.value,
+})
 
 function previewText() {
   if (!props.live) return
@@ -328,7 +363,10 @@ async function searchUsers() {
 }
 
 function keydown(event: KeyboardEvent) {
-  if (event.isComposing) return
+  if (event.isComposing || composing.value) {
+    if (props.gridCommitOnLeave) event.stopPropagation()
+    return
+  }
   if (event.key === 'Escape') {
     event.preventDefault()
     emit('cancel')
@@ -396,6 +434,8 @@ function keydown(event: KeyboardEvent) {
       :placeholder="t('field.editor.multilineHint')"
       :required="required"
       @input="previewText"
+      @compositionstart="composing = true"
+      @compositionend="compositionEnded"
     />
     <div v-else-if="field.presentation === 'user'" class="field-user-editor">
       <input
@@ -502,6 +542,8 @@ function keydown(event: KeyboardEvent) {
       :placeholder="placeholder"
       :required="required"
       @input="previewText"
+      @compositionstart="composing = true"
+      @compositionend="compositionEnded"
     />
     <button v-if="showSubmitButton" type="button" @click="commit">
       {{ submitLabel ?? t('field.editor.apply') }}

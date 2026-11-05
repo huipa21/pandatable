@@ -413,6 +413,12 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
       ),
     )
     .toMatchObject({ x: 0, y: 0 })
+  const inlineEditor = gridElement.getByRole('textbox', {
+    name: en.field.editor.value,
+    exact: true,
+  })
+  await expect(inlineEditor).toBeVisible()
+  await inlineEditor.press('Escape')
   await page.keyboard.press('Space')
   await expect(dialog).toBeVisible()
   const nameField = schema.fields.find((field) => field.uiType === 'text')!

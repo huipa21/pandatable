@@ -19,6 +19,8 @@ import (
 	"pandatable/internal/auth"
 	"pandatable/internal/db"
 	"pandatable/internal/events"
+	"pandatable/internal/structure/structuresql"
+	"pandatable/internal/workspace"
 )
 
 type Service struct {
@@ -178,6 +180,13 @@ func (service *Service) mutation(ctx context.Context, token string, target pgtyp
 
 func (service *Service) adminMutation(ctx context.Context, token string, target pgtype.UUID, groupOperation bool,
 	fn func(*adminsql.Queries, *bool) error) error {
+	return service.adminMutationTx(ctx, token, target, groupOperation, func(_ pgx.Tx, queries *adminsql.Queries, invalidate *bool) error {
+		return fn(queries, invalidate)
+	})
+}
+
+func (service *Service) adminMutationTx(ctx context.Context, token string, target pgtype.UUID, groupOperation bool,
+	fn func(pgx.Tx, *adminsql.Queries, *bool) error) error {
 	hash, err := auth.SessionHash(token)
 	if err != nil {
 		return err
@@ -212,7 +221,7 @@ func (service *Service) adminMutation(ctx context.Context, token string, target 
 				return fmt.Errorf("lock managed user: %w", err)
 			}
 		}
-		if err := fn(queries, &invalidate); err != nil {
+		if err := fn(tx, queries, &invalidate); err != nil {
 			return err
 		}
 		if invalidate {
@@ -271,7 +280,7 @@ func (service *Service) Create(ctx context.Context, token string, input CreateIn
 		return User{}, err
 	}
 	var user User
-	err = service.mutation(ctx, token, pgtype.UUID{}, func(queries *adminsql.Queries, _ *bool) error {
+	err = service.adminMutationTx(ctx, token, pgtype.UUID{}, false, func(tx pgx.Tx, queries *adminsql.Queries, invalidate *bool) error {
 		if err := checkIdentity(ctx, queries, pgtype.UUID{}, username, email); err != nil {
 			return err
 		}
@@ -284,6 +293,10 @@ func (service *Service) Create(ctx context.Context, token string, input CreateIn
 		if err != nil {
 			return fmt.Errorf("create user: %w", err)
 		}
+		if _, err := workspace.CreateStarter(ctx, structuresql.New(tx), id); err != nil {
+			return fmt.Errorf("create user workspace: %w", err)
+		}
+		*invalidate = true
 		row, err := queries.GetUser(ctx, id)
 		if err != nil {
 			return fmt.Errorf("read created user: %w", err)

@@ -99,6 +99,13 @@ func TestAdminUsersHTTPAuthorizationAndContract(t *testing.T) {
 	t.Cleanup(func() {
 		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
+		if _, err := f.pool.Exec(cleanup, `DELETE FROM meta.grants WHERE resource_type='workspace'
+			AND resource_id IN (SELECT id FROM meta.workspaces WHERE created_by=$1)`, created.User.ID); err != nil {
+			t.Error(err)
+		}
+		if _, err := f.pool.Exec(cleanup, "DELETE FROM meta.workspaces WHERE created_by=$1", created.User.ID); err != nil {
+			t.Error(err)
+		}
 		if _, err := f.pool.Exec(cleanup, "DELETE FROM meta.users WHERE id=$1", created.User.ID); err != nil {
 			t.Error(err)
 		}

@@ -34,6 +34,12 @@ describe('row API errors', () => {
     )
   })
 
+  it('translates workspace preference contention', () => {
+    expect(
+      errorMessage(new RequestError('ERR_WORKSPACE_PREFERENCE_BUSY', 409)),
+    ).toBe(i18n.global.t('errors.ERR_WORKSPACE_PREFERENCE_BUSY'))
+  })
+
   it('localizes every shared error in both languages and hides unknown details', () => {
     const catalogs = {
       en: JSON.parse(enRaw) as { errors: Record<string, string> },

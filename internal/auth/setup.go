@@ -14,6 +14,8 @@ import (
 
 	"pandatable/internal/apperr"
 	"pandatable/internal/auth/authsql"
+	"pandatable/internal/structure/structuresql"
+	"pandatable/internal/workspace"
 )
 
 const SetupTokenLifetime = 24 * time.Hour
@@ -150,6 +152,9 @@ func (service *Service) Setup(ctx context.Context, input SetupInput, ip netip.Ad
 		})
 		if err != nil {
 			return fmt.Errorf("create first administrator: %w", err)
+		}
+		if _, err := workspace.CreateStarter(ctx, structuresql.New(tx), userID); err != nil {
+			return fmt.Errorf("create first administrator workspace: %w", err)
 		}
 		userAgent = strings.ToValidUTF8(userAgent, "")
 		if len(userAgent) > 512 {

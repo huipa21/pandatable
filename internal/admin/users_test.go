@@ -67,7 +67,9 @@ func newFixture(t *testing.T) *fixture {
 		ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
 		f.exec(ctx, "DELETE FROM meta.grants WHERE principal_id=ANY($1::uuid[])", f.users)
-		f.exec(ctx, "DELETE FROM meta.workspaces WHERE id=ANY($1::uuid[])", f.workspaces)
+		f.exec(ctx, `DELETE FROM meta.grants WHERE resource_type='workspace' AND resource_id IN
+			(SELECT id FROM meta.workspaces WHERE created_by=ANY($1::uuid[]))`, f.users)
+		f.exec(ctx, "DELETE FROM meta.workspaces WHERE id=ANY($1::uuid[]) OR created_by=ANY($2::uuid[])", f.workspaces, f.users)
 		f.exec(ctx, "DELETE FROM meta.users WHERE id=ANY($1::uuid[])", f.users)
 	})
 	f.admin, f.token = f.account("admin", "active", false)
@@ -141,6 +143,15 @@ func TestAdminCreateNormalizeSearchAndCollisions(t *testing.T) {
 	if user.Username != "alice" || user.Email == nil || *user.Email != "alice@example.test" ||
 		user.Status != "active" || !user.MustChangePassword || user.LastLoginAt != nil {
 		t.Fatalf("invalid created user: %+v", user)
+	}
+	var starterOK bool
+	if err := f.pool.QueryRow(f.ctx, `SELECT EXISTS (
+		SELECT 1 FROM meta.user_workspace_preferences p
+		JOIN meta.workspaces w ON w.id=p.workspace_id
+		JOIN meta.grants g ON g.resource_type='workspace' AND g.resource_id=w.id
+		WHERE p.user_id=$1 AND w.created_by=$1 AND w.name='Default' AND w.deleted_at IS NULL
+		  AND g.principal_type='user' AND g.principal_id=$1 AND g.level='owner')`, user.ID).Scan(&starterOK); err != nil || !starterOK {
+		t.Fatalf("new user starter workspace: ok=%t err=%v", starterOK, err)
 	}
 	payload, _ := json.Marshal(user)
 	for _, secret := range []string{password, "passwordHash", f.phc} {

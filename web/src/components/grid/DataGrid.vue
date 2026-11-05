@@ -23,6 +23,7 @@ import type {
   ColumnRegular,
   Components,
   ColumnDragEventData,
+  EditorCtrCallable,
   FocusAfterRenderEvent,
   RangeArea,
   ViewPortScrollEvent,
@@ -77,6 +78,7 @@ import RelationPicker from '../relations/RelationPicker.vue'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { RealtimeRowSync } from './realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
+import { isGridScalar } from './inlineEditing'
 import { formatTsv, parseTsv, TsvError } from './tsv'
 import {
   isCompleteFilter,
@@ -135,6 +137,23 @@ const footerAggregates = shallowRef<RowAggregate[]>([])
 const footerAggregateError = ref('')
 const footerAggregateLoading = ref(false)
 const cellErrors = ref(new Map<string, string>())
+interface CellDraft {
+  text: string
+  pending: boolean
+  revision: number
+}
+interface CellIntent {
+  value: WireValue
+  revision: number | undefined
+  text: string | undefined
+  outcome?: { success: true } | { message: string }
+}
+const cellDrafts = ref(new Map<string, CellDraft>())
+const cellIntents = new Map<string, CellIntent>()
+const cellControllers = new Set<AbortController>()
+let cellDraftRevision = 0
+let pendingCellWrites = 0
+let cellWriteTail: Promise<void> = Promise.resolve()
 const clipboardErrors = ref<string[]>([])
 const clipboardMessage = ref('')
 const selectedRows = ref(new Set<string>())
@@ -168,9 +187,17 @@ const activeEdit = shallowRef<{
   fieldId: string
   changedBy: string
 } | null>(null)
+let editorBoundary: {
+  rowId: string
+  fieldId: string
+  editor: InstanceType<typeof GridCellEditor>
+} | null = null
 const deferredRows = new Map<string, DataRow>()
+let deferredRemoteChanges = false
 let remoteReloadPending = false
 let realtimeEpoch = 0
+let initializationGeneration = 0
+let initializing = false
 let focused: FocusAfterRenderEvent | undefined
 let footerController: AbortController | undefined
 let footerGeneration = 0
@@ -216,7 +243,7 @@ const gridEditorComponent = defineComponent({
       required: true,
     },
     val: {
-      type: [String, Number, Boolean, Array] as PropType<WireValue>,
+      type: [String, Number, Boolean, Array, Object] as PropType<WireValue>,
       default: null,
     },
     save: {
@@ -231,20 +258,31 @@ const gridEditorComponent = defineComponent({
     rowIndex: { type: Number, required: true },
   },
   setup(editorProps) {
-    let rowId = ''
+    const modelId = editorProps.column.model?.__rowId
+    let rowId =
+      typeof modelId === 'string'
+        ? modelId
+        : (rows.rowAt(editorProps.rowIndex)?.id ?? '')
     const fieldId = String(editorProps.column.prop)
+    const origin = componentEditOrigin
+    const cellEditor = ref<InstanceType<typeof GridCellEditor>>()
+    const originalDraft = cellDrafts.value.get(`${rowId}:${fieldId}`)
+    const originalIntent = originalDraft?.pending
+      ? cellIntents.get(`${rowId}:${fieldId}`)
+      : undefined
     onMounted(() => {
       const focusedId = focused?.model?.__rowId
-      rowId =
-        typeof focusedId === 'string'
-          ? focusedId
-          : (rows.rowAt(editorProps.rowIndex)?.id ?? '')
+      if (!rowId && typeof focusedId === 'string') rowId = focusedId
       if (rowId) {
         activeEdit.value = { rowId, fieldId, changedBy: '' }
+        if (cellEditor.value)
+          editorBoundary = { rowId, fieldId, editor: cellEditor.value }
         realtime.setFocus(props.schema.table.id, { rowId, fieldId })
       }
     })
     onBeforeUnmount(() => {
+      cellEditor.value?.captureBeforeUnmount()
+      if (editorBoundary?.editor === cellEditor.value) editorBoundary = null
       if (
         activeEdit.value?.rowId === rowId &&
         activeEdit.value.fieldId === fieldId
@@ -264,11 +302,23 @@ const gridEditorComponent = defineComponent({
       return h(GridCellEditor, {
         ...editorProps,
         key: `${editorProps.rowIndex}:${String(editorProps.column.prop)}`,
+        ref: cellEditor,
         boundField: item.bound,
         fieldEnv: fieldEnvironment.value,
         tableId: props.schema.table.id,
         fieldId: item.field.id,
         identity: props.identity,
+        initialDraft: originalDraft?.text,
+        canCommit: () => editOriginCurrent(origin),
+        unavailableMessage: () => editUnavailableMessage(origin),
+        saveDraft: (text: string, pending: boolean, message?: string) => {
+          if (sameEditScope(origin))
+            storeCellDraft(rowId, fieldId, text, pending, message)
+        },
+        discardDraft: () => {
+          if (sameEditScope(origin))
+            discardEditorDraft(rowId, fieldId, originalIntent)
+        },
         changedBy:
           activeEdit.value?.rowId === rowId &&
           activeEdit.value.fieldId === fieldId
@@ -278,7 +328,21 @@ const gridEditorComponent = defineComponent({
     }
   },
 })
-const gridCellEditor = VGridVueEditor(gridEditorComponent)
+// VGridVueEditor returns a callable factory although its declared type is a union.
+const vueGridEditor = VGridVueEditor(gridEditorComponent) as EditorCtrCallable
+const gridCellEditor: EditorCtrCallable = (column, save, close) => {
+  const adapter = vueGridEditor(column, save, close)
+  adapter.beforeDisconnect = () => {
+    const rowId = column.model?.__rowId
+    if (
+      typeof rowId === 'string' &&
+      editorBoundary?.rowId === rowId &&
+      editorBoundary.fieldId === String(column.prop)
+    )
+      editorBoundary.editor.leave()
+  }
+  return adapter
+}
 const gridError = computed(() =>
   typeof error.value === 'string'
     ? error.value
@@ -291,6 +355,101 @@ const canWrite = computed(
     props.identity === auth.user?.id &&
     (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
 )
+interface EditOrigin {
+  tableId: string
+  viewId: string
+  identity: string
+  schemaVersion: number
+  routeTableScoped: boolean
+}
+
+const componentEditOrigin = editOrigin()
+
+function editOrigin(): EditOrigin {
+  return {
+    tableId: props.schema.table.id,
+    viewId: props.viewId,
+    identity: props.identity,
+    schemaVersion: props.schema.schemaVersion,
+    routeTableScoped:
+      typeof router.currentRoute.value.params.tableId === 'string',
+  }
+}
+
+function sameEditScope(origin: EditOrigin) {
+  return (
+    props.schema.table.id === origin.tableId &&
+    props.viewId === origin.viewId &&
+    props.identity === origin.identity &&
+    auth.user?.id === origin.identity
+  )
+}
+
+function editOriginCurrent(origin: EditOrigin) {
+  const params = router.currentRoute.value.params
+  return (
+    !disposed.value &&
+    sameEditScope(origin) &&
+    canWrite.value &&
+    props.schema.schemaVersion === origin.schemaVersion &&
+    (!origin.routeTableScoped ||
+      (params.tableId === origin.tableId && params.viewId === origin.viewId))
+  )
+}
+
+function editUnavailableMessage(origin: EditOrigin) {
+  return props.schema.schemaVersion !== origin.schemaVersion
+    ? t('errors.ERR_SCHEMA_CHANGED')
+    : t('errors.ERR_PERMISSION_DENIED')
+}
+
+function storeCellDraft(
+  rowId: string,
+  fieldId: string,
+  text: string,
+  pending: boolean,
+  message?: string,
+) {
+  const key = `${rowId}:${fieldId}`
+  cellDrafts.value.set(key, { text, pending, revision: ++cellDraftRevision })
+  if (message) cellErrors.value.set(key, message)
+  else cellErrors.value.delete(key)
+}
+
+function discardCellDraft(rowId: string, fieldId: string) {
+  const key = `${rowId}:${fieldId}`
+  cellDrafts.value.delete(key)
+  cellErrors.value.delete(key)
+}
+
+function discardEditorDraft(
+  rowId: string,
+  fieldId: string,
+  previous: CellIntent | undefined,
+) {
+  const key = `${rowId}:${fieldId}`
+  if (
+    !previous ||
+    previous.revision === undefined ||
+    previous.text === undefined
+  ) {
+    discardCellDraft(rowId, fieldId)
+    return
+  }
+  const latest = cellIntents.get(key)
+  if (latest && latest !== previous) return
+  if (previous.outcome && 'success' in previous.outcome) {
+    discardCellDraft(rowId, fieldId)
+    return
+  }
+  cellDrafts.value.set(key, {
+    text: previous.text,
+    pending: !previous.outcome,
+    revision: previous.revision,
+  })
+  if (previous.outcome) cellErrors.value.set(key, previous.outcome.message)
+  else cellErrors.value.delete(key)
+}
 const canPersistView = computed(() => {
   if (props.identity !== auth.user?.id) return false
   const selected = props.schema.views.find((item) => item.id === props.viewId)
@@ -697,6 +856,8 @@ const remoteRows = new RemoteRowsWindow(
     if (!ready.value || disposed.value) return
     if (rows.snapshot().cachedRows > 0) loading.value = false
     syncSource()
+    if (!loading.value && !initializing && remoteReloadPending)
+      queueMicrotask(flushDeferredRealtime)
   },
   (cause) => {
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
@@ -776,6 +937,8 @@ function createGroupedRows() {
       if (!ready.value || disposed.value) return
       if (groupedRows.snapshot().cachedRows > 0) loading.value = false
       syncSource()
+      if (!loading.value && !initializing && remoteReloadPending)
+        queueMicrotask(flushDeferredRealtime)
     },
     (cause) => {
       if (
@@ -881,10 +1044,19 @@ function requestRealtimeReload() {
 }
 
 function flushDeferredRealtime() {
-  if (disposed.value || !ready.value || activeEdit.value || saving.value) return
+  if (
+    disposed.value ||
+    !ready.value ||
+    activeEdit.value ||
+    saving.value ||
+    loading.value ||
+    initializing
+  )
+    return
   if (remoteReloadPending) {
     remoteReloadPending = false
     deferredRows.clear()
+    deferredRemoteChanges = false
     void initialize(
       Math.max(0, rows.snapshot().activePage) * remotePageSize,
       true,
@@ -896,6 +1068,7 @@ function flushDeferredRealtime() {
     if (index >= 0) rows.updateRow(index, row)
   }
   deferredRows.clear()
+  deferredRemoteChanges = false
 }
 
 const rowSync = new RealtimeRowSync({
@@ -925,6 +1098,7 @@ const rowSync = new RealtimeRowSync({
   merge: (row) => {
     if (activeEdit.value || saving.value) {
       deferredRows.set(row.id, row)
+      deferredRemoteChanges = true
       return
     }
     const index = rows.indexOfRow(row.id)
@@ -958,6 +1132,10 @@ function handleRealtime(event: RealtimeEvent) {
           changedBy: event.byName || event.by || t('realtime.unknownEditor'),
         }
     }
+    if (initializing || loading.value) {
+      requestRealtimeReload()
+      return
+    }
     rowSync.update(event.ids)
     void loadFooterAggregates()
   } else if (
@@ -967,6 +1145,7 @@ function handleRealtime(event: RealtimeEvent) {
     event.ids
   ) {
     if (!ready.value) requestRealtimeReload()
+    else if (initializing || loading.value) requestRealtimeReload()
     else rowSync.update(event.ids)
   } else if (
     ['row.created', 'row.deleted', 'row.bulk', 'resync'].includes(event.t) ||
@@ -1221,10 +1400,14 @@ const columns = computed<ColumnRegular[]>(() => {
           fieldId: field.id,
           rowHighlight: rowHighlight(context.model),
           cellHighlight: cellHighlight(context.model, field.id),
-          message:
-            cellErrors.value.get(
-              `${String(context.model.__rowId)}:${field.id}`,
-            ) ?? '',
+          state: () => {
+            const key = `${String(context.model.__rowId)}:${field.id}`
+            return {
+              draft: cellDrafts.value.get(key),
+              message: cellErrors.value.get(key) ?? '',
+            }
+          },
+          savingLabel: t('grid.saving'),
           group: group
             ? {
                 header: field.id === visibleFieldIds.value[0],
@@ -1355,15 +1538,15 @@ function mutate<T>(
   path: string,
   method: 'POST' | 'PATCH' | 'DELETE',
   body: unknown,
+  signal?: AbortSignal,
 ) {
   const controller = new AbortController()
   mutationControllers.add(controller)
-  return request<T>(
-    path,
-    method,
-    body,
-    AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
-  ).finally(() => mutationControllers.delete(controller))
+  const signals = [controller.signal, AbortSignal.timeout(10_000)]
+  if (signal) signals.push(signal)
+  return request<T>(path, method, body, AbortSignal.any(signals)).finally(() =>
+    mutationControllers.delete(controller),
+  )
 }
 
 function clipboardColumn(
@@ -2101,16 +2284,25 @@ function syncSource() {
 }
 
 async function initialize(anchor = 0, preserveCellErrors = false) {
+  const generation = ++initializationGeneration
+  initializing = true
   realtimeEpoch++
   loading.value = true
   error.value = null
-  if (!preserveCellErrors) cellErrors.value.clear()
+  if (!preserveCellErrors)
+    for (const key of cellErrors.value.keys())
+      if (!cellDrafts.value.has(key)) cellErrors.value.delete(key)
   void loadFooterAggregates()
   try {
     await rows.initialize(anchor)
-    if (!disposed.value && !error.value) loading.value = false
+    if (!disposed.value && generation === initializationGeneration) {
+      initializing = false
+      loading.value = false
+      if (!error.value) flushDeferredRealtime()
+    }
   } catch (cause) {
-    if (!disposed.value) {
+    if (!disposed.value && generation === initializationGeneration) {
+      initializing = false
       error.value = cause
       loading.value = false
     }
@@ -2125,7 +2317,145 @@ function refreshHighlightedRows() {
 
 function created() {
   ready.value = true
-  void initialize().then(flushDeferredRealtime)
+  void initialize()
+}
+
+interface CellPointerActivation {
+  rowId: string
+  fieldId: string
+  origin: EditOrigin
+  x: number
+  y: number
+  dragged: boolean
+}
+let cellPointerActivation: CellPointerActivation | null = null
+
+function beforeCellFocus(event: CustomEvent<BeforeSaveDataDetails>) {
+  const rowId = event.detail.model?.__rowId
+  const fieldId = event.detail.prop
+  if (
+    editorBoundary &&
+    (editorBoundary.rowId !== rowId || editorBoundary.fieldId !== fieldId) &&
+    !editorBoundary.editor.leave()
+  ) {
+    cellPointerActivation = null
+    event.preventDefault()
+    return
+  }
+  cellPointerActivation = null
+  const original = event.detail.originalEvent
+  if (
+    !(original instanceof MouseEvent) ||
+    original.type !== 'mousedown' ||
+    original.button !== 0 ||
+    original.shiftKey ||
+    original.ctrlKey ||
+    original.metaKey ||
+    original.altKey ||
+    !(original.target instanceof Element) ||
+    original.target.closest(
+      'a, button, input, textarea, select, [contenteditable="true"], .autofill-handle',
+    ) ||
+    typeof rowId !== 'string' ||
+    !rowId ||
+    event.detail.model?.__groupId ||
+    typeof fieldId !== 'string' ||
+    !editOriginCurrent(componentEditOrigin)
+  )
+    return
+  const item = boundFor(fieldId)
+  if (!item || !isGridScalar(item.bound) || rows.indexOfRow(rowId) < 0) return
+  cellPointerActivation = {
+    rowId,
+    fieldId,
+    origin: componentEditOrigin,
+    x: original.clientX,
+    y: original.clientY,
+    dragged: false,
+  }
+}
+
+function trackCellPointer(event: MouseEvent) {
+  if (
+    cellPointerActivation &&
+    Math.hypot(
+      event.clientX - cellPointerActivation.x,
+      event.clientY - cellPointerActivation.y,
+    ) > 5
+  )
+    cellPointerActivation.dragged = true
+}
+
+async function activateCell(event: MouseEvent) {
+  const candidate = cellPointerActivation
+  cellPointerActivation = null
+  const grid = host.value?.$el
+  if (
+    !candidate ||
+    candidate.dragged ||
+    event.button !== 0 ||
+    Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) > 5 ||
+    !(event.target instanceof Node) ||
+    !grid?.contains(event.target) ||
+    !editOriginCurrent(candidate.origin)
+  )
+    return
+  const range = await grid.getSelectedRange()
+  if (range && (range.x !== range.x1 || range.y !== range.y1)) return
+  const item = boundFor(candidate.fieldId)
+  const index = rows.indexOfRow(candidate.rowId)
+  if (
+    !editOriginCurrent(candidate.origin) ||
+    !item ||
+    !isGridScalar(item.bound) ||
+    index < 0
+  )
+    return
+  await grid.setCellEdit(index, candidate.fieldId)
+}
+
+function finishCellPointer(event: MouseEvent) {
+  void activateCell(event).catch((cause: unknown) => {
+    if (!disposed.value) error.value = cause
+  })
+}
+
+function leaveEditorOnPointer(event: PointerEvent) {
+  if (
+    editorBoundary &&
+    !editorBoundary.editor.contains(event.target) &&
+    !editorBoundary.editor.leave()
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
+
+function preventCompositionClick(event: MouseEvent) {
+  if (
+    editorBoundary?.editor.isComposing() &&
+    !editorBoundary.editor.contains(event.target)
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+}
+
+function beforeEditStart(event: CustomEvent<BeforeSaveDataDetails>) {
+  const rowId = event.detail.model?.__rowId
+  const item =
+    typeof event.detail.prop === 'string'
+      ? boundFor(event.detail.prop)
+      : undefined
+  if (
+    !editOriginCurrent(componentEditOrigin) ||
+    event.detail.model?.__groupId ||
+    typeof rowId !== 'string' ||
+    rows.indexOfRow(rowId) < 0 ||
+    !item ||
+    item.bound.readOnly
+  )
+    event.preventDefault()
 }
 
 function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
@@ -2247,7 +2577,8 @@ async function routerReplaceLogin() {
 
 async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   event.preventDefault()
-  if (!canWrite.value || disposed.value) return
+  const origin = componentEditOrigin
+  if (!editOriginCurrent(origin)) return
   if (event.detail.model?.__groupId) return
   if (typeof event.detail.prop !== 'string') return
   const item = boundFor(event.detail.prop)
@@ -2264,50 +2595,136 @@ async function edit(event: CustomEvent<BeforeSaveDataDetails>) {
   const key = `${row.id}:${item.field.id}`
   if (!normalized.ok) {
     cellErrors.value.set(key, fieldErrorMessage(normalized.reason))
+    const draft = cellDrafts.value.get(key)
+    if (draft) draft.pending = false
     return
   }
+  const previousIntent = cellIntents.get(key)
+  const currentValue = previousIntent
+    ? previousIntent.value
+    : (deferredRows.get(row.id) ?? row).fields[item.field.id]
+  if (
+    currentValue !== undefined &&
+    JSON.stringify(currentValue) === JSON.stringify(normalized.value)
+  ) {
+    const draft = cellDrafts.value.get(key)
+    if (previousIntent && draft && previousIntent.revision !== undefined) {
+      draft.revision = previousIntent.revision
+      draft.pending = true
+    } else if (!previousIntent) discardCellDraft(row.id, item.field.id)
+    return
+  }
+  const draftAtCommit = cellDrafts.value.get(key)
+  const revision = draftAtCommit?.revision
+  const intent: CellIntent = {
+    value: normalized.value,
+    revision,
+    text: draftAtCommit?.text,
+  }
+  cellIntents.set(key, intent)
+  const predecessor = cellWriteTail
+  let release = () => {}
+  cellWriteTail = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  pendingCellWrites++
   saving.value = true
   error.value = null
+  const controller = new AbortController()
+  cellControllers.add(controller)
   try {
+    await predecessor
+    if (!editOriginCurrent(origin)) {
+      if (sameEditScope(origin)) {
+        intent.outcome = { message: editUnavailableMessage(origin) }
+        const draft = cellDrafts.value.get(key)
+        if (draft && draft.revision === revision) {
+          draft.pending = false
+          cellErrors.value.set(key, editUnavailableMessage(origin))
+        }
+      }
+      return
+    }
+    const currentIndex = rows.indexOfRow(row.id)
+    const currentRow =
+      deferredRows.get(row.id) ??
+      (currentIndex >= 0 ? rows.rowAt(currentIndex) : null) ??
+      row
+    if (!currentRow || currentRow.fields[item.field.id] === undefined)
+      throw new Error(t('grid.saveFailed'))
+    error.value = null
     const result = await mutate<RowPatchMutation>(
-      `/tables/${props.schema.table.id}/rows/${row.id}`,
+      `/tables/${origin.tableId}/rows/${row.id}`,
       'PATCH',
       { fields: { [item.field.id]: normalized.value } },
+      controller.signal,
     )
-    if (disposed.value || props.identity !== auth.user?.id) return
+    if (!editOriginCurrent(origin)) {
+      if (sameEditScope(origin))
+        intent.outcome = { message: editUnavailableMessage(origin) }
+      return
+    }
+    if (result.row.id !== row.id) throw new Error(t('grid.saveFailed'))
+    intent.outcome = { success: true }
     const before = result.previous ?? {
-      [item.field.id]: row.fields[item.field.id]!,
+      [item.field.id]: currentRow.fields[item.field.id]!,
     }
     undo.record([
       patchUndoStep(
-        props.schema.table.id,
+        origin.tableId,
         [{ id: row.id, fields: before }],
         [result.row],
       ),
     ])
-    rows.updateRow(rowIndex, result.row)
-    if (columnState.config.value.highlight?.length)
-      await refreshHighlightedRows()
-    cellErrors.value.delete(key)
+    if (activeEdit.value || pendingCellWrites > 1)
+      deferredRows.set(row.id, result.row)
+    else {
+      deferredRows.delete(row.id)
+      const index = rows.indexOfRow(row.id)
+      if (index >= 0) rows.updateRow(index, result.row)
+    }
+    if (columnState.config.value.highlight?.length) remoteReloadPending = true
+    const draft = cellDrafts.value.get(key)
+    if (!draft || draft.revision === revision) {
+      cellDrafts.value.delete(key)
+      cellErrors.value.delete(key)
+    }
     selectedRows.value.delete(row.id)
   } catch (cause) {
+    if (disposed.value || !sameEditScope(origin)) return
+    if (!editOriginCurrent(origin)) {
+      intent.outcome = { message: editUnavailableMessage(origin) }
+      const draft = cellDrafts.value.get(key)
+      if (draft && draft.revision === revision) {
+        draft.pending = false
+        cellErrors.value.set(key, editUnavailableMessage(origin))
+      }
+      return
+    }
+    intent.outcome = { message: errorMessage(cause) }
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
     if (item.field.uiType === 'attachment') {
       const currentIds = new Set(attachmentIds(row.fields[item.field.id]))
       for (const id of attachmentIds(normalized.value)) {
         if (!currentIds.has(id))
-          void discardAttachment(
-            props.schema.table.id,
-            item.field.id,
-            id,
-          ).catch(() => {})
+          void discardAttachment(origin.tableId, item.field.id, id).catch(
+            () => {},
+          )
       }
     }
-    cellErrors.value.set(key, errorMessage(cause))
+    const draft = cellDrafts.value.get(key)
+    if (!draft || draft.revision === revision) {
+      if (draft) draft.pending = false
+      cellErrors.value.set(key, errorMessage(cause))
+    }
     error.value = cause
   } finally {
-    if (!disposed.value) saving.value = false
+    cellControllers.delete(controller)
+    if (cellIntents.get(key) === intent) cellIntents.delete(key)
+    pendingCellWrites--
+    release()
+    if (!disposed.value && pendingCellWrites === 0) saving.value = false
   }
 }
 
@@ -2416,6 +2833,37 @@ function dragColumns(event: CustomEvent<ColumnDragEventData>) {
 }
 
 watch(
+  () =>
+    [
+      props.schema.table.id,
+      props.schema.schemaVersion,
+      props.schema.myLevel,
+      props.viewId,
+      props.identity,
+      auth.user?.id,
+      router.currentRoute.value.params.tableId,
+      router.currentRoute.value.params.viewId,
+    ] as const,
+  () => {
+    if (editOriginCurrent(componentEditOrigin)) return
+    cellPointerActivation = null
+    for (const controller of cellControllers) controller.abort()
+    if (!sameEditScope(componentEditOrigin)) {
+      cellDrafts.value.clear()
+      cellErrors.value.clear()
+      return
+    }
+    editorBoundary?.editor.leave()
+    for (const [key, draft] of cellDrafts.value) {
+      if (!draft.pending) continue
+      draft.pending = false
+      cellErrors.value.set(key, editUnavailableMessage(componentEditOrigin))
+    }
+  },
+  { flush: 'sync' },
+)
+
+watch(
   () => visibleFieldIds.value.join(','),
   () => {
     if (ready.value) {
@@ -2451,8 +2899,9 @@ watch(
   saving,
   (isSaving) => {
     realtimeEpoch++
-    if (rowSync.hasWork() || deferredRows.size) {
+    if (rowSync.hasWork() || deferredRemoteChanges) {
       deferredRows.clear()
+      deferredRemoteChanges = false
       remoteReloadPending = true
     }
     if (!isSaving) flushDeferredRealtime()
@@ -2516,6 +2965,10 @@ async function deleteSelected() {
 onMounted(() => {
   media.addEventListener('change', resized)
   document.addEventListener('keydown', documentKeydown, true)
+  document.addEventListener('pointerdown', leaveEditorOnPointer, true)
+  document.addEventListener('click', preventCompositionClick, true)
+  document.addEventListener('mousemove', trackCellPointer)
+  document.addEventListener('mouseup', finishCellPointer)
   document.addEventListener('pointerdown', dismissToolbarMenus)
 })
 
@@ -2549,6 +3002,9 @@ defineExpose({
 
 onBeforeUnmount(() => {
   disposed.value = true
+  editorBoundary?.editor.captureBeforeUnmount()
+  editorBoundary = null
+  cellPointerActivation = null
   realtime.setFocus(props.schema.table.id, null)
   keyboardGeneration++
   clearTimeout(searchTimer)
@@ -2556,7 +3012,13 @@ onBeforeUnmount(() => {
   footerGeneration++
   media.removeEventListener('change', resized)
   document.removeEventListener('keydown', documentKeydown, true)
+  document.removeEventListener('pointerdown', leaveEditorOnPointer, true)
+  document.removeEventListener('click', preventCompositionClick, true)
+  document.removeEventListener('mousemove', trackCellPointer)
+  document.removeEventListener('mouseup', finishCellPointer)
   document.removeEventListener('pointerdown', dismissToolbarMenus)
+  for (const controller of cellControllers) controller.abort()
+  cellControllers.clear()
   for (const controller of mutationControllers) controller.abort()
   mutationControllers.clear()
   removeRealtimeListener()
@@ -3165,6 +3627,8 @@ onBeforeUnmount(() => {
         :hide-attribution="true"
         @created="created"
         @viewportscroll="scroll"
+        @beforecellfocus="beforeCellFocus"
+        @beforeeditstart="beforeEditStart"
         @beforeedit="edit"
         @afterfocus="focusChanged"
         @focusout="focusLeft"

@@ -17,6 +17,43 @@ RETURNING id, name, icon, color, created_at;
 INSERT INTO meta.grants (resource_type, resource_id, principal_type, principal_id, level, granted_by)
 VALUES ('workspace', sqlc.arg(workspace_id)::uuid, 'user', sqlc.arg(user_id)::uuid, 'owner', sqlc.arg(user_id)::uuid);
 
+-- name: LockWorkspacePreference :exec
+SELECT pg_advisory_xact_lock(hashtextextended('pandatable.workspace-preference:' || sqlc.arg(user_id)::uuid::text, 0));
+
+-- name: ReadWorkspacePreference :one
+SELECT workspace_id FROM meta.user_workspace_preferences WHERE user_id = $1;
+
+-- name: InsertWorkspacePreference :exec
+INSERT INTO meta.user_workspace_preferences (user_id, workspace_id) VALUES ($1, $2);
+
+-- name: UpdateWorkspacePreference :execrows
+UPDATE meta.user_workspace_preferences SET workspace_id = $2 WHERE user_id = $1;
+
+-- name: EligibleWorkspaces :many
+SELECT w.id
+FROM meta.workspaces w
+WHERE w.deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM meta.grants g
+    WHERE g.resource_type = 'workspace' AND g.resource_id = w.id
+      AND ((g.principal_type = 'user' AND g.principal_id = sqlc.arg(user_id)::uuid)
+        OR (g.principal_type = 'group' AND EXISTS (
+          SELECT 1 FROM meta.group_members gm
+          WHERE gm.group_id = g.principal_id AND gm.user_id = sqlc.arg(user_id)::uuid
+        )))
+  )
+ORDER BY w.created_at, w.id;
+
+-- name: LockWorkspaceGrantGroups :many
+SELECT gr.id
+FROM meta.groups gr
+JOIN meta.group_members gm ON gm.group_id = gr.id
+JOIN meta.grants g ON g.principal_type = 'group' AND g.principal_id = gr.id
+WHERE gm.user_id = sqlc.arg(user_id)::uuid
+  AND g.resource_type = 'workspace' AND g.resource_id = sqlc.arg(workspace_id)::uuid
+ORDER BY gr.id
+FOR SHARE OF gr;
+
 -- name: GetWorkspace :one
 SELECT id, name, icon, color, created_at
 FROM meta.workspaces
@@ -447,6 +484,25 @@ SELECT pg_advisory_unlock(hashtextextended('pandatable.dev.seed', 0))::boolean;
 SELECT current_database()::text AS database_name,
        current_setting('server_version_num')::integer AS server_version,
        NOT EXISTS (SELECT 1 FROM meta.workspaces) AS empty;
+
+-- name: IsOnlyPristineStarter :one
+SELECT EXISTS (
+  SELECT 1
+  FROM meta.user_workspace_preferences p
+  JOIN meta.workspaces w ON w.id = p.workspace_id
+  WHERE p.user_id = sqlc.arg(user_id)::uuid
+    AND w.created_by = p.user_id AND w.name = 'Default'
+    AND w.icon IS NULL AND w.color IS NULL AND w.deleted_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM meta.workspaces other WHERE other.id <> w.id)
+    AND NOT EXISTS (SELECT 1 FROM meta.books b WHERE b.workspace_id = w.id)
+    AND NOT EXISTS (SELECT 1 FROM meta.user_workspace_preferences other
+                    WHERE other.workspace_id = w.id AND other.user_id <> p.user_id)
+    AND (SELECT count(*) FROM meta.grants g
+         WHERE g.resource_type = 'workspace' AND g.resource_id = w.id) = 1
+    AND EXISTS (SELECT 1 FROM meta.grants g WHERE g.resource_type = 'workspace'
+                AND g.resource_id = w.id AND g.principal_type = 'user'
+                AND g.principal_id = p.user_id AND g.level = 'owner')
+);
 
 -- name: ListRowComments :many
 SELECT c.id, c.user_id, COALESCE(u.display_name, '')::text AS author_name,

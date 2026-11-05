@@ -301,7 +301,7 @@ func TestSystemPostgreSQLObservationsAndAuthorization(t *testing.T) {
 	}
 	if result.Versions.App != "test-build" || result.Versions.Go != runtime.Version() || result.UptimeSeconds < 60 ||
 		result.Versions.Postgres.Value == nil || !strings.HasPrefix(*result.Versions.Postgres.Value, "18.") ||
-		result.Versions.Migration.Value == nil || *result.Versions.Migration.Value != 6 {
+		result.Versions.Migration.Value == nil || *result.Versions.Migration.Value != 7 {
 		t.Fatal("versions/uptime not actual runtime/database values")
 	}
 	var shared, size int64
@@ -345,7 +345,7 @@ func TestSystemPostgreSQLObservationsAndAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	level, err := f.service.queries.WithTx(tx).SystemMigration(f.ctx)
-	if err != nil || level != 6 {
+	if err != nil || level != 7 {
 		t.Fatal("latest migration state must honor a reverted version", level, err)
 	}
 }

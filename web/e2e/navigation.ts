@@ -13,6 +13,7 @@ import type {
   RowQueryResult,
   TableSchema,
   ViewMutation,
+  WorkspacePreference,
 } from '../src/api/types'
 import { adminLink, openNodeActions, setLocale, setTheme } from './app-shell'
 import en from '../src/i18n/en.json' with { type: 'json' }
@@ -635,7 +636,13 @@ export async function verifyNavigation(
     ).status(),
   ).toBe(200)
   await alice.goto('/home')
-  await expect(alice.locator('main')).toContainText(en.nav.empty)
+  const starter = (await (
+    await alice.request.get('/api/v1/auth/workspace-preference')
+  ).json()) as WorkspacePreference
+  expect(starter.workspaceId).toBeTruthy()
+  await expect(
+    alice.locator('main').locator(`[href="/w/${starter.workspaceId}"]`),
+  ).toHaveText('Default')
   await create(alice, 'workspace', 'Workspace W')
   const wid = new URL(alice.url()).pathname.split('/')[2]!
   try {

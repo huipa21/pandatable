@@ -17,6 +17,7 @@ import (
 	"pandatable/internal/structure"
 	"pandatable/internal/structure/structuresql"
 	"pandatable/internal/testdb"
+	"pandatable/internal/workspace"
 )
 
 var database testdb.Suite
@@ -193,9 +194,59 @@ func TestSeedPostgreSQL(t *testing.T) {
 	if _, err := Run(canceled, pool, name, owner, 1); err == nil {
 		t.Fatal("canceled seed accepted")
 	}
+	userID, ok := acl.ParseUUID(owner)
+	if !ok {
+		t.Fatal("fixture owner ID is invalid")
+	}
+	var starter string
+	if err := pool.WithTx(ctx, func(tx pgx.Tx) error {
+		id, err := workspace.CreateStarter(ctx, structuresql.New(tx), userID)
+		starter = id.String()
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, mutation string
+	}{
+		{"icon", "UPDATE meta.workspaces SET icon='x' WHERE id=$1"},
+		{"color", "UPDATE meta.workspaces SET color='#123456' WHERE id=$1"},
+		{"trashed", "UPDATE meta.workspaces SET deleted_at=now() WHERE id=$1"},
+		{"other workspace", "INSERT INTO meta.workspaces (name,created_by) SELECT 'Existing',created_by FROM meta.workspaces WHERE id=$1"},
+		{"book", "INSERT INTO meta.books (workspace_id,name,pg_schema,position) VALUES ($1,'Existing','b_abcdefghij',1)"},
+		{"changed grant", "UPDATE meta.grants SET level='read' WHERE resource_id=$1"},
+	} {
+		t.Run("reject "+test.name, func(t *testing.T) {
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx.Rollback(ctx) }()
+			if _, err := tx.Exec(ctx, test.mutation, starter); err != nil {
+				t.Fatal(err)
+			}
+			pristine, err := structuresql.New(tx).IsOnlyPristineStarter(ctx, userID)
+			if err != nil || pristine {
+				t.Fatalf("modified starter accepted: pristine=%t err=%v", pristine, err)
+			}
+		})
+	}
+	if _, err := pool.Exec(ctx, "UPDATE meta.workspaces SET name='User data' WHERE id=$1", starter); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(ctx, pool, name, owner, 1); err == nil {
+		t.Fatal("seed accepted a modified starter workspace")
+	}
+	if _, err := pool.Exec(ctx, "UPDATE meta.workspaces SET name='Default' WHERE id=$1", starter); err != nil {
+		t.Fatal(err)
+	}
 	result, err := Run(ctx, pool, name, owner, 601)
 	if err != nil || !result.Complete || result.CommittedRows != 601 || len(result.FieldIDs) != 13 {
 		t.Fatalf("real seed=%+v err=%v", result, err)
+	}
+	var starterName string
+	if err := pool.QueryRow(ctx, "SELECT name FROM meta.workspaces WHERE id=$1", starter).Scan(&starterName); err != nil || starterName != "Default" {
+		t.Fatalf("seed changed the starter workspace: name=%q err=%v", starterName, err)
 	}
 	resolver, err := acl.NewResolver(pool)
 	if err != nil {

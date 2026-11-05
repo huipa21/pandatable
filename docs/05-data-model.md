@@ -36,7 +36,7 @@ are never renamed and trashed physical-name reservations are never reused.
 
 The SQL below describes the core schema; the executable source is
 [`0001_initial.sql`](../migrations/0001_initial.sql) and the forward-only
-migrations through [`0006_mail.sql`](../migrations/0006_mail.sql). Never edit an applied
+migrations through [`0007_workspace_preferences.sql`](../migrations/0007_workspace_preferences.sql). Never edit an applied
 migration. See D-069..D-071 for the T1.1 integrity clarifications.
 
 ```sql
@@ -98,6 +98,14 @@ CREATE TABLE meta.workspaces (
   deleted_at  timestamptz,                -- trash
   deleted_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL
 );
+
+-- A missing row means this existing user has not been bootstrapped yet.
+-- A NULL workspace_id means its selected workspace was physically deleted.
+CREATE TABLE meta.user_workspace_preferences (
+  user_id      uuid PRIMARY KEY REFERENCES meta.users(id) ON DELETE CASCADE,
+  workspace_id uuid REFERENCES meta.workspaces(id) ON DELETE SET NULL
+);
+CREATE INDEX ON meta.user_workspace_preferences(workspace_id) WHERE workspace_id IS NOT NULL;
 
 CREATE TABLE meta.books (
   id            uuid PRIMARY KEY DEFAULT uuidv7(),

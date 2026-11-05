@@ -79,6 +79,9 @@ surrogates.
 | POST | `/auth/login` | `{ login, password }` (username or email); rate-limited 10/min/IP, 5 failures → 1 min lock per account |
 | POST | `/auth/logout` | |
 | GET | `/auth/me` | user, role, prefs, mustChangePassword |
+| GET | `/auth/workspace-preference` | `{ workspaceId: string\|null }`; read-only, hides inaccessible preferences |
+| PUT | `/auth/workspace-preference` | `{ workspaceId }` → `{ workspaceId, eventId }` |
+| POST | `/auth/workspace-preference/resolve` | `{}` → initialized, accessible `{ workspaceId, eventId }` |
 | POST | `/auth/password` | `{ current, new }` |
 | POST | `/auth/reset/request` | `{ email }` → generic `{accepted:true}` |
 | POST | `/auth/reset/complete` | `{ token, password }` → password change and session revocation |
@@ -153,6 +156,38 @@ surrogates.
   503 `ERR_AUTH_BUSY` (`Retry-After: 1`), 500 `ERR_INTERNAL`. Internal errors
   log only a fixed message and request ID, never driver/hash/credential content.
   The setup UI translates setup errors; future auth consumers must do the same.
+
+#### UX-01 workspace preference (D-218)
+
+- Setup and administrator-created users receive an owned `Default` workspace,
+  direct user-owner grant and preference in the same account-creation
+  transaction. Existing users are initialized lazily by the authenticated
+  resolve operation; their old workspaces and grants are unchanged. Renaming a
+  starter does not reset initialization.
+- `GET /auth/workspace-preference` is side-effect-free and returns
+  `{workspaceId:null}` for an uninitialized, physically deleted, trashed or
+  inaccessible selection. It never returns a hidden ID. `/auth/me` and `/nav`
+  do not bootstrap or resolve preferences.
+- `POST /auth/workspace-preference/resolve` requires exactly `{}` and returns a
+  non-null `{workspaceId,eventId}`. An uninitialized user gets one owned
+  starter. Otherwise, retain the preference if it is live and has workspace
+  read access; choose the first eligible workspace in `/nav` order
+  (`created_at`, then UUID) if not. If none exists, create one owned
+  replacement. Per-user serialization prevents duplicate starters/replacements;
+  failed reads or transactions fail the request instead of provisioning.
+- `PUT /auth/workspace-preference` requires exactly one non-null string
+  `workspaceId` and returns the same non-null mutation shape. The target must
+  be live and have effective workspace read access via a user or group grant.
+  Selection does not grant access or require ownership. If called before
+  initialization, a valid selection also initializes the owned starter in the
+  same transaction; an invalid selection changes nothing.
+- Both mutations require the normal session, Origin/CSRF checks and completed
+  password change. All three endpoints reject query strings and use no-store.
+  Malformed, hidden and trashed IDs return 404 `ERR_NOT_FOUND`; path-only
+  targets return 403 `ERR_PERMISSION_DENIED`; invalid JSON/null returns 400
+  `ERR_VALIDATION`. Bounded lock/race contention returns 409
+  `ERR_WORKSPACE_PREFERENCE_BUSY`; database failures are redacted 500s.
+  UX-02 should call resolve when entering `/home`, not on every nav poll.
 
 #### T5.2 mail and password recovery (D-205..D-207)
 

@@ -1012,6 +1012,7 @@
   "errors": {
     "ERR_DDL_CONFLICT": "现有数据或约束与此结构更改冲突。",
     "ERR_DDL_LOCK_TIMEOUT": "表正忙，请稍后重试结构更改。",
+    "ERR_WORKSPACE_PREFERENCE_BUSY": "工作区偏好正在更改，请稍后重试。",
     "ERR_SYSTEM_UNAVAILABLE": "系统指标暂时不可用，请重试。",
     "ERR_VALIDATION": "请检查输入内容和密码字节数后重试。",
     "ERR_SETUP_TOKEN": "设置令牌无效或已过期。请查看服务器日志中的当前令牌。",

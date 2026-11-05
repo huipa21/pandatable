@@ -6,7 +6,7 @@ import { markRaw, type Component } from 'vue'
 import { i18n, loadLocale } from '../../i18n'
 import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
-import { useRealtimeStore } from '../../stores/realtime'
+import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import { navUser, tableSchema } from '../../test/navigation'
 import { ThemeMedia } from '../../test/setup'
 import DataGrid from './DataGrid.vue'
@@ -26,6 +26,7 @@ const gridState = vi.hoisted(() => ({
   editCell: vi.fn(),
   focusCells: vi.fn(),
   scrollRow: vi.fn(),
+  editorComponent: undefined as Component | undefined,
 }))
 
 vi.mock('@revolist/vue3-datagrid', async () => {
@@ -40,6 +41,8 @@ vi.mock('@revolist/vue3-datagrid', async () => {
       emits: [
         'created',
         'beforeedit',
+        'beforecellfocus',
+        'beforeeditstart',
         'viewportscroll',
         'afterfocus',
         'beforecopyregion',
@@ -73,150 +76,174 @@ vi.mock('@revolist/vue3-datagrid', async () => {
           emit('created')
         })
         return () =>
-          vue.h('div', { ref: root, 'data-testid': 'fake-grid' }, [
-            vue.h(
-              'button',
-              {
-                type: 'button',
-                onClick: () =>
-                  emit(
-                    'beforeedit',
-                    new CustomEvent('beforeedit', {
-                      detail: {
-                        prop: gridState.fieldId,
-                        val: gridState.value,
-                        rowIndex: gridState.rowIndex,
-                      },
-                    }),
-                  ),
-              },
-              'commit',
-            ),
-            vue.h(
-              'button',
-              {
-                type: 'button',
-                onClick: () =>
-                  emit(
-                    'afterfocus',
-                    new CustomEvent('afterfocus', {
-                      detail: {
-                        model: _props.source[gridState.focus.rowIndex],
-                        column: _props.columns.filter(
-                          (column: { pin?: string }) =>
-                            (column.pin ?? 'rgCol') === gridState.focus.colType,
-                        )[gridState.focus.colIndex],
-                        ...gridState.focus,
-                      },
-                    }),
-                  ),
-              },
-              'focus',
-            ),
-            vue.h(
-              'button',
-              {
-                type: 'button',
-                onClick: () => {
-                  emit(
-                    'beforecopyregion',
-                    new CustomEvent('beforecopyregion', {
-                      detail: gridState.range,
-                      cancelable: true,
-                    }),
-                  )
-                  emit(
-                    'beforecopyapply',
-                    new CustomEvent('beforecopyapply', {
-                      detail: {
-                        data: [],
-                        event: {
-                          setData: (type: string, value: string) =>
-                            gridState.clipboard.set(type, value),
+          vue.h(
+            'div',
+            {
+              ref: root,
+              'data-testid': 'fake-grid',
+              onMousedown: (originalEvent: MouseEvent) =>
+                emit(
+                  'beforecellfocus',
+                  new CustomEvent('beforecellfocus', {
+                    detail: {
+                      prop: gridState.fieldId,
+                      model: _props.source[gridState.focus.rowIndex],
+                      rowIndex: gridState.focus.rowIndex,
+                      originalEvent,
+                    },
+                    cancelable: true,
+                  }),
+                ),
+            },
+            [
+              vue.h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () =>
+                    emit(
+                      'beforeedit',
+                      new CustomEvent('beforeedit', {
+                        detail: {
+                          prop: gridState.fieldId,
+                          val: gridState.value,
+                          rowIndex: gridState.rowIndex,
                         },
-                      },
-                      cancelable: true,
-                    }),
-                  )
+                      }),
+                    ),
                 },
-              },
-              'copy',
-            ),
-            vue.h(
-              'button',
-              {
-                type: 'button',
-                onClick: () =>
-                  emit(
-                    'beforepasteapply',
-                    new CustomEvent('beforepasteapply', {
-                      detail: {
-                        parsed: [],
-                        raw: '',
-                        dataText: gridState.value,
-                        event: new Event('paste'),
-                      },
-                      cancelable: true,
-                    }),
-                  ),
-              },
-              'paste',
-            ),
-            vue.h(
-              'button',
-              {
-                type: 'button',
-                onClick: () =>
-                  emit(
-                    'beforerangeedit',
-                    new CustomEvent('beforerangeedit', {
-                      detail: {
-                        data: {},
-                        models: {},
-                        type: 'rgRow',
-                        oldRange: gridState.range,
-                        newRange: gridState.fillRange,
-                      },
-                      cancelable: true,
-                    }),
-                  ),
-              },
-              'fill',
-            ),
-            vue.h(
-              'button',
-              {
-                type: 'button',
-                onClick: () => {
-                  emit(
-                    'beforecopyregion',
-                    new CustomEvent('beforecopyregion', {
-                      detail: gridState.range,
-                      cancelable: true,
-                    }),
-                  )
-                  emit(
-                    'beforecut',
-                    new CustomEvent('beforecut', {
-                      detail: { event: {} as ClipboardEvent },
-                      cancelable: true,
-                    }),
-                  )
-                  emit(
-                    'clearregion',
-                    new CustomEvent('clearregion', {
-                      detail: {} as DataTransfer,
-                      cancelable: true,
-                    }),
-                  )
+                'commit',
+              ),
+              vue.h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () =>
+                    emit(
+                      'afterfocus',
+                      new CustomEvent('afterfocus', {
+                        detail: {
+                          model: _props.source[gridState.focus.rowIndex],
+                          column: _props.columns.filter(
+                            (column: { pin?: string }) =>
+                              (column.pin ?? 'rgCol') ===
+                              gridState.focus.colType,
+                          )[gridState.focus.colIndex],
+                          ...gridState.focus,
+                        },
+                      }),
+                    ),
                 },
-              },
-              'cut',
-            ),
-          ])
+                'focus',
+              ),
+              vue.h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => {
+                    emit(
+                      'beforecopyregion',
+                      new CustomEvent('beforecopyregion', {
+                        detail: gridState.range,
+                        cancelable: true,
+                      }),
+                    )
+                    emit(
+                      'beforecopyapply',
+                      new CustomEvent('beforecopyapply', {
+                        detail: {
+                          data: [],
+                          event: {
+                            setData: (type: string, value: string) =>
+                              gridState.clipboard.set(type, value),
+                          },
+                        },
+                        cancelable: true,
+                      }),
+                    )
+                  },
+                },
+                'copy',
+              ),
+              vue.h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () =>
+                    emit(
+                      'beforepasteapply',
+                      new CustomEvent('beforepasteapply', {
+                        detail: {
+                          parsed: [],
+                          raw: '',
+                          dataText: gridState.value,
+                          event: new Event('paste'),
+                        },
+                        cancelable: true,
+                      }),
+                    ),
+                },
+                'paste',
+              ),
+              vue.h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () =>
+                    emit(
+                      'beforerangeedit',
+                      new CustomEvent('beforerangeedit', {
+                        detail: {
+                          data: {},
+                          models: {},
+                          type: 'rgRow',
+                          oldRange: gridState.range,
+                          newRange: gridState.fillRange,
+                        },
+                        cancelable: true,
+                      }),
+                    ),
+                },
+                'fill',
+              ),
+              vue.h(
+                'button',
+                {
+                  type: 'button',
+                  onClick: () => {
+                    emit(
+                      'beforecopyregion',
+                      new CustomEvent('beforecopyregion', {
+                        detail: gridState.range,
+                        cancelable: true,
+                      }),
+                    )
+                    emit(
+                      'beforecut',
+                      new CustomEvent('beforecut', {
+                        detail: { event: {} as ClipboardEvent },
+                        cancelable: true,
+                      }),
+                    )
+                    emit(
+                      'clearregion',
+                      new CustomEvent('clearregion', {
+                        detail: {} as DataTransfer,
+                        cancelable: true,
+                      }),
+                    )
+                  },
+                },
+                'cut',
+              ),
+            ],
+          )
       },
     }),
-    VGridVueEditor: (component: unknown) => component,
+    VGridVueEditor: (component: Component) => {
+      gridState.editorComponent = component
+      return () => ({ render: () => '' })
+    },
   }
 })
 
@@ -321,14 +348,19 @@ function queryResponse(
   fieldIds = gridState.visibleFieldIds.length
     ? gridState.visibleFieldIds
     : [schema.fields[0]!.id],
+  offset = 0,
+  limit = gridState.rowCount,
 ) {
   return {
-    rows: Array.from({ length: gridState.rowCount }, (_, index) => ({
-      id: String(BigInt('9007199254740993') + BigInt(index)),
-      fields: gridState.rowFields[index] ?? {
-        [schema.fields[0]!.id]: 'before',
-      },
-    })),
+    rows: Array.from(
+      { length: Math.max(0, Math.min(limit, gridState.rowCount - offset)) },
+      (_, index) => ({
+        id: String(BigInt('9007199254740993') + BigInt(offset + index)),
+        fields: gridState.rowFields[offset + index] ?? {
+          [schema.fields[0]!.id]: 'before',
+        },
+      }),
+    ),
     fieldIds,
     total: gridState.rowCount,
     schemaVersion: schema.schemaVersion,
@@ -343,11 +375,18 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
         ? (JSON.parse(init.body) as {
             fieldIds?: string[]
             aggregates?: { fieldId: string; aggregate: string }[]
+            offset?: number
+            limit?: number
           })
         : undefined
     if (path.endsWith('/query'))
       return Response.json(
-        queryResponse(schema, body?.fieldIds ?? gridState.visibleFieldIds),
+        queryResponse(
+          schema,
+          body?.fieldIds ?? gridState.visibleFieldIds,
+          body?.offset,
+          body?.limit,
+        ),
       )
     if (path.endsWith('/aggregates'))
       return Response.json({
@@ -1140,7 +1179,8 @@ it('keeps presence on a cell while its editor receives focus', async () => {
   const editors = wrapper!
     .findComponent({ name: 'RevoGrid' })
     .props('editors') as Record<string, Component>
-  const editor = mount(editors.name!, {
+  expect(editors.name).toBeDefined()
+  const editor = mount(gridState.editorComponent!, {
     props: {
       column: { prop: 'name' },
       prop: 'name',
@@ -1165,6 +1205,546 @@ it('keeps presence on a cell while its editor receives focus', async () => {
     editor.unmount()
     setFocus.mockRestore()
   }
+})
+
+it('keeps an editor mounted when an outside pointer interrupts IME composition', async () => {
+  await mountGrid(schemaFor('text'))
+  const save = vi.fn()
+  const editor = mount(gridState.editorComponent!, {
+    props: {
+      column: { prop: 'name' },
+      prop: 'name',
+      rowIndex: 0,
+      val: 'before',
+      save,
+      close: vi.fn(),
+    },
+    global: { plugins: [pinia, i18n] },
+  })
+  const outside = document.createElement('button')
+  const clicked = vi.fn()
+  outside.addEventListener('click', clicked)
+  document.body.append(editor.element, outside)
+  try {
+    const input = editor.get('input')
+    await input.setValue('中文')
+    await input.trigger('compositionstart')
+    const pointer = new MouseEvent('pointerdown', {
+      bubbles: true,
+      cancelable: true,
+    })
+    const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+    expect(outside.dispatchEvent(pointer)).toBe(false)
+    expect(outside.dispatchEvent(click)).toBe(false)
+    expect(clicked).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+
+    await input.trigger('compositionend')
+    await flushPromises()
+    expect(save).toHaveBeenCalledExactlyOnceWith('中文', true)
+    expect(
+      outside.dispatchEvent(
+        new MouseEvent('click', { bubbles: true, cancelable: true }),
+      ),
+    ).toBe(true)
+    expect(clicked).toHaveBeenCalledOnce()
+  } finally {
+    editor.unmount()
+    outside.remove()
+  }
+})
+
+it('activates a scalar on a single click without activating drags, modifiers, or links', async () => {
+  await mountGrid(schemaFor('text'))
+  document.body.appendChild(wrapper!.element)
+  const grid = wrapper!.get('[data-testid="fake-grid"]')
+  try {
+    await grid.trigger('mousedown', { button: 0, clientX: 20, clientY: 20 })
+    await grid.trigger('mouseup', { button: 0, clientX: 20, clientY: 20 })
+    await flushPromises()
+    expect(gridState.editCell).toHaveBeenCalledExactlyOnceWith(0, 'name')
+
+    gridState.editCell.mockClear()
+    await grid.trigger('mousedown', { button: 0, clientX: 20, clientY: 20 })
+    await grid.trigger('mousemove', { buttons: 1, clientX: 40, clientY: 20 })
+    await grid.trigger('mouseup', { button: 0, clientX: 40, clientY: 20 })
+    await grid.trigger('mousedown', {
+      button: 0,
+      shiftKey: true,
+      clientX: 20,
+      clientY: 20,
+    })
+    await grid.trigger('mouseup', { button: 0, clientX: 20, clientY: 20 })
+    const link = document.createElement('a')
+    grid.element.appendChild(link)
+    link.dispatchEvent(
+      new MouseEvent('mousedown', {
+        bubbles: true,
+        button: 0,
+        clientX: 20,
+        clientY: 20,
+      }),
+    )
+    link.dispatchEvent(
+      new MouseEvent('mouseup', {
+        bubbles: true,
+        button: 0,
+        clientX: 20,
+        clientY: 20,
+      }),
+    )
+    await flushPromises()
+    expect(gridState.editCell).not.toHaveBeenCalled()
+  } finally {
+    wrapper!.element.remove()
+  }
+})
+
+it.each([
+  ['reader', 'text', 'read'],
+  ['system field', 'id', 'owner'],
+  ['checkbox', 'checkbox', 'owner'],
+  ['select', 'single_select', 'owner'],
+] as const)(
+  'does not single-click activate a %s',
+  async (_label, kind, level) => {
+    await mountGrid(schemaFor(kind, level))
+    document.body.appendChild(wrapper!.element)
+    try {
+      const grid = wrapper!.get('[data-testid="fake-grid"]')
+      await grid.trigger('mousedown', { button: 0, clientX: 20, clientY: 20 })
+      await grid.trigger('mouseup', { button: 0, clientX: 20, clientY: 20 })
+      await flushPromises()
+      expect(gridState.editCell).not.toHaveBeenCalled()
+    } finally {
+      wrapper!.element.remove()
+    }
+  },
+)
+
+it('serializes successive cell saves and keeps the last authoritative response', async () => {
+  const fetch = await mountGrid(schemaFor('text'))
+  const original = fetch.getMockImplementation()!
+  let releaseFirst: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (init?.method !== 'PATCH') return original(input, init)
+    const value = (
+      JSON.parse(String(init.body)) as { fields: { name: string } }
+    ).fields.name
+    if (value === 'first')
+      return new Promise<Response>((resolve) => {
+        releaseFirst = resolve
+      })
+    return Promise.resolve(
+      Response.json({
+        row: { id: '9007199254740993', fields: { name: value } },
+        previous: { name: 'first' },
+      }),
+    )
+  })
+  const commit = wrapper!.get('[data-testid="fake-grid"] button:first-child')
+  gridState.value = 'first'
+  await commit.trigger('click')
+  await flushPromises()
+  gridState.value = 'second'
+  await commit.trigger('click')
+  await flushPromises()
+  expect(
+    fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH'),
+  ).toHaveLength(1)
+  expect(releaseFirst).toBeDefined()
+  releaseFirst!(
+    Response.json({
+      row: { id: '9007199254740993', fields: { name: 'first' } },
+      previous: { name: 'before' },
+    }),
+  )
+  await flushPromises()
+  const patches = fetch.mock.calls.filter(
+    ([, init]) => init?.method === 'PATCH',
+  )
+  expect(patches).toHaveLength(2)
+  expect(JSON.parse(String(patches[1]![1]?.body))).toEqual({
+    fields: { name: 'second' },
+  })
+  const source = wrapper!
+    .getComponent({ name: 'RevoGrid' })
+    .props('source') as { name: string }[]
+  expect(source[0]?.name).toBe('second')
+})
+
+it('applies a locally saved row after the editor closes without reloading the window', async () => {
+  const fetch = await mountGrid(schemaFor('text'))
+  const queriesBefore = fetch.mock.calls.filter(([input]) =>
+    String(input).endsWith('/query'),
+  ).length
+  const editor = mount(gridState.editorComponent!, {
+    props: {
+      column: { prop: 'name' },
+      prop: 'name',
+      rowIndex: 0,
+      val: 'before',
+      save: vi.fn(),
+      close: vi.fn(),
+    },
+    global: { plugins: [pinia, i18n] },
+  })
+  try {
+    gridState.value = 'after'
+    await wrapper!
+      .get('[data-testid="fake-grid"] button:first-child')
+      .trigger('click')
+    await flushPromises()
+    const sourceWhileEditing = wrapper!
+      .getComponent({ name: 'RevoGrid' })
+      .props('source') as { name: string }[]
+    expect(sourceWhileEditing[0]?.name).toBe('before')
+  } finally {
+    editor.unmount()
+  }
+  await flushPromises()
+  const source = wrapper!
+    .getComponent({ name: 'RevoGrid' })
+    .props('source') as { name: string }[]
+  expect(source[0]?.name).toBe('after')
+  expect(
+    fetch.mock.calls.filter(([input]) => String(input).endsWith('/query')),
+  ).toHaveLength(queriesBefore)
+})
+
+it.each(['row.updated', 'comment.created'])(
+  'refreshes again when %s arrives during window initialization',
+  async (eventType) => {
+    let receive: ((event: RealtimeEvent) => void) | undefined
+    vi.spyOn(useRealtimeStore(), 'subscribe').mockImplementation(
+      (_table, listener) => {
+        receive = listener
+        return () => {}
+      },
+    )
+    const schema = schemaFor('text')
+    const fetch = await mountGrid(schema)
+    const original = fetch.getMockImplementation()!
+    let resolveReload: ((response: Response) => void) | undefined
+    let reloadSignal: AbortSignal | undefined
+    fetch.mockImplementation((input, init) => {
+      if (String(input).endsWith('/query') && !resolveReload) {
+        reloadSignal = init?.signal ?? undefined
+        return new Promise<Response>((resolve) => {
+          resolveReload = resolve
+        })
+      }
+      return original(input, init)
+    })
+
+    expect(receive).toBeDefined()
+    receive!({ t: 'resync', tableId: 't' })
+    await flushPromises()
+    expect(resolveReload).toBeDefined()
+    receive!({
+      t: eventType,
+      tableId: 't',
+      ids: ['9007199254740993'],
+    })
+    expect(reloadSignal?.aborted).toBe(false)
+    gridState.rowFields = [{ name: 'remote' }]
+    resolveReload!(
+      Response.json({
+        ...queryResponse(schema),
+        rows: [{ id: '9007199254740993', fields: { name: 'stale' } }],
+      }),
+    )
+    await flushPromises()
+    const source = wrapper!
+      .getComponent({ name: 'RevoGrid' })
+      .props('source') as { name: string }[]
+    expect(source[0]?.name).toBe('remote')
+  },
+)
+
+it('reconciles collaborator changes that overlap a local editor save', async () => {
+  let receive: ((event: RealtimeEvent) => void) | undefined
+  vi.spyOn(useRealtimeStore(), 'subscribe').mockImplementation(
+    (_table, listener) => {
+      receive = listener
+      return () => {}
+    },
+  )
+  const fetch = await mountGrid(schemaFor('text'))
+  const original = fetch.getMockImplementation()!
+  let resolveSave: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (init?.method === 'PATCH')
+      return new Promise<Response>((resolve) => {
+        resolveSave = resolve
+      })
+    return original(input, init)
+  })
+  const editor = mount(gridState.editorComponent!, {
+    props: {
+      column: { prop: 'name' },
+      prop: 'name',
+      rowIndex: 0,
+      val: 'before',
+      save: vi.fn(),
+      close: vi.fn(),
+    },
+    global: { plugins: [pinia, i18n] },
+  })
+  try {
+    gridState.value = 'local'
+    await wrapper!
+      .get('[data-testid="fake-grid"] button:first-child')
+      .trigger('click')
+    await flushPromises()
+    expect(resolveSave).toBeDefined()
+    gridState.rowFields = [{ name: 'remote latest' }]
+    receive!({
+      t: 'row.updated',
+      tableId: 't',
+      ids: ['9007199254740993'],
+      fields: ['name'],
+    })
+    await flushPromises()
+    resolveSave!(
+      Response.json({
+        row: { id: '9007199254740993', fields: { name: 'local' } },
+        previous: { name: 'before' },
+      }),
+    )
+    await flushPromises()
+  } finally {
+    editor.unmount()
+  }
+  await flushPromises()
+  const source = wrapper!
+    .getComponent({ name: 'RevoGrid' })
+    .props('source') as { name: string }[]
+  expect(source[0]?.name).toBe('remote latest')
+})
+
+it('refreshes realtime changes received while an uncached viewport loads', async () => {
+  let receive: ((event: RealtimeEvent) => void) | undefined
+  vi.spyOn(useRealtimeStore(), 'subscribe').mockImplementation(
+    (_table, listener) => {
+      receive = listener
+      return () => {}
+    },
+  )
+  gridState.rowCount = 1100
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const original = fetch.getMockImplementation()!
+  const pending = new Map<number, (response: Response) => void>()
+  fetch.mockImplementation((input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as {
+      offset?: number
+      includeCount?: boolean
+    }
+    if (
+      String(input).endsWith('/query') &&
+      !body.includeCount &&
+      body.offset !== undefined &&
+      body.offset >= 900
+    )
+      return new Promise<Response>((resolve) => {
+        pending.set(body.offset!, resolve)
+      })
+    return original(input, init)
+  })
+  wrapper!.findComponent({ name: 'RevoGrid' }).vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgRow', coordinate: 32_000 },
+    }),
+  )
+  await flushPromises()
+  expect(pending.has(900)).toBe(true)
+  expect(pending.has(1000)).toBe(true)
+  const rowId = String(BigInt('9007199254740993') + 1000n)
+  gridState.rowFields[1000] = { name: 'remote latest' }
+  receive!({ t: 'row.updated', tableId: 't', ids: [rowId] })
+  pending.get(900)!(Response.json(queryResponse(schema, ['name'], 900, 100)))
+  await flushPromises()
+  const source = wrapper!
+    .getComponent({ name: 'RevoGrid' })
+    .props('source') as { name?: string; __rowId?: string }[]
+  expect(source[1000]).toMatchObject({ __rowId: rowId, name: 'remote latest' })
+  pending.get(1000)!(Response.json(queryResponse(schema, ['name'], 1000, 100)))
+})
+
+it.each(['permission', 'identity', 'view'] as const)(
+  'does not dispatch queued writes after a %s change',
+  async (change) => {
+    const schema = schemaFor('text')
+    const fetch = await mountGrid(schema)
+    const original = fetch.getMockImplementation()!
+    let releaseFirst: ((response: Response) => void) | undefined
+    fetch.mockImplementation((input, init) => {
+      if (init?.method !== 'PATCH') return original(input, init)
+      return new Promise<Response>((resolve) => {
+        releaseFirst = resolve
+      })
+    })
+    const commit = wrapper!.get('[data-testid="fake-grid"] button:first-child')
+    gridState.value = 'first'
+    await commit.trigger('click')
+    await flushPromises()
+    gridState.value = 'second'
+    await commit.trigger('click')
+    await flushPromises()
+    if (change === 'permission')
+      await wrapper!.setProps({ schema: { ...schema, myLevel: 'read' } })
+    else if (change === 'identity')
+      useAuthStore().setUser({ ...navUser, id: 'bob' })
+    else await wrapper!.setProps({ viewId: 'other' })
+    expect(releaseFirst).toBeDefined()
+    releaseFirst!(
+      Response.json({
+        row: { id: '9007199254740993', fields: { name: 'first' } },
+      }),
+    )
+    await flushPromises()
+    expect(
+      fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH'),
+    ).toHaveLength(1)
+  },
+)
+
+it('retains the active draft without saving when write permission is revoked', async () => {
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const save = vi.fn()
+  const close = vi.fn()
+  const open = () =>
+    mount(gridState.editorComponent!, {
+      props: {
+        column: { prop: 'name' },
+        prop: 'name',
+        rowIndex: 0,
+        val: 'before',
+        save,
+        close,
+      },
+      global: { plugins: [pinia, i18n] },
+    })
+  const editor = open()
+  await editor.get('input').setValue('permission draft')
+  await wrapper!.setProps({ schema: { ...schema, myLevel: 'read' } })
+  expect(save).not.toHaveBeenCalled()
+  expect(close).toHaveBeenCalledOnce()
+  expect(wrapper!.text()).toContain(
+    i18n.global.t('errors.ERR_PERMISSION_DENIED'),
+  )
+  expect(
+    fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH'),
+  ).toHaveLength(0)
+  editor.unmount()
+  await wrapper!.setProps({ schema })
+  const reopened = open()
+  expect((reopened.get('input').element as HTMLInputElement).value).toBe(
+    'permission draft',
+  )
+  await reopened.get('input').trigger('keydown', { key: 'Escape' })
+  reopened.unmount()
+})
+
+it('retains and reopens the raw draft after a rejected server save', async () => {
+  const fetch = await mountGrid(schemaFor('text'))
+  const original = fetch.getMockImplementation()!
+  fetch.mockImplementation((input, init) =>
+    init?.method === 'PATCH'
+      ? Promise.resolve(
+          Response.json(
+            { error: { code: 'ERR_UNIQUE_CONFLICT' } },
+            { status: 409 },
+          ),
+        )
+      : original(input, init),
+  )
+  const open = () =>
+    mount(gridState.editorComponent!, {
+      props: {
+        column: { prop: 'name' },
+        prop: 'name',
+        rowIndex: 0,
+        val: 'before',
+        save: (value: string) => {
+          gridState.value = value
+          ;(
+            wrapper!.get('[data-testid="fake-grid"] button:first-child')
+              .element as HTMLButtonElement
+          ).click()
+        },
+        close: vi.fn(),
+      },
+      global: { plugins: [pinia, i18n] },
+    })
+  const editor = open()
+  await editor.get('input').setValue('duplicate')
+  await editor
+    .get('input')
+    .trigger('focusout', { relatedTarget: document.body })
+  await flushPromises()
+  expect(wrapper!.text()).toContain(i18n.global.t('errors.ERR_UNIQUE_CONFLICT'))
+  editor.unmount()
+  const reopened = open()
+  expect((reopened.get('input').element as HTMLInputElement).value).toBe(
+    'duplicate',
+  )
+  await reopened.get('input').trigger('keydown', { key: 'Escape' })
+  expect(wrapper!.find('.grid-validation-summary').exists()).toBe(false)
+  reopened.unmount()
+})
+
+it('preserves an earlier pending draft when a later edit is cancelled', async () => {
+  const fetch = await mountGrid(schemaFor('text'))
+  const original = fetch.getMockImplementation()!
+  let release: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (init?.method !== 'PATCH') return original(input, init)
+    return new Promise<Response>((resolve) => {
+      release = resolve
+    })
+  })
+  const open = () =>
+    mount(gridState.editorComponent!, {
+      props: {
+        column: { prop: 'name' },
+        prop: 'name',
+        rowIndex: 0,
+        val: 'before',
+        save: (value: string) => {
+          gridState.value = value
+          ;(
+            wrapper!.get('[data-testid="fake-grid"] button:first-child')
+              .element as HTMLButtonElement
+          ).click()
+        },
+        close: vi.fn(),
+      },
+      global: { plugins: [pinia, i18n] },
+    })
+  const first = open()
+  await first.get('input').setValue('first draft')
+  await first.get('input').trigger('focusout', { relatedTarget: document.body })
+  await flushPromises()
+  first.unmount()
+  const second = open()
+  await second.get('input').setValue('cancel this')
+  await second.get('input').trigger('keydown', { key: 'Escape' })
+  second.unmount()
+  expect(release).toBeDefined()
+  release!(
+    Response.json({ error: { code: 'ERR_UNIQUE_CONFLICT' } }, { status: 409 }),
+  )
+  await flushPromises()
+  const recovered = open()
+  expect((recovered.get('input').element as HTMLInputElement).value).toBe(
+    'first draft',
+  )
+  expect(wrapper!.text()).toContain(i18n.global.t('errors.ERR_UNIQUE_CONFLICT'))
+  recovered.unmount()
 })
 
 it('expands the focused loaded row with Space but leaves native controls and IME alone', async () => {

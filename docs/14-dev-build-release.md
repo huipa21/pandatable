@@ -280,7 +280,8 @@ $env:PT_DATABASE_URL = '<explicit disposable PostgreSQL connection URL>'
 The configured database must match `--confirm-database` exactly and match
 `pt_seed_` or Suite-owned `pt_test_` followed by 1..48 lowercase letters,
 digits or underscores. No implicit localhost/developer DSN. The command checks
-the connected database name, major 18, no workspaces **including Trash**, an
+the connected database name, major 18, no workspaces **including Trash** (or
+only the owner's untouched, unshared `Default` starter with no books), an
 existing active owner without forced password change, and a nonblocking
 database advisory session lock on a reserved connection (no idle transaction
 between batches), with independent bounded unlock/close on every exit.

@@ -38,6 +38,12 @@ func newHTTPSetupFixture(t *testing.T) (*httpAuthFixture, string) {
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM meta.grants WHERE resource_type='workspace'
+			AND resource_id IN (SELECT w.id FROM meta.workspaces w JOIN meta.users u ON u.id=w.created_by
+				WHERE u.email LIKE '%@http-setup.test');
+			DELETE FROM meta.workspaces WHERE created_by IN (SELECT id FROM meta.users WHERE email LIKE '%@http-setup.test')`); err != nil {
+			t.Error("cleanup HTTP setup workspaces:", err)
+		}
 		if _, err := pool.Exec(cleanupCtx, "DELETE FROM meta.users WHERE email LIKE '%@http-setup.test'"); err != nil {
 			t.Error("cleanup HTTP setup user:", err)
 		}

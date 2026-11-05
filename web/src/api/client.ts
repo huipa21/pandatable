@@ -284,6 +284,8 @@ export function errorMessage(error: unknown): string {
       return t('errors.ERR_DDL_CONFLICT')
     case 'ERR_DDL_LOCK_TIMEOUT':
       return t('errors.ERR_DDL_LOCK_TIMEOUT')
+    case 'ERR_WORKSPACE_PREFERENCE_BUSY':
+      return t('errors.ERR_WORKSPACE_PREFERENCE_BUSY')
     default:
       return t('errors.ERR_INTERNAL')
   }

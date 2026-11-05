@@ -235,6 +235,10 @@ membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
 - **AT-212 — Hidden resources are 404** · M1 *(API)* · dave (no grants) requesting T's rows gets 404, not 403.
 - **AT-213 — Any user creates workspaces** · M1 · carol creates W2 and is its owner.
 
+UX-01 reran AT-101, AT-201, AT-203, AT-208, AT-212 and AT-213 in its task
+gate. New lifecycle scenarios and the UX-02 handoff are in its
+[record](task-prompts/workspace-grid-01-default-workspace.md).
+
 ### T1.9 physical-only evidence (2026-10-26)
 
 | Test | Status | Evidence / remaining requirement |

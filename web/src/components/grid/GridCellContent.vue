@@ -1,15 +1,21 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { HighlightColor } from '../../api/types'
 import type { BoundField } from '../../fields/registry'
 import type { FieldEnv, WireValue } from '../../fields/types'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import CellPresence from '../presence/CellPresence.vue'
 
-defineProps<{
+const props = defineProps<{
   field: BoundField
   value: WireValue
   env: FieldEnv
-  message: string
+  state?: () => {
+    draft?: { text: string; pending: boolean }
+    message: string
+  }
+  message?: string
+  savingLabel?: string
   tableId: string
   identity: string
   rowId: string
@@ -26,6 +32,9 @@ defineProps<{
     toggle: () => void
   }
 }>()
+const cellState = computed(
+  () => props.state?.() ?? { draft: undefined, message: props.message ?? '' },
+)
 </script>
 
 <template>
@@ -52,15 +61,26 @@ defineProps<{
     <span v-else-if="group" class="grid-group-cell">{{
       group.aggregate ?? ''
     }}</span>
-    <div v-else-if="message" class="grid-cell-invalid" aria-invalid="true">
+    <div
+      v-else-if="cellState.message || cellState.draft"
+      class="grid-cell-invalid"
+      :aria-invalid="cellState.message ? 'true' : undefined"
+    >
+      <span v-if="cellState.draft" class="grid-cell-draft">{{
+        cellState.draft.text
+      }}</span>
       <FieldRenderer
+        v-else
         :field="field"
         :value="value"
         :env="env"
         :table-id="tableId"
         :identity="identity"
       />
-      <span role="alert">{{ message }}</span>
+      <span v-if="cellState.message" role="alert">{{ cellState.message }}</span>
+      <span v-else-if="cellState.draft?.pending" role="status">{{
+        savingLabel
+      }}</span>
     </div>
     <FieldRenderer
       v-else-if="!group"
@@ -97,5 +117,8 @@ defineProps<{
 }
 .grid-group-toggle[aria-expanded='true'] .grid-group-indicator {
   transform: rotate(90deg);
+}
+.grid-cell-draft {
+  white-space: pre-wrap;
 }
 </style>

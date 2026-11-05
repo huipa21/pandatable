@@ -53,6 +53,18 @@ export interface AuthUserMutation extends AuthMutation {
   user: AuthUser
 }
 
+export interface WorkspacePreference {
+  workspaceId: string | null
+}
+
+export interface WorkspacePreferenceMutation extends AuthMutation {
+  workspaceId: string
+}
+
+export interface SetWorkspacePreferenceRequest {
+  workspaceId: string
+}
+
 export interface APIError {
   error: {
     code: string

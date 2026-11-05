@@ -11,6 +11,7 @@ import (
 	"pandatable/internal/acl"
 	"pandatable/internal/events"
 	"pandatable/internal/structure/structuresql"
+	"pandatable/internal/workspace"
 )
 
 type WorkspaceInput struct {
@@ -87,14 +88,10 @@ func (s *Service) CreateWorkspace(ctx context.Context, actor Actor, input Worksp
 			return err
 		}
 		queries := s.queries.WithTx(tx)
-		row, err := queries.InsertWorkspace(ctx, structuresql.InsertWorkspaceParams{
+		row, err := workspace.CreateOwned(ctx, queries, structuresql.InsertWorkspaceParams{
 			Name: name, Icon: textValue(icon), Color: textValue(color), CreatedBy: user})
 		if err != nil {
-			return fmt.Errorf("insert workspace: %w", err)
-		}
-		if err := queries.InsertWorkspaceOwnerGrant(ctx, structuresql.InsertWorkspaceOwnerGrantParams{
-			WorkspaceID: row.ID, UserID: user}); err != nil {
-			return fmt.Errorf("insert workspace owner grant: %w", err)
+			return err
 		}
 		created = workspaceDTO(row.ID, row.Name, row.Icon, row.Color, row.CreatedAt)
 		written = true

@@ -68,9 +68,17 @@ func Run(ctx context.Context, pool *db.Pool, confirmedDatabase, owner string, co
 		if err != nil {
 			return fmt.Errorf("inspect developer seed target: %w", err)
 		}
-		if target.DatabaseName != confirmedDatabase || target.ServerVersion < 180000 || target.ServerVersion >= 190000 ||
-			!target.Empty {
-			return Refusal("seed requires the confirmed PG18 database with no workspaces (including Trash)")
+		if target.DatabaseName != confirmedDatabase || target.ServerVersion < 180000 || target.ServerVersion >= 190000 {
+			return Refusal("seed requires the confirmed PG18 database")
+		}
+		if !target.Empty {
+			pristine, err := q.IsOnlyPristineStarter(ctx, userID)
+			if err != nil {
+				return fmt.Errorf("inspect starter workspace: %w", err)
+			}
+			if !pristine {
+				return Refusal("seed requires no workspaces, except the owner's untouched starter")
+			}
 		}
 		user, err := authsql.New(pool).GetUser(ctx, userID)
 		if err != nil {

@@ -141,6 +141,42 @@ func (q *Queries) DeleteRowComment(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const eligibleWorkspaces = `-- name: EligibleWorkspaces :many
+SELECT w.id
+FROM meta.workspaces w
+WHERE w.deleted_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM meta.grants g
+    WHERE g.resource_type = 'workspace' AND g.resource_id = w.id
+      AND ((g.principal_type = 'user' AND g.principal_id = $1::uuid)
+        OR (g.principal_type = 'group' AND EXISTS (
+          SELECT 1 FROM meta.group_members gm
+          WHERE gm.group_id = g.principal_id AND gm.user_id = $1::uuid
+        )))
+  )
+ORDER BY w.created_at, w.id
+`
+
+func (q *Queries) EligibleWorkspaces(ctx context.Context, userID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, eligibleWorkspaces, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const enqueueMentionMail = `-- name: EnqueueMentionMail :exec
 INSERT INTO meta.mention_mail_jobs (notification_id)
 SELECT $1::uuid
@@ -834,6 +870,20 @@ func (q *Queries) InsertWorkspaceOwnerGrant(ctx context.Context, arg InsertWorks
 	return err
 }
 
+const insertWorkspacePreference = `-- name: InsertWorkspacePreference :exec
+INSERT INTO meta.user_workspace_preferences (user_id, workspace_id) VALUES ($1, $2)
+`
+
+type InsertWorkspacePreferenceParams struct {
+	UserID      pgtype.UUID
+	WorkspaceID pgtype.UUID
+}
+
+func (q *Queries) InsertWorkspacePreference(ctx context.Context, arg InsertWorkspacePreferenceParams) error {
+	_, err := q.db.Exec(ctx, insertWorkspacePreference, arg.UserID, arg.WorkspaceID)
+	return err
+}
+
 const inspectDevSeedTarget = `-- name: InspectDevSeedTarget :one
 SELECT current_database()::text AS database_name,
        current_setting('server_version_num')::integer AS server_version,
@@ -851,6 +901,33 @@ func (q *Queries) InspectDevSeedTarget(ctx context.Context) (InspectDevSeedTarge
 	var i InspectDevSeedTargetRow
 	err := row.Scan(&i.DatabaseName, &i.ServerVersion, &i.Empty)
 	return i, err
+}
+
+const isOnlyPristineStarter = `-- name: IsOnlyPristineStarter :one
+SELECT EXISTS (
+  SELECT 1
+  FROM meta.user_workspace_preferences p
+  JOIN meta.workspaces w ON w.id = p.workspace_id
+  WHERE p.user_id = $1::uuid
+    AND w.created_by = p.user_id AND w.name = 'Default'
+    AND w.icon IS NULL AND w.color IS NULL AND w.deleted_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM meta.workspaces other WHERE other.id <> w.id)
+    AND NOT EXISTS (SELECT 1 FROM meta.books b WHERE b.workspace_id = w.id)
+    AND NOT EXISTS (SELECT 1 FROM meta.user_workspace_preferences other
+                    WHERE other.workspace_id = w.id AND other.user_id <> p.user_id)
+    AND (SELECT count(*) FROM meta.grants g
+         WHERE g.resource_type = 'workspace' AND g.resource_id = w.id) = 1
+    AND EXISTS (SELECT 1 FROM meta.grants g WHERE g.resource_type = 'workspace'
+                AND g.resource_id = w.id AND g.principal_type = 'user'
+                AND g.principal_id = p.user_id AND g.level = 'owner')
+)
+`
+
+func (q *Queries) IsOnlyPristineStarter(ctx context.Context, userID pgtype.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, isOnlyPristineStarter, userID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const listAttachmentMetadata = `-- name: ListAttachmentMetadata :many
@@ -1662,6 +1739,51 @@ func (q *Queries) LockViewForQuery(ctx context.Context, id pgtype.UUID) (LockVie
 	return i, err
 }
 
+const lockWorkspaceGrantGroups = `-- name: LockWorkspaceGrantGroups :many
+SELECT gr.id
+FROM meta.groups gr
+JOIN meta.group_members gm ON gm.group_id = gr.id
+JOIN meta.grants g ON g.principal_type = 'group' AND g.principal_id = gr.id
+WHERE gm.user_id = $1::uuid
+  AND g.resource_type = 'workspace' AND g.resource_id = $2::uuid
+ORDER BY gr.id
+FOR SHARE OF gr
+`
+
+type LockWorkspaceGrantGroupsParams struct {
+	UserID      pgtype.UUID
+	WorkspaceID pgtype.UUID
+}
+
+func (q *Queries) LockWorkspaceGrantGroups(ctx context.Context, arg LockWorkspaceGrantGroupsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, lockWorkspaceGrantGroups, arg.UserID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []pgtype.UUID
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockWorkspacePreference = `-- name: LockWorkspacePreference :exec
+SELECT pg_advisory_xact_lock(hashtextextended('pandatable.workspace-preference:' || $1::uuid::text, 0))
+`
+
+func (q *Queries) LockWorkspacePreference(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockWorkspacePreference, userID)
+	return err
+}
+
 const markMentionNotificationRead = `-- name: MarkMentionNotificationRead :execrows
 UPDATE meta.notifications SET read_at = now()
 WHERE id = $1::uuid AND user_id = $2::uuid
@@ -2040,6 +2162,17 @@ func (q *Queries) ReadHistoryRetentionDays(ctx context.Context) (int32, error) {
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const readWorkspacePreference = `-- name: ReadWorkspacePreference :one
+SELECT workspace_id FROM meta.user_workspace_preferences WHERE user_id = $1
+`
+
+func (q *Queries) ReadWorkspacePreference(ctx context.Context, userID pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, readWorkspacePreference, userID)
+	var workspace_id pgtype.UUID
+	err := row.Scan(&workspace_id)
+	return workspace_id, err
 }
 
 const releaseDevSeedLock = `-- name: ReleaseDevSeedLock :one
@@ -2488,6 +2621,23 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const updateWorkspacePreference = `-- name: UpdateWorkspacePreference :execrows
+UPDATE meta.user_workspace_preferences SET workspace_id = $2 WHERE user_id = $1
+`
+
+type UpdateWorkspacePreferenceParams struct {
+	UserID      pgtype.UUID
+	WorkspaceID pgtype.UUID
+}
+
+func (q *Queries) UpdateWorkspacePreference(ctx context.Context, arg UpdateWorkspacePreferenceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateWorkspacePreference, arg.UserID, arg.WorkspaceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const validFieldTimezone = `-- name: ValidFieldTimezone :one

@@ -39,6 +39,12 @@ func newSetupFixture(t *testing.T) *setupFixture {
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cleanupCancel()
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM meta.grants WHERE resource_type='workspace'
+			AND resource_id IN (SELECT w.id FROM meta.workspaces w JOIN meta.users u ON u.id=w.created_by
+				WHERE u.email LIKE '%@setup.test');
+			DELETE FROM meta.workspaces WHERE created_by IN (SELECT id FROM meta.users WHERE email LIKE '%@setup.test')`); err != nil {
+			t.Error("cleanup setup workspaces:", err)
+		}
 		if _, err := pool.Exec(cleanupCtx, "DELETE FROM meta.users WHERE email LIKE '%@setup.test'"); err != nil {
 			t.Error("cleanup setup users:", err)
 		}
@@ -155,6 +161,15 @@ func TestSetupFlowPostgreSQL(t *testing.T) {
 		session.User.MustChangePassword || session.User.EffectiveTimezone != "Asia/Shanghai" {
 		t.Fatalf("incorrect first-admin profile: %+v", session.User)
 	}
+	var starterOK bool
+	if err := f.pool.QueryRow(f.ctx, `SELECT EXISTS (
+		SELECT 1 FROM meta.user_workspace_preferences p
+		JOIN meta.workspaces w ON w.id=p.workspace_id
+		JOIN meta.grants g ON g.resource_type='workspace' AND g.resource_id=w.id
+		WHERE p.user_id=$1 AND w.created_by=$1 AND w.name='Default' AND w.deleted_at IS NULL
+		  AND g.principal_type='user' AND g.principal_id=$1 AND g.level='owner')`, session.User.ID).Scan(&starterOK); err != nil || !starterOK {
+		t.Fatalf("first administrator starter workspace: ok=%t err=%v", starterOK, err)
+	}
 	var role, passwordHash, avatarColor string
 	var email string
 	var lastLogin time.Time
@@ -212,14 +227,18 @@ func TestSetupTransactionalRollbackPostgreSQL(t *testing.T) {
 	if _, _, err := f.service.Setup(f.ctx, input, netip.MustParseAddr("192.0.2.11"), "rollback test"); err == nil {
 		t.Fatal("forced session insert failure unexpectedly succeeded")
 	}
-	var users, sessions, markers int
+	var users, sessions, markers, workspaces, grants, preferences int
 	if err := f.pool.QueryRow(f.ctx, `SELECT (SELECT count(*) FROM meta.users),
 		(SELECT count(*) FROM meta.sessions),
-		(SELECT count(*) FROM meta.settings WHERE key='setup_completed')`).Scan(&users, &sessions, &markers); err != nil {
+		(SELECT count(*) FROM meta.settings WHERE key='setup_completed'),
+		(SELECT count(*) FROM meta.workspaces), (SELECT count(*) FROM meta.grants),
+		(SELECT count(*) FROM meta.user_workspace_preferences)`).
+		Scan(&users, &sessions, &markers, &workspaces, &grants, &preferences); err != nil {
 		t.Fatal(err)
 	}
-	if users != 0 || sessions != 0 || markers != 0 {
-		t.Fatalf("failed setup left partial rows: users=%d sessions=%d markers=%d", users, sessions, markers)
+	if users != 0 || sessions != 0 || markers != 0 || workspaces != 0 || grants != 0 || preferences != 0 {
+		t.Fatalf("failed setup left partial rows: users=%d sessions=%d markers=%d workspaces=%d grants=%d preferences=%d",
+			users, sessions, markers, workspaces, grants, preferences)
 	}
 	if _, err := f.pool.Exec(f.ctx, "DROP TRIGGER test_reject_setup_session ON meta.sessions"); err != nil {
 		t.Fatal(err)

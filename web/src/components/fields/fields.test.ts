@@ -324,6 +324,20 @@ describe('FieldEditor', () => {
       .trigger('keydown', { key: 'Escape', isComposing: true })
     expect(wrapper.emitted('cancel')).toBeUndefined()
   })
+
+  it('keeps non-grid text drafts local when focus leaves', async () => {
+    const wrapper = mount(FieldEditor, {
+      props: { field: field('text'), value: 'before' },
+    })
+    await wrapper.get('input').setValue('draft')
+    await wrapper
+      .get('input')
+      .trigger('focusout', { relatedTarget: document.body })
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    expect((wrapper.get('input').element as HTMLInputElement).value).toBe(
+      'draft',
+    )
+  })
 })
 
 describe('field messages', () => {

@@ -17,6 +17,9 @@ func actorOf(user auth.User) structure.Actor {
 
 func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Get("/nav", api.authenticated(api.nav))
+	router.Get("/auth/workspace-preference", api.authenticated(api.getWorkspacePreference))
+	router.Put("/auth/workspace-preference", api.authenticated(api.setWorkspacePreference))
+	router.Post("/auth/workspace-preference/resolve", api.authenticated(api.resolveWorkspacePreference))
 	router.Get("/trash", api.authenticated(api.listTrash))
 	router.Post("/trash/{kind}/{id}/restore", api.authenticated(api.restoreTrash))
 	router.Post("/workspaces", api.authenticated(api.createWorkspace))
