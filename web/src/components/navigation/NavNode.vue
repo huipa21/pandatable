@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { type NavigationItem, useNavStore } from '../../stores/nav'
 import AppIcon from '../AppIcon.vue'
 import NavActions from './NavActions.vue'
+import ViewActions from './ViewActions.vue'
 
 const props = defineProps<{ item: NavigationItem }>()
 const emit = defineEmits<{
@@ -23,6 +24,18 @@ const current = computed(
     props.item.kind === 'table' &&
     route.params.tableId === props.item.id &&
     !route.params.viewId,
+)
+watch(
+  [() => route.params.tableId, () => route.params.viewId],
+  ([tableId, viewId]) => {
+    if (
+      props.item.kind === 'table' &&
+      tableId === props.item.id &&
+      typeof viewId === 'string'
+    )
+      expanded.value = true
+  },
+  { immediate: true },
 )
 </script>
 
@@ -92,15 +105,21 @@ const current = computed(
       <li v-if="!item.views.length" class="path-only">
         {{ t('nav.emptyViews') }}
       </li>
-      <li v-for="view in item.views" :key="view.id">
+      <li v-for="view in item.views" :key="view.id" :data-view-id="view.id">
         <RouterLink
           class="nav-row"
           :to="`/t/${item.id}/v/${view.id}`"
+          :aria-current="
+            route.params.tableId === item.id && route.params.viewId === view.id
+              ? 'page'
+              : undefined
+          "
           @click="emit('navigate')"
         >
           <AppIcon name="view" :size="14" />
           <span class="nav-name">{{ view.name }}</span>
         </RouterLink>
+        <ViewActions :table="item" :view="view" />
       </li>
     </ul>
   </li>

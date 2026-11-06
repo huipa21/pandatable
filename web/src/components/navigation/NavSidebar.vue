@@ -8,6 +8,7 @@ import { useNavStore } from '../../stores/nav'
 import NavContents from './NavContents.vue'
 import NavErrors from './NavErrors.vue'
 import StructureDialog from './StructureDialog.vue'
+import ViewManagementDialog from './ViewManagementDialog.vue'
 import ShareDialog from '../sharing/ShareDialog.vue'
 import UserMenu from '../account/UserMenu.vue'
 import { usePreferencesStore } from '../../stores/preferences'
@@ -119,6 +120,7 @@ onBeforeUnmount(() => {
       class="nav-error-floating"
     />
     <StructureDialog />
+    <ViewManagementDialog />
     <ShareDialog />
   </div>
 </template>

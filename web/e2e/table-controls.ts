@@ -41,6 +41,60 @@ export async function openTableOptions(page: Page) {
   return options
 }
 
+export async function sidebarTable(page: Page, tableId: string) {
+  if (
+    (page.viewportSize()?.width ?? 0) < 768 &&
+    !(await page.locator('.nav-drawer').isVisible())
+  )
+    await page.getByRole('button', { name: en.nav.open, exact: true }).click()
+  const nav = page.getByRole('navigation', { name: en.nav.title, exact: true })
+  const table = nav.locator(`[data-nav-id="${tableId}"][data-kind="table"]`)
+  await expect(table).toBeVisible()
+  return table
+}
+
+export async function openCreateView(
+  page: Page,
+  tableId: string,
+  interaction: 'pointer' | 'keyboard' | 'touch' = 'pointer',
+) {
+  const table = await sidebarTable(page, tableId)
+  const actions = table.locator(':scope > .node-actions')
+  const activate = async (target: ReturnType<Page['locator']>) => {
+    if (interaction === 'touch') await target.tap()
+    else if (interaction === 'keyboard') {
+      await target.focus()
+      await target.press('Enter')
+    } else await target.click()
+  }
+  if ((await actions.getAttribute('open')) === null)
+    await activate(actions.locator(':scope > summary'))
+  await activate(
+    actions.getByRole('button', { name: en.nav.createView, exact: true }),
+  )
+  const dialog = page.getByRole('dialog', {
+    name: en.nav.createView,
+    exact: true,
+  })
+  await expect(dialog).toBeVisible()
+  await expect(
+    dialog.getByLabel(en.nav.viewName, { exact: true }),
+  ).toBeEnabled()
+  return dialog
+}
+
+export async function sidebarView(page: Page, tableId: string, name: string) {
+  const table = await sidebarTable(page, tableId)
+  const toggle = table.locator(':scope > .nav-row .table-toggle')
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true')
+    await toggle.click()
+  const link = table
+    .locator(':scope > .view-list')
+    .getByRole('link', { name, exact: true })
+  await expect(link).toBeVisible()
+  return link
+}
+
 export async function openGridMore(page: Page) {
   const more = page.locator('.grid-more')
   await expect(more).toBeVisible()

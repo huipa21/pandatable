@@ -13,11 +13,11 @@ Shell per D-209 (supersedes the earlier sketch):
 │ PT PandaTable ⇤ │ Workspace › Book › Table [› View]   🔍  中文/EN  ☀/🌙 │  ← header
 ├─────────────────┬──────────────────────────────────────────────────────┤
 │ Workspaces    + │ ↶ ↷  (view subheader, table routes only)             │
-│ ▾ Workspace  ⋯ │ View tabs:  Shared | Personal | + View               │
+│ ▾ Workspace  ⋯ │ Table title and available view tools                 │
 │   ▾ 📘 Book   ⋯ │ Toolbar: Fields · Filter · Sort · Group · …          │
 │      ▦ Table  ⋯ │ ┌──────────────────────────────────────────────────┐ │
 │      ▾ Table 2  │ │ Grid / Form / Kanban …                           │ │
-│         ◫ View  │ │                                                  │ │
+│         ◫ View ⋯│ │                                                  │ │
 │ ▾ Workspace 2 ⋯ │ └──────────────────────────────────────────────────┘ │
 │ (A)³ avatar menu│                                                      │
 └─────────────────┴──────────────────────────────────────────────────────┘
@@ -36,7 +36,8 @@ Shell per D-209 (supersedes the earlier sketch):
   set that default; path-only ancestors remain context without owner controls.
   Books toggle their tables; hovering/focusing a table's icon turns it into the
   views dropdown; the table name opens `/t/:tableId` (default view, no redirect).
-  "⋯" holds permitted sharing and structure actions.
+  Table "⋯" menus include view creation, and each view has a context menu for
+  its permitted actions alongside the sharing and structure menus.
 - Avatar menu (unread badge): notifications, Profile, Change password, Trash,
   Admin submenu (admins), Sign out. No footer.
 - `/home`: loading/error-aware resolver to the preferred workspace. Retry is
@@ -59,6 +60,7 @@ Routes:
 |---|---|
 | `auth` | me, prefs (locale, theme) |
 | `nav` | sidebar tree + effective levels |
+| `viewManagement` | authorized target-table schema and contextual view mutations |
 | `schema` | per table: fields, relations, views, schemaVersion |
 | `rows` | per view: page cache (Map offset→rows), total, group tree, stale flags |
 | `realtime` | ws connection, subscriptions, presence |
@@ -103,6 +105,21 @@ Routes:
   Explicit local preferences, memory-only auth, production CSP and the
   <600,000-byte/no-initial-grid bundle gate remain unchanged. Unit mocks are
   lower-layer evidence only; browser fixtures use real accounts and APIs.
+
+### UX-05 sidebar views (D-225)
+
+The table menu opens a dialog to create a personal or shared Grid, Form, Kanban
+or Gallery view; readers can create personal views without structure-edit
+permission. Selecting an explicit view expands its table in the sidebar. Each
+view menu offers the authorized rename, duplicate, reorder, lock/unlock and
+delete actions. The active-view action for saving temporary shared-view changes
+as a personal view remains on the table page for UX-06 to relocate.
+
+All these operations share a route- and identity-guarded management store. It
+loads the target table's authorized schema for permissions, lock state and
+versions, refreshes navigation after writes, and retains explicit retry/error
+feedback on conflicts and uncertain results. Table deletion continues to use
+Trash: descendant views and deep links are unavailable until restoration.
 
 ### T1.12 sharing (D-108..D-112)
 
@@ -635,7 +652,9 @@ prevents access to additional rows.
 T2.13's form builder and submission view use the same accessible field editors
 on desktop and mobile. The form remains a single-column layout at 390 px,
 supports keyboard/touch controls, and shows read access without an enabled
-submit action.
+submit action. Refreshing an unchanged schema or view preserves in-progress
+values and submission feedback; an actual view or schema revision resets the
+draft and its field editors together.
 
 ### T1.19 implemented mobile grid (D-141/D-142)
 

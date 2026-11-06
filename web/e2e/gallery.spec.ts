@@ -7,7 +7,7 @@ import {
   test,
 } from './fixtures'
 import { setLocale } from './app-shell'
-import { openTableOptions } from './table-controls'
+import { openCreateView } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type {
   AttachmentValue,
@@ -131,13 +131,11 @@ test('AT-902 displays persisted Gallery covers and selected card fields', async 
 
   await page.goto(`/t/${tableId}/v/${schema.views[0]!.id}`)
   await english(page)
-  await openTableOptions(page)
-  const createView = page.locator('.view-create')
+  const createView = await openCreateView(page, tableId)
   await createView.getByLabel(en.nav.viewName, { exact: true }).fill('Gallery')
   await createView.getByLabel(en.nav.viewScopeLabel).selectOption('shared')
   await createView.getByLabel(en.form.viewType).selectOption('gallery')
   await createView.getByRole('button', { name: en.nav.createView }).click()
-  await page.locator('.table-management > summary').click()
   const builder = page.locator('.gallery-settings')
   await expect(builder).toBeVisible()
   await builder.locator('summary').click()

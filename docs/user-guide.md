@@ -34,7 +34,7 @@ does not change that preference.
 Open a workspace and choose **New book**, then open the book and choose **New
 table**. A new table has a default grid and a display field named Name or 名称
 according to the creator's profile language. Select a book to show its tables,
-select a table name to open its default view, or point at the table icon to list
+select a table name to open its default view, or activate the table icon to list
 its views. A path-only workspace is context for shared descendants, not an
 eligible default or an invitation to manage its structure. The header shows
 where you are and its search button (Ctrl+K) jumps to any workspace, book,
@@ -78,12 +78,15 @@ the row editor or use the add-row control to create a row.
 
 ### 4. Use views and forms
 
-Open **Views and table options** to select an existing view or enter a view
-name, choose **Personal** or **Shared** and a **Grid**, **Form**, **Kanban**, or
-**Gallery** type, then choose **Create view**.
-Readers can create personal views; shared views require write access. Owners can
-lock shared views. If you cannot save changes to a shared view, you can apply
-temporary changes and use **Save current changes as a personal view**.
+Expand a table in the sidebar to select a view. To create one, open the table's
+**⋯** menu and choose **Create view**; enter a name, choose **Personal** or
+**Shared** and a **Grid**, **Form**, **Kanban**, or **Gallery** type, then
+confirm. The new view appears under that table and opens automatically.
+Readers can create personal views; shared views require write access. Open a
+view's **⋯** menu for its permitted rename, duplicate, move, and delete actions;
+owners can also lock or unlock a shared view. If you cannot save changes to a
+shared view, you can apply temporary changes and use **Save current changes as a
+personal view** on the table page.
 
 The desktop grid toolbar provides **Filter**, **Group**, **Sort**, **Highlight**,
 and row-height controls. Apply a filter to use it temporarily;
@@ -188,7 +191,7 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 
 打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。新表默认包含
 一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或名称。选择工作簿
-可展开其数据表，选择数据表名称可打开默认视图，指向数据表图标可列出其视图。仅路径
+可展开其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。仅路径
 工作区只为共享的下级资源提供上下文，不能设为默认工作区，也不能管理其结构。页眉
 显示当前位置，搜索按钮（Ctrl+K）可按名称跳转到任意工作区、工作簿、数据表或视图。
 徽标旁的箭头可隐藏侧边栏；在窄屏上它会打开导航抽屉。
@@ -215,10 +218,12 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 
 ### 4. 使用视图和表单
 
-打开**视图和数据表选项**，选择已有视图，或输入视图名称，选择**个人**或**共享**以及**网格**、**表单**、
-**看板**或**画廊**类型，然后选择**创建视图**。读取者可以创建个人视图；共享视图需要写入
-权限。所有者可以锁定共享视图。如果无法保存共享视图的更改，可以临时调整并选择
-**将当前更改保存为个人视图**。
+展开侧边栏中的数据表并选择视图。要创建视图，请打开数据表的 **⋯** 菜单，选择
+**创建视图**，输入名称，选择**个人**或**共享**以及**网格**、**表单**、**看板**或
+**画廊**类型，然后确认。新视图会显示在该数据表下并自动打开。读取者可以创建个人
+视图；共享视图需要写入权限。打开视图的 **⋯** 菜单，可执行有权限的重命名、复制、
+移动和删除操作；所有者还可以锁定或解锁共享视图。如果无法保存共享视图的更改，可以
+临时调整，并在数据表页面选择**将当前更改保存为个人视图**。
 
 桌面网格工具栏提供**筛选**、**分组**、**排序**、**高亮**和行高控件。
 应用筛选后可临时使用；分组会保存到有编辑权限的视图。搜索可见字段、列宽和顺序、

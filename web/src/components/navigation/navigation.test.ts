@@ -144,9 +144,10 @@ it('renders all workspaces, separate workspace and workbook toggles, views and o
     expect(wrapper.find('[data-nav-id="b"] > .node-actions').exists()).toBe(
       false,
     )
-    expect(wrapper.find('[data-nav-id="t"] > .node-actions').exists()).toBe(
-      false,
-    )
+    const readerActions = wrapper.get('[data-nav-id="t"] > .node-actions')
+    expect(readerActions.text()).toContain('Create view')
+    expect(readerActions.text()).not.toContain('Rename')
+    expect(readerActions.text()).not.toContain('Move to Trash')
     expect(wrapper.text()).toContain('Path only')
   } finally {
     wrapper.unmount()

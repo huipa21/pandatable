@@ -31,6 +31,10 @@ import { useNavStore } from '../stores/nav'
 import { useSharingStore } from '../stores/sharing'
 import { useRealtimeStore } from '../stores/realtime'
 import { useUndoStore, viewUndoStep } from '../stores/undo'
+import {
+  canManageView as isViewManageable,
+  useViewManagementStore,
+} from '../stores/viewManagement'
 import AppIcon from '../components/AppIcon.vue'
 import PresenceAvatars from '../components/presence/PresenceAvatars.vue'
 import VisibilityMenu from '../components/sharing/VisibilityMenu.vue'
@@ -43,6 +47,7 @@ const nav = useNavStore()
 const sharing = useSharingStore()
 const realtime = useRealtimeStore()
 const undo = useUndoStore()
+const viewManagement = useViewManagementStore()
 const schema = shallowRef<TableSchema | null>(null)
 // Lazy so the field registry/editor stay out of the initial bundle (D-130).
 const FieldPanel = defineAsyncComponent(
@@ -147,10 +152,7 @@ const exportBusy = ref(false)
 const importOpen = ref(false)
 let exportController: AbortController | undefined
 let exportGeneration = 0
-const newViewName = ref('')
-const newViewScope = ref<'shared' | 'personal'>('personal')
-const newViewType = ref<'grid' | 'form' | 'kanban' | 'gallery'>('grid')
-const viewNameDrafts = ref<Record<string, string>>({})
+let personalSaveGeneration = 0
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
   newRow.value = false
@@ -292,9 +294,6 @@ const showRowDialog = computed(
       view.value?.type === 'kanban' ||
       view.value?.type === 'gallery') &&
     (typeof route.params.rowId === 'string' || newRow.value),
-)
-const canCreateSharedView = computed(
-  () => schema.value?.myLevel === 'write' || schema.value?.myLevel === 'owner',
 )
 const canSaveAsPersonalView = computed(() => {
   const currentView = view.value
@@ -541,6 +540,9 @@ watch(
     filterVisited.value = false
     createFieldPending.value = false
     fieldMenuError.value = ''
+    personalSaveGeneration++
+    viewBusy.value = false
+    viewError.value = ''
   },
 )
 watch(
@@ -631,20 +633,7 @@ async function downloadExport(format: 'csv' | 'xlsx') {
 }
 
 function canManageView(item: TableView) {
-  if (item.scope === 'personal') return true
-  return (
-    schema.value?.myLevel === 'owner' ||
-    (schema.value?.myLevel === 'write' && !item.locked)
-  )
-}
-
-function canMoveView(item: TableView, index: number, direction: 'up' | 'down') {
-  const viewCount = schema.value?.views.length ?? 0
-  return (
-    canManageView(item) &&
-    !viewBusy.value &&
-    (direction === 'up' ? index > 0 : index < viewCount - 1)
-  )
+  return isViewManageable(item, schema.value?.myLevel)
 }
 
 function applyFilter() {
@@ -665,35 +654,6 @@ function replaceView(updated: TableView) {
 
 function viewRequestFailed(cause: unknown) {
   viewError.value = errorMessage(cause)
-}
-
-async function createView() {
-  if (!schema.value || !newViewName.value.trim()) return
-  viewBusy.value = true
-  viewError.value = ''
-  try {
-    const result = await request<ViewMutation>(
-      `/tables/${schema.value.table.id}/views`,
-      'POST',
-      {
-        name: newViewName.value,
-        scope: newViewScope.value,
-        type: newViewType.value,
-      },
-    )
-    schema.value = {
-      ...schema.value,
-      views: [...schema.value.views, result.view],
-    }
-    newViewName.value = ''
-    newViewType.value = 'grid'
-    void nav.refresh(true)
-    await router.push(`/t/${schema.value.table.id}/v/${result.view.id}`)
-  } catch (cause) {
-    viewRequestFailed(cause)
-  } finally {
-    viewBusy.value = false
-  }
 }
 
 async function saveForm(form: FormConfig) {
@@ -771,164 +731,66 @@ async function saveCardView(
   }
 }
 
-async function renameView(item: TableView) {
-  if (!canManageView(item)) return
-  const name = viewNameDrafts.value[item.id] ?? item.name
-  viewBusy.value = true
-  viewError.value = ''
-  try {
-    const result = await request<ViewMutation>(
-      `/views/${item.id}`,
-      'PATCH',
-      { name },
-      undefined,
-      { ifMatch: item.version },
-    )
-    replaceView(result.view)
-  } catch (cause) {
-    viewRequestFailed(cause)
-  } finally {
-    viewBusy.value = false
-  }
-}
-
-async function duplicateView(item: TableView, scope: 'shared' | 'personal') {
-  if (scope === 'shared' && !canCreateSharedView.value) return
-  viewBusy.value = true
-  viewError.value = ''
-  try {
-    const result = await request<ViewMutation>(
-      `/views/${item.id}/duplicate`,
-      'POST',
-      {
-        name: t('nav.viewCopyName', { name: item.name }),
-        scope,
-      },
-    )
-    if (schema.value) {
-      schema.value = {
-        ...schema.value,
-        views: [...schema.value.views, result.view],
-      }
-      void nav.refresh(true)
-      await router.push(`/t/${schema.value.table.id}/v/${result.view.id}`)
-    }
-  } catch (cause) {
-    viewRequestFailed(cause)
-  } finally {
-    viewBusy.value = false
-  }
-}
-
 async function saveAsPersonalView() {
-  if (!schema.value || !view.value || view.value.scope !== 'shared') return
-  viewBusy.value = true
-  viewError.value = ''
-  try {
-    const config = localViewConfig.value
-    if (!config) throw new RequestError('ERR_INTERNAL', 500)
-    if (filterApplied.value) config.filter = filterValue.value
-    const result = await request<ViewMutation>(
-      `/views/${view.value.id}/duplicate`,
-      'POST',
-      {
-        name: t('nav.viewCopyName', { name: view.value.name }),
-        scope: 'personal',
-        config,
-      },
-    )
-    schema.value = {
-      ...schema.value,
-      views: [...schema.value.views, result.view],
-    }
-    void nav.refresh(true)
-    await router.push(`/t/${schema.value.table.id}/v/${result.view.id}`)
-  } catch (cause) {
-    viewRequestFailed(cause)
-  } finally {
-    viewBusy.value = false
-  }
-}
-
-async function toggleViewLock(item: TableView) {
-  if (schema.value?.myLevel !== 'owner' || item.scope !== 'shared') return
-  viewBusy.value = true
-  viewError.value = ''
-  try {
-    const result = await request<ViewMutation>(
-      `/views/${item.id}`,
-      'PATCH',
-      { locked: !item.locked },
-      undefined,
-      { ifMatch: item.version },
-    )
-    replaceView(result.view)
-  } catch (cause) {
-    viewRequestFailed(cause)
-  } finally {
-    viewBusy.value = false
-  }
-}
-
-async function moveView(item: TableView, beforeId: string | null) {
-  if (!canManageView(item)) return
-  viewBusy.value = true
-  viewError.value = ''
-  try {
-    const result = await request<ViewMutation>(
-      `/views/${item.id}/move`,
-      'POST',
-      { beforeId },
-      undefined,
-      { ifMatch: item.version },
-    )
-    replaceView(result.view)
-    if (schema.value)
-      schema.value = {
-        ...schema.value,
-        views: [...schema.value.views].sort(
-          (left, right) =>
-            left.position - right.position || left.id.localeCompare(right.id),
-        ),
-      }
-  } catch (cause) {
-    viewRequestFailed(cause)
-  } finally {
-    viewBusy.value = false
-  }
-}
-
-async function deleteView(item: TableView) {
   if (
-    !canManageView(item) ||
-    !window.confirm(t('nav.confirmDeleteView', { name: item.name }))
+    !schema.value ||
+    !view.value ||
+    view.value.scope !== 'shared' ||
+    viewBusy.value ||
+    viewManagement.busy
   )
     return
+  const tableId = schema.value.table.id
+  const source = view.value
+  const origin = route.fullPath
+  const identity = auth.user?.id
+  const current = ++personalSaveGeneration
+  const stillCurrent = () =>
+    current === personalSaveGeneration &&
+    route.fullPath === origin &&
+    auth.user?.id === identity &&
+    schema.value?.table.id === tableId &&
+    view.value?.id === source.id
   viewBusy.value = true
   viewError.value = ''
   try {
-    await request(`/views/${item.id}`, 'DELETE', undefined, undefined, {
-      ifMatch: item.version,
-    })
-    if (!schema.value) return
-    const wasActive = view.value?.id === item.id
-    const views = schema.value.views.filter(
-      (candidate) => candidate.id !== item.id,
-    )
-    schema.value = { ...schema.value, views }
-    void nav.refresh(true)
-    if (wasActive) {
-      const next = views[0]
-      if (next) await router.replace(`/t/${schema.value.table.id}/v/${next.id}`)
-      else await router.replace(`/t/${schema.value.table.id}`)
+    const localConfig = localViewConfig.value
+    if (!localConfig) throw new RequestError('ERR_INTERNAL', 500)
+    const config = {
+      ...localConfig,
+      ...(filterApplied.value ? { filter: filterValue.value } : {}),
     }
+    const loaded = await viewManagement.select(tableId, source.id, stillCurrent)
+    if (!loaded) {
+      if (stillCurrent())
+        viewRequestFailed(
+          viewManagement.loadError ?? new RequestError('ERR_INTERNAL', 500),
+        )
+      return
+    }
+    const result = await viewManagement.duplicate(
+      t('nav.viewCopyName', { name: source.name }),
+      'personal',
+      config,
+    )
+    if (!result) {
+      if (stillCurrent())
+        viewRequestFailed(
+          viewManagement.error ??
+            viewManagement.loadError ??
+            new RequestError('ERR_INTERNAL', 500),
+        )
+      return
+    }
+    if (stillCurrent()) await router.push(`/t/${tableId}/v/${result.view.id}`)
   } catch (cause) {
-    viewRequestFailed(cause)
+    if (stillCurrent()) viewRequestFailed(cause)
   } finally {
-    viewBusy.value = false
+    if (current === personalSaveGeneration) viewBusy.value = false
   }
 }
 onBeforeUnmount(() => {
+  personalSaveGeneration++
   generation++
   controller?.abort()
   exportGeneration++
@@ -1101,128 +963,6 @@ onBeforeUnmount(() => {
                 </p>
                 <p v-if="exportError" role="alert">{{ exportError }}</p>
               </details>
-              <nav class="view-links" :aria-label="t('nav.views')">
-                <div v-for="(item, index) in schema.views" :key="item.id">
-                  <RouterLink
-                    :to="`/t/${schema.table.id}/v/${item.id}`"
-                    :aria-current="view?.id === item.id ? 'page' : undefined"
-                  >
-                    {{ item.name }}
-                  </RouterLink>
-                  <span v-if="item.scope === 'shared'">{{
-                    t('nav.viewScope.shared')
-                  }}</span>
-                  <span v-else>{{ t('nav.viewScope.personal') }}</span>
-                  <button
-                    type="button"
-                    :aria-label="t('nav.moveViewUp', { name: item.name })"
-                    :disabled="!canMoveView(item, index, 'up')"
-                    @click="moveView(item, schema.views[index - 1]!.id)"
-                  >
-                    {{ t('nav.moveUp') }}
-                  </button>
-                  <button
-                    type="button"
-                    :aria-label="t('nav.moveViewDown', { name: item.name })"
-                    :disabled="!canMoveView(item, index, 'down')"
-                    @click="moveView(item, schema.views[index + 2]?.id ?? null)"
-                  >
-                    {{ t('nav.moveDown') }}
-                  </button>
-                  <button
-                    v-if="item.scope === 'shared' && !canManageView(item)"
-                    type="button"
-                    :disabled="viewBusy"
-                    @click="duplicateView(item, 'personal')"
-                  >
-                    {{ t('nav.duplicatePersonalView') }}
-                  </button>
-                  <details v-if="canManageView(item)">
-                    <summary>{{ t('nav.viewActions') }}</summary>
-                    <form @submit.prevent="renameView(item)">
-                      <label>
-                        {{ t('nav.viewName') }}
-                        <input
-                          v-model="viewNameDrafts[item.id]"
-                          :aria-label="t('nav.viewName')"
-                          :placeholder="item.name"
-                        />
-                      </label>
-                      <button type="submit" :disabled="viewBusy">
-                        {{ t('nav.renameView') }}
-                      </button>
-                    </form>
-                    <button
-                      type="button"
-                      :disabled="viewBusy"
-                      @click="duplicateView(item, 'personal')"
-                    >
-                      {{ t('nav.duplicatePersonalView') }}
-                    </button>
-                    <button
-                      v-if="canCreateSharedView"
-                      type="button"
-                      :disabled="viewBusy"
-                      @click="duplicateView(item, 'shared')"
-                    >
-                      {{ t('nav.duplicateSharedView') }}
-                    </button>
-                    <button
-                      v-if="
-                        schema.myLevel === 'owner' && item.scope === 'shared'
-                      "
-                      type="button"
-                      :disabled="viewBusy"
-                      @click="toggleViewLock(item)"
-                    >
-                      {{
-                        item.locked ? t('nav.unlockView') : t('nav.lockView')
-                      }}
-                    </button>
-                    <button
-                      type="button"
-                      :disabled="viewBusy"
-                      @click="deleteView(item)"
-                    >
-                      {{ t('nav.deleteView') }}
-                    </button>
-                  </details>
-                </div>
-              </nav>
-              <form class="view-create" @submit.prevent="createView">
-                <label>
-                  {{ t('nav.viewName') }}
-                  <input v-model="newViewName" :disabled="viewBusy" required />
-                </label>
-                <label>
-                  {{ t('nav.viewScopeLabel') }}
-                  <select v-model="newViewScope" :disabled="viewBusy">
-                    <option value="personal">
-                      {{ t('nav.viewScope.personal') }}
-                    </option>
-                    <option value="shared" :disabled="!canCreateSharedView">
-                      {{ t('nav.viewScope.shared') }}
-                    </option>
-                  </select>
-                </label>
-                <label>
-                  {{ t('form.viewType') }}
-                  <select v-model="newViewType" :disabled="viewBusy">
-                    <option value="grid">{{ t('form.gridType') }}</option>
-                    <option value="form">{{ t('form.formType') }}</option>
-                    <option value="kanban">{{ t('kanban.viewType') }}</option>
-                    <option value="gallery">{{ t('gallery.viewType') }}</option>
-                  </select>
-                </label>
-                <button
-                  type="submit"
-                  :disabled="viewBusy || !newViewName.trim()"
-                >
-                  {{ t('nav.createView') }}
-                </button>
-              </form>
-              <p v-if="viewError" role="alert">{{ viewError }}</p>
-              <p v-if="schema.views.length === 0">{{ t('nav.emptyViews') }}</p>
             </div>
           </details>
         </div>
@@ -1240,11 +980,12 @@ onBeforeUnmount(() => {
         <button
           v-if="canSaveAsPersonalView"
           type="button"
-          :disabled="viewBusy"
+          :disabled="viewBusy || viewManagement.busy"
           @click="saveAsPersonalView"
         >
           {{ t('nav.saveAsPersonalView') }}
         </button>
+        <p v-if="viewError" role="alert">{{ viewError }}</p>
         <FormBuilder
           v-if="view?.type === 'form' && canManageView(view)"
           :schema="schema"
@@ -1576,25 +1317,6 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
-}
-
-.table-management-panel .view-links,
-.table-management-panel .view-create {
-  display: grid;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.table-management-panel .view-links > div {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.table-management-panel .view-create label {
-  display: grid;
-  gap: 4px;
 }
 
 .grid-workspace {

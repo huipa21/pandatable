@@ -69,4 +69,29 @@ Gates, translations, documentation and commits follow the execution index.
 
 ## Record
 
-Not started.
+2026-11-06: Started UX-05 alone after UX-04; completed and released UX-06.
+
+- Sidebar table/view actions and a native dialog use one route/identity-guarded
+  view-management store and the target table's authorized schema (D-225). The
+  old content-area view list/create form is gone; permissions, conflict retry,
+  Trash and restoration remain. English/Chinese guidance and focused tests
+  cover cross-table/workspace creation, keyboard/touch, all view types, privacy,
+  locks, ordering and multi-user descendant access.
+- Stabilization fixed form drafts/confirmation being cleared by an unchanged
+  schema refresh. Actual revisions reset the draft and editors together. An
+  outdated sharing-test assertion and a mobile collaboration-test drawer race
+  were corrected; their focused reruns passed.
+- `go run .\tools\ptdev check`: **PASS**, including 852 frontend tests, lint
+  and build. Optional `golangci-lint` was not on PATH. Focused view-navigation
+  Vitest: 8/8; focused desktop/mobile form E2E: 3/3.
+- `go run .\tools\ptdev e2e --fast --` with `views.spec.ts`, `trash.spec.ts`,
+  `form.spec.ts`, `gallery.spec.ts`, `kanban.spec.ts`, and `realtime.spec.ts`,
+  split by desktop/mobile project: **10 passed / 1 skipped** and **8 passed /
+  3 skipped**. `hardening.spec.ts`, split likewise: **12 passed** and
+  **11 passed / 1 skipped**. Skips are intentional project-specific cases.
+- UX-06 handoff: the remaining table options panel contains the display-field
+  and access summary, append import and export. Save-as-personal, mobile filter
+  and view builders remain active-view controls outside that panel; reuse the
+  shared store and preserve its route/identity and error guards. UX-05 is
+  committed separately; the complete production-image phase gate and remaining
+  batch coordination remain deferred to UX-11.

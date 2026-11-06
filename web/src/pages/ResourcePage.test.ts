@@ -119,6 +119,8 @@ it('downloads the active desktop view and full-table package using native links'
     })
   const { wrapper } = await setup('/t/t/v/v')
   try {
+    expect(wrapper.find('.view-create').exists()).toBe(false)
+    expect(wrapper.find('.view-links').exists()).toBe(false)
     expect(wrapper.get('.view-export p').text()).toContain(
       'View locks are not included.',
     )

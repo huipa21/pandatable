@@ -1,7 +1,12 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { expect, observeBrowser, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
-import { openTableOptions } from './table-controls'
+import {
+  openCreateView,
+  openTableOptions,
+  sidebarTable,
+  sidebarView,
+} from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 test.use({ actionTimeout: 10_000 })
@@ -22,7 +27,7 @@ async function signInOwner(page: Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/(home|change-password)$/)
+  await expect(page).toHaveURL(/\/(?:home|w\/[^/]+|change-password)$/)
 }
 
 async function signInParticipant(
@@ -96,16 +101,85 @@ async function setLanguageEnglish(page: Page) {
     await setLocale(page, 'en')
 }
 
-async function viewActions(page: Page, name: string) {
-  await openTableOptions(page)
-  const row = page
-    .locator('.view-links > div')
-    .filter({ has: page.getByRole('link', { name, exact: true }) })
-  const actions = row.locator('details')
+async function viewActions(page: Page, tableId: string, name: string) {
+  const row = (await sidebarView(page, tableId, name)).locator('..')
+  const actions = row.locator(':scope > .node-actions')
   if ((await actions.getAttribute('open')) === null)
-    await actions.locator('summary').click()
+    await actions.locator(':scope > summary').click()
   return row
 }
+
+test('UX-05 creates every supported view under the selected sidebar table', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(240_000)
+  await signInOwner(page)
+  const stamp = Date.now()
+  const workspace = await createResource<{ workspace: { id: string } }>(
+    page,
+    '/api/v1/workspaces',
+    { name: `View navigation ${stamp}` },
+  )
+  const book = await createResource<{ book: { id: string } }>(
+    page,
+    `/api/v1/workspaces/${workspace.workspace.id}/books`,
+    { name: `View navigation book ${stamp}` },
+  )
+  const source = await createResource<TableSchema>(
+    page,
+    `/api/v1/books/${book.book.id}/tables`,
+    { name: 'Source table' },
+  )
+  const target = await createResource<TableSchema>(
+    page,
+    `/api/v1/books/${book.book.id}/tables`,
+    { name: 'Target table' },
+  )
+  const sourcePath = `/t/${source.table.id}/v/${source.views[0]!.id}`
+  await page.goto(sourcePath)
+  const table = await sidebarTable(page, target.table.id)
+  const summary = table.locator(':scope > .node-actions > summary')
+  const interaction = isMobile ? 'touch' : 'keyboard'
+  const cancelled = await openCreateView(page, target.table.id, interaction)
+  await cancelled
+    .getByRole('button', { name: en.admin.cancel, exact: true })
+    .click()
+  await expect(summary).toBeFocused()
+  await expect(page).toHaveURL(new RegExp(`${sourcePath}$`))
+  await expect(page.locator('.resource-page .view-create')).toHaveCount(0)
+  await expect(page.locator('.resource-page .view-links')).toHaveCount(0)
+
+  for (const type of ['grid', 'form', 'kanban', 'gallery'] as const) {
+    const name = `Sidebar ${type}`
+    const dialog = await openCreateView(page, target.table.id, interaction)
+    await dialog.getByLabel(en.nav.viewName, { exact: true }).fill(name)
+    await dialog.getByLabel(en.nav.viewScopeLabel).selectOption('shared')
+    await dialog.getByLabel(en.form.viewType).selectOption(type)
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (result) =>
+          result.request().method() === 'POST' &&
+          new URL(result.url()).pathname ===
+            `/api/v1/tables/${target.table.id}/views`,
+      ),
+      dialog
+        .getByRole('button', { name: en.nav.createView, exact: true })
+        .click(),
+    ])
+    expect(response.status()).toBe(201)
+    const created = (await response.json()) as ViewMutation
+    expect(created.view.type).toBe(type)
+    await expect(page).toHaveURL(
+      new RegExp(`/t/${target.table.id}/v/${created.view.id}$`),
+    )
+    await expect(
+      await sidebarView(page, target.table.id, name),
+    ).toHaveAttribute('aria-current', 'page')
+    await page.reload()
+    await expect(await sidebarView(page, target.table.id, name)).toBeVisible()
+  }
+})
 
 test('AT-506–508 manages private/shared views, locked overrides, ordering, and version conflicts', async ({
   page,
@@ -175,7 +249,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
       en.nav.level.write,
     )
 
-    const createForm = writerPage.locator('.view-create')
+    let createForm = await openCreateView(writerPage, tableId)
     await createForm
       .getByLabel(en.nav.viewName, { exact: true })
       .fill('Writer personal')
@@ -185,8 +259,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     const initialUrl = writerPage.url()
     await createForm.getByRole('button', { name: en.nav.createView }).click()
     await expect(writerPage).not.toHaveURL(initialUrl)
-    await openTableOptions(writerPage)
-
+    createForm = await openCreateView(writerPage, tableId)
     await createForm
       .getByLabel(en.nav.viewName, { exact: true })
       .fill('Shared board')
@@ -225,6 +298,32 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
       readerSchema.views.some((item) => item.id === privateWriterView.id),
     ).toBe(false)
     expect(readerSchema.views.some((item) => item.id === shared.id)).toBe(true)
+    const readerCreate = await openCreateView(readerPage, tableId)
+    await expect(
+      readerCreate.getByRole('option', { name: en.nav.viewScope.shared }),
+    ).toHaveAttribute('disabled', '')
+    await readerCreate
+      .getByLabel(en.nav.viewName, { exact: true })
+      .fill('Reader personal')
+    await readerCreate
+      .getByRole('button', { name: en.nav.createView, exact: true })
+      .click()
+    await expect(readerPage).not.toHaveURL(new RegExp(`/v/${shared.id}$`))
+    const readerPrivateSchema = (await (
+      await readerPage.request.get(`/api/v1/tables/${tableId}/schema`)
+    ).json()) as TableSchema
+    const readerPrivate = readerPrivateSchema.views.find(
+      (item) => item.name === 'Reader personal',
+    )!
+    const ownerSchema = (await (
+      await page.request.get(`/api/v1/tables/${tableId}/schema`)
+    ).json()) as TableSchema
+    expect(ownerSchema.views.some((item) => item.id === readerPrivate.id)).toBe(
+      false,
+    )
+    expect(
+      ownerSchema.views.some((item) => item.id === privateWriterView.id),
+    ).toBe(false)
     expect(
       (
         await readerPage.request.post(`/api/v1/tables/${tableId}/views`, {
@@ -236,7 +335,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
 
     const ownerPage = page
     await ownerPage.goto(`/t/${tableId}/v/${shared.id}`)
-    const lockRow = await viewActions(ownerPage, 'Shared board')
+    const lockRow = await viewActions(ownerPage, tableId, 'Shared board')
     await lockRow.getByRole('button', { name: en.nav.lockView }).click()
     await expect(
       lockRow.getByRole('button', { name: en.nav.unlockView }),
@@ -278,7 +377,9 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     )
     readerSchema = (await readerSchemaResponse.json()) as TableSchema
     const savedPersonal = readerSchema.views.find(
-      (item) => item.scope === 'personal' && item.id !== initialView.id,
+      (item) =>
+        item.scope === 'personal' &&
+        item.name === en.nav.viewCopyName.replace('{name}', 'Shared board'),
     )!
     expect(savedPersonal.config.filter).toMatchObject({
       op: 'and',
@@ -298,7 +399,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     ).toBe(false)
 
     await ownerPage.goto(`/t/${tableId}/v/${shared.id}`)
-    const unlockRow = await viewActions(ownerPage, 'Shared board')
+    const unlockRow = await viewActions(ownerPage, tableId, 'Shared board')
     await expect(
       unlockRow.getByRole('button', { name: en.nav.unlockView }),
     ).toBeVisible()
@@ -378,15 +479,21 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     )
 
     await writerPage.goto(`/t/${tableId}/v/${shared.id}`)
-    const sharedRow = await viewActions(writerPage, 'Shared board')
-    await sharedRow
+    const sharedRow = await viewActions(writerPage, tableId, 'Shared board')
+    await sharedRow.getByRole('button', { name: en.nav.renameView }).click()
+    const renameDialog = writerPage.getByRole('dialog', {
+      name: en.nav.renameView,
+    })
+    await renameDialog
       .getByLabel(en.nav.viewName, { exact: true })
       .fill('Renamed board')
-    await sharedRow.getByRole('button', { name: en.nav.renameView }).click()
+    await renameDialog
+      .getByRole('button', { name: en.admin.confirm, exact: true })
+      .click()
     await expect(
-      writerPage.getByRole('link', { name: 'Renamed board', exact: true }),
+      await sidebarView(writerPage, tableId, 'Renamed board'),
     ).toBeVisible()
-    const renamedRow = await viewActions(writerPage, 'Renamed board')
+    const renamedRow = await viewActions(writerPage, tableId, 'Renamed board')
     const moveUpLabel = en.nav.moveViewUp.replace('{name}', 'Renamed board')
     await renamedRow.getByRole('button', { name: moveUpLabel }).click()
     await expect
@@ -401,7 +508,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
         return moved.position < personal.position
       })
       .toBe(true)
-    const movedRow = await viewActions(writerPage, 'Renamed board')
+    const movedRow = await viewActions(writerPage, tableId, 'Renamed board')
     const duplicateResponsePromise = writerPage.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
@@ -439,9 +546,19 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     )
     expect(writerCopies.length).toBeGreaterThan(0)
     const copy = writerCopies[0]!
-    writerPage.on('dialog', (dialog) => dialog.accept())
-    const copyRow = await viewActions(writerPage, copy.name)
+    const copyRow = await viewActions(writerPage, tableId, copy.name)
     await copyRow.getByRole('button', { name: en.nav.deleteView }).click()
+    const deleteDialog = writerPage.getByRole('dialog', {
+      name: en.nav.deleteView,
+    })
+    await deleteDialog
+      .getByRole('button', { name: en.admin.confirm, exact: true })
+      .click()
+    await expect(deleteDialog).not.toBeVisible()
+    await expect(writerPage).not.toHaveURL(new RegExp(`/v/${copy.id}$`))
+    await expect(
+      writerPage.locator(`[data-nav-id="${tableId}"] > .nav-row .table-toggle`),
+    ).toBeFocused()
     await expect
       .poll(async () => {
         const res = await writerPage.request.get(

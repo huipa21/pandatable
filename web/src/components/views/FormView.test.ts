@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { i18n, loadLocale } from '../../i18n'
+import type { TableSchema } from '../../api/types'
 import { tableSchema, navUser } from '../../test/navigation'
 import { useAuthStore } from '../../stores/auth'
 import FormView from './FormView.vue'
@@ -41,11 +42,12 @@ async function setup(
     routes: [{ path: '/t/:tableId/v/:viewId', component: FormView }],
   })
   await router.push('/t/t/v/v')
-  wrapper = mount(FormView, {
+  const form = mount(FormView, {
     props: { schema, view, identity: navUser.id },
     global: { plugins: [pinia, i18n, router] },
   })
-  return wrapper
+  wrapper = form
+  return form
 }
 
 it('disables read-only submission and validates required values before sending', async () => {
@@ -85,6 +87,56 @@ it('submits live field values and shows the configured confirmation message', as
     'Your response was submitted.',
   )
 })
+
+it('preserves an in-progress draft when the same schema and view are refreshed', async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ row: { id: '1' } }))
+  vi.stubGlobal('fetch', fetcher)
+  const form = await setup('owner')
+  await form.get('input[aria-label="Topic"]').setValue('Access request')
+  const refreshed = JSON.parse(
+    JSON.stringify(form.props('schema')),
+  ) as TableSchema
+  await form.setProps({ schema: refreshed, view: refreshed.views[0]! })
+  await form.get('form').trigger('submit')
+  await flushPromises()
+  expect(fetcher).toHaveBeenCalledWith(
+    '/api/v1/views/v/form-submit',
+    expect.objectContaining({
+      body: JSON.stringify({ fields: { name: 'Access request' } }),
+    }),
+  )
+  expect(form.get('[role="status"]').text()).toBe(
+    'Your response was submitted.',
+  )
+  const secondRefresh = JSON.parse(JSON.stringify(refreshed)) as TableSchema
+  await form.setProps({ schema: secondRefresh, view: secondRefresh.views[0]! })
+  expect(form.get('[role="status"]').text()).toBe(
+    'Your response was submitted.',
+  )
+})
+
+it.each(['view', 'schema'])(
+  'resets the field editor when the %s version changes',
+  async (change) => {
+    const fetcher = vi.fn()
+    vi.stubGlobal('fetch', fetcher)
+    const form = await setup('owner')
+    await form.get('input[aria-label="Topic"]').setValue('Stale draft')
+    const refreshed = JSON.parse(
+      JSON.stringify(form.props('schema')),
+    ) as TableSchema
+    if (change === 'view') refreshed.views[0]!.version++
+    else refreshed.schemaVersion++
+    await form.setProps({ schema: refreshed, view: refreshed.views[0]! })
+    expect(form.get('input[aria-label="Topic"]').element).toHaveProperty(
+      'value',
+      '',
+    )
+    await form.get('form').trigger('submit')
+    expect(form.get('[role="alert"]').text()).toContain('Topic is required')
+    expect(fetcher).not.toHaveBeenCalled()
+  },
+)
 
 it('clears values after a successful new-form submission', async () => {
   vi.stubGlobal(

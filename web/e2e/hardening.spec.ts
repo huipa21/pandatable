@@ -20,7 +20,7 @@ import type {
   ViewMutation,
 } from '../src/api/types'
 import { openAccountMenu, setLocale } from './app-shell'
-import { openTableOptions } from './table-controls'
+import { openCreateView, openTableOptions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { expect, paceLogin, test } from './fixtures'
@@ -721,8 +721,7 @@ test('AT-806 form views work at 390px in both languages', async ({
   const data = await fixture(page, `form-${testInfo.project.name}`, 1)
   try {
     await page.goto(`/t/${data.tableId}/v/${data.viewId}`)
-    await openTableOptions(page)
-    const create = page.locator('.view-create')
+    const create = await openCreateView(page, data.tableId)
     await create.getByLabel(en.nav.viewName, { exact: true }).fill('Responsive')
     const type = create.getByRole('combobox', {
       name: en.form.viewType,

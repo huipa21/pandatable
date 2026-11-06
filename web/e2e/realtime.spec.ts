@@ -9,7 +9,7 @@ import {
   paceLogin,
 } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
-import { openTableOptions } from './table-controls'
+import { sidebarView } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -292,11 +292,7 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
         .getByRole('button', { name: en.rowExpand.close, exact: true })
         .click()
     const beforeSwitch = aliceFrames.length
-    await openTableOptions(bob)
-    await bob
-      .locator('.view-links')
-      .getByRole('link', { name: 'Bob private', exact: true })
-      .click()
+    await (await sidebarView(bob, tableId, 'Bob private')).click()
     await expect
       .poll(() =>
         bobSentFrames.some(
@@ -316,14 +312,13 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
     expect(aliceFrames.some((frame) => frame.viewId === privateViewId)).toBe(
       false,
     )
-    await openTableOptions(bob)
-    await bob
-      .locator('.view-links')
-      .getByRole('link', { name: viewName, exact: true })
-      .click()
-    await expect(
-      bob.locator('.view-links').locator(`a[href="${path}"]`),
-    ).toHaveAttribute('aria-current', 'page')
+    await (await sidebarView(bob, tableId, viewName)).click()
+    await expect(bob).toHaveURL(new RegExp(`${path}$`))
+    if (isMobile) await expect(bob.locator('.nav-drawer')).not.toBeVisible()
+    const selected = await sidebarView(bob, tableId, viewName)
+    await expect(selected).toHaveAttribute('aria-current', 'page')
+    if (isMobile)
+      await bob.getByRole('button', { name: en.nav.close, exact: true }).click()
     await focusBob()
     const leftAt = Date.now()
     await bob.goto('/home')

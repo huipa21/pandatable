@@ -175,7 +175,13 @@ it('offers Share to book/table effective owners independently of structure owner
       b.tables[0]!.level = level
       nav.tree = structuredClone(tree)
       await flushPromises()
-      expect(wrapper.findAll('.node-actions')).toHaveLength(0)
+      expect(wrapper.findAll('.node-actions')).toHaveLength(1)
+      expect(
+        wrapper
+          .get('[data-nav-id="t"] > .node-actions')
+          .findAll('button')
+          .map((button) => button.text()),
+      ).toEqual(['Create view'])
     }
     useAuthStore().setUser({ ...navUser, role: 'admin', id: 'admin' })
     await flushPromises()

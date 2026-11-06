@@ -1,18 +1,25 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { createResourceLabel } from '../../i18n'
 import { useNavStore, type NavigationItem } from '../../stores/nav'
 import { useSharingStore } from '../../stores/sharing'
+import { useViewManagementStore } from '../../stores/viewManagement'
 import AppIcon from '../AppIcon.vue'
+import { useNavActionMenu } from './useNavActionMenu'
 
 const props = defineProps<{ item: NavigationItem }>()
 const emit = defineEmits<{
   move: [item: NavigationItem, index: number]
 }>()
 const { t } = useI18n()
+const route = useRoute()
 const nav = useNavStore()
 const sharing = useSharingStore()
+const views = useViewManagementStore()
+const root = ref<HTMLDetailsElement>()
+const { close, onToggle } = useNavActionMenu(root)
 const canShare = computed(
   () => !props.item.pathOnly && props.item.level === 'owner',
 )
@@ -25,31 +32,20 @@ const canSetDefault = computed(
 const isDefault = computed(
   () => nav.preferenceLoaded && nav.preferredWorkspaceId === props.item.id,
 )
-const root = ref<HTMLDetailsElement>()
-
-function close() {
-  root.value?.removeAttribute('open')
-}
-
-function onOutside(event: Event) {
-  const target = event.target as Element
-  if (root.value?.contains(target)) return
-  // Dialogs opened from the menu return focus to it when they close.
-  if (target.closest?.('dialog, [role="dialog"], .n-modal-container')) return
-  close()
-}
-
-function onKey(event: KeyboardEvent) {
-  if (event.key === 'Escape' && root.value?.contains(event.target as Node)) {
-    event.preventDefault()
-    close()
-    root.value.querySelector('summary')?.focus()
-  }
-}
+const canCreateView = computed(
+  () => props.item.kind === 'table' && props.item.level !== 'none',
+)
+const hasActions = computed(
+  () =>
+    props.item.canEdit ||
+    props.item.canCreate ||
+    canShare.value ||
+    canSetDefault.value ||
+    canCreateView.value,
+)
 
 async function setDefault() {
-  close()
-  root.value?.querySelector('summary')?.focus()
+  close(true)
   try {
     await nav.setPreferredWorkspace(props.item.id)
   } catch {
@@ -57,35 +53,15 @@ async function setDefault() {
   }
 }
 
-function listen(on: boolean) {
-  if (on) {
-    document.addEventListener('pointerdown', onOutside, true)
-    document.addEventListener('keydown', onKey)
-  } else {
-    document.removeEventListener('pointerdown', onOutside, true)
-    document.removeEventListener('keydown', onKey)
-  }
+function createView() {
+  const origin = route.fullPath
+  close(true)
+  void views.beginCreate(props.item.id, () => route.fullPath === origin)
 }
-
-// Only one action menu is open at a time so dropdowns never overlap.
-function onToggle() {
-  const open = root.value?.open ?? false
-  listen(open)
-  if (!open) return
-  for (const other of document.querySelectorAll('details.node-actions[open]'))
-    if (other !== root.value) other.removeAttribute('open')
-}
-
-onBeforeUnmount(() => listen(false))
 </script>
 
 <template>
-  <details
-    v-if="item.canEdit || item.canCreate || canShare || canSetDefault"
-    ref="root"
-    class="node-actions"
-    @toggle="onToggle"
-  >
+  <details v-if="hasActions" ref="root" class="node-actions" @toggle="onToggle">
     <summary :title="t('nav.actions', { name: item.name })">
       <AppIcon name="more" :size="16" />
       <span class="visually-hidden">{{
@@ -102,6 +78,9 @@ onBeforeUnmount(() => listen(false))
       </button>
       <button v-if="canShare" @click="sharing.open(item)">
         {{ t('sharing.open') }}
+      </button>
+      <button v-if="canCreateView" :disabled="views.busy" @click="createView">
+        {{ t('nav.createView') }}
       </button>
       <button
         v-if="item.canCreate && item.childKind"

@@ -77,13 +77,17 @@ function resetDraft() {
 }
 
 watch(
-  () =>
-    [props.view.id, props.view.version, props.schema.schemaVersion] as const,
+  [
+    () => props.view.id,
+    () => props.view.version,
+    () => props.schema.schemaVersion,
+  ],
   () => {
     resetDraft()
     error.value = ''
     submitted.value = false
     preserveUploads.value = false
+    editorGeneration.value++
   },
   { immediate: true },
 )

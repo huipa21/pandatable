@@ -363,8 +363,7 @@ a {
 }
 
 .nav-row,
-.nav-actions,
-.view-links {
+.nav-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -441,11 +440,6 @@ a {
   font-size: 14px;
 }
 
-.view-links .router-link-exact-active {
-  color: var(--accent);
-  font-weight: 700;
-}
-
 .path-only,
 .node-actions,
 .structure-name > span:last-child {
@@ -505,6 +499,11 @@ a {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 6px 24px rgb(0 0 0 / 12%);
+}
+
+.nav-tree .node-actions > .nav-actions p {
+  margin: 4px;
+  overflow-wrap: anywhere;
 }
 
 .nav-actions {
@@ -873,7 +872,8 @@ dialog::backdrop {
   gap: 10px;
 }
 
-.structure-name input {
+.structure-name input,
+.structure-name select {
   width: 100%;
   color: var(--text);
   background: var(--surface);
@@ -881,6 +881,10 @@ dialog::backdrop {
   border-radius: 6px;
   padding: 10px;
   font: inherit;
+}
+
+.view-dialog .structure-name + .structure-name {
+  margin-top: 12px;
 }
 
 .grid-row-number-cell {
@@ -1475,14 +1479,29 @@ dialog::backdrop {
     height: 44px;
   }
 
-  .nav-drawer [data-kind='workspace'] > .node-actions {
+  .nav-drawer .nav-tree .nav-row {
+    min-height: 44px;
+    padding-right: 48px;
+  }
+
+  .nav-drawer .nav-tree .table-toggle {
+    justify-content: center;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .nav-drawer .nav-tree .node-actions {
     top: 0;
     right: 0;
   }
 
-  .nav-drawer [data-kind='workspace'] > .node-actions summary {
+  .nav-drawer .nav-tree .node-actions summary {
     width: 44px;
     height: 44px;
+  }
+
+  .nav-drawer .nav-tree .node-actions > .nav-actions {
+    top: 44px;
   }
 }
 
