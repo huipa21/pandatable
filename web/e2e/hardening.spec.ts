@@ -20,7 +20,7 @@ import type {
   ViewMutation,
 } from '../src/api/types'
 import { openAccountMenu, setLocale } from './app-shell'
-import { openCreateView, openTableOptions } from './table-controls'
+import { openCreateView } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { expect, paceLogin, test } from './fixtures'
@@ -306,7 +306,6 @@ async function inspectImport(
   locale: typeof en,
   mode: 'newTable' | 'append',
 ) {
-  if (mode === 'append') await openTableOptions(page)
   await page
     .locator('main')
     .getByRole('button', { name: locale.import[mode], exact: true })
@@ -341,8 +340,6 @@ async function inspectImport(
     .getByRole('button', { name: locale.import.close, exact: true })
     .click()
   await expect(importing).not.toBeVisible()
-  if (mode === 'append')
-    await page.locator('.table-management > summary').click()
 }
 
 test('responsive control checks reject blocked controls when batching', async ({

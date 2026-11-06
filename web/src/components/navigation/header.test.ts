@@ -54,10 +54,21 @@ it('builds header breadcrumbs from the route and adds the view only when named',
     expect(
       wrapper.findAll('.breadcrumbs a').at(-1)!.attributes('aria-current'),
     ).toBe('page')
+    expect(wrapper.get('.breadcrumb-workspace').text()).toBe('Workspace')
     await router.push('/t/t/v/v')
     expect(crumbs(wrapper)).toEqual(['Workspace', 'Book', 'Table', 'Grid'])
+    expect(wrapper.get('.breadcrumb-separator-current').text()).toBe(
+      i18n.global.t('nav.separator'),
+    )
     await router.push('/w/w/b/b')
     expect(crumbs(wrapper)).toEqual(['Workspace', 'Book'])
+    await router.push('/w/w')
+    expect(crumbs(wrapper)).toEqual(['Workspace'])
+    useNavStore().tree!.workspaces[0]!.name = 'Renamed workspace'
+    await flushPromises()
+    expect(wrapper.get('.breadcrumb-workspace').text()).toBe(
+      'Renamed workspace',
+    )
     await router.push('/home')
     expect(wrapper.find('.breadcrumbs').exists()).toBe(false)
   } finally {

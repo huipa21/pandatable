@@ -71,10 +71,7 @@ test('new table uses a compact, working field and filter toolbar', async ({
   await expect(
     page.getByRole('tab', { name: /^(data|details)$/i }),
   ).toHaveCount(0)
-  await expect(page.locator('.table-management')).not.toHaveAttribute(
-    'open',
-    '',
-  )
+  await expect(page.locator('.table-management')).toHaveCount(0)
   await test.info().attach('new-table', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -107,6 +104,9 @@ test('new table uses a compact, working field and filter toolbar', async ({
   await editor.getByRole('button', { name: en.field.panel.create }).click()
   expect((await createdField).status()).toBe(201)
   await expect(editor).not.toBeVisible()
+  await expect(
+    page.getByRole('status').filter({ hasText: en.field.panel.saved }),
+  ).toBeVisible()
   const schema = await schemaOf()
   const notes = schema.fields.find((field) => field.name === 'Notes')!
   expect(notes).toMatchObject({
@@ -117,6 +117,20 @@ test('new table uses a compact, working field and filter toolbar', async ({
 
   const panel = page.getByRole('region', { name: en.field.panel.title })
   await expect(panel).toBeVisible()
+  for (const width of [820, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect
+      .poll(async () => {
+        const [popover, tools] = await Promise.all([
+          page.locator('.grid-field-popover').boundingBox(),
+          toolbar.boundingBox(),
+        ])
+        return popover && tools
+          ? Math.abs(popover.y - (tools.y + tools.height))
+          : Infinity
+      })
+      .toBeLessThanOrEqual(1)
+  }
   await panel.getByLabel(en.field.panel.search).fill('Notes')
   await expect(panel.locator('.field-name')).toHaveText(['Notes'])
   await panel.getByLabel(en.field.panel.search).fill('')

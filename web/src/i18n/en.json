@@ -161,7 +161,6 @@
     "emptyBooks": "This workspace has no visible books.",
     "emptyTables": "This book has no visible tables.",
     "emptyViews": "This table has no visible views.",
-    "tableOptions": "Views and table options",
     "viewName": "View name",
     "viewScopeLabel": "View visibility",
     "viewScope": {

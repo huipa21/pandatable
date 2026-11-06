@@ -12,9 +12,9 @@ Shell per D-209 (supersedes the earlier sketch):
 ┌────────────────────────────────────────────────────────────────────────┐
 │ PT PandaTable ⇤ │ Workspace › Book › Table [› View]   🔍  中文/EN  ☀/🌙 │  ← header
 ├─────────────────┬──────────────────────────────────────────────────────┤
-│ Workspaces    + │ ↶ ↷  (view subheader, table routes only)             │
-│ ▾ Workspace  ⋯ │ Table title and available view tools                 │
-│   ▾ 📘 Book   ⋯ │ Toolbar: Fields · Filter · Sort · Group · …          │
+│ Workspaces    + │ ↶ ↷ Fields · Filter · Group · … · Import · Export   │
+│ ▾ Workspace  ⋯ │                                                      │
+│   ▾ 📘 Book   ⋯ │                                                      │
 │      ▦ Table  ⋯ │ ┌──────────────────────────────────────────────────┐ │
 │      ▾ Table 2  │ │ Grid / Form / Kanban …                           │ │
 │         ◫ View ⋯│ │                                                  │ │
@@ -28,7 +28,9 @@ Shell per D-209 (supersedes the earlier sketch):
 - Header: logo → `/home`; ⇤ hides/shows the sidebar (remembered) or opens the
   mobile drawer; breadcrumb (view segment only when the URL names one); 🔍
   quick-jump palette (Ctrl/Cmd+K, client-side over the nav tree); language and
-  light↔dark toggles. When the sidebar is hidden the avatar moves to the header.
+  light↔dark toggles. The workspace remains visible beside the sidebar toggle on
+  narrow screens, with the current resource retained as space permits. When the
+  sidebar is hidden the avatar moves to the header.
 - Sidebar: a static Workspaces heading and Add action precede every accessible
   workspace in server order. A workspace link selects it; a separate control
   expands its books, tables and views. The selected route/last-visited context is
@@ -113,7 +115,7 @@ or Gallery view; readers can create personal views without structure-edit
 permission. Selecting an explicit view expands its table in the sidebar. Each
 view menu offers the authorized rename, duplicate, reorder, lock/unlock and
 delete actions. The active-view action for saving temporary shared-view changes
-as a personal view remains on the table page for UX-06 to relocate.
+as a personal view remains available on the table page.
 
 All these operations share a route- and identity-guarded management store. It
 loads the target table's authorized schema for permissions, lock state and
@@ -128,7 +130,7 @@ Trash: descendant views and deep links are unavailable until restoration.
   without parent ownership. No Share on path-only/read/write/admin-only nodes.
 - Table pages host Share in the eye-icon Visibility menu (D-214): inside the
   desktop Grid toolbar after Highlight, otherwise (mobile, non-Grid views) in
-  the table utility area. It launches the same dialog and returns focus to the
+  the table toolbar. It launches the same dialog and returns focus to the
   menu opener; workspace/book pages keep their direct Share button.
 - A viewport-bounded, scrollable native modal separates direct grants from
   read-only inherited grants and identifies principal type/status and source
@@ -365,6 +367,15 @@ login/profile APIs alone.
 
 Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-005).
 
+- UX-06 (D-226) puts undo/redo, presence, table metadata, Import and Export in
+  the existing grid toolbar; mobile and non-grid views use one equivalent table
+  toolbar. Visibility continues to mean resource ACL sharing, while Fields
+  controls columns and display-field editing. Export progress and failures stay
+  visible outside its menu; CSV uses the active view's filter, sort, search and
+  visible columns. Toolbar popovers stay above row content and close other menus
+  when activated. Field and filter popovers remain outside the schema-keyed Grid
+  and track the wrapping toolbar's height, preserving editor feedback on schema
+  refresh. The trailing action position is reserved for UX-10.
 - Virtual rows & columns; windowed data fetch (page 100) with placeholders.
 - Frozen columns, resize, reorder (drag header) → saved to view config (if permitted) else local override.
 - Batch-1 and batch-2 pure `FieldKind` definitions live in `src/fields`, bound through

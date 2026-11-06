@@ -8,6 +8,7 @@ import { useNavStore } from '../stores/nav'
 import { useAuthStore } from '../stores/auth'
 import { useRealtimeStore } from '../stores/realtime'
 import { useSharingStore } from '../stores/sharing'
+import { useUndoStore } from '../stores/undo'
 import { navigation, navUser, tableSchema } from '../test/navigation'
 import ResourcePage from './ResourcePage.vue'
 import { errorMessage, RequestError } from '../api/client'
@@ -55,7 +56,7 @@ async function setup(
       plugins: [pinia, i18n, router],
       stubs: {
         DataGrid: {
-          props: ['fieldsOpen', 'filterOpen', 'filterCount'],
+          props: ['schema', 'fieldsOpen', 'filterOpen', 'filterCount'],
           emits: ['toggleFields', 'toggleFilter', 'createField'],
           methods: {
             exportQuery: () => ({
@@ -67,13 +68,18 @@ async function setup(
             toggleField: vi.fn(),
           },
           template: `
-            <div data-testid="production-grid" :data-filter-count="filterCount">
+            <div class="grid-toolbar" data-testid="production-grid" :data-filter-count="filterCount" :data-schema-version="schema.schemaVersion">
+              <slot name="toolbar-leading" />
               <button class="grid-fields-trigger" @click="$emit('toggleFields')">Fields</button>
               <button class="grid-filter-trigger" @click="$emit('toggleFilter')">Filter</button>
               <button class="grid-create-field" @click="$emit('createField')">Add field</button>
               <details class="grid-highlights"><summary>Colour</summary></details>
               <slot name="after-highlight" />
               <details class="grid-row-height"><summary>Height</summary></details>
+              <div class="grid-toolbar-end">
+                <slot name="toolbar-actions" />
+                <slot name="toolbar-end" />
+              </div>
             </div>`,
         },
         MobileCardList: {
@@ -199,19 +205,23 @@ it('exports mobile field overrides, reports failures, and cancels stale navigati
       groupBy: [],
       filter: null,
     })
-    expect(wrapper.get('.view-export [role="alert"]').text()).toContain(
-      'Export could not be started.',
-    )
+    expect(
+      wrapper.get('.table-export-feedback[role="alert"]').text(),
+    ).toContain('Export could not be started.')
     mode = 'pending'
     await wrapper.findAll('.view-export button')[0]!.trigger('click')
-    expect(wrapper.find('.view-export [role="status"]').exists()).toBe(true)
+    expect(wrapper.find('.table-export-feedback[role="status"]').exists()).toBe(
+      true,
+    )
     await router.push('/t/t/v/v2')
     await flushPromises()
     expect(signal?.aborted).toBe(true)
     release(Response.json({ ticket: 'A'.repeat(26) }, { status: 201 }))
     await flushPromises()
     expect(click).not.toHaveBeenCalled()
-    expect(wrapper.find('.view-export [role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.table-export-feedback[role="alert"]').exists()).toBe(
+      false,
+    )
   } finally {
     wrapper.unmount()
     click.mockRestore()
@@ -310,6 +320,221 @@ it('shows real schema metadata, levels, view links and the production grid', asy
         signal: expect.any(AbortSignal),
       }),
     )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it.each([
+  { type: 'grid', desktop: true, level: 'owner' },
+  { type: 'grid', desktop: false, level: 'read' },
+  { type: 'form', desktop: true, level: 'write' },
+  { type: 'kanban', desktop: false, level: 'owner' },
+  { type: 'gallery', desktop: true, level: 'read' },
+] as const)(
+  'keeps header actions and permissions for $type at desktop=$desktop with $level access',
+  async ({ type, desktop, level }) => {
+    useAuthStore().setUser(navUser)
+    media.matches = desktop
+    const schema = tableSchema()
+    schema.myLevel = level
+    schema.views[0]!.type = type
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(schema)))
+    const empty = { template: '<div />' }
+    const { wrapper } = await setup('/t/t/v/v', {
+      FieldPanel: empty,
+      FormBuilder: empty,
+      FormView: empty,
+      KanbanBuilder: empty,
+      KanbanView: empty,
+      GalleryBuilder: empty,
+      GalleryView: empty,
+    })
+    try {
+      const toolbar = wrapper.get(
+        type === 'grid' && desktop
+          ? '[data-testid="production-grid"]'
+          : '.table-toolbar',
+      )
+      expect(toolbar.findAll('.table-history button')).toHaveLength(2)
+      const accessLabels = {
+        owner: i18n.global.t('nav.level.owner'),
+        read: i18n.global.t('nav.level.read'),
+        write: i18n.global.t('nav.level.write'),
+      }
+      expect(toolbar.get('.schema-summary').text()).toContain(
+        accessLabels[level],
+      )
+      expect(toolbar.get('.schema-summary').text()).toContain('Name')
+      expect(
+        toolbar.find('button[aria-label="Import into this table"]').exists(),
+      ).toBe(level !== 'read')
+      expect(toolbar.find('.visibility-menu').exists()).toBe(level === 'owner')
+      expect(toolbar.findAll('.view-export button')).toHaveLength(
+        type === 'grid' ? 2 : 1,
+      )
+      expect(
+        toolbar.get('.view-export button:last-of-type').attributes('disabled'),
+      ).toBeUndefined()
+      expect(wrapper.find('.table-management').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Views and table options')
+      i18n.global.locale.value = 'zh-CN'
+      await flushPromises()
+      expect(wrapper.text()).not.toContain('视图和数据表选项')
+      expect(toolbar.get('.view-export summary').text()).toBe('导出')
+    } finally {
+      wrapper.unmount()
+    }
+  },
+)
+
+it('keeps undo, redo and collaborator presence in the active table toolbar', async () => {
+  useAuthStore().setUser(navUser)
+  const undo = useUndoStore()
+  undo.record([{ kind: 'delete', tableId: 't', ids: ['1'] }])
+  undo.redoStack = [{ steps: [{ kind: 'delete', tableId: 't', ids: ['2'] }] }]
+  const undoAction = vi.spyOn(undo, 'undo').mockResolvedValue()
+  const redoAction = vi.spyOn(undo, 'redo').mockResolvedValue()
+  useRealtimeStore().presence.t = [{ userId: 'bob', name: 'Bob' }]
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(Response.json(tableSchema())),
+  )
+  const { wrapper } = await setup('/t/t/v/v')
+  try {
+    const toolbar = wrapper.get('[data-testid="production-grid"]')
+    await toolbar.get('button[aria-label="Undo"]').trigger('click')
+    await toolbar.get('button[aria-label="Redo"]').trigger('click')
+    expect(undoAction).toHaveBeenCalledOnce()
+    expect(redoAction).toHaveBeenCalledOnce()
+    expect(toolbar.get('[data-presence-user="bob"]').text()).toBe('B')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('uses the newly selected table and view for the next export', async () => {
+  useAuthStore().setUser(navUser)
+  const first = tableSchema()
+  const second = tableSchema()
+  second.table.id = 't2'
+  second.views[0]!.id = 'v2'
+  second.views[0]!.config.filter = {
+    field: 'name',
+    cmp: 'contains',
+    value: 'second',
+  }
+  const fetcher = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(input).endsWith('/export'))
+        return Response.json({ ticket: 'A'.repeat(26) }, { status: 201 })
+      return Response.json(
+        String(input).includes('/tables/t2/') ? second : first,
+      )
+    },
+  )
+  vi.stubGlobal('fetch', fetcher)
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, 'click')
+    .mockImplementation(() => {})
+  const { wrapper, router, nav } = await setup('/t/t/v/v')
+  try {
+    const tables = nav.tree!.workspaces[0]!.books[0]!.tables
+    tables.push({
+      ...tables[0]!,
+      id: 't2',
+      name: 'Second table',
+      views: [{ ...tables[0]!.views[0]!, id: 'v2', name: 'Second view' }],
+    })
+    await router.push('/t/t2/v/v2')
+    await flushPromises()
+    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await flushPromises()
+    const exportCall = fetcher.mock.calls.find(([path]) =>
+      String(path).endsWith('/export'),
+    )
+    expect(String(exportCall?.[0])).toBe('/api/v1/views/v2/export')
+    expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({
+      format: 'csv',
+      filter: { field: 'name', cmp: 'contains', value: 'second' },
+    })
+    expect(click).toHaveBeenCalledOnce()
+  } finally {
+    wrapper.unmount()
+    click.mockRestore()
+  }
+})
+
+it('keeps toolbar popovers exclusive when another control is activated', async () => {
+  useAuthStore().setUser(navUser)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(Response.json(tableSchema())),
+  )
+  const { wrapper } = await setup('/t/t/v/v', {
+    FieldPanel: { template: '<div />' },
+  })
+  try {
+    const toolbar = wrapper.get('[data-testid="production-grid"]')
+    const exportMenu = toolbar.get('.view-export')
+    const visibility = toolbar.get('.visibility-menu')
+    const fields = wrapper.get('.grid-field-popover')
+    const exportDetails = exportMenu.element as HTMLDetailsElement
+    const visibilityDetails = visibility.element as HTMLDetailsElement
+    const fieldPopover = fields.element as HTMLElement
+
+    exportDetails.open = true
+    await toolbar.get('.grid-fields-trigger').trigger('click')
+    expect(exportDetails.open).toBe(false)
+    expect(fieldPopover.style.display).not.toBe('none')
+
+    await visibility.get('summary').trigger('click')
+    expect(fieldPopover.style.display).toBe('none')
+    visibilityDetails.open = true
+    await exportMenu.get('summary').trigger('click')
+    expect(visibilityDetails.open).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('retains the field panel when a schema change remounts the grid', async () => {
+  useAuthStore().setUser(navUser)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(Response.json(tableSchema())),
+  )
+  const mounted = vi.fn()
+  const unmounted = vi.fn()
+  const panel = {
+    props: ['schema'],
+    emits: ['update'],
+    mounted,
+    unmounted,
+    template: `
+      <button data-testid="advance-schema"
+        @click="$emit('update', { ...schema, schemaVersion: schema.schemaVersion + 1 })">
+        Update
+      </button>`,
+  }
+  const { wrapper } = await setup('/t/t/v/v', { FieldPanel: panel })
+  try {
+    await wrapper.get('.grid-fields-trigger').trigger('click')
+    const previousGrid = wrapper.get('[data-testid="production-grid"]')
+    const previousVersion = Number(
+      previousGrid.attributes('data-schema-version'),
+    )
+    await wrapper.get('[data-testid="advance-schema"]').trigger('click')
+    await flushPromises()
+
+    const nextGrid = wrapper.get('[data-testid="production-grid"]')
+    expect(nextGrid.element).not.toBe(previousGrid.element)
+    expect(Number(nextGrid.attributes('data-schema-version'))).toBe(
+      previousVersion + 1,
+    )
+    expect(mounted).toHaveBeenCalledOnce()
+    expect(unmounted).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="advance-schema"]').exists()).toBe(true)
   } finally {
     wrapper.unmount()
   }
@@ -454,10 +679,10 @@ it('moves table sharing into the Grid Visibility menu with Escape, outside dismi
   const { wrapper } = await setup('/t/t/v/v', {}, document.body)
   const sharing = useSharingStore()
   try {
-    expect(wrapper.find('.table-utility .visibility-menu').exists()).toBe(false)
+    expect(wrapper.find('.table-toolbar .visibility-menu').exists()).toBe(false)
     expect(
       wrapper
-        .findAll('.table-utility > button')
+        .findAll('.table-toolbar > button')
         .some((button) => button.text() === 'Share'),
     ).toBe(false)
     const toolbar = wrapper.get('[data-testid="production-grid"]')
@@ -511,7 +736,7 @@ it('keeps Visibility sharing on mobile and non-Grid views and hides it from non-
   const { wrapper, nav } = await setup('/t/t/v/v')
   try {
     expect(wrapper.find('[data-testid="mobile-cards"]').exists()).toBe(true)
-    const menu = wrapper.get('.table-utility .visibility-menu--utility')
+    const menu = wrapper.get('.table-toolbar .visibility-menu--utility')
     expect(menu.get('summary').attributes('aria-label')).toBe('Visibility')
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
@@ -522,6 +747,31 @@ it('keeps Visibility sharing on mobile and non-Grid views and hides it from non-
     nav.revision++
     await flushPromises()
     expect(wrapper.find('.visibility-menu').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('dismisses the mobile filter on outside pointer or Escape and restores focus', async () => {
+  useAuthStore().setUser(navUser)
+  media.matches = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(Response.json(tableSchema())),
+  )
+  const { wrapper } = await setup('/t/t/v/v', {}, document.body)
+  try {
+    const menu = wrapper.get<HTMLDetailsElement>('.view-filter')
+    const summary = menu.get('summary')
+    menu.element.open = true
+    summary.element.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(menu.element.open).toBe(true)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(menu.element.open).toBe(false)
+    expect(document.activeElement).toBe(summary.element)
+    menu.element.open = true
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(menu.element.open).toBe(false)
   } finally {
     wrapper.unmount()
   }

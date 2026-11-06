@@ -11,7 +11,7 @@ import {
   test,
 } from './fixtures'
 import { setLocale } from './app-shell'
-import { openTableOptions } from './table-controls'
+import { openExportMenu } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type {
   DataRow,
@@ -310,8 +310,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   ).json()) as DataRow
 
   await page.goto(`/t/${source.table.id}/v/${source.views[0]!.id}`)
-  await openTableOptions(page)
-  await page.locator('.view-export summary').click()
+  await openExportMenu(page)
   const download = page.waitForEvent('download')
   await page
     .getByRole('button', { name: en.export.package, exact: true })
@@ -488,7 +487,6 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   expect(repairedQuery.status()).toBe(200)
 
   await page.goto(`/t/${restoredId}/v/${packageResult.result.viewId!}`)
-  await openTableOptions(page)
   await page.getByRole('button', { name: en.import.append }).click()
   const packageAppend = page.locator('dialog.import-dialog')
   await packageAppend.locator('input[type=file]').setInputFiles({
@@ -590,10 +588,16 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   try {
     const viewPath = `/t/${destination.table.id}/v/${destination.views[0]!.id}`
     await collaborator.page.goto(viewPath)
-    await openTableOptions(collaborator.page)
     await expect(
       collaborator.page.getByRole('button', { name: en.import.append }),
     ).toHaveCount(0)
+    await expect(collaborator.page.locator('.visibility-menu')).toHaveCount(0)
+    await openExportMenu(collaborator.page)
+    const readerDownload = collaborator.page.waitForEvent('download')
+    await collaborator.page
+      .getByRole('button', { name: en.export.package, exact: true })
+      .click()
+    expect(await (await readerDownload).failure()).toBeNull()
     const plainXlsx = await readFile(
       path.resolve('e2e', 'data', 'plain-import.xlsx'),
     )
@@ -614,7 +618,6 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     expect(denied.status()).toBe(403)
     expect([200, 201]).toContain((await grant('write')).status())
     await collaborator.page.reload()
-    await openTableOptions(collaborator.page)
     await collaborator.page
       .getByRole('button', { name: en.import.append })
       .click()

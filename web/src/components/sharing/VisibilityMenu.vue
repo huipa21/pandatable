@@ -91,15 +91,15 @@ let launchedFor: string | null = null
 
 <style scoped>
 .visibility-menu {
-  position: relative;
+  position: static;
 }
 
 .visibility-menu > summary {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   min-height: 40px;
-  padding: 8px 10px;
+  padding: 8px 6px;
   color: var(--text);
   background: transparent;
   border: 1px solid transparent;
@@ -128,7 +128,7 @@ let launchedFor: string | null = null
   position: absolute;
   z-index: 5;
   top: 100%;
-  left: 0;
+  right: 0;
   display: grid;
   gap: 4px;
   min-width: 160px;
@@ -141,11 +141,6 @@ let launchedFor: string | null = null
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
-}
-
-.visibility-menu--utility .visibility-menu-panel {
-  right: 0;
-  left: auto;
 }
 
 .visibility-menu-panel button {

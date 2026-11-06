@@ -33,12 +33,12 @@ export async function openFieldTypeActions(page: Page) {
   })
 }
 
-export async function openTableOptions(page: Page) {
-  const options = page.locator('.table-management')
-  await expect(options).toBeVisible()
-  if ((await options.getAttribute('open')) === null)
-    await options.locator(':scope > summary').click()
-  return options
+export async function openExportMenu(page: Page) {
+  const menu = page.locator('.view-export')
+  await expect(menu).toBeVisible()
+  if ((await menu.getAttribute('open')) === null)
+    await menu.locator(':scope > summary').click()
+  return menu
 }
 
 export async function sidebarTable(page: Page, tableId: string) {

@@ -6,7 +6,6 @@ import { usePreferencesStore } from '../stores/preferences'
 import { useAuthStore } from '../stores/auth'
 import { useAppSettingsStore } from '../stores/appSettings'
 import { useNavStore } from '../stores/nav'
-import { useUndoStore } from '../stores/undo'
 import { useNavLocation } from '../composables/useNavLocation'
 import AppIcon from '../components/AppIcon.vue'
 import AppBreadcrumbs from '../components/navigation/AppBreadcrumbs.vue'
@@ -19,7 +18,6 @@ const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const appSettings = useAppSettingsStore()
 const nav = useNavStore()
-const undo = useUndoStore()
 const route = useRoute()
 const { routeWorkspaceId } = useNavLocation()
 const media = window.matchMedia('(max-width: 767px)')
@@ -35,7 +33,6 @@ const sidebarShown = computed(
   () =>
     navigationVisible.value && !mobile.value && !preferences.sidebarCollapsed,
 )
-const tableRoute = computed(() => typeof route.params.tableId === 'string')
 const otherLocale = computed(() =>
   preferences.locale === 'en' ? 'zh-CN' : 'en',
 )
@@ -132,33 +129,6 @@ function toggleSidebar() {
     <div class="app-body">
       <NavSidebar v-if="navigationVisible && auth.user" :key="auth.user.id" />
       <main class="app-main">
-        <div
-          v-if="navigationVisible && tableRoute"
-          class="view-subheader"
-          role="toolbar"
-          :aria-label="t('nav.viewTools')"
-        >
-          <button
-            class="icon-button"
-            :aria-label="t('undo.undo')"
-            :title="t('undo.undo')"
-            :disabled="!undo.canUndo"
-            aria-keyshortcuts="Control+Z Meta+Z"
-            @click="undo.undo"
-          >
-            <AppIcon name="undo" />
-          </button>
-          <button
-            class="icon-button"
-            :aria-label="t('undo.redo')"
-            :title="t('undo.redo')"
-            :disabled="!undo.canRedo"
-            aria-keyshortcuts="Control+Y Meta+Shift+Z"
-            @click="undo.redo"
-          >
-            <AppIcon name="redo" />
-          </button>
-        </div>
         <slot />
       </main>
     </div>

@@ -161,7 +161,6 @@
     "emptyBooks": "此工作区没有可见的工作簿。",
     "emptyTables": "此工作簿没有可见的数据表。",
     "emptyViews": "此数据表没有可见的视图。",
-    "tableOptions": "视图和数据表选项",
     "viewName": "视图名称",
     "viewScopeLabel": "视图可见范围",
     "viewScope": {

@@ -20,7 +20,7 @@ import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
 import { verifyFieldReader, verifyFields } from './fields'
-import { openFieldPanel, openTableOptions } from './table-controls'
+import { openFieldPanel, sidebarView } from './table-controls'
 import { formatTsv } from '../src/components/grid/tsv'
 
 const headers = () => ({
@@ -670,13 +670,13 @@ export async function verifyNavigation(
     await expect(alice.locator('main')).toContainText(en.nav.emptyTables)
     await create(alice, 'table', 'Table T')
     await expect(alice.locator('.schema-summary')).toContainText('Name')
-    await openTableOptions(alice)
-    await expect(
-      alice.getByRole('navigation', { name: en.nav.views }),
-    ).toContainText('Grid')
-    await alice.locator('.table-management > summary').click()
     const tid = new URL(alice.url()).pathname.split('/')[2]!
     const viewId = new URL(alice.url()).pathname.split('/')[4]!
+    await expect(await sidebarView(alice, tid, 'Grid')).toHaveAttribute(
+      'href',
+      `/t/${tid}/v/${viewId}`,
+    )
+    await closeDrawer(alice)
     const schemaResponse = await alice.request.get(
       `/api/v1/tables/${tid}/schema`,
     )
@@ -881,7 +881,9 @@ export async function verifyNavigation(
         // Readers may choose a readable workspace as their own default only.
         await expect(
           visibleTree
-            .locator(`[data-nav-id="${wid}"] .nav-actions button`)
+            .locator(
+              `[data-nav-id="${wid}"] > .node-actions > .nav-actions > button`,
+            )
             .filter({ hasNotText: en.workspaceGrid.ux02.setDefault }),
         ).toHaveCount(0)
         if (index === 1) {

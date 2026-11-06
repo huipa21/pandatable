@@ -137,13 +137,14 @@ people save the same cell, the last saved value wins.
 ### 6. Import and export
 
 To create a table from a CSV or XLSX file, open a book and choose **Import as a
-new table**. To append to an existing table, open it and choose **Import into
-this table**; write access is required. Select the file, choose **Analyze
-file**, review the detected columns, types, or mappings, and choose **Start
-import**. Review the result and download the invalid-cell report when offered.
+new table**. To append to an existing table, choose **Import** in its toolbar
+to open **Import into this table**; write access is required. Select the file,
+choose **Analyze file**, review the detected columns, types, or mappings, and
+choose **Start import**. Review the result and download the invalid-cell report
+when offered.
 
-From a grid, **Views and table options → Export → CSV (current view)** downloads the visible fields and
-respects the current filter, sort, and search. A **PandaTable XLSX package**
+From a grid, **Export → CSV (current view)** in the toolbar downloads the visible
+fields and respects the current filter, sort, and search. A **PandaTable XLSX package**
 can also be exported and imported, but it is **not a complete backup**:
 nonempty attachment identities and contents are not recovered, distinct
 timestamps may collapse to the same value, and view locks are not preserved.
@@ -261,11 +262,11 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 ### 6. 导入和导出
 
 要从 CSV 或 XLSX 文件创建数据表，请打开工作簿并选择**导入为新表**。要向已有表
-追加数据，请打开该表并选择**导入到此表**；这需要写入权限。选择文件，点击
+追加数据，请在该表的工具栏选择**导入**，打开**导入到此表**；这需要写入权限。选择文件，点击
 **分析文件**，检查检测到的列、类型或映射，然后选择**开始导入**。检查结果，并在
 提供报告时下载无效单元格报告。
 
-在网格中，**视图和数据表选项 → 导出 → CSV（当前视图）**会下载可见字段，并遵循当前筛选、排序和
+在网格中，工具栏中的**导出 → CSV（当前视图）**会下载可见字段，并遵循当前筛选、排序和
 搜索。也可以导出和导入 **PandaTable XLSX 数据包**，但它**不是完整备份**：
 非空附件的身份和内容无法恢复，不同时间戳可能合并为同一值，视图锁定状态也不会
 保留。导入数据包后，请检查关联选项和报告的依赖问题。

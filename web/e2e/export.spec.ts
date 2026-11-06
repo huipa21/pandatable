@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises'
+import type { Locator } from '@playwright/test'
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
-import { openGridMore, openTableOptions } from './table-controls'
+import { openExportMenu, openGridMore } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
@@ -9,6 +10,22 @@ const headers = () => ({
   Origin: process.env.PT_E2E_BASE_URL!,
   'X-PT-CSRF': '1',
 })
+
+async function expectUnobscured(locator: Locator) {
+  await expect(locator).toBeVisible()
+  await expect
+    .poll(() =>
+      locator.evaluate((element) => {
+        const bounds = element.getBoundingClientRect()
+        const hit = document.elementFromPoint(
+          bounds.x + bounds.width / 2,
+          bounds.y + bounds.height / 2,
+        )
+        return hit !== null && (hit === element || element.contains(hit))
+      }),
+    )
+    .toBe(true)
+}
 
 test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
   page,
@@ -111,9 +128,20 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     await options
       .getByRole('button', { name: en.mobileRows.closeOptions, exact: true })
       .click()
+
+    const filter = page.locator('.table-toolbar .view-filter')
+    await filter.locator('summary').click()
+    await expectUnobscured(filter.locator('.view-filter-panel'))
+    await filter.locator('summary').click()
+
+    const visibility = page.locator('.table-toolbar .visibility-menu')
+    await visibility.locator('summary').click()
+    await expectUnobscured(
+      visibility.getByRole('button', { name: en.sharing.open, exact: true }),
+    )
+    await visibility.locator('summary').click()
   }
-  await openTableOptions(page)
-  await page.locator('.view-export summary').click()
+  await openExportMenu(page)
   const csvRequest = page.waitForRequest(
     (request) =>
       request.method() === 'POST' &&
@@ -142,10 +170,9 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     expect(value).toBe(
       `${name.name},Group,Status\r\nOmega,A,Open\r\nAlpha,A,Open\r\n"中文,""引号""",B,Open\r\n`,
     )
-    await page.locator('.table-management > summary').click()
     await openGridMore(page)
     await page.getByLabel(en.grid.quickSearch, { exact: true }).fill('Alpha')
-    await openTableOptions(page)
+    await openExportMenu(page)
     const searchRequest = page.waitForRequest(
       (request) =>
         request.method() === 'POST' &&
@@ -172,9 +199,12 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
       new URL(request.url()).pathname === `/api/v1/views/${view.id}/export`,
   )
   const packageDownload = page.waitForEvent('download')
-  await page
-    .getByRole('button', { name: en.export.package, exact: true })
-    .click()
+  const packageButton = page.getByRole('button', {
+    name: en.export.package,
+    exact: true,
+  })
+  await expectUnobscured(packageButton)
+  await packageButton.click()
   expect((await packageRequest).postDataJSON()).toEqual({ format: 'xlsx' })
   const packageFile = await packageDownload
   expect(packageFile.suggestedFilename()).toBe(`任务 ${stamp}.xlsx`)
@@ -182,4 +212,78 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
   const packageBytes = await readFile((await packageFile.path())!)
   expect([...packageBytes.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
   expect(packageBytes.length).toBeGreaterThan(2_000)
+
+  const secondView = (await create(`/api/v1/tables/${tableId}/views`, {
+    name: 'Closed items',
+    type: 'grid',
+    scope: 'shared',
+  })) as { view: TableSchema['views'][number] }
+  const configuredSecond = await page.request.patch(
+    `/api/v1/views/${secondView.view.id}`,
+    {
+      headers: { ...headers(), 'If-Match': String(secondView.view.version) },
+      data: {
+        config: {
+          fields: schema.fields.map((item) => ({
+            id: item.id,
+            visible: item.id === name.id || item.id === status.id,
+          })),
+          frozen: 0,
+          filter: { field: status.id, cmp: 'is', value: 'Closed' },
+        },
+      },
+    },
+  )
+  expect(configuredSecond.status()).toBe(200)
+  await page.goto(`/t/${tableId}/v/${secondView.view.id}`)
+  await openExportMenu(page)
+  const secondRequest = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname ===
+        `/api/v1/views/${secondView.view.id}/export`,
+  )
+  const secondDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: en.export.csv, exact: true }).click()
+  const secondPayload = (await secondRequest).postDataJSON()
+  expect(secondPayload).toMatchObject({
+    filter: { field: status.id, cmp: 'is', value: 'Closed' },
+  })
+  expect(secondPayload.fieldIds).toEqual(
+    mobile ? undefined : [name.id, status.id],
+  )
+  const secondFile = await secondDownload
+  expect(await secondFile.failure()).toBeNull()
+  expect(
+    (await readFile((await secondFile.path())!)).subarray(3).toString(),
+  ).toBe(`${name.name},Status\r\nExcluded,Closed\r\n`)
+
+  const otherTable = (await create(`/api/v1/books/${book.book.id}/tables`, {
+    name: `Other export ${stamp}`,
+  })) as TableSchema
+  await create(`/api/v1/tables/${otherTable.table.id}/rows`, {
+    rows: [{ fields: { [otherTable.table.displayFieldId!]: 'Other table' } }],
+  })
+  await page.goto(`/t/${otherTable.table.id}/v/${otherTable.views[0]!.id}`)
+  await openExportMenu(page)
+  const otherRequest = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname ===
+        `/api/v1/views/${otherTable.views[0]!.id}/export`,
+  )
+  const otherDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: en.export.csv, exact: true }).click()
+  const otherPayload = (await otherRequest).postDataJSON()
+  expect(otherPayload.fieldIds).toEqual(
+    mobile ? undefined : [otherTable.table.displayFieldId],
+  )
+  const otherFile = await otherDownload
+  expect(await otherFile.failure()).toBeNull()
+  const displayName = otherTable.fields.find(
+    (item) => item.id === otherTable.table.displayFieldId,
+  )!.name
+  expect(
+    (await readFile((await otherFile.path())!)).subarray(3).toString(),
+  ).toBe(`${displayName}\r\nOther table\r\n`)
 })

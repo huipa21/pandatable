@@ -233,15 +233,6 @@ a {
   padding: 16px 24px 32px;
 }
 
-.view-subheader {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: -8px -8px 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
 .sidebar-container {
   width: var(--sidebar-width);
   flex-shrink: 0;
@@ -909,17 +900,6 @@ dialog::backdrop {
 
 .resource-list li {
   margin: 16px 0;
-  overflow-wrap: anywhere;
-}
-
-.schema-summary {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 12px;
-}
-
-.schema-summary dd {
-  margin: 0;
   overflow-wrap: anywhere;
 }
 
@@ -1758,10 +1738,19 @@ select {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* Narrow headers show only the current breadcrumb segment. */
-  .breadcrumbs a:not([aria-current='page']),
-  .breadcrumbs .breadcrumb-separator {
+  .breadcrumbs a:not(.breadcrumb-workspace):not([aria-current='page']),
+  .breadcrumbs .breadcrumb-separator:not(.breadcrumb-separator-current),
+  .breadcrumbs .breadcrumb-path-only:not(.breadcrumb-path-visible) {
     display: none;
+  }
+
+  .breadcrumbs a {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .breadcrumbs .path-only {
+    flex-shrink: 0;
   }
 }
 

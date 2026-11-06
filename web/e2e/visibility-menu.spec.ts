@@ -73,8 +73,8 @@ test('Visibility menu hosts table sharing on desktop Grid, mobile and non-Grid v
     exact: true,
   })
   await expect(trigger.locator('svg.app-icon')).toHaveCount(1)
-  await expect(main.locator('.table-utility > button')).toHaveCount(0)
-  await expect(main.locator('.table-utility .visibility-menu')).toHaveCount(0)
+  await expect(main.locator('.table-toolbar > button')).toHaveCount(0)
+  await expect(main.locator('.table-toolbar .visibility-menu')).toHaveCount(0)
 
   const share = visibility.getByRole('button', {
     name: en.sharing.open,
@@ -128,7 +128,7 @@ test('Visibility menu hosts table sharing on desktop Grid, mobile and non-Grid v
   ] as const) {
     await page.setViewportSize({ width, height: 844 })
     await page.goto(path)
-    const utility = main.locator('.table-utility .visibility-menu')
+    const utility = main.locator('.table-toolbar .visibility-menu')
     await expect(utility).toBeVisible()
     await expect(main.locator('.grid-toolbar .visibility-menu')).toHaveCount(0)
     await utility.locator('summary').click()

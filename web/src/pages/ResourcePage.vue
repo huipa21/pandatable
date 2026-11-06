@@ -10,7 +10,7 @@ import {
   watch,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { createResourceLabel, accessLevelLabel } from '../i18n'
+import { createResourceLabel } from '../i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { errorMessage, request, RequestError } from '../api/client'
 import type {
@@ -36,7 +36,8 @@ import {
   useViewManagementStore,
 } from '../stores/viewManagement'
 import AppIcon from '../components/AppIcon.vue'
-import PresenceAvatars from '../components/presence/PresenceAvatars.vue'
+import TableHistoryControls from '../components/navigation/TableHistoryControls.vue'
+import TableToolbarActions from '../components/navigation/TableToolbarActions.vue'
 import VisibilityMenu from '../components/sharing/VisibilityMenu.vue'
 
 const { t } = useI18n()
@@ -96,6 +97,8 @@ const grid = ref<{
 }>()
 const rowWorkspace = ref<HTMLElement>()
 const gridWorkspace = ref<HTMLElement>()
+const gridToolbarBottom = ref(0)
+const mobileFilter = ref<HTMLDetailsElement>()
 const fieldPanel = ref<{ openCreate: () => Promise<void> }>()
 const fieldsOpen = ref(false)
 const filterOpen = ref(false)
@@ -153,6 +156,29 @@ const importOpen = ref(false)
 let exportController: AbortController | undefined
 let exportGeneration = 0
 let personalSaveGeneration = 0
+let toolbarObserver: ResizeObserver | undefined
+function measureGridToolbar() {
+  const workspace = gridWorkspace.value
+  const toolbar = workspace?.querySelector('.grid-toolbar')
+  gridToolbarBottom.value =
+    workspace && toolbar
+      ? Math.max(
+          0,
+          toolbar.getBoundingClientRect().bottom -
+            workspace.getBoundingClientRect().top,
+        )
+      : 0
+}
+function observeGridToolbar() {
+  toolbarObserver?.disconnect()
+  const toolbar = gridWorkspace.value?.querySelector('.grid-toolbar')
+  if (toolbar && typeof ResizeObserver !== 'undefined') {
+    toolbarObserver = new ResizeObserver(measureGridToolbar)
+    toolbarObserver.observe(toolbar)
+  }
+  measureGridToolbar()
+}
+watch([gridWorkspace, grid], observeGridToolbar, { flush: 'post' })
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
   newRow.value = false
@@ -169,36 +195,73 @@ function dismissGridMenus(event: PointerEvent) {
   }
   if (!target.closest('.grid-filter-popover, .grid-filter-trigger'))
     filterOpen.value = false
+  if (!target.closest('.view-filter') && mobileFilter.value)
+    mobileFilter.value.open = false
 }
 function closeGridMenus(event: KeyboardEvent) {
   if (
     event.key !== 'Escape' ||
     document.querySelector('dialog[open]') ||
-    (!fieldsOpen.value && !filterOpen.value)
+    (!fieldsOpen.value && !filterOpen.value && !mobileFilter.value?.open)
   )
     return
-  const trigger = fieldsOpen.value
-    ? '.grid-fields-trigger'
-    : '.grid-filter-trigger'
+  if (mobileFilter.value?.open) {
+    mobileFilter.value.open = false
+    mobileFilter.value.querySelector<HTMLElement>('summary')?.focus()
+  } else {
+    const trigger = fieldsOpen.value
+      ? '.grid-fields-trigger'
+      : '.grid-filter-trigger'
+    gridWorkspace.value?.querySelector<HTMLButtonElement>(trigger)?.focus()
+  }
   fieldsOpen.value = false
   filterOpen.value = false
   createFieldPending.value = false
-  gridWorkspace.value?.querySelector<HTMLButtonElement>(trigger)?.focus()
   event.preventDefault()
+}
+function closeToolbarMenus(toolbar: Element | null | undefined) {
+  for (const menu of toolbar?.querySelectorAll<HTMLDetailsElement>(
+    ':scope > details[open], .table-toolbar-actions > details[open]',
+  ) ?? [])
+    menu.open = false
+}
+function activateToolbarMenu(event: MouseEvent) {
+  if (!(event.target instanceof Element)) return
+  const menu = event.target.closest('summary')?.parentElement
+  if (!(menu instanceof HTMLDetailsElement) || menu.open) return
+  const toolbar = menu.closest('.grid-toolbar, .table-toolbar')
+  if (
+    !toolbar ||
+    (menu.parentElement !== toolbar &&
+      !menu.parentElement?.classList.contains('table-toolbar-actions'))
+  )
+    return
+  closeToolbarMenus(toolbar)
+  if (toolbar.classList.contains('grid-toolbar')) {
+    fieldsOpen.value = false
+    filterOpen.value = false
+    createFieldPending.value = false
+  }
 }
 function toggleFieldsMenu() {
   fieldsOpen.value = !fieldsOpen.value
-  if (fieldsOpen.value) fieldsVisited.value = true
-  else createFieldPending.value = false
+  if (fieldsOpen.value) {
+    fieldsVisited.value = true
+    closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
+  } else createFieldPending.value = false
   filterOpen.value = false
 }
 function toggleFilterMenu() {
   filterOpen.value = !filterOpen.value
-  if (filterOpen.value) filterVisited.value = true
+  if (filterOpen.value) {
+    filterVisited.value = true
+    closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
+  }
   fieldsOpen.value = false
   createFieldPending.value = false
 }
 async function openFieldCreate() {
+  closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
   fieldsOpen.value = true
   fieldsVisited.value = true
   filterOpen.value = false
@@ -254,6 +317,7 @@ watch(fieldPanel, (panel) => {
 })
 onMounted(() => {
   media.addEventListener('change', resized)
+  window.addEventListener('resize', measureGridToolbar)
   document.addEventListener('pointerdown', dismissGridMenus)
   document.addEventListener('keydown', closeGridMenus)
 })
@@ -280,11 +344,6 @@ const viewId = computed(() => {
   const views = schema.value?.views ?? []
   return (views.find((item) => item.type === 'grid') ?? views[0])?.id
 })
-const displayField = computed(() =>
-  schema.value?.fields.find(
-    (field) => field.id === schema.value?.table.displayFieldId,
-  ),
-)
 const view = computed(() =>
   schema.value?.views.find((item) => item.id === viewId.value),
 )
@@ -536,6 +595,7 @@ watch(
     newRow.value = false
     fieldsOpen.value = false
     filterOpen.value = false
+    if (mobileFilter.value) mobileFilter.value.open = false
     fieldsVisited.value = false
     filterVisited.value = false
     createFieldPending.value = false
@@ -795,7 +855,9 @@ onBeforeUnmount(() => {
   controller?.abort()
   exportGeneration++
   exportController?.abort()
+  toolbarObserver?.disconnect()
   media.removeEventListener('change', resized)
+  window.removeEventListener('resize', measureGridToolbar)
   document.removeEventListener('pointerdown', dismissGridMenus)
   document.removeEventListener('keydown', closeGridMenus)
 })
@@ -911,72 +973,45 @@ onBeforeUnmount(() => {
 
       <template v-else-if="schema">
         <h1 class="visually-hidden">{{ schema.table.name }}</h1>
-        <div class="table-utility">
-          <PresenceAvatars
-            :table-id="node.id"
-            :identity="auth.user?.id ?? ''"
-          />
-          <VisibilityMenu
-            v-if="canShare && !(view?.type === 'grid' && desktop)"
-            :target="node"
-            placement="utility"
-          />
-          <details class="table-management">
-            <summary>
-              <AppIcon name="table" />
-              {{ t('nav.tableOptions') }}
-            </summary>
-            <div class="table-management-panel">
-              <dl class="schema-summary">
-                <dt>{{ t('nav.displayField') }}</dt>
-                <dd>{{ displayField?.name ?? t('nav.noDisplayField') }}</dd>
-                <dt>{{ t('nav.access') }}</dt>
-                <dd>{{ accessLevelLabel(schema.myLevel) }}</dd>
-              </dl>
-              <button
-                v-if="schema.myLevel === 'write' || schema.myLevel === 'owner'"
-                type="button"
-                @click="importOpen = true"
-              >
-                {{ t('import.append') }}
+        <div
+          v-if="view?.type !== 'grid' || !desktop"
+          class="table-toolbar"
+          role="toolbar"
+          :aria-label="t('nav.viewTools')"
+          @click.capture="activateToolbarMenu"
+        >
+          <TableHistoryControls />
+          <details
+            v-if="view?.type === 'grid'"
+            ref="mobileFilter"
+            class="view-filter"
+          >
+            <summary>{{ t('grid.filter') }}</summary>
+            <div class="view-filter-panel">
+              <FilterBuilder
+                :key="`${schema.table.id}:${view.id}`"
+                v-model="filterDraft"
+                :schema="schema"
+              />
+              <button type="button" @click="applyFilter">
+                {{ t('filter.apply') }}
               </button>
-              <details v-if="view" class="view-export">
-                <summary>{{ t('export.title') }}</summary>
-                <button
-                  v-if="view.type === 'grid'"
-                  type="button"
-                  :disabled="exportBusy || !grid"
-                  @click="downloadExport('csv')"
-                >
-                  {{ t('export.csv') }}
-                </button>
-                <button
-                  type="button"
-                  :disabled="exportBusy"
-                  @click="downloadExport('xlsx')"
-                >
-                  {{ t('export.package') }}
-                </button>
-                <p>{{ t('export.packageNotice') }}</p>
-                <p v-if="exportBusy" role="status">
-                  {{ t('export.preparing') }}
-                </p>
-                <p v-if="exportError" role="alert">{{ exportError }}</p>
-              </details>
             </div>
           </details>
+          <VisibilityMenu v-if="canShare" :target="node" placement="utility" />
+          <div class="table-toolbar-end">
+            <TableToolbarActions
+              :schema="schema"
+              :view="view"
+              :identity="auth.user?.id ?? ''"
+              :csv-ready="!!grid"
+              :export-busy="exportBusy"
+              :export-error="exportError"
+              @import="importOpen = true"
+              @export="downloadExport"
+            />
+          </div>
         </div>
-        <details v-if="view?.type === 'grid' && !desktop" class="view-filter">
-          <summary>{{ t('grid.filter') }}</summary>
-          <FilterBuilder
-            :key="`${schema.table.id}:${view.id}`"
-            v-model="filterDraft"
-            :schema="schema"
-          />
-          <button type="button" @click="applyFilter">
-            {{ t('filter.apply') }}
-          </button>
-        </details>
         <button
           v-if="canSaveAsPersonalView"
           type="button"
@@ -1019,6 +1054,7 @@ onBeforeUnmount(() => {
             v-if="view?.type === 'grid' && desktop"
             ref="gridWorkspace"
             class="grid-workspace"
+            @click.capture="activateToolbarMenu"
           >
             <DataGrid
               ref="grid"
@@ -1057,11 +1093,30 @@ onBeforeUnmount(() => {
                   router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
               "
             >
+              <template #toolbar-leading>
+                <TableHistoryControls />
+              </template>
               <template #after-highlight>
                 <VisibilityMenu v-if="canShare && node" :target="node" />
               </template>
+              <template #toolbar-actions>
+                <TableToolbarActions
+                  :schema="schema"
+                  :view="view"
+                  :identity="auth.user?.id ?? ''"
+                  :csv-ready="!!grid"
+                  :export-busy="exportBusy"
+                  :export-error="exportError"
+                  @import="importOpen = true"
+                  @export="downloadExport"
+                />
+              </template>
             </DataGrid>
-            <div v-show="fieldsOpen" class="grid-field-popover">
+            <div
+              v-show="fieldsOpen"
+              class="grid-field-popover"
+              :style="{ top: `${gridToolbarBottom}px` }"
+            >
               <FieldPanel
                 v-if="fieldsVisited"
                 :key="schema.table.id"
@@ -1078,7 +1133,11 @@ onBeforeUnmount(() => {
               />
               <p v-if="fieldMenuError" role="alert">{{ fieldMenuError }}</p>
             </div>
-            <div v-show="filterOpen" class="grid-filter-popover">
+            <div
+              v-show="filterOpen"
+              class="grid-filter-popover"
+              :style="{ top: `${gridToolbarBottom}px` }"
+            >
               <FilterBuilder
                 v-if="filterVisited"
                 :key="`${schema.table.id}:${view.id}`"
@@ -1276,47 +1335,62 @@ onBeforeUnmount(() => {
   font-size: 0.875rem;
 }
 
-.table-utility {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.table-management {
+.table-toolbar {
   position: relative;
-  z-index: 4;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 48px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
 }
 
-.table-management > summary {
+.table-toolbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+}
+
+.view-filter > summary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: var(--panel-surface);
-  border: 1px solid var(--border);
+  min-height: 40px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
   list-style: none;
 }
 
-.table-management > summary::-webkit-details-marker {
+.view-filter > summary::-webkit-details-marker {
   display: none;
 }
 
-.table-management-panel {
+.view-filter-panel {
   position: absolute;
-  right: 0;
-  z-index: 5;
-  width: min(460px, calc(100vw - 32px));
+  top: 100%;
+  left: 0;
+  z-index: 15;
+  width: min(720px, 100%);
   max-height: 70vh;
   padding: 16px;
   overflow: auto;
+  color: var(--text);
   background: var(--panel-surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+
+.view-filter-panel > button {
+  margin-top: 14px;
 }
 
 .grid-workspace {
@@ -1328,7 +1402,6 @@ onBeforeUnmount(() => {
 .grid-filter-popover {
   position: absolute;
   z-index: 10;
-  top: 48px;
   max-height: min(75vh, 700px);
   overflow: auto;
   color: var(--text);

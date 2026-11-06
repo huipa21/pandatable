@@ -1,12 +1,7 @@
 import type { Browser, BrowserContext, Page } from '@playwright/test'
 import { expect, observeBrowser, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
-import {
-  openCreateView,
-  openTableOptions,
-  sidebarTable,
-  sidebarView,
-} from './table-controls'
+import { openCreateView, sidebarTable, sidebarView } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 test.use({ actionTimeout: 10_000 })
@@ -244,7 +239,6 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     const writerDiagnostics = await observeBrowser(writerPage)
     await setLanguageEnglish(writerPage)
     await writerPage.goto(`/t/${tableId}/v/${initialView.id}`)
-    await openTableOptions(writerPage)
     await expect(writerPage.locator('.schema-summary')).toContainText(
       en.nav.level.write,
     )

@@ -3235,7 +3235,13 @@ onBeforeUnmount(() => {
     :aria-label="t('grid.title')"
     @keydown.capture="keydown"
   >
-    <div ref="toolbar" class="grid-toolbar">
+    <div
+      ref="toolbar"
+      class="grid-toolbar"
+      role="toolbar"
+      :aria-label="t('nav.viewTools')"
+    >
+      <slot name="toolbar-leading" />
       <button
         v-if="desktop"
         type="button"
@@ -3766,6 +3772,10 @@ onBeforeUnmount(() => {
       }}</span>
       <span v-if="saving" role="status">{{ t('grid.saving') }}</span>
       <span v-else-if="loading" role="status">{{ t('grid.loading') }}</span>
+      <div class="grid-toolbar-end">
+        <slot name="toolbar-actions" />
+        <slot name="toolbar-end" />
+      </div>
     </div>
     <p v-if="columnState.failure.value" role="alert">
       {{ columnState.failure.value }}
@@ -4024,19 +4034,28 @@ onBeforeUnmount(() => {
 }
 .grid-toolbar {
   position: relative;
-  z-index: 1;
-  gap: 2px;
+  z-index: 3;
+  gap: 0;
   min-height: 48px;
   margin-bottom: 0;
   border-bottom: 1px solid var(--border);
+}
+.grid-toolbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
 }
 .grid-toolbar > details > summary,
 .data-grid .grid-toolbar-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   min-height: 40px;
-  padding: 8px 10px;
+  padding: 8px 6px;
   color: var(--text);
   background: transparent;
   border: 1px solid transparent;
@@ -4046,6 +4065,11 @@ onBeforeUnmount(() => {
 }
 .grid-toolbar > details > summary::-webkit-details-marker {
   display: none;
+}
+.grid-row-height > summary,
+.grid-more > summary {
+  justify-content: center;
+  min-width: 36px;
 }
 .grid-toolbar > details[open] > summary,
 .grid-toolbar > details > summary:hover,
@@ -4073,7 +4097,7 @@ onBeforeUnmount(() => {
 .grid-highlights,
 .grid-row-height,
 .grid-more {
-  position: relative;
+  position: static;
 }
 .grid-groups > fieldset,
 .grid-sorts > fieldset,
@@ -4084,8 +4108,9 @@ onBeforeUnmount(() => {
   z-index: 3;
   top: 100%;
   left: 0;
-  min-width: min(460px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
+  width: min(460px, 100%);
+  min-width: 0;
+  max-width: 100%;
   max-height: 65vh;
   margin: 0;
   padding: 14px;
@@ -4099,7 +4124,7 @@ onBeforeUnmount(() => {
 .grid-row-height > fieldset {
   display: grid;
   gap: 4px;
-  min-width: 150px;
+  width: min(150px, 100%);
 }
 .grid-row-height button[aria-pressed='true'] {
   color: var(--accent);
@@ -4108,6 +4133,8 @@ onBeforeUnmount(() => {
 .grid-more-menu {
   display: grid;
   gap: 10px;
+  right: 0;
+  left: auto;
 }
 .grid-more-menu details > summary {
   cursor: pointer;

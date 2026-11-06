@@ -35,18 +35,31 @@ const crumbs = computed(() => {
     :aria-label="t('nav.breadcrumbs')"
   >
     <template v-for="(item, index) in crumbs" :key="item.id">
-      <span v-if="index" class="breadcrumb-separator" aria-hidden="true">{{
-        t('nav.separator')
-      }}</span>
+      <span
+        v-if="index"
+        class="breadcrumb-separator"
+        :class="{ 'breadcrumb-separator-current': index === crumbs.length - 1 }"
+        aria-hidden="true"
+      >
+        {{ t('nav.separator') }}
+      </span>
       <RouterLink
         :to="item.path"
+        :class="{ 'breadcrumb-workspace': index === 0 }"
         :aria-current="index === crumbs.length - 1 ? 'page' : undefined"
+        :title="item.name"
       >
         {{ item.name }}
       </RouterLink>
-      <span v-if="item.pathOnly" class="path-only">{{
-        t('nav.pathOnly')
-      }}</span>
+      <span
+        v-if="item.pathOnly"
+        class="path-only breadcrumb-path-only"
+        :class="{
+          'breadcrumb-path-visible': index === 0 || index === crumbs.length - 1,
+        }"
+      >
+        {{ t('nav.pathOnly') }}
+      </span>
     </template>
   </nav>
 </template>

@@ -71,4 +71,26 @@ Publish the exact rightmost action slot/props for UX-10.
 
 ## Record
 
-Not started.
+2026-11-06: Started UX-06 alone after the UX-05 handoff.
+
+- Outcome: the Grid and mobile/non-grid toolbars host history, presence, display
+  field/access, import and export; the old options panel and history band are
+  removed. ACL Visibility remains separate. Workspace breadcrumbs remain
+  visible on narrow screens. Field/filter popovers survive schema-keyed Grid
+  remounts and track the wrapping toolbar's height (D-226).
+- Verification:
+  - `pnpm --dir web exec vitest run src/components/navigation/header.test.ts src/pages/ResourcePage.test.ts src/pages/ResourcePage.field-order.test.ts`: 33 passed.
+  - `go run .\tools\ptdev check`: passed, including 862 frontend tests;
+    `golangci-lint` unavailable (optional warning).
+  - `go run .\tools\ptdev e2e --fast -- shell.spec.ts table-workspace.spec.ts visibility-menu.spec.ts table-header.spec.ts grid-columns-keyboard.spec.ts`: 11 passed/2 skipped.
+  - `go run .\tools\ptdev e2e --fast -- import.spec.ts export.spec.ts views.spec.ts`: 9 passed/2 skipped.
+  - `go run .\tools\ptdev e2e --fast -- hardening.spec.ts mobile-rows.spec.ts --project=mobile-chromium --grep 'AT-806 (resource menus and structure dialogs|table dialogs)|AT-313'`: 4 passed.
+  - `go run .\tools\ptdev e2e --fast -- admin-users.spec.ts`: 3 passed.
+  - Skips are intentional mobile duplicates or desktop-only workloads.
+- Risk: the full production-image browser gate remains for UX-11 at phase end;
+  its failures reopen affected tasks.
+- UX-10 contract: in `ResourcePage.vue`, provide the New Entry control as the
+  last child of DataGrid's named `toolbar-end` slot. On mobile/non-grid routes,
+  add the same control after `TableToolbarActions` in `.table-toolbar-end`.
+  Both already receive the active `schema`, `view` and identity in the page;
+  no row-creation behavior or placeholder action was added by UX-06.

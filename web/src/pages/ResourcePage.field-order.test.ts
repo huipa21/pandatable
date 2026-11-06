@@ -131,7 +131,7 @@ it.each(['flush', 'save'] as const)(
       setup(_props, { emit, expose }) {
         expose({ flushColumnChanges, reorderFields })
         return () =>
-          h('section', { 'data-testid': 'grid' }, [
+          h('section', { class: 'grid-toolbar', 'data-testid': 'grid' }, [
             h(
               'button',
               {
