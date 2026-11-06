@@ -146,6 +146,9 @@
     "ux09": {
       "blankCreateHint": "Use New Entry to provide the required or unique values.",
       "createdMayBeHidden": "Row created. Filters, sorting, or collapsed groups may affect where it appears."
+    },
+    "ux10": {
+      "newEntry": "New Entry"
     }
   },
   "nav": {

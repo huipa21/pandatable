@@ -18,6 +18,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| UX-10 | Rightmost New Entry form action | ✅ | 2026-11-06 | D-227; task gates passed, with the phase gate deferred to UX-11. [Record](task-prompts/workspace-grid-10-new-entry.md). |
 | UX-06 | Consolidated table header and options-panel removal | ✅ | 2026-11-06 | D-226; task gates passed and UX-10 toolbar slot is reserved. [Record](task-prompts/workspace-grid-06-table-header.md). |
 | UX-05 | Sidebar view creation and management | ✅ | 2026-11-06 | Task gates passed; ResourcePage released to UX-06. [Record](task-prompts/workspace-grid-05-view-navigation.md). |
 | UX-09 | Plus action after the final grid row | ✅ | 2026-11-05 | Coordinated task gates passed; phase gate and commits deferred to UX-11. [Record](task-prompts/workspace-grid-09-append-row.md). |
@@ -130,6 +131,8 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-06 | Completed UX-10: New Entry creation form and active-view refresh; task gates passed. |
+| 2026-11-06 | Started UX-10: wire the rightmost New Entry form action. |
 | 2026-11-06 | Completed UX-06: consolidated the table header and removed the options panel (D-226); task gates passed. |
 | 2026-11-06 | Started UX-06: consolidate the table header and remove the options panel. |
 | 2026-11-06 | Completed UX-05: sidebar view creation and contextual management (D-225); task gates passed and UX-06 handoff released. |

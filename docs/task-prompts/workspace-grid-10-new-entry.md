@@ -63,4 +63,20 @@ Gates/docs/commits follow the execution index. Leave a complete handoff for UX-1
 
 ## Record
 
-Not started.
+2026-11-06: Started UX-10 alone after the UX-06 and UX-09 handoffs.
+
+- Outcome: the trailing desktop Grid action reuses the existing row-creation
+  draft; mobile keeps its single FAB. Cancel preserves the URL, creation
+  refreshes the active view and opens the authoritative row, and transitions
+  between a bare table route and its default view retain the grid (D-227).
+- Changed `ResourcePage.vue` and its tests, `RowExpandDialog.test.ts`, both
+  locales, `new-entry.spec.ts`, the frontend design and bilingual user guide.
+- Verification:
+  - Focused ResourcePage/RowExpandDialog/MobileCardList Vitest: 123 passed.
+  - `go run .\tools\ptdev check`: passed; 869 frontend tests, lint and build.
+    `golangci-lint` was unavailable (optional warning).
+  - `go run .\tools\ptdev e2e --fast -- new-entry.spec.ts row-expand.spec.ts mobile-rows.spec.ts grid-append-row.spec.ts`: 17 passed, 10 intentionally skipped for the other viewport.
+  - `go run .\tools\ptdev e2e --fast -- fields-acceptance.spec.ts fields-batch2.spec.ts --project=desktop-chromium --grep 'AT-303|AT-320'`: 3 passed.
+- UX-11 handoff: new-form and direct-plus paths, ACL, defaults, errors, focus,
+  filtered/sorted/grouped refresh and mobile coverage are in the fast gate.
+  The complete production-image phase gate remains for UX-11 (D-158).

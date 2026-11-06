@@ -251,6 +251,7 @@ it('reports table opening and view changes without changing subscriptions', asyn
 })
 
 it('switches at 768px without mounting the grid for mobile cards, preserves row links and closes new drafts on navigation', async () => {
+  useAuthStore().setUser(navUser)
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(Response.json(tableSchema())),
@@ -259,6 +260,7 @@ it('switches at 768px without mounting the grid for mobile cards, preserves row 
   const { wrapper, router } = await setup('/t/t/v/v')
   try {
     expect(wrapper.find('[data-testid="production-grid"]').exists()).toBe(false)
+    expect(wrapper.find('.new-entry').exists()).toBe(false)
     await wrapper.get('[data-testid="mobile-cards"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(true)
@@ -275,6 +277,128 @@ it('switches at 768px without mounting the grid for mobile cards, preserves row 
     wrapper.unmount()
   }
 })
+
+it('opens a new row from the rightmost grid action, preserves the route on cancel, and refreshes after creation', async () => {
+  useAuthStore().setUser(navUser)
+  const fetcher = vi.fn(() => Promise.resolve(Response.json(tableSchema())))
+  const refresh = vi.fn(async () => {})
+  vi.stubGlobal('fetch', fetcher)
+  const gridStub = {
+    methods: {
+      refresh,
+      exportQuery: () => ({ fieldIds: ['name'], groupBy: [] }),
+    },
+    template: `
+      <div class="grid-toolbar">
+        <div class="grid-toolbar-end">
+          <slot name="toolbar-actions" />
+          <slot name="toolbar-end" />
+        </div>
+      </div>`,
+  }
+  const dialogStub = {
+    props: { rowId: { type: String, default: null } },
+    emits: ['close', 'created'],
+    template: `
+      <div data-testid="new-row-dialog" :data-row-id="rowId">
+        <button data-testid="close-row" @click="$emit('close')">Close</button>
+        <button data-testid="create-row" @click="$emit('created', '47')">Create</button>
+      </div>`,
+  }
+  const { wrapper, router } = await setup(
+    '/t/t?draft=keep',
+    { DataGrid: gridStub, RowExpandDialog: dialogStub },
+    document.body,
+  )
+  try {
+    const grid = wrapper.get('.grid-toolbar').element
+    const toolbarEnd = wrapper.get('.grid-toolbar-end')
+    const action = toolbarEnd.get('.new-entry')
+    expect(action.text()).toBe('New Entry')
+    expect(toolbarEnd.element.lastElementChild).toBe(action.element)
+    await action.trigger('click')
+    await flushPromises()
+    expect(
+      wrapper.get('[data-testid="new-row-dialog"]').attributes('data-row-id'),
+    ).toBeUndefined()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/t/t?draft=keep')
+    await wrapper.get('[data-testid="close-row"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="new-row-dialog"]').exists()).toBe(false)
+    expect(router.currentRoute.value.fullPath).toBe('/t/t?draft=keep')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+
+    await action.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="create-row"]').trigger('click')
+    await flushPromises()
+    expect(refresh).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v/r/47')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.grid-toolbar').element).toBe(grid)
+    expect(
+      wrapper.get('[data-testid="new-row-dialog"]').attributes('data-row-id'),
+    ).toBe('47')
+    await wrapper.get('[data-testid="close-row"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v')
+    await router.push('/t/t?another=1')
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(wrapper.get('.grid-toolbar').element).toBe(grid)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('discards the new-row dialog on view and identity changes', async () => {
+  const auth = useAuthStore()
+  auth.setUser(navUser)
+  const schema = tableSchema()
+  schema.views.push({ ...schema.views[0]!, id: 'v2', name: 'Other' })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(Response.json(schema))),
+  )
+  const { wrapper, router } = await setup('/t/t/v/v')
+  try {
+    await wrapper.get('.new-entry').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(true)
+    await router.push('/t/t/v/v2')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(false)
+    await wrapper.get('.new-entry').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(true)
+    auth.setUser({ ...navUser, id: 'someone-else' })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('does not open a new-row dialog from a stale mobile add event for readers', async () => {
+  useAuthStore().setUser(navUser)
+  media.matches = false
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue(Response.json({ ...tableSchema(), myLevel: 'read' })),
+  )
+  const { wrapper } = await setup('/t/t/v/v')
+  try {
+    await wrapper.get('[data-testid="mobile-cards"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="row-dialog"]').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('opens row deep links without reloading schema or remounting the grid, and rejects invalid views', async () => {
   const fetcher = vi.fn().mockResolvedValue(Response.json(tableSchema()))
   vi.stubGlobal('fetch', fetcher)
@@ -327,6 +451,9 @@ it('shows real schema metadata, levels, view links and the production grid', asy
 
 it.each([
   { type: 'grid', desktop: true, level: 'owner' },
+  { type: 'grid', desktop: true, level: 'write' },
+  { type: 'grid', desktop: true, level: 'read' },
+  { type: 'grid', desktop: false, level: 'owner' },
   { type: 'grid', desktop: false, level: 'read' },
   { type: 'form', desktop: true, level: 'write' },
   { type: 'kanban', desktop: false, level: 'owner' },
@@ -370,6 +497,11 @@ it.each([
         toolbar.find('button[aria-label="Import into this table"]').exists(),
       ).toBe(level !== 'read')
       expect(toolbar.find('.visibility-menu').exists()).toBe(level === 'owner')
+      const newEntry = toolbar.find('.new-entry')
+      expect(newEntry.exists()).toBe(
+        type === 'grid' && desktop && level !== 'read',
+      )
+      if (newEntry.exists()) expect(newEntry.text()).toBe('New Entry')
       expect(toolbar.findAll('.view-export button')).toHaveLength(
         type === 'grid' ? 2 : 1,
       )
@@ -382,6 +514,7 @@ it.each([
       await flushPromises()
       expect(wrapper.text()).not.toContain('视图和数据表选项')
       expect(toolbar.get('.view-export summary').text()).toBe('导出')
+      if (newEntry.exists()) expect(newEntry.text()).toBe('新建条目')
     } finally {
       wrapper.unmount()
     }

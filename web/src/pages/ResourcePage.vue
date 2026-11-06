@@ -338,14 +338,24 @@ const node = computed(() => {
       (kind.value !== 'book' || item.parentId === route.params.wid),
   )
 })
-// The bare table route shows the default view without naming it in the URL.
-const viewId = computed(() => {
-  if (typeof route.params.viewId === 'string') return route.params.viewId
+const defaultViewId = computed(() => {
   const views = schema.value?.views ?? []
   return (views.find((item) => item.type === 'grid') ?? views[0])?.id
 })
+// The bare table route shows the default view without naming it in the URL.
+const viewId = computed(() =>
+  typeof route.params.viewId === 'string'
+    ? route.params.viewId
+    : defaultViewId.value,
+)
 const view = computed(() =>
   schema.value?.views.find((item) => item.id === viewId.value),
+)
+const canCreateRow = computed(
+  () =>
+    !!auth.user?.id &&
+    view.value?.type === 'grid' &&
+    (schema.value?.myLevel === 'write' || schema.value?.myLevel === 'owner'),
 )
 const showRowDialog = computed(
   () =>
@@ -354,6 +364,23 @@ const showRowDialog = computed(
       view.value?.type === 'gallery') &&
     (typeof route.params.rowId === 'string' || newRow.value),
 )
+
+function openNewRow() {
+  if (!canCreateRow.value || typeof route.params.rowId === 'string') return
+  closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
+  fieldsOpen.value = false
+  filterOpen.value = false
+  createFieldPending.value = false
+  if (mobileFilter.value) mobileFilter.value.open = false
+  newRow.value = true
+}
+
+function closeRowDialog() {
+  newRow.value = false
+  if (typeof route.params.rowId === 'string' && schema.value && view.value)
+    void router.replace(`/t/${schema.value.table.id}/v/${view.value.id}`)
+}
+
 const canSaveAsPersonalView = computed(() => {
   const currentView = view.value
   return (
@@ -538,7 +565,18 @@ watch(
     () => route.params.wid,
     () => node.value?.id,
   ],
-  () => void loadSchema(),
+  (next, previous) => {
+    const defaultId = defaultViewId.value
+    if (
+      defaultId &&
+      schema.value?.table.id === next[0] &&
+      next[1] !== previous[1] &&
+      next.every((value, index) => index === 1 || value === previous[index]) &&
+      (next[1] ?? defaultId) === (previous[1] ?? defaultId)
+    )
+      return
+    void loadSchema()
+  },
   { immediate: true },
 )
 watch(
@@ -1111,6 +1149,17 @@ onBeforeUnmount(() => {
                   @export="downloadExport"
                 />
               </template>
+              <template #toolbar-end>
+                <button
+                  v-if="canCreateRow"
+                  class="new-entry"
+                  type="button"
+                  @click="openNewRow"
+                >
+                  <AppIcon name="plus" :size="16" />
+                  {{ t('workspaceGrid.ux10.newEntry') }}
+                </button>
+              </template>
             </DataGrid>
             <div
               v-show="fieldsOpen"
@@ -1163,7 +1212,7 @@ onBeforeUnmount(() => {
               (id) =>
                 router.push(`/t/${schema!.table.id}/v/${view!.id}/r/${id}`)
             "
-            @add="newRow = true"
+            @add="openNewRow"
           >
             <FieldPanel
               :schema="schema"
@@ -1220,12 +1269,7 @@ onBeforeUnmount(() => {
                 ? route.query.comment
                 : undefined
             "
-            @close="
-              () => {
-                newRow = false
-                router.replace(`/t/${schema!.table.id}/v/${view!.id}`)
-              }
-            "
+            @close="closeRowDialog"
             @saved="refreshVisibleRows"
             @navigate="
               (id) =>
@@ -1355,6 +1399,27 @@ onBeforeUnmount(() => {
   min-width: 0;
   max-width: 100%;
   margin-left: auto;
+}
+
+.new-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  margin-left: auto;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.new-entry:hover {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+}
+
+.new-entry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .view-filter > summary {

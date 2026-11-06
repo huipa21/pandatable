@@ -558,6 +558,15 @@ long text uses Ctrl/Meta+Enter, checkbox/single-select changes save immediately,
 and multi-select has explicit Save. Cancel/Escape discards the active editor.
 Closing never implicitly saves a draft.
 
+On desktop, Grid writers can open the same local creation draft from **New
+Entry**, the rightmost toolbar action. This is separate from the grid-tail plus,
+which creates directly using defaults. Applying a field only updates the draft;
+untouched fields remain omitted from the atomic create request. Cancelling a
+new draft leaves the current route unchanged. Success refreshes the active query
+and opens the authoritative created-row deep link. Resolving a bare table route
+to that same default view does not remount the grid. Mobile retains its single
+add-row FAB for this form; readers have neither creation action (D-227).
+
 Each save uses single-row PATCH, preserves exact bigint/decimal/microsecond
 wire values and rejects UTF-8 bodies over 4096 bytes visibly. Values/status
 change only on a successful authoritative response; the grid's active bounded

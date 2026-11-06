@@ -540,6 +540,59 @@ it('omits untouched defaults, permits explicit null, and preserves drafts after 
   ).toBe('')
 })
 
+it('prevents duplicate creation and retains editable drafts after unique and network errors', async () => {
+  let release!: (response: Response) => void
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = resolve
+        }),
+    )
+    .mockRejectedValueOnce(new TypeError('Network unavailable'))
+    .mockResolvedValueOnce(
+      Response.json({ rows: [{ id, fields: { name: 'Draft' } }] }),
+    )
+  const { wrapper } = await setup(tableSchema(), fetcher, null)
+  const field = wrapper.get('.row-field')
+  await field.get('button').trigger('click')
+  await field.get('input').setValue('Draft')
+  await field.get('input').trigger('blur')
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(wrapper.get('.create-row').attributes('disabled')).toBeDefined()
+  await field.get('.field-editor button').trigger('click')
+  const create = wrapper.get('.create-row')
+  await create.trigger('click')
+  create.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(create.attributes('disabled')).toBeDefined()
+  release(
+    Response.json({ error: { code: 'ERR_UNIQUE_CONFLICT' } }, { status: 409 }),
+  )
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).toContain('unique field')
+  expect(wrapper.emitted('created')).toBeUndefined()
+  await field.get('button').trigger('click')
+  expect((field.get('input').element as HTMLInputElement).value).toBe('Draft')
+  await field.get('.field-editor button').trigger('click')
+  await create.trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[role="alert"]').text()).not.toBe('')
+  expect(wrapper.emitted('created')).toBeUndefined()
+  await field.get('button').trigger('click')
+  expect((field.get('input').element as HTMLInputElement).value).toBe('Draft')
+  await field.get('.field-editor button').trigger('click')
+  await create.trigger('click')
+  await flushPromises()
+  expect(fetcher).toHaveBeenCalledTimes(3)
+  expect(wrapper.emitted('created')).toEqual([[id]])
+  for (const [, init] of fetcher.mock.calls)
+    expect(JSON.parse(String(init?.body))).toEqual({
+      rows: [{ fields: { name: 'Draft' } }],
+    })
+})
+
 it.each(['view', 'schema', 'identity', 'permission', 'close'])(
   'ignores late creation after %s changes',
   async (change) => {

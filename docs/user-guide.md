@@ -51,8 +51,13 @@ control or resource is unavailable, contact its owner.
 
 ### 3. Work with rows and fields
 
-Open a table's grid, use **Add row**, and edit cells with the appropriate
-editor. Invalid values are reported and not saved. On desktop, **Fields**
+Open a table's grid and edit cells with the appropriate editor. On desktop, the
+plus after the last row creates a row immediately using defaults. To fill in
+values before creating it, choose **New Entry** at the right of the toolbar,
+apply each edited field, and choose **Create row**. Untouched fields use their
+defaults; closing the draft creates nothing. If a required field has no
+default, use the form instead of the plus. Invalid values are reported and not
+saved. On desktop, **Fields**
 searches the field list and controls which columns are visible; choose **System
 fields** to include system columns. Owners can add a field with the plus button
 in the grid header or **Add field** in the field menu, choose its type, and
@@ -74,7 +79,7 @@ the editor or press Enter to save them, or press Escape to cancel.
 On desktop, copy and paste cell ranges, use Ctrl+D to fill down, and use Ctrl+Z
 or Ctrl+Y to undo or redo. An undo can ask for confirmation if another user
 changed the data. On a narrow screen, rows appear as cards; tap a card to open
-the row editor or use the add-row control to create a row.
+the row editor or use the single add-row control to open the creation form.
 
 ### 4. Use views and forms
 
@@ -204,8 +209,11 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 
 ### 3. 使用行和字段
 
-打开数据表的网格，选择**添加行**，并使用相应的编辑器修改单元格。无效值会显示
-错误且不会保存。在桌面端，使用**字段**搜索字段并控制显示哪些列；选择**系统字段**
+打开数据表的网格，并使用相应的编辑器修改单元格。在桌面端，最后一行后的加号会使用
+默认值直接创建行；要先填写内容，请选择工具栏右侧的**新建条目**，逐个应用编辑值，
+然后选择**创建行**。未编辑的字段使用默认值；关闭草稿不会创建行。如果必填字段没有
+默认值，请使用表单而不是加号。无效值会显示错误且不会保存。在桌面端，使用**字段**
+搜索字段并控制显示哪些列；选择**系统字段**
 可显示系统列。所有者可以通过网格表头的加号或字段菜单中的**添加字段**新建字段，
 选择类型，并按需设置默认值和说明。可搜索的类型列表也包含关联、查找、汇总和公式。
 在**字段**中，每个字段显示为紧凑的磁贴：拖动字段名可调整当前网格的列顺序（所有者
@@ -215,7 +223,7 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 
 在桌面端，可以复制粘贴单元格区域、使用 Ctrl+D 向下填充，以及使用 Ctrl+Z 或
 Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需要确认。在窄屏上，行以
-卡片显示；点击卡片可打开行编辑器，也可以使用添加行控件新建行。
+卡片显示；点击卡片可打开行编辑器，也可以使用唯一的添加行控件打开创建表单。
 
 ### 4. 使用视图和表单
 

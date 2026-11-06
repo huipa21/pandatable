@@ -146,6 +146,9 @@
     "ux09": {
       "blankCreateHint": "请使用“新建条目”填写必填值或其他唯一值。",
       "createdMayBeHidden": "已创建行。筛选、排序或折叠的分组可能影响其显示位置。"
+    },
+    "ux10": {
+      "newEntry": "新建条目"
     }
   },
   "nav": {
