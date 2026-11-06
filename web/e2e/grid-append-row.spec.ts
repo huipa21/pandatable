@@ -139,7 +139,11 @@ async function openGrid(page: Page, path: string) {
     await setLocale(page, 'en')
 }
 
-async function expectPlusAtEnd(page: Page, count: number) {
+async function expectPlusAtEnd(
+  page: Page,
+  count: number,
+  renderedColumnWidth?: number,
+) {
   const grid = page.locator('revo-grid')
   await expect(grid).toHaveAttribute('aria-rowcount', String(count))
   const plus = page.getByRole('button', { name: en.grid.addRow, exact: true })
@@ -151,9 +155,26 @@ async function expectPlusAtEnd(page: Page, count: number) {
   await expect(end).toBeVisible()
   const rowBox = await end.boundingBox()
   const plusBox = await plus.boundingBox()
-  if (!rowBox || !plusBox) throw new Error('Grid bounds are unavailable')
+  const gridBox = await grid.boundingBox()
+  if (!rowBox || !plusBox || !gridBox)
+    throw new Error('Grid bounds are unavailable')
   expect(Math.abs(plusBox.y - (rowBox.y + rowBox.height))).toBeLessThanOrEqual(
     2,
+  )
+  expect(Math.abs(plusBox.x - gridBox.x)).toBeLessThanOrEqual(2)
+  expect(
+    Math.abs(plusBox.width - Math.max(gridBox.width, renderedColumnWidth ?? 0)),
+  ).toBeLessThanOrEqual(2)
+}
+
+async function clickAppendRowAtTrailingEdge(page: Page) {
+  const grid = page.locator('revo-grid')
+  const gridBox = await grid.boundingBox()
+  const rowBox = await page.locator('.grid-add-row').boundingBox()
+  if (!gridBox || !rowBox) throw new Error('Append row bounds are unavailable')
+  await page.mouse.click(
+    Math.min(rowBox.x + rowBox.width - 8, gridBox.x + gridBox.width - 8),
+    rowBox.y + rowBox.height / 2,
   )
 }
 
@@ -199,8 +220,7 @@ test('short grids append directly, use defaults, and preserve undo and realtime'
 
     const first = rowCreateResponse(page, table.tableId)
     const plus = page.getByRole('button', { name: en.grid.addRow, exact: true })
-    await plus.focus()
-    await page.keyboard.press('Enter')
+    await clickAppendRowAtTrailingEdge(page)
     const response = await first
     expect(response.status()).toBe(201)
     expect(response.request().postDataJSON()).toEqual({
@@ -497,6 +517,116 @@ test('an expanded multi-page group reveals its newly appended tail row', async (
   })
   expect(source).toMatchObject({ length: 252, lastLoaded: true })
   expect(source.loaded).toBeLessThanOrEqual(300)
+})
+
+test('the append row spans wide reordered and frozen columns', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The desktop grid has a separate mobile creation form.')
+  test.setTimeout(150_000)
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await login(page)
+  const table = await createTable(page, 'wide')
+  const section = await createField(page, table.tableId, {
+    name: 'Section',
+    uiType: 'text',
+  })
+  const extraFields: TableField[] = []
+  for (let index = 0; index < 4; index++)
+    extraFields.push(
+      await createField(page, table.tableId, {
+        name: `Wide ${index + 1}`,
+        uiType: 'text',
+      }),
+    )
+  const fieldIds = [table.nameId, section.id, ...extraFields.map((f) => f.id)]
+  const columnWidth = 260
+  await configureView(page, table.tableId, table.viewId, {
+    fields: [...fieldIds].reverse().map((id) => ({
+      id,
+      visible: true,
+      width: columnWidth,
+    })),
+    frozen: 2,
+    groupBy: [section.id],
+  })
+  await insertRows(page, table.tableId, [
+    { fields: { [table.nameId]: 'First', [section.id]: 'Open' } },
+    { fields: { [table.nameId]: 'Second', [section.id]: 'Open' } },
+  ])
+  await openGrid(page, table.path)
+
+  const grid = page.locator('revo-grid')
+  const resizeHandle = await grid
+    .getByRole('columnheader', { name: 'Wide 4', exact: true })
+    .locator('.resizable-r')
+    .boundingBox()
+  if (!resizeHandle) throw new Error('Wide column resize handle is absent')
+  await page.mouse.move(
+    resizeHandle.x + resizeHandle.width / 2,
+    resizeHandle.y + resizeHandle.height / 2,
+  )
+  await page.mouse.down()
+  await page.mouse.move(
+    resizeHandle.x + 36,
+    resizeHandle.y + resizeHandle.height / 2,
+    { steps: 6 },
+  )
+  await page.mouse.up()
+  await expect
+    .poll(async () => {
+      const current = await schemaOf(page, table.tableId)
+      return current.views[0]?.config.fields.find(
+        (column) => column.id === extraFields[3]?.id,
+      )?.width
+    })
+    .toBeGreaterThan(columnWidth)
+  const currentSchema = await schemaOf(page, table.tableId)
+  const currentView = currentSchema.views.find(
+    (view) => view.id === table.viewId,
+  )
+  if (!currentView) throw new Error('Wide append view is missing')
+  const renderedColumnWidth =
+    104 +
+    fieldIds.reduce(
+      (total, id) =>
+        total +
+        (currentView.config.fields.find((column) => column.id === id)?.width ??
+          columnWidth),
+      0,
+    )
+  await expectPlusAtEnd(page, 1, renderedColumnWidth)
+  const horizontal = grid.locator('revogr-scroll-virtual.horizontal')
+  await expect
+    .poll(() =>
+      horizontal.evaluate(
+        (element) => element.scrollWidth > element.clientWidth,
+      ),
+    )
+    .toBe(true)
+  await page
+    .getByRole('button', { name: 'Expand Section: Open', exact: false })
+    .click()
+  await expectPlusAtEnd(page, 3, renderedColumnWidth)
+
+  const created = rowCreateResponse(page, table.tableId)
+  await clickAppendRowAtTrailingEdge(page)
+  expect((await created).status()).toBe(201)
+  await expect.poll(async () => (await query(page, table.viewId)).total).toBe(3)
+  await expectPlusAtEnd(page, 4, renderedColumnWidth)
+
+  await grid.evaluate(async (element, fieldId) => {
+    await (element as HTMLElement & Components.RevoGrid).scrollToColumnProp(
+      String(fieldId),
+    )
+  }, fieldIds[0])
+  await expect
+    .poll(() => horizontal.evaluate((element) => element.scrollLeft > 0))
+    .toBe(true)
+  const rowBox = await page.locator('.grid-add-row').boundingBox()
+  if (!rowBox) throw new Error('Append row bounds are unavailable')
+  expect(Math.abs(rowBox.width - renderedColumnWidth)).toBeLessThanOrEqual(2)
 })
 
 test('filtered, sorted, and grouped results retain one truthful table action', async ({

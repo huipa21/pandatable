@@ -86,6 +86,8 @@ import {
   minColumnWidth,
   maxColumnWidth,
 } from './viewColumns'
+import { appendRowLayoutWidth } from './appendRowLayout'
+import { columnFooterCells, type ColumnFooterCell } from './columnFooters'
 
 const props = defineProps<{
   schema: TableSchema
@@ -136,6 +138,7 @@ const error = ref<unknown>(null)
 const appendFailure = shallowRef<unknown>(null)
 const appendNotice = ref(false)
 const appendAtEnd = ref(false)
+const appendWidth = ref(0)
 const searchTerm = ref('')
 const footerAggregates = shallowRef<RowAggregate[]>([])
 const footerAggregateError = ref('')
@@ -214,12 +217,6 @@ interface PastePlan {
   addedRows: number
   patchRows: { id: string; index: number; fields: Record<string, RowValue> }[]
   insertRows: { fields: Record<string, RowValue> }[]
-}
-interface DisplayedFooterAggregate {
-  key: string
-  field: string
-  aggregate: string
-  value: string
 }
 const pendingPaste = ref<PastePlan | null>(null)
 const desktop = ref(window.matchMedia('(min-width: 768px)').matches)
@@ -625,13 +622,11 @@ function selectedFooterAggregate(fieldId: string) {
 }
 
 function changeFooterAggregate(fieldId: string, value: string) {
-  const field = footerAggregateFields.value.find(
-    (item) => item.field.id === fieldId,
-  )
+  const field = fieldById.value.get(fieldId)
   if (
     !field ||
     (value !== 'none' &&
-      !field.aggregates.some((aggregate) => aggregate === value))
+      !field.bound.aggregates().some((aggregate) => aggregate === value))
   )
     return
   const aggregates: ViewAggregate[] = (
@@ -779,33 +774,41 @@ const visibleFieldIds = computed(() =>
     .filter((field) => field.visible)
     .map((field) => field.id),
 )
-const footerAggregateFields = computed(() =>
-  visibleFieldIds.value.flatMap((id) => {
-    const item = fieldById.value.get(id)
-    if (!item) return []
-    const aggregates = item.bound
-      .aggregates()
-      .filter((aggregate) => aggregate !== 'none')
-    return aggregates.length ? [{ ...item, aggregates }] : []
+const footerSummaryCells = computed(() =>
+  columnFooterCells(columns.value).map((cell) => {
+    const item = cell.fieldId ? fieldById.value.get(cell.fieldId) : undefined
+    return {
+      ...cell,
+      item,
+      aggregates: item
+        ? item.bound.aggregates().filter((aggregate) => aggregate !== 'none')
+        : [],
+    }
   }),
 )
-function displayedFooterAggregates(): DisplayedFooterAggregate[] {
-  const result: DisplayedFooterAggregate[] = []
-  for (const aggregate of footerAggregates.value) {
-    const item = fieldById.value.get(aggregate.fieldId)
-    if (!item || !visibleFieldIds.value.includes(aggregate.fieldId)) continue
-    result.push({
-      key: `${aggregate.fieldId}:${aggregate.aggregate}`,
-      field: item.field.name,
-      aggregate: groupAggregateLabel(aggregate.aggregate),
-      value: formatFooterAggregateValue(
-        aggregate.value,
-        aggregate.aggregate,
-        item.bound,
-      ),
-    })
+function footerAggregateValue(fieldId: string) {
+  const aggregate = selectedFooterAggregate(fieldId)
+  return footerAggregates.value.find(
+    (item) => item.fieldId === fieldId && item.aggregate === aggregate,
+  )
+}
+function hasFooterAggregate(fieldId: string) {
+  return (
+    selectedFooterAggregate(fieldId) !== 'none' && !footerAggregateError.value
+  )
+}
+function footerCellStyle(cell: ColumnFooterCell) {
+  return {
+    flex: `0 0 ${cell.width}px`,
+    width: `${cell.width}px`,
+    ...(cell.stickyLeft === undefined
+      ? {}
+      : {
+          position: 'sticky' as const,
+          left: `${cell.stickyLeft}px`,
+          zIndex: 2,
+        }),
   }
-  return result
 }
 const columnFields = computed(() =>
   columnState.config.value.fields.flatMap((column) => {
@@ -1501,6 +1504,12 @@ function groupAggregateLabel(aggregate: string) {
       return t('grid.aggregateLabels.latest')
     case 'percent_checked':
       return t('grid.aggregateLabels.percent_checked')
+    case 'percent_empty':
+      return t('grid.aggregateLabels.percent_empty')
+    case 'percent_filled':
+      return t('grid.aggregateLabels.percent_filled')
+    case 'percent_unique':
+      return t('grid.aggregateLabels.percent_unique')
     default:
       return aggregate
   }
@@ -1514,7 +1523,14 @@ function formatFooterAggregateValue(
   if (value === null || value === undefined) return t('grid.aggregateNoValue')
   if (['count', 'count_empty', 'count_filled', 'unique'].includes(aggregate))
     return String(value)
-  if (aggregate === 'percent_checked')
+  if (
+    [
+      'percent_checked',
+      'percent_empty',
+      'percent_filled',
+      'percent_unique',
+    ].includes(aggregate)
+  )
     return new Intl.NumberFormat(locale.value, {
       style: 'percent',
       maximumFractionDigits: 2,
@@ -2382,12 +2398,17 @@ function scheduleAppendLayout() {
   appendLayoutFrame = requestAnimationFrame(() => {
     appendLayoutFrame = undefined
     const grid = host.value?.$el
+    if (!grid) return
+    appendWidth.value = appendRowLayoutWidth(
+      grid.clientWidth,
+      columns.value.map((column) => column.size ?? 180),
+    )
     const viewport =
       grid?.querySelector<HTMLElement>(
         'revogr-viewport-scroll.rgCol .vertical-inner',
       ) ??
       grid?.querySelector<HTMLElement>('revogr-viewport-scroll .vertical-inner')
-    if (!grid || !viewport || !desktop.value) {
+    if (!viewport || !desktop.value) {
       if (!desktop.value) pendingAppendReveal = undefined
       appendAtEnd.value = false
       return
@@ -2441,6 +2462,8 @@ function scheduleAppendLayout() {
       lastBottom <= viewportBounds.bottom + 1
   })
 }
+
+watch(columns, scheduleAppendLayout)
 
 interface CellPointerActivation {
   rowId: string
@@ -3723,45 +3746,6 @@ onBeforeUnmount(() => {
               </label>
             </fieldset>
           </details>
-          <details class="grid-aggregate-settings">
-            <summary>{{ t('grid.footerAggregates') }}</summary>
-            <fieldset>
-              <legend>{{ t('grid.footerAggregates') }}</legend>
-              <label
-                v-for="item in footerAggregateFields"
-                :key="item.field.id"
-                class="grid-aggregate-control"
-              >
-                <span>{{ item.field.name }}</span>
-                <select
-                  :aria-label="
-                    t('grid.aggregateForField', { field: item.field.name })
-                  "
-                  :value="selectedFooterAggregate(item.field.id)"
-                  @change="
-                    changeFooterAggregate(
-                      item.field.id,
-                      ($event.target as HTMLSelectElement).value,
-                    )
-                  "
-                >
-                  <option value="none">
-                    {{ t('grid.aggregateLabels.none') }}
-                  </option>
-                  <option
-                    v-for="aggregate in item.aggregates"
-                    :key="aggregate"
-                    :value="aggregate"
-                  >
-                    {{ groupAggregateLabel(aggregate) }}
-                  </option>
-                </select>
-              </label>
-              <p v-if="footerAggregateFields.length === 0" role="status">
-                {{ t('grid.noFooterAggregateFields') }}
-              </p>
-            </fieldset>
-          </details>
         </div>
       </details>
       <span v-if="!columnState.canPersist.value" role="status">{{
@@ -3870,7 +3854,10 @@ onBeforeUnmount(() => {
           slot="footer"
           type="button"
           class="grid-add-row"
-          :style="{ visibility: appendVisible ? 'visible' : 'hidden' }"
+          :style="{
+            width: `${appendWidth}px`,
+            visibility: appendVisible ? 'visible' : 'hidden',
+          }"
           :disabled="saving"
           :aria-hidden="!appendVisible"
           :tabindex="appendVisible ? undefined : -1"
@@ -3879,6 +3866,67 @@ onBeforeUnmount(() => {
         >
           <AppIcon name="plus" />
         </button>
+        <div
+          slot="footer"
+          class="grid-summary-strip"
+          :style="{ width: `${appendWidth}px`, flex: '0 0 auto' }"
+          role="group"
+          :aria-label="t('grid.footerAggregates')"
+          aria-live="polite"
+        >
+          <div
+            v-for="cell in footerSummaryCells"
+            :key="cell.key"
+            class="grid-summary-cell"
+            :data-field-id="cell.fieldId ?? undefined"
+            :style="footerCellStyle(cell)"
+          >
+            <template v-if="cell.item && cell.fieldId">
+              <select
+                :aria-label="
+                  t('grid.aggregateForField', { field: cell.item.field.name })
+                "
+                :value="selectedFooterAggregate(cell.fieldId)"
+                @change="
+                  changeFooterAggregate(
+                    cell.fieldId,
+                    ($event.target as HTMLSelectElement).value,
+                  )
+                "
+              >
+                <option value="none">
+                  {{ t('grid.aggregateLabels.none') }}
+                </option>
+                <option
+                  v-for="aggregate in cell.aggregates"
+                  :key="aggregate"
+                  :value="aggregate"
+                >
+                  {{ groupAggregateLabel(aggregate) }}
+                </option>
+              </select>
+              <output v-if="hasFooterAggregate(cell.fieldId)">
+                <span>{{
+                  groupAggregateLabel(selectedFooterAggregate(cell.fieldId))
+                }}</span>
+                <span v-if="footerAggregateValue(cell.fieldId)">
+                  {{
+                    formatFooterAggregateValue(
+                      footerAggregateValue(cell.fieldId)?.value,
+                      selectedFooterAggregate(cell.fieldId),
+                      cell.item.bound,
+                    )
+                  }}
+                </span>
+                <span v-else-if="footerAggregateLoading" role="status">{{
+                  t('grid.footerAggregatesLoading')
+                }}</span>
+                <span v-else>{{ t('grid.aggregateNoValue') }}</span>
+              </output>
+            </template>
+            <span v-else aria-hidden="true"></span>
+          </div>
+        </div>
         <!-- eslint-enable vue/no-deprecated-slot-attribute -->
       </RevoGrid>
       <button
@@ -3893,29 +3941,12 @@ onBeforeUnmount(() => {
         <AppIcon name="plus" />
       </button>
     </div>
-    <p v-if="footerAggregateError" role="alert">
+    <p v-if="footerAggregateError" class="grid-footer-error" role="alert">
       {{ t('grid.footerAggregateFailed', { message: footerAggregateError }) }}
+      <button type="button" @click="loadFooterAggregates">
+        {{ t('grid.footerAggregateRetry') }}
+      </button>
     </p>
-    <footer
-      v-if="displayedFooterAggregates().length || footerAggregateLoading"
-      class="grid-aggregate-footer"
-      :aria-label="t('grid.footerAggregates')"
-      aria-live="polite"
-    >
-      <p v-if="footerAggregateLoading" role="status">
-        {{ t('grid.footerAggregatesLoading') }}
-      </p>
-      <ul v-else>
-        <li
-          v-for="aggregate in displayedFooterAggregates()"
-          :key="aggregate.key"
-        >
-          <span>{{ aggregate.field }}</span>
-          <span>{{ aggregate.aggregate }}</span>
-          <output>{{ aggregate.value }}</output>
-        </li>
-      </ul>
-    </footer>
     <p v-if="unsupportedField" role="alert">
       {{ t('grid.unsupportedField') }}
     </p>
@@ -4014,7 +4045,7 @@ onBeforeUnmount(() => {
   order: 1;
   flex: 0 0 38px;
   align-items: center;
-  width: min(300px, 100%);
+  width: 100%;
   height: 38px;
   min-height: 38px;
   padding: 8px 14px;
@@ -4168,34 +4199,70 @@ onBeforeUnmount(() => {
 }
 .grid-column-options label,
 .grid-groups label,
-.grid-sorts label,
-.grid-aggregate-control {
+.grid-sorts label {
   display: flex;
   gap: 8px;
   padding: 4px;
 }
-.grid-aggregate-control {
-  justify-content: space-between;
-}
-.grid-aggregate-control select {
-  min-width: 150px;
-}
-.grid-aggregate-footer {
-  overflow-x: auto;
+.grid-summary-strip {
+  display: flex;
+  order: 1;
+  min-width: 0;
+  min-height: 52px;
+  flex: 0 0 auto;
+  background: var(--panel-surface);
   border-top: 1px solid var(--border);
   color: var(--text);
 }
-.grid-aggregate-footer ul {
+.grid-summary-cell {
   display: flex;
-  gap: 20px;
-  list-style: none;
-  margin: 0;
-  padding: 8px;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 52px;
+  padding: 3px 6px;
+  overflow: hidden;
+  background: var(--panel-surface);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
 }
-.grid-aggregate-footer li {
+.grid-summary-cell select {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid-summary-cell output {
   display: flex;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+.grid-summary-cell output > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid-summary-cell output > span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+.grid-summary-cell select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.grid-footer-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .grid-sorts ol {
   display: grid;

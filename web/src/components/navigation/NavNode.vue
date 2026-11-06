@@ -21,9 +21,10 @@ const route = useRoute()
 const expanded = ref(props.item.kind === 'book')
 const current = computed(
   () =>
-    props.item.kind === 'table' &&
-    route.params.tableId === props.item.id &&
-    !route.params.viewId,
+    (props.item.kind === 'book' && route.params.bookId === props.item.id) ||
+    (props.item.kind === 'table' &&
+      route.params.tableId === props.item.id &&
+      !route.params.viewId),
 )
 watch(
   [() => route.params.tableId, () => route.params.viewId],

@@ -129,13 +129,9 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   )
   if (isMobile) {
     const add = await sidebar.locator('.workspace-heading button').boundingBox()
-    const expand = await sidebar
-      .locator(`[data-nav-id="${first}"] .workspace-toggle`)
-      .boundingBox()
     expect(add?.width).toBeGreaterThanOrEqual(44)
     expect(add?.height).toBeGreaterThanOrEqual(44)
-    expect(expand?.width).toBeGreaterThanOrEqual(44)
-    expect(expand?.height).toBeGreaterThanOrEqual(44)
+    await expect(sidebar.locator('.workspace-toggle')).toHaveCount(0)
   }
   await sidebar
     .locator('.workspace-heading')
@@ -175,6 +171,11 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
       nodes.map((node) => node.getAttribute('data-nav-id')),
     )
   expect(listed).toEqual(serverTree.workspaces.map((item) => item.id))
+  await expect(
+    sidebar.locator(
+      '[data-kind="book"], [data-kind="table"], .workspace-section',
+    ),
+  ).toHaveCount(0)
   for (const id of [original, first, second])
     await expect(sidebar.locator(`[data-nav-id="${id}"]`)).toBeVisible()
 
@@ -328,6 +329,57 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   const row = ((await rows.json()) as { rows: DataRow[] }).rows[0]!.id
   const viewPath = `/t/${table}/v/${view}`
   const rowPath = `${viewPath}/r/${row}`
+  const bookPath = `/w/${second}/b/${book}`
+  await page.goto(`/w/${second}`)
+  await page
+    .locator('main .workbook-card')
+    .filter({ hasText: 'Visible book' })
+    .click()
+  await expect(page).toHaveURL(new RegExp(`${bookPath}$`))
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workbook-root')).toHaveAttribute(
+    'data-context-book',
+    book,
+  )
+  await expect(sidebar.locator('.workbook-root > li')).toHaveCount(1)
+  await expect(
+    sidebar.locator(`.workbook-root > li[data-nav-id="${book}"]`),
+  ).toBeVisible()
+  await expect(
+    sidebar.locator('.workspace-root [data-kind="table"]'),
+  ).toHaveCount(0)
+
+  await page.goto(`/t/${table}`)
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workbook-root')).toHaveAttribute(
+    'data-context-book',
+    book,
+  )
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${table}"] > .nav-row`),
+  ).toHaveClass(/current/)
+  await expect(sidebar.locator('.workbook-root .view-list')).toHaveCount(0)
+
+  await page.goto(viewPath)
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workbook-root')).toHaveAttribute(
+    'data-context-book',
+    book,
+  )
+  await expect(
+    sidebar.locator(`.workbook-root [data-view-id="${view}"] a`),
+  ).toHaveAttribute('aria-current', 'page')
+  await page.reload()
+  await expect(page).toHaveURL(new RegExp(`${viewPath}$`))
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workbook-root')).toHaveAttribute(
+    'data-context-book',
+    book,
+  )
+  await expect(
+    sidebar.locator(`.workbook-root [data-view-id="${view}"] a`),
+  ).toHaveAttribute('aria-current', 'page')
+
   await page.goto(rowPath)
   await expect(page).toHaveURL(new RegExp(`${rowPath}$`))
   await expect(page.locator('dialog.row-expand')).toBeVisible()
@@ -340,22 +392,45 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   const currentWorkspace = sidebar.locator(
     `[data-nav-id="${second}"] > .workspace-box`,
   )
+  await expect(sidebar.locator('.workbook-root')).toHaveAttribute(
+    'data-context-book',
+    book,
+  )
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${siblingBook}"]`),
+  ).toHaveCount(0)
   await expect(currentWorkspace).toHaveClass(/current/)
   await expect(currentWorkspace.locator('.workspace-link')).toHaveAttribute(
     'aria-current',
     'location',
   )
-  const toggle = currentWorkspace.getByRole('button', {
-    name: en.nav.toggle.replace('{name}', `UX02 second ${suffix}`),
-  })
-  await toggle.focus()
-  await page.keyboard.press('Space')
-  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await currentWorkspace.locator('.workspace-link').click()
+  await expect(page).toHaveURL(new RegExp(`/w/${second}$`))
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workbook-root')).toHaveCount(0)
+  await closeDrawer(page, isMobile)
+  await page
+    .locator('main .workbook-card')
+    .filter({ hasText: 'Visible book' })
+    .click()
+  await expect(page).toHaveURL(new RegExp(`${bookPath}$`))
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workbook-root')).toHaveAttribute(
+    'data-context-book',
+    book,
+  )
+  await page.goto(viewPath)
+  await expect(page).toHaveURL(new RegExp(`${viewPath}$`))
+  sidebar = await tree(page, isMobile)
+  await expect(sidebar.locator('.workspace-toggle')).toHaveCount(0)
+  const firstWorkspaceLink = sidebar.locator(
+    `[data-nav-id="${first}"] .workspace-link`,
+  )
+  await firstWorkspaceLink.focus()
   expect(new URL(page.url()).pathname).toBe(viewPath)
-  await page.keyboard.press('Space')
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true')
-  await sidebar.locator(`[data-nav-id="${first}"] .workspace-link`).click()
+  await page.keyboard.press('Enter')
   await expect(page).toHaveURL(new RegExp(`/w/${first}$`))
+  await expect(sidebar.locator('.workbook-root')).toHaveCount(0)
   await page.goBack()
   await expect(page).toHaveURL(new RegExp(`${viewPath}$`))
   await page.goForward()
@@ -417,19 +492,25 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
     await expect(userPage).toHaveURL(new RegExp(`${viewPath}$`))
     const userTree = await tree(userPage, isMobile)
     const context = userTree.locator(`[data-nav-id="${second}"]`)
+    const userBookTree = userTree.locator('.workbook-root')
+    await expect(userBookTree).toHaveAttribute('data-context-book', book)
+    await expect(userBookTree.locator(`[data-nav-id="${book}"]`)).toBeVisible()
+    await expect(
+      userTree.locator('.workspace-root [data-kind="table"]'),
+    ).toHaveCount(0)
     await expect(
       context.locator(':scope > .workspace-box .path-only'),
     ).toHaveText(en.nav.pathOnly)
     await expect(context.locator(':scope > .node-actions')).toHaveCount(0)
     await expect(
-      context.locator(`[data-nav-id="${book}"] > .node-actions`),
+      userBookTree.locator(`[data-nav-id="${book}"] > .node-actions`),
     ).toHaveCount(0)
-    await expect(context.locator(`[data-nav-id="${table}"]`)).toBeVisible()
-    await expect(context.locator(`[data-nav-id="${siblingBook}"]`)).toHaveCount(
-      0,
-    )
+    await expect(userBookTree.locator(`[data-nav-id="${table}"]`)).toBeVisible()
     await expect(
-      context.locator(`[data-nav-id="${siblingTable}"]`),
+      userBookTree.locator(`[data-nav-id="${siblingBook}"]`),
+    ).toHaveCount(0)
+    await expect(
+      userBookTree.locator(`[data-nav-id="${siblingTable}"]`),
     ).toHaveCount(0)
     expect(
       (

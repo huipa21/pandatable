@@ -272,3 +272,17 @@ D-083's minimal signed-in `/home` (identity notice) is **Superseded by D-219**:
 `/home` now resolves to the preferred workspace and the welcome, signed-in and
 chooser copy is removed. D-083's login, forced-change and admin rules remain
 binding. D-226's reserved trailing toolbar slot is filled by D-227.
+
+## Planned workspace/grid refinement (2026-11-06)
+
+| ID | Date | Decision | Rationale | Source | Status |
+|---|---|---|---|---|---|
+| D-230 | 2026-11-06 | Plan WG-01..WG-09: keep all authorized workspace entries flat and show workbook cards on workspace selection; workbook/table/view/row routes add a separate active-workbook-only tree. Render a full-width append action and column-aligned aggregate pickers, including missing percentage operations. Replace the row-height-only control with Format; move search/order/freezing to dedicated controls and remove the table-toolbar ellipsis, not resource/field context menus. Selected-row Delete/Edit use existing bounded atomic APIs; Edit assigns one typed field value to every selected ID. Remove visible display-field/access facts and combine Import/Export under one accessible icon. Disjoint source work may run in documented waves; shared writes serialize. WG-01..08 use confined checks and remain implemented-awaiting-gates without intermediate commits; WG-09 runs the consolidated D-158 task gates and one canonical production-image phase gate. | Captures the user's follow-up screenshots and quick-session request without repeating existing card/API work, racing shared grid files, weakening gates or changing permission semantics. Exact operation contracts and implementation evidence belong to execution tasks. | [Refinement plan](task-prompts/workspace-grid-refinement.md) | Accepted plan; no-intermediate-commits clause superseded for one checkpoint by D-231 |
+| D-231 | 2026-11-06 | Create one intermediate checkpoint commit for the WG-01..WG-09 work at the user's request. This does not mark any task complete or replace the consolidated WG-09 task and production-image phase gates; all other D-230 requirements remain. | Preserve the current work in progress without treating a snapshot as verification. | User-requested checkpoint | Accepted |
+
+D-219's per-workspace descendant expansion is **Superseded by D-230** for
+this planned follow-up; its ordering, preference, access and async guards remain.
+D-226/D-229's visible display-field/access summary and separate transfer controls
+are **Superseded by D-230**; history, presence, permission and toolbar coordination
+rules remain. D-222's append mutation/end-of-data semantics remain; WG-03 changes
+its visual hit area, not its data behavior. No historical gate result is changed.

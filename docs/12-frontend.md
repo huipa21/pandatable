@@ -13,12 +13,12 @@ Shell per D-209 (supersedes the earlier sketch):
 │ PT PandaTable ⇤ │ Workspace › Book › Table [› View]   🔍  中文/EN  ☀/🌙 │  ← header
 ├─────────────────┬──────────────────────────────────────────────────────┤
 │ Workspaces    + │ ↶ ↷ Fields · Filter · Group · … · Import · Export   │
-│ ▾ Workspace  ⋯ │                                                      │
-│   ▾ 📘 Book   ⋯ │                                                      │
-│      ▦ Table  ⋯ │ ┌──────────────────────────────────────────────────┐ │
-│      ▾ Table 2  │ │ Grid / Form / Kanban …                           │ │
-│         ◫ View ⋯│ │                                                  │ │
-│ ▾ Workspace 2 ⋯ │ └──────────────────────────────────────────────────┘ │
+│ Workspace    ⋯  │                                                      │
+│ Workspace 2  ⋯  │                                                      │
+│ ──────────────  │ ┌──────────────────────────────────────────────────┐ │
+│ 📘 Book      ⋯  │ │ Grid / Form / Kanban …                           │ │
+│   ▦ Table    ⋯  │ │                                                  │ │
+│     ◫ View   ⋯  │ └──────────────────────────────────────────────────┘ │
 │ (A)³ avatar menu│                                                      │
 └─────────────────┴──────────────────────────────────────────────────────┘
 ```
@@ -32,14 +32,22 @@ Shell per D-209 (supersedes the earlier sketch):
   narrow screens, with the current resource retained as space permits. When the
   sidebar is hidden the avatar moves to the header.
 - Sidebar: a static Workspaces heading and Add action precede every accessible
-  workspace in server order. A workspace link selects it; a separate control
-  expands its books, tables and views. The selected route/last-visited context is
-  independent of the visibly marked per-user default. Eligible workspace actions
-  set that default; path-only ancestors remain context without owner controls.
-  Books toggle their tables; hovering/focusing a table's icon turns it into the
-  views dropdown; the table name opens `/t/:tableId` (default view, no redirect).
-  Table "⋯" menus include view creation, and each view has a context menu for
-  its permitted actions alongside the sharing and structure menus.
+  workspace in server order. The workspace list stays flat, with no descendant
+  expansion, book counts or book-empty messages. A workspace link selects it;
+  its route shows visible workbooks as cards. Workbook/table/view/row routes
+  show a separate tree only when the current route resolves through fresh
+  authorized navigation ancestry; it contains the active workbook, its tables
+  and views, outside the flat workspace entries. Loading, stale navigation and
+  identity changes clear this context. The workspace link remains available to
+  return to its cards, and opening a workbook card resolves the tree from the
+  route again rather than a remembered ID. The selected route/last-visited
+  context is independent of the visibly marked per-user default. Eligible
+  workspace actions set that default; path-only ancestors remain context
+  without owner controls. In the contextual tree, books toggle their tables;
+  hovering/focusing a table's icon turns it into the views dropdown; the table
+  name opens `/t/:tableId` (default view, no redirect). Table "⋯" menus include
+  view creation, and each view has a context menu for its permitted actions
+  alongside the sharing and structure menus.
 - Avatar menu (unread badge): notifications, Profile, Change password, Trash,
   Admin submenu (admins), Sign out. No footer.
 - `/home`: loading/error-aware resolver to the preferred workspace. Retry is
@@ -82,13 +90,15 @@ Routes:
   mutations and resource 403/404. Ordinary reads coalesce; forced refresh aborts
   an older read. Requests have ten-second client deadlines. Failed reads keep
   previous data explicitly stale with retry; there is no realtime subsystem.
-- The sidebar lists all accessible workspace contexts and offers workspace
-  creation; `/home` resolves the per-user default (D-219). `/w/:workspaceId` and
-  `/w/:wid/b/:bookId` show only visible children, breadcrumbs and explicit empty
-  states. Path-only ancestors are labeled context, with no structure controls or
-  default selection. Book creation/rename/delete/reorder needs workspace owner;
-  table creation/rename/delete/reorder needs book owner. Table ownership alone
-  never grants parent-structure controls.
+- The sidebar lists all accessible workspace contexts flat and offers workspace
+  creation; `/home` resolves the per-user default (D-219). `/w/:workspaceId`
+  shows visible workbooks as cards; `/w/:wid/b/:bookId` shows only visible
+  tables, breadcrumbs and explicit empty states. Workbook/table/view/row routes
+  use a separate active-workbook-only tree, not nested under workspace entries.
+  Path-only ancestors are labeled context, with no structure controls or default
+  selection. Book creation/rename/delete/reorder needs workspace owner; table
+  creation/rename/delete/reorder needs book owner. Table ownership alone never
+  grants parent-structure controls.
 - Native modal forms create/rename resources with trimmed 1..100-code-point
   names, no controls. Confirmed deletion honestly describes moving the item and
   descendants to Trash; restore/purge are not implemented. The Trash entry is

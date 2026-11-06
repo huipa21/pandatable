@@ -148,6 +148,12 @@ func groupAggregateExpression(
 		}
 	case codec.AggPercentChecked:
 		return "avg(CASE WHEN " + expression + " THEN 1.0 ELSE 0.0 END)", nil
+	case codec.AggPercentEmpty:
+		return "COALESCE((count(*) FILTER (WHERE " + key + " = 'null'::jsonb))::numeric / NULLIF(count(*), 0), 0::numeric)", nil
+	case codec.AggPercentFilled:
+		return "COALESCE((count(*) FILTER (WHERE " + key + " <> 'null'::jsonb))::numeric / NULLIF(count(*), 0), 0::numeric)", nil
+	case codec.AggPercentUnique:
+		return "COALESCE((count(DISTINCT " + key + ") FILTER (WHERE " + key + " <> 'null'::jsonb))::numeric / NULLIF(count(*), 0), 0::numeric)", nil
 	default:
 		return "", validation("Configured aggregate is unsupported")
 	}

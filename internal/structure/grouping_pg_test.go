@@ -73,6 +73,9 @@ func TestGroupingTextPathsAndArraySemanticsPostgreSQL(t *testing.T) {
 		{FieldID: text.ID, Aggregate: codec.AggCountEmpty},
 		{FieldID: text.ID, Aggregate: codec.AggCountFilled},
 		{FieldID: text.ID, Aggregate: codec.AggUnique},
+		{FieldID: text.ID, Aggregate: codec.AggPercentEmpty},
+		{FieldID: text.ID, Aggregate: codec.AggPercentFilled},
+		{FieldID: text.ID, Aggregate: codec.AggPercentUnique},
 	}
 	_, err = f.service.UpdateViewColumns(f.ctx, owner, view.ID, view.Version, ViewColumns{
 		Fields:  []ViewColumn{{ID: text.ID, Visible: true}, {ID: tags.ID, Visible: true}},
@@ -88,6 +91,21 @@ func TestGroupingTextPathsAndArraySemanticsPostgreSQL(t *testing.T) {
 	expected := map[string]int64{"<NULL>": 2, "": 1, "[]": 2, "null": 1, `a"b`: 2, "text \u4e2d": 1}
 	if len(top.Groups) != len(expected) {
 		t.Fatalf("top groups = %+v", top.Groups)
+	}
+	for _, bucket := range top.Groups {
+		var groupKey *string
+		if err := json.Unmarshal(bucket.Key, &groupKey); err != nil {
+			t.Fatal(err)
+		}
+		if groupKey == nil {
+			want := []float64{2, 0, 0, 1, 0, 0}
+			for index, aggregate := range bucket.Aggregates {
+				var got float64
+				if err := json.Unmarshal(aggregate.Value, &got); err != nil || got != want[index] {
+					t.Errorf("null-group aggregate %s = %s, want numeric %v", aggregate.Aggregate, aggregate.Value, want[index])
+				}
+			}
+		}
 	}
 	for _, bucket := range top.Groups {
 		var key *string
@@ -144,7 +162,9 @@ func TestGroupingTextPathsAndArraySemanticsPostgreSQL(t *testing.T) {
 	if err != nil || len(footer.Aggregates) != len(aggregates) {
 		t.Fatalf("footer aggregates = %+v, %v", footer, err)
 	}
-	for index, want := range []string{"2", "7", "5"} {
+	for index, want := range []string{
+		"2", "7", "5", `"0.22222222222222222222"`, `"0.77777777777777777778"`, `"0.55555555555555555556"`,
+	} {
 		got := footer.Aggregates[index]
 		if got.FieldID != text.ID || got.Aggregate != aggregates[index].Aggregate || string(got.Value) != want {
 			t.Fatalf("footer aggregate %d = %+v, want %s", index, got, want)

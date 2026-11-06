@@ -118,6 +118,9 @@ export type Agg =
   | 'earliest'
   | 'latest'
   | 'percent_checked'
+  | 'percent_empty'
+  | 'percent_filled'
+  | 'percent_unique'
 
 /** Canonical JSON wire value (D-115); null is SQL NULL. */
 export type JsonValue =

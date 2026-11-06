@@ -142,6 +142,14 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     await visibility.locator('summary').click()
   }
   await openExportMenu(page)
+  await expect(page.locator('.transfer-menu')).toHaveCount(1)
+  await expect(
+    page.locator('.table-toolbar-actions .schema-summary'),
+  ).toHaveCount(0)
+  await expect(page.locator('.transfer-menu > summary')).toHaveAttribute(
+    'aria-label',
+    en.transfer.title,
+  )
   const csvRequest = page.waitForRequest(
     (request) =>
       request.method() === 'POST' &&

@@ -260,6 +260,9 @@
     "preparing": "正在准备下载",
     "failed": "无法开始导出。{message}"
   },
+  "transfer": {
+    "title": "导入或导出"
+  },
   "import": {
     "title": "导入",
     "newTable": "导入为新表",
@@ -368,9 +371,9 @@
     "quickSearchPlaceholder": "搜索记录",
     "footerAggregates": "底部汇总",
     "aggregateForField": "{field} 的底部汇总",
-    "noFooterAggregateFields": "没有支持底部汇总的可见字段。",
     "footerAggregatesLoading": "正在计算底部汇总",
     "footerAggregateFailed": "无法加载底部汇总。{message}",
+    "footerAggregateRetry": "重试底部汇总",
     "aggregateNoValue": "无值",
     "sort": "排序",
     "highlightRules": "高亮规则",
@@ -429,7 +432,10 @@
       "max": "最大值",
       "earliest": "最早",
       "latest": "最晚",
-      "percent_checked": "已选百分比"
+      "percent_checked": "已选百分比",
+      "percent_empty": "空值百分比",
+      "percent_filled": "非空值百分比",
+      "percent_unique": "唯一值百分比"
     }
   },
   "form": {

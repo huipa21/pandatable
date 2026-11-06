@@ -260,6 +260,9 @@
     "preparing": "Preparing download",
     "failed": "Export could not be started. {message}"
   },
+  "transfer": {
+    "title": "Import or export"
+  },
   "import": {
     "title": "Import",
     "newTable": "Import as a new table",
@@ -368,9 +371,9 @@
     "quickSearchPlaceholder": "Search rows",
     "footerAggregates": "Footer aggregates",
     "aggregateForField": "Footer aggregate for {field}",
-    "noFooterAggregateFields": "No visible fields support footer aggregates.",
     "footerAggregatesLoading": "Calculating footer aggregates",
     "footerAggregateFailed": "Footer aggregates could not be loaded. {message}",
+    "footerAggregateRetry": "Retry footer aggregates",
     "aggregateNoValue": "No value",
     "sort": "Sort",
     "highlightRules": "Highlight rules",
@@ -429,7 +432,10 @@
       "max": "Maximum",
       "earliest": "Earliest",
       "latest": "Latest",
-      "percent_checked": "Percent checked"
+      "percent_checked": "Percent checked",
+      "percent_empty": "Percent empty",
+      "percent_filled": "Percent filled",
+      "percent_unique": "Percent unique"
     }
   },
   "form": {

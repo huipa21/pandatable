@@ -108,6 +108,9 @@ const (
 	AggEarliest       Agg = "earliest"
 	AggLatest         Agg = "latest"
 	AggPercentChecked Agg = "percent_checked"
+	AggPercentEmpty   Agg = "percent_empty"
+	AggPercentFilled  Agg = "percent_filled"
+	AggPercentUnique  Agg = "percent_unique"
 )
 
 // Env carries viewer context for text conversions. Location is the viewing
@@ -294,15 +297,14 @@ func IsSystem(kind Kind) bool {
 }
 
 var (
-	textOps     = []Op{OpIs, OpIsNot, OpContains, OpNotContains, OpStartsWith, OpEndsWith, OpIsEmpty, OpIsNotEmpty}
-	numericOps  = []Op{OpEq, OpNeq, OpLt, OpLte, OpGt, OpGte, OpBetween, OpIsEmpty, OpIsNotEmpty}
-	temporalOps = []Op{OpIs, OpIsNot, OpBefore, OpAfter, OpOnOrBefore, OpOnOrAfter, OpBetween, OpIsWithin, OpIsEmpty, OpIsNotEmpty}
-	timeOps     = []Op{OpIs, OpIsNot, OpBefore, OpAfter, OpOnOrBefore, OpOnOrAfter, OpBetween, OpIsEmpty, OpIsNotEmpty}
-	userOps     = []Op{OpIs, OpIsNot, OpHasAnyOf, OpIsEmpty, OpIsNotEmpty}
-
-	basicAggs    = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique}
-	numericAggs  = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique, AggSum, AggAvg, AggMin, AggMax}
-	temporalAggs = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique, AggEarliest, AggLatest}
+	textOps      = []Op{OpIs, OpIsNot, OpContains, OpNotContains, OpStartsWith, OpEndsWith, OpIsEmpty, OpIsNotEmpty}
+	numericOps   = []Op{OpEq, OpNeq, OpLt, OpLte, OpGt, OpGte, OpBetween, OpIsEmpty, OpIsNotEmpty}
+	temporalOps  = []Op{OpIs, OpIsNot, OpBefore, OpAfter, OpOnOrBefore, OpOnOrAfter, OpBetween, OpIsWithin, OpIsEmpty, OpIsNotEmpty}
+	timeOps      = []Op{OpIs, OpIsNot, OpBefore, OpAfter, OpOnOrBefore, OpOnOrAfter, OpBetween, OpIsEmpty, OpIsNotEmpty}
+	userOps      = []Op{OpIs, OpIsNot, OpHasAnyOf, OpIsEmpty, OpIsNotEmpty}
+	basicAggs    = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique, AggPercentEmpty, AggPercentFilled, AggPercentUnique}
+	numericAggs  = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique, AggPercentEmpty, AggPercentFilled, AggPercentUnique, AggSum, AggAvg, AggMin, AggMax}
+	temporalAggs = []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggUnique, AggPercentEmpty, AggPercentFilled, AggPercentUnique, AggEarliest, AggLatest}
 )
 
 func withoutEmpty(ops []Op) []Op {

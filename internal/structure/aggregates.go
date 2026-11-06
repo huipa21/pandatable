@@ -33,7 +33,7 @@ type RowAggregateResult struct {
 }
 
 func footerAggregateValueExpression(field rowField, aggregate codec.Agg, expression string) string {
-	if footerAggregateValueIsText(field, aggregate) {
+	if aggregateValueIsText(field, aggregate) {
 		return "(" + expression + ")::text"
 	}
 	return "to_jsonb(" + expression + ")"
@@ -205,7 +205,7 @@ func (s *Service) QueryAggregates(
 		for index, aggregate := range effective {
 			field := table.byID[aggregate.FieldID]
 			var value json.RawMessage
-			if footerAggregateValueIsText(field, aggregate.Aggregate) {
+			if aggregateValueIsText(field, aggregate.Aggregate) {
 				value, err = footerAggregateText(values[index])
 			} else {
 				value, err = rawJSONValue(values[index])
@@ -224,8 +224,9 @@ func (s *Service) QueryAggregates(
 	return result, nil
 }
 
-func footerAggregateValueIsText(field rowField, aggregate codec.Agg) bool {
-	if aggregate == codec.AggPercentChecked {
+func aggregateValueIsText(field rowField, aggregate codec.Agg) bool {
+	switch aggregate {
+	case codec.AggPercentChecked, codec.AggPercentEmpty, codec.AggPercentFilled, codec.AggPercentUnique:
 		return true
 	}
 	switch field.kind {

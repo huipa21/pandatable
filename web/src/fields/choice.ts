@@ -195,7 +195,14 @@ function choiceKind(multi: boolean): FieldKind<ChoiceOptions> {
           ],
     aggregates: () =>
       multi
-        ? ['none', 'count', 'count_empty', 'count_filled']
+        ? [
+            'none',
+            'count',
+            'count_empty',
+            'count_filled',
+            'percent_empty',
+            'percent_filled',
+          ]
         : [...BASIC_AGGS],
   }
 }

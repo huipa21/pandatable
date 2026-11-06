@@ -58,6 +58,9 @@ export const BASIC_AGGS: readonly Agg[] = [
   'count_empty',
   'count_filled',
   'unique',
+  'percent_empty',
+  'percent_filled',
+  'percent_unique',
 ]
 export const NUMERIC_AGGS: readonly Agg[] = [
   ...BASIC_AGGS,

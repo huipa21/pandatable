@@ -48,6 +48,7 @@ async function setup(tree: Navigation, path = '/t/t/v/v') {
     history: createMemoryHistory(),
     routes: [
       { path: '/w/:workspaceId', component: { template: '<div />' } },
+      { path: '/w/:wid/b/:bookId', component: { template: '<div />' } },
       { path: '/t/:tableId/v/:viewId', component: { template: '<div />' } },
       { path: '/t/:tableId', component: { template: '<div />' } },
     ],
@@ -91,7 +92,7 @@ function secondTable(tree: Navigation, level: 'read' | 'write' | 'owner') {
   return schema
 }
 
-it.each(['/t/t/v/v', '/w/other'] as const)(
+it.each(['/t/t/v/v', '/w/w/b/b'] as const)(
   'creates a reader personal view from %s, expands it, and restores focus on cancel',
   async (path) => {
     const tree = navigation()

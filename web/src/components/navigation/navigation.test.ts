@@ -52,6 +52,7 @@ async function setup(path = '/w/w') {
     history: createMemoryHistory(),
     routes: [
       { path: '/w/:workspaceId', component: { template: '<div />' } },
+      { path: '/w/:wid/b/:bookId', component: { template: '<div />' } },
       {
         path: '/t/:tableId/v/:viewId/r/:rowId',
         component: { template: '<div />' },
@@ -66,8 +67,8 @@ async function setup(path = '/w/w') {
   return { global: { plugins: [pinia, i18n, router] }, router }
 }
 
-it('renders all workspaces, separate workspace and workbook toggles, views and owner-only reorder', async () => {
-  const { global } = await setup()
+it('keeps workspaces flat and renders only the active workbook tree with its controls', async () => {
+  const { global, router } = await setup()
   const nav = useNavStore()
   const tree = navigation()
   const b = tree.workspaces[0]!.books[0]!
@@ -82,20 +83,23 @@ it('renders all workspaces, separate workspace and workbook toggles, views and o
     await box.trigger('click')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
     expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(true)
-    expect(wrapper.findAll('[data-nav-id]')).toHaveLength(5)
+    expect(wrapper.findAll('.workspace-root > li')).toHaveLength(2)
+    expect(wrapper.find('.workspace-root [data-kind="book"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
     expect(wrapper.get('.workspace-heading h2').text()).toBe('Workspaces')
     await wrapper.get('.workspace-heading button').trigger('click')
     expect(nav.editor).toEqual({ operation: 'create', kind: 'workspace' })
     nav.editor = null
-    const workspaceToggle = wrapper.get('[data-nav-id="w"] .workspace-toggle')
-    expect(workspaceToggle.attributes('aria-expanded')).toBe('true')
-    await workspaceToggle.trigger('click')
-    expect(workspaceToggle.attributes('aria-expanded')).toBe('false')
-    expect(wrapper.get('#workspace-children-w').attributes('style')).toContain(
-      'display: none',
+    await router.push('/w/w/b/b')
+    await nextTick()
+    expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
+      'b',
     )
-    await workspaceToggle.trigger('click')
-    expect(wrapper.find('[data-nav-id="w"] > .nav-row').exists()).toBe(false)
+    expect(wrapper.get('[data-nav-id="b"] > .nav-row').classes()).toContain(
+      'current',
+    )
     expect(wrapper.get('[data-nav-id="t"] a.nav-name').attributes('href')).toBe(
       '/t/t',
     )
@@ -149,6 +153,98 @@ it('renders all workspaces, separate workspace and workbook toggles, views and o
     expect(readerActions.text()).not.toContain('Rename')
     expect(readerActions.text()).not.toContain('Move to Trash')
     expect(wrapper.text()).toContain('Path only')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('resolves contextual trees only from fresh authorized route ancestry', async () => {
+  const { global, router } = await setup('/w/w/b/b')
+  const nav = useNavStore()
+  const tree = navigation()
+  const secondWorkspace = structuredClone(tree.workspaces[0]!)
+  secondWorkspace.id = 'w2'
+  secondWorkspace.name = 'Second workspace'
+  secondWorkspace.books[0]!.id = 'b2'
+  secondWorkspace.books[0]!.name = 'Second book'
+  secondWorkspace.books[0]!.tables[0]!.id = 't2'
+  secondWorkspace.books[0]!.tables[0]!.name = 'Second table'
+  secondWorkspace.books[0]!.tables[0]!.views[0]!.id = 'v2'
+  tree.workspaces.push(secondWorkspace)
+  nav.tree = tree
+  const wrapper = mount(NavContents, { global })
+  try {
+    expect(wrapper.findAll('.workspace-root > li')).toHaveLength(2)
+    expect(wrapper.find('.workspace-root [data-kind="table"]').exists()).toBe(
+      false,
+    )
+    expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
+      'b',
+    )
+    expect(wrapper.findAll('.workbook-root [data-kind="book"]')).toHaveLength(1)
+    expect(wrapper.find('[data-nav-id="b2"]').exists()).toBe(false)
+
+    await router.push('/t/t')
+    await nextTick()
+    expect(wrapper.get('[data-nav-id="t"] > .nav-row').classes()).toContain(
+      'current',
+    )
+    expect(
+      wrapper
+        .get('[data-nav-id="t"] .table-toggle')
+        .attributes('aria-expanded'),
+    ).toBe('false')
+
+    await router.push('/t/t/v/v')
+    await nextTick()
+    expect(wrapper.get('[data-view-id="v"] a').attributes('aria-current')).toBe(
+      'page',
+    )
+    expect(
+      wrapper
+        .get('[data-nav-id="t"] .table-toggle')
+        .attributes('aria-expanded'),
+    ).toBe('true')
+
+    await router.push('/t/t/v/v/r/42')
+    await nextTick()
+    expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
+      'b',
+    )
+    expect(wrapper.get('[data-view-id="v"] a').attributes('aria-current')).toBe(
+      'page',
+    )
+
+    await router.push('/w/w')
+    await nextTick()
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
+    expect(wrapper.find('.workspace-root [data-kind="book"]').exists()).toBe(
+      false,
+    )
+
+    await router.push('/t/t/v/missing')
+    await nextTick()
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
+
+    await router.push('/w/w2/b/b2')
+    await nextTick()
+    expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
+      'b2',
+    )
+    expect(wrapper.find('[data-nav-id="b"]').exists()).toBe(false)
+
+    nav.loading = true
+    await nextTick()
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
+    nav.loading = false
+    nav.error = new Error('stale navigation')
+    await nextTick()
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
+
+    useAuthStore().setUser({ ...navUser, id: 'bob' })
+    await nextTick()
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
+    expect(wrapper.find('.workspace-root').exists()).toBe(false)
   } finally {
     wrapper.unmount()
   }
@@ -249,7 +345,7 @@ it('distinguishes the default from the selected deep-link workspace and excludes
 })
 
 it('keeps one structure action menu open and closes it outside or on Escape', async () => {
-  const { global } = await setup()
+  const { global } = await setup('/w/w/b/b')
   const wrapper = mount(NavContents, { global, attachTo: document.body })
   try {
     const menu = (id: string) =>

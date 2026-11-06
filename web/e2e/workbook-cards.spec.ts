@@ -45,6 +45,36 @@ async function createBook(
   return ((await response.json()) as { book: Book }).book
 }
 
+async function verifyFlatSidebar(page: Page, mobile: boolean) {
+  if (mobile)
+    await page.getByRole('button', { name: en.nav.open, exact: true }).click()
+  const sidebar = page.locator(
+    mobile ? '.nav-drawer .nav-tree' : '.sidebar-desktop .nav-tree',
+  )
+  const response = await page.request.get('/api/v1/nav')
+  expect(response.status()).toBe(200)
+  const serverTree = (await response.json()) as Navigation
+  await expect(sidebar.locator('.workspace-root > li')).toHaveCount(
+    serverTree.workspaces.length,
+  )
+  expect(
+    await sidebar
+      .locator('.workspace-root > li')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-nav-id')),
+      ),
+  ).toEqual(serverTree.workspaces.map((workspace) => workspace.id))
+  await expect(
+    sidebar.locator(
+      '.workspace-toggle, .workspace-section, .workspace-root [data-kind="book"], .workspace-root [data-kind="table"]',
+    ),
+  ).toHaveCount(0)
+  if (mobile) {
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.nav-drawer')).not.toBeVisible()
+  }
+}
+
 async function selectWorkspace(page: Page, id: string) {
   const mobile = await page.evaluate(
     () => window.matchMedia('(max-width: 767px)').matches,
@@ -55,6 +85,7 @@ async function selectWorkspace(page: Page, id: string) {
   await sidebar.locator(`[data-nav-id="${id}"] > .workspace-box a`).click()
   await expect(page).toHaveURL(new RegExp(`/w/${id}$`))
   if (mobile) await expect(page.locator('.nav-drawer')).not.toBeVisible()
+  await verifyFlatSidebar(page, mobile)
 }
 
 async function verifyStaleRetry(page: Page, expectedCards: number) {
@@ -172,6 +203,7 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     await page.goto(`/w/${firstWorkspace}`)
     await setLocale(page, 'en')
     await setTheme(page, 'light')
+    await verifyFlatSidebar(page, isMobile)
     const main = page.locator('main')
     await expect(
       main.getByText(en.nav.emptyBooks, { exact: true }),

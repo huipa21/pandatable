@@ -1,6 +1,7 @@
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
 import { openGridMore } from './table-controls'
+import type { Components } from '@revolist/revogrid'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
@@ -126,8 +127,9 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
         fields: schema.fields.map((field) => ({
           id: field.id,
           visible: !field.isSystem && field.id !== privateField.id,
+          width: field.id === displayId ? 180 : 260,
         })),
-        frozen: 0,
+        frozen: 1,
         filter,
         aggregates: [
           { fieldId: amount.id, aggregate: 'sum' },
@@ -164,6 +166,82 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
   expect(aggregateValue(initial, note.id, 'count_empty')).toBe(1)
   expect(aggregateValue(initial, displayId, 'unique')).toBe(3)
   expect(aggregateValue(initial, counter.id, 'count')).toBe(3)
+
+  const grid = page.locator('revo-grid')
+  const summaryCells = page.locator('.grid-summary-cell[data-field-id]')
+  await expect(summaryCells).toHaveCount(5)
+  await expect(
+    page.locator(`.grid-summary-cell[data-field-id="${privateField.id}"]`),
+  ).toHaveCount(0)
+  await expect(
+    page.locator(`.grid-summary-cell[data-field-id="${amount.id}"] output`),
+  ).toContainText('30')
+
+  const expectAligned = async (fieldName: string, fieldId: string) => {
+    const headerBox = await grid
+      .getByRole('columnheader', { name: fieldName, exact: true })
+      .boundingBox()
+    const summaryBox = await page
+      .locator(`.grid-summary-cell[data-field-id="${fieldId}"]`)
+      .boundingBox()
+    if (!headerBox || !summaryBox)
+      throw new Error(`Missing ${fieldName} column geometry`)
+    expect(Math.abs(summaryBox.x - headerBox.x)).toBeLessThanOrEqual(2)
+    expect(Math.abs(summaryBox.width - headerBox.width)).toBeLessThanOrEqual(2)
+  }
+  await expectAligned('Amount', amount.id)
+  const amountHeader = grid.getByRole('columnheader', {
+    name: 'Amount',
+    exact: true,
+  })
+  const amountBeforeResize = await amountHeader.boundingBox()
+  const resizeHandle = await amountHeader.locator('.resizable-r').boundingBox()
+  if (!amountBeforeResize || !resizeHandle)
+    throw new Error('Amount column resize handle is unavailable')
+  const resizedConfigSaved = page.waitForResponse((response) => {
+    const request = response.request()
+    return (
+      request.method() === 'PATCH' &&
+      new URL(response.url()).pathname === `/api/v1/views/${view.id}`
+    )
+  })
+  await page.mouse.move(
+    resizeHandle.x + resizeHandle.width / 2,
+    resizeHandle.y + resizeHandle.height / 2,
+  )
+  await page.mouse.down()
+  await page.mouse.move(
+    resizeHandle.x + 36,
+    resizeHandle.y + resizeHandle.height / 2,
+    { steps: 6 },
+  )
+  await page.mouse.up()
+  await expect
+    .poll(async () => (await amountHeader.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(amountBeforeResize.width + 20)
+  await expectAligned('Amount', amount.id)
+  await resizedConfigSaved
+  const frozenSummary = page.locator(
+    `.grid-summary-cell[data-field-id="${displayId}"]`,
+  )
+  const frozenBefore = await frozenSummary.boundingBox()
+  await grid.evaluate(async (element, fieldId) => {
+    await (element as HTMLElement & Components.RevoGrid).scrollToColumnProp(
+      fieldId,
+    )
+  }, counter.id)
+  await expect
+    .poll(() =>
+      grid
+        .locator('revogr-scroll-virtual.horizontal')
+        .evaluate((element) => element.scrollLeft > 0),
+    )
+    .toBe(true)
+  await expectAligned('Counter', counter.id)
+  const frozenAfter = await frozenSummary.boundingBox()
+  if (!frozenBefore || !frozenAfter)
+    throw new Error('Frozen summary geometry is unavailable')
+  expect(Math.abs(frozenAfter.x - frozenBefore.x)).toBeLessThanOrEqual(2)
 
   const acmeQuery = page.waitForResponse((response) => {
     const request = response.request()
@@ -212,12 +290,77 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
   const amountAggregate = page.getByRole('combobox', {
     name: en.grid.aggregateForField.replace('{field}', 'Amount'),
   })
-  await page
-    .locator('summary')
-    .filter({ hasText: en.grid.footerAggregates })
-    .click()
+  const aggregateConfigSaved = page.waitForResponse((response) => {
+    const request = response.request()
+    return (
+      request.method() === 'PATCH' &&
+      new URL(response.url()).pathname === `/api/v1/views/${view.id}`
+    )
+  })
   const changedAggregate = waitForAggregates('项目')
   await amountAggregate.selectOption('avg')
   await changedAggregate
-  await expect(page.locator('.grid-aggregate-footer')).toContainText('Average')
+  await aggregateConfigSaved
+  await expect(
+    page.locator(`.grid-summary-cell[data-field-id="${amount.id}"] output`),
+  ).toContainText('Average')
+
+  const updateView = async (
+    update: (config: TableSchema['views'][number]['config']) => void,
+  ) => {
+    const currentSchema = (await (
+      await page.request.get(`/api/v1/tables/${tableId}/schema`)
+    ).json()) as TableSchema
+    const currentView = currentSchema.views.find(
+      (candidate) => candidate.id === view.id,
+    )
+    if (!currentView) throw new Error('Footer test view is missing')
+    const nextConfig = structuredClone(currentView.config)
+    update(nextConfig)
+    const response = await page.request.patch(`/api/v1/views/${view.id}`, {
+      headers: { ...headers(), 'If-Match': String(currentView.version) },
+      data: { config: nextConfig },
+    })
+    expect(response.status()).toBe(200)
+  }
+
+  await updateView((config) => {
+    const counterIndex = config.fields.findIndex(
+      (field) => field.id === counter.id,
+    )
+    const amountIndex = config.fields.findIndex(
+      (field) => field.id === amount.id,
+    )
+    const [counterColumn] = config.fields.splice(counterIndex, 1)
+    if (!counterColumn || amountIndex < 0)
+      throw new Error('Footer test columns are missing')
+    config.fields.splice(amountIndex, 0, counterColumn)
+  })
+  await page.reload()
+  await expect(summaryCells).toHaveCount(5)
+  expect(
+    await summaryCells.evaluateAll((cells) =>
+      cells.map((cell) => cell.getAttribute('data-field-id')),
+    ),
+  ).toEqual([displayId, note.id, counter.id, amount.id, rate.id])
+  await grid.evaluate(async (element, fieldId) => {
+    await (element as HTMLElement & Components.RevoGrid).scrollToColumnProp(
+      fieldId,
+    )
+  }, counter.id)
+  await expectAligned('Counter', counter.id)
+
+  await updateView((config) => {
+    config.groupBy = [counter.id]
+  })
+  await page.reload()
+  await expect(summaryCells).toHaveCount(5)
+  await expect(page.locator('.grid-add-row')).toBeVisible()
+
+  await updateView((config) => {
+    config.filter = { field: amount.id, cmp: 'eq', value: 999 }
+  })
+  await page.reload()
+  await expect(summaryCells).toHaveCount(5)
+  await expect(page.locator('.grid-add-row')).toBeVisible()
 })

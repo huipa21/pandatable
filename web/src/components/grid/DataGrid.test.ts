@@ -23,6 +23,7 @@ const gridState = vi.hoisted(() => ({
   scrollTop: 0,
   visibleFieldIds: [] as string[],
   rowFields: [] as Record<string, unknown>[],
+  footerFailuresRemaining: 0,
   range: { x: 0, y: 0, x1: 0, y1: 0, rgCol: 'rgCol', rgRow: 'rgRow' },
   fillRange: { x: 0, y: 0, x1: 0, y1: 0 },
   focus: { rowIndex: 0, colIndex: 0, colType: 'rgCol' },
@@ -268,7 +269,10 @@ vi.mock('@revolist/vue3-datagrid', async () => {
                   ),
                 ]),
               ]),
-              vue.h('div', {}, slots.default?.()),
+              vue.h('div', {}, [
+                ...(slots.default?.() ?? []),
+                ...(slots.footer?.() ?? []),
+              ]),
             ],
           )
       },
@@ -330,6 +334,7 @@ function addField(
 }
 
 beforeEach(async () => {
+  gridState.footerFailuresRemaining = 0
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().setUser(navUser)
@@ -433,10 +438,19 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
         schemaVersion: schema.schemaVersion,
       })
     if (path.endsWith('/aggregates'))
+      if (gridState.footerFailuresRemaining > 0) {
+        gridState.footerFailuresRemaining--
+        return Response.json({ code: 'ERR_INTERNAL' }, { status: 500 })
+      }
+    if (path.endsWith('/aggregates'))
       return Response.json({
         aggregates: (body?.aggregates ?? []).map((aggregate) => ({
           ...aggregate,
-          value: 42,
+          value: aggregate.aggregate.startsWith('percent_')
+            ? '0.25'
+            : ['earliest', 'latest'].includes(aggregate.aggregate)
+              ? '2026-11-06'
+              : 42,
         })),
         schemaVersion: schema.schemaVersion,
       })
@@ -2650,6 +2664,8 @@ it('queries the real view and persists a cell edit without coercing bigint row I
 it('sends transient quick search and renders configured footer aggregates', async () => {
   const schema = schemaFor('text')
   addField(schema, 'amount', 'integer')
+  addField(schema, 'hidden', 'text')
+  schema.views[0]!.config.fields.push({ id: 'hidden', visible: false })
   schema.fields.find((field) => field.id === 'amount')!.options = {
     size: 'int',
   }
@@ -2684,7 +2700,148 @@ it('sends transient quick search and renders configured footer aggregates', asyn
     search: 'acme',
     aggregates: [{ fieldId: 'amount', aggregate: 'sum' }],
   })
-  expect(wrapper!.get('.grid-aggregate-footer').text()).toContain('42')
+  expect(
+    wrapper!
+      .findAll('.grid-summary-cell[data-field-id]')
+      .map((cell) => cell.attributes('data-field-id')),
+  ).toEqual(['name', 'amount'])
+  expect(
+    wrapper!.get('.grid-summary-cell[data-field-id="amount"] output').text(),
+  ).toContain('42')
+})
+
+it('offers type-aware aggregate operations, renders API values, and clears config', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'amount', 'integer', { size: 'int' })
+  addField(schema, 'created', 'date')
+  const fetch = await mountGrid(schema)
+  const namePicker = wrapper!.get(
+    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'Name' })}"]`,
+  )
+
+  for (const aggregate of [
+    'count',
+    'count_empty',
+    'count_filled',
+    'unique',
+    'percent_empty',
+    'percent_filled',
+    'percent_unique',
+  ]) {
+    expect(namePicker.find(`option[value="${aggregate}"]`).exists()).toBe(true)
+    await namePicker.setValue(aggregate)
+    await flushPromises()
+    const request = fetch.mock.calls
+      .filter(([path]) => String(path).endsWith('/aggregates'))
+      .at(-1)
+    const body = JSON.parse(String(request?.[1]?.body)) as {
+      aggregates: { fieldId: string; aggregate: string }[]
+    }
+    expect(body.aggregates).toContainEqual({ fieldId: 'name', aggregate })
+    expect(
+      wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+    ).toContain(aggregate.startsWith('percent_') ? '25%' : '42')
+  }
+
+  const amountPicker = wrapper!.get(
+    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'amount' })}"]`,
+  )
+  for (const aggregate of ['sum', 'avg']) {
+    expect(amountPicker.find(`option[value="${aggregate}"]`).exists()).toBe(
+      true,
+    )
+    await amountPicker.setValue(aggregate)
+    await flushPromises()
+    expect(
+      wrapper!.get('.grid-summary-cell[data-field-id="amount"] output').text(),
+    ).toContain('42')
+  }
+
+  const createdPicker = wrapper!.get(
+    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'created' })}"]`,
+  )
+  for (const aggregate of ['earliest', 'latest']) {
+    expect(createdPicker.find(`option[value="${aggregate}"]`).exists()).toBe(
+      true,
+    )
+    await createdPicker.setValue(aggregate)
+    await flushPromises()
+    expect(
+      wrapper!.get('.grid-summary-cell[data-field-id="created"] output').text(),
+    ).toContain('2026')
+  }
+
+  await namePicker.setValue('none')
+  await flushPromises()
+  expect(
+    wrapper!.find('.grid-summary-cell[data-field-id="name"] output').exists(),
+  ).toBe(false)
+  const lastRequest = fetch.mock.calls
+    .filter(([path]) => String(path).endsWith('/aggregates'))
+    .at(-1)
+  expect(
+    JSON.parse(String(lastRequest?.[1]?.body)).aggregates,
+  ).not.toContainEqual({ fieldId: 'name', aggregate: 'percent_unique' })
+})
+
+it('shows aggregate failures and retries the server request explicitly', async () => {
+  const schema = schemaFor('text')
+  gridState.footerFailuresRemaining = 1
+  const fetch = await mountGrid(schema)
+  const picker = wrapper!.get(
+    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'Name' })}"]`,
+  )
+
+  await picker.setValue('count')
+  await flushPromises()
+  expect(wrapper!.get('[role="alert"]').text()).toContain(
+    'Footer aggregates could not be loaded.',
+  )
+
+  await wrapper!.get('[role="alert"] button').trigger('click')
+  await flushPromises()
+  expect(wrapper!.find('[role="alert"]').exists()).toBe(false)
+  expect(
+    fetch.mock.calls.filter(([path]) => String(path).endsWith('/aggregates')),
+  ).toHaveLength(2)
+  expect(
+    wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+  ).toContain('42')
+})
+
+it('ignores a stale aggregate reply after a newer function is selected', async () => {
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  let resolveFirst!: (response: Response) => void
+  const firstReply = new Promise<Response>((resolve) => {
+    resolveFirst = resolve
+  })
+  fetch.mockImplementationOnce(async () => firstReply)
+  const picker = wrapper!.get(
+    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'Name' })}"]`,
+  )
+
+  await picker.setValue('count')
+  await flushPromises()
+  await picker.setValue('unique')
+  await flushPromises()
+  expect(
+    wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+  ).toContain('42')
+
+  resolveFirst(
+    Response.json({
+      aggregates: [{ fieldId: 'name', aggregate: 'count', value: 99 }],
+      schemaVersion: schema.schemaVersion,
+    }),
+  )
+  await flushPromises()
+  expect(
+    wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+  ).toContain('42')
+  expect(
+    wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+  ).not.toContain('99')
 })
 
 it('adds, prioritizes, changes, and removes transient sort criteria', async () => {

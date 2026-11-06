@@ -52,5 +52,12 @@ export function useNavLocation() {
     const id = param(route.params.viewId)
     return id ? table.value?.views.find((item) => item.id === id) : undefined
   })
-  return { workspace, book, table, view, routeWorkspaceId }
+  const activeBook = computed(() => {
+    if (!nav.loaded || nav.loading || nav.error) return undefined
+    if (param(route.params.bookId)) return book.value
+    if (!table.value) return undefined
+    if (param(route.params.viewId) && !view.value) return undefined
+    return book.value
+  })
+  return { workspace, book, table, view, routeWorkspaceId, activeBook }
 }

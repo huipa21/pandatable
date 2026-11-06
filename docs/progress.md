@@ -18,6 +18,9 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| WG-01 | Flat workspace browsing | 🟨 | 2026-11-06 | D-230; flat ordered sidebar with existing workbook cards and access states retained. Focused Vitest/ESLint pass; E2E and consolidated task gates deferred to WG-09. [Record](task-prompts/wg-01-flat-workspaces.md). |
+| WG-08 | Unified import/export toolbar trigger | 🟨 | 2026-11-06 | D-230; one localized transfer icon replaces separate import/export triggers and removes toolbar metadata while preserving permissions, readiness, dismissal and feedback. Focused Vitest/ESLint, typecheck and i18n checks pass; WG-09 gates deferred. [Record](task-prompts/wg-08-transfer-toolbar.md). |
+| WG-PLAN | Workspace/grid refinement execution prompts | ✅ | 2026-11-06 | D-230; nine bounded prompts, five safe waves, confined implementation tests and final-only consolidated/full gates. WG-01 implemented awaiting WG-09 gates. [Plan](task-prompts/workspace-grid-refinement.md). |
 | UX-11 | Workspace/grid integration, acceptance and phase gate | 🟨 | 2026-11-06 | D-228/D-229; fast checks and visual inspection pass, but the production-image runs failed and used an extended global timeout. AT-305/311 and AT-705 remain unresolved. [Record](task-prompts/workspace-grid-11-integration.md). |
 | UX-10 | Rightmost New Entry form action | ✅ | 2026-11-06 | D-227; task gates passed. The UX-11 phase gate remains open. [Record](task-prompts/workspace-grid-10-new-entry.md). |
 | UX-06 | Consolidated table header and options-panel removal | 🟨 | 2026-11-06 | Reopened: the linked AT-305/311 PageDown regression failed in the UX-11 production run; focused repetitions passed, but the phase gate remains red. [Record](task-prompts/workspace-grid-06-table-header.md). |
@@ -132,6 +135,9 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-06 | Started and implemented WG-08: unified transfer icon with focused behavior coverage; locale additions and export browser assertions are ready for WG-09 gates. |
+| 2026-11-06 | Started and implemented WG-01 flat workspace browsing; focused Vitest/ESLint pass, with E2E and consolidated gates deferred to WG-09. |
+| 2026-11-06 | Planned WG-01..09 workspace/grid refinement with source ownership, quick-task handoffs and one final full-verification session; implementation and earlier phase failures unchanged. |
 | 2026-11-06 | Reopened UX-06 and kept UX-07/08 open: the UX-11 production AT-305/311 PageDown regression failed; focused repetitions pass, phase verification remains open. |
 | 2026-11-06 | Reopened UX-02, T1.5 and T2.4: production navigation/landing assertions failed; corrected focused tests pass, phase verification remains open. |
 | 2026-11-06 | UX-11 integrated D-228/D-229 and acceptance mappings; production gate and AT-705 remain open. |

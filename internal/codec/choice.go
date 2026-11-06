@@ -175,7 +175,7 @@ func (field *choiceField) FilterOps() []Op {
 }
 func (field *choiceField) Aggregates() []Agg {
 	if field.multi {
-		return []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled}
+		return []Agg{AggNone, AggCount, AggCountEmpty, AggCountFilled, AggPercentEmpty, AggPercentFilled}
 	}
 	return clone(basicAggs)
 }
