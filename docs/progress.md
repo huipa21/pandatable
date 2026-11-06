@@ -20,6 +20,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 |---|---|---|---|---|
 | WG-01 | Flat workspace browsing | 🟨 | 2026-11-06 | D-230; flat ordered sidebar with existing workbook cards and access states retained. Focused Vitest/ESLint pass; E2E and consolidated task gates deferred to WG-09. [Record](task-prompts/wg-01-flat-workspaces.md). |
 | WG-06 | Format and toolbar cleanup | 🟨 | 2026-11-06 | D-230/D-232; Format owns height and column sizing/order/freezing, search has a dedicated trigger, and the old More/Delete controls are removed. Focused checks pass; pre-commit check retains 16 frontend failures, with WG-09 gates pending. [Record](task-prompts/wg-06-format-toolbar.md). |
+| WG-07 | Selected-row bulk actions | 🟨 | 2026-11-06 | D-230; writer-only row selection with typed preview/Edit, confirmed Delete, bounded atomic existing APIs, and undo. 118 focused Vitest tests, typecheck, touched-file ESLint and i18n pass; API-backed E2E and consolidated gates deferred to WG-09. [Record](task-prompts/wg-07-bulk-actions.md). |
 | WG-08 | Unified import/export toolbar trigger | 🟨 | 2026-11-06 | D-230; one localized transfer icon replaces separate import/export triggers and removes toolbar metadata while preserving permissions, readiness, dismissal and feedback. Focused Vitest/ESLint, typecheck and i18n checks pass; WG-09 gates deferred. [Record](task-prompts/wg-08-transfer-toolbar.md). |
 | WG-PLAN | Workspace/grid refinement execution prompts | ✅ | 2026-11-06 | D-230; nine bounded prompts, five safe waves, confined implementation tests and final-only consolidated/full gates. WG-01 implemented awaiting WG-09 gates. [Plan](task-prompts/workspace-grid-refinement.md). |
 | UX-11 | Workspace/grid integration, acceptance and phase gate | 🟨 | 2026-11-06 | D-228/D-229; fast checks and visual inspection pass, but the production-image runs failed and used an extended global timeout. AT-305/311 and AT-705 remain unresolved. [Record](task-prompts/workspace-grid-11-integration.md). |
@@ -136,6 +137,7 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-06 | Implemented WG-07 selected-row Delete/Edit with typed previews, authoritative undo values, explicit API limits and focused unit coverage; production API E2E and consolidated gates remain for WG-09. |
 | 2026-11-06 | Implemented WG-06 Format controls, dedicated search, width validation and toolbar cleanup; focused checks are in the handoff, with consolidated gates deferred to WG-09. |
 | 2026-11-06 | Started and implemented WG-08: unified transfer icon with focused behavior coverage; locale additions and export browser assertions are ready for WG-09 gates. |
 | 2026-11-06 | Started and implemented WG-01 flat workspace browsing; focused Vitest/ESLint pass, with E2E and consolidated gates deferred to WG-09. |

@@ -61,4 +61,30 @@ Leave **implemented, awaiting WG-09 gates**.
 
 ## Record
 
-Not started.
+Implemented; awaiting WG-09 gates.
+
+- `DataGrid` keeps checkbox row selection independent of RevoGrid cell/range
+  selection. Writer-only toolbar actions expose a live count, direct Edit and
+  confirmed Delete. Delete sends the exact selected IDs to the existing atomic
+  DELETE API; Edit uses `FieldEditor`/bound codecs, previews count, field and
+  normalized display value, then sends one atomic bulk PATCH for those IDs.
+- Editable choices include all bound writable ordinary fields, including
+  scalar/text, number, checkbox, select, date and table-scoped user fields.
+  System, computed/read-only, relation and attachment fields are excluded;
+  the dialog explains the relation/attachment restriction. Delete retains the
+  1,000-ID/64-KiB API bound. Edit retains 1,000 rows/5,000 cells/512 KiB and
+  reports a visible limit error without slicing or chunking.
+- Both operations use existing delete snapshots or authoritative bulk-patch
+  `previous` values for undo. Success clears selection and refreshes rows,
+  grouping and footer aggregates; cancel/failure retains selection. Pending
+  cell drafts and active editors block the actions. Route, view, identity,
+  schema and permission changes reset selection, close dialogs and abort a
+  pending bulk request.
+- Focused verification: **118 Vitest tests passed** across DataGrid and field
+  editor suites; strict frontend typecheck, touched-file ESLint, i18n parity
+  (1,291 keys) and formatting pass. Added
+  `web/e2e/bulk-row-actions.spec.ts` for API-backed typed edits, cross-page
+  selected IDs, null/false/choice/date codecs, exact deletion and undo. Per
+  WG-07 scope, the E2E was not run; WG-09 must run it and the consolidated
+  task gates. Server-side validation/conflict behavior and real browser
+  pagination remain to be confirmed there.

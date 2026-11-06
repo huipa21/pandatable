@@ -58,6 +58,7 @@ import type {
 import { bindField, type BoundField } from '../../fields/registry'
 import { fieldErrorMessage } from '../../fields/messages'
 import { isWireValue, type FieldEnv, type WireValue } from '../../fields/types'
+import { userLabel } from '../../fields/userDirectory'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { usePreferencesStore } from '../../stores/preferences'
@@ -71,6 +72,7 @@ import {
 } from '../../stores/undo'
 import GridCellEditor from './GridCellEditor.vue'
 import GridCellContent from './GridCellContent.vue'
+import FieldEditor from '../fields/FieldEditor.vue'
 import AppIcon from '../AppIcon.vue'
 import FilterBuilder from '../filters/FilterBuilder.vue'
 import GridRelationCell from '../relations/GridRelationCell.vue'
@@ -166,6 +168,12 @@ const clipboardErrors = ref<string[]>([])
 const clipboardMessage = ref('')
 const selectedRows = ref(new Set<string>())
 const deleteDialog = ref<HTMLDialogElement>()
+const bulkEditDialog = ref<HTMLDialogElement>()
+const bulkEditFieldId = ref('')
+const bulkEditValue = shallowRef<WireValue | undefined>()
+const bulkEditOrigin = shallowRef<EditOrigin | null>(null)
+const bulkActionError = ref('')
+const bulkActionController = shallowRef<AbortController | null>(null)
 const addRowsDialog = ref<HTMLDialogElement>()
 const relationField = ref<TableField | null>(null)
 const relationRow = ref<DataRow | null>(null)
@@ -239,6 +247,29 @@ const fieldById = computed(() => {
   }
   return result
 })
+const bulkEditableFields = computed(() =>
+  [...fieldById.value.values()].filter(
+    ({ field, bound }) =>
+      !field.isSystem &&
+      !bound.readOnly &&
+      field.uiType !== 'link' &&
+      bound.presentation !== 'attachment',
+  ),
+)
+const bulkEditField = computed(() =>
+  bulkEditableFields.value.find(
+    ({ field }) => field.id === bulkEditFieldId.value,
+  ),
+)
+const hasPendingCellDrafts = computed(
+  () =>
+    pendingCellWrites > 0 ||
+    cellDrafts.value.size > 0 ||
+    activeEdit.value !== null,
+)
+const bulkActionsBlocked = computed(
+  () => saving.value || hasPendingCellDrafts.value,
+)
 const gridEditorComponent = defineComponent({
   props: {
     column: {
@@ -364,11 +395,38 @@ const canWrite = computed(
     props.identity === auth.user?.id &&
     (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
 )
+const bulkEditPreview = computed(() => {
+  const item = bulkEditField.value
+  const value = bulkEditValue.value
+  return item && value !== undefined
+    ? item.bound.formatDisplay(value, fieldEnvironment.value)
+    : ''
+})
+const bulkEditRequestLimitExceeded = computed(() => {
+  const value = bulkEditValue.value
+  if (value === undefined || !bulkEditField.value) return false
+  const ids = [...selectedRows.value]
+  const body = {
+    rows: ids.map((id) => ({
+      id,
+      fields: { [bulkEditField.value!.field.id]: value },
+    })),
+  }
+  return ids.length > 1000 || ids.length > 5000 || !requestBodyFits(body)
+})
+const bulkEditApplyDisabled = computed(
+  () =>
+    bulkActionsBlocked.value ||
+    bulkEditValue.value === undefined ||
+    !bulkEditField.value ||
+    bulkEditRequestLimitExceeded.value,
+)
 interface EditOrigin {
   tableId: string
   viewId: string
   identity: string
   schemaVersion: number
+  permission: TableSchema['myLevel']
   routeTableScoped: boolean
 }
 
@@ -380,6 +438,7 @@ function editOrigin(): EditOrigin {
     viewId: props.viewId,
     identity: props.identity,
     schemaVersion: props.schema.schemaVersion,
+    permission: props.schema.myLevel,
     routeTableScoped:
       typeof router.currentRoute.value.params.tableId === 'string',
   }
@@ -406,11 +465,39 @@ function editOriginCurrent(origin: EditOrigin) {
   )
 }
 
+function bulkOriginCurrent(origin: EditOrigin) {
+  return editOriginCurrent(origin) && props.schema.myLevel === origin.permission
+}
+
 function editUnavailableMessage(origin: EditOrigin) {
   return props.schema.schemaVersion !== origin.schemaVersion
     ? t('errors.ERR_SCHEMA_CHANGED')
     : t('errors.ERR_PERMISSION_DENIED')
 }
+
+watch(
+  () =>
+    [
+      props.schema.table.id,
+      props.viewId,
+      props.identity,
+      props.schema.schemaVersion,
+      props.schema.myLevel,
+      props.schema.fields.map((field) => field.id).join(','),
+    ] as const,
+  () => {
+    selectedRows.value = new Set()
+    bulkActionController.value?.abort()
+    bulkActionController.value = null
+    bulkActionError.value = ''
+    deleteDialog.value?.close()
+    bulkEditDialog.value?.close()
+    bulkEditFieldId.value = ''
+    bulkEditValue.value = undefined
+    bulkEditOrigin.value = null
+  },
+  { flush: 'sync' },
+)
 
 function storeCellDraft(
   rowId: string,
@@ -1315,16 +1402,20 @@ const columns = computed<ColumnRegular[]>(() => {
                   { class: 'grid-row-number' },
                   String(model.__rowNumber ?? ''),
                 ),
-                render('input', {
-                  type: 'checkbox',
-                  checked: selectedRows.value.has(String(model.__rowId)),
-                  'aria-label': t('grid.selectRow', { id: model.__rowId }),
-                  onChange: (event: Event) =>
-                    selectRow(
-                      String(model.__rowId),
-                      (event.target as HTMLInputElement).checked,
-                    ),
-                }),
+                canWrite.value
+                  ? render('input', {
+                      type: 'checkbox',
+                      checked: selectedRows.value.has(String(model.__rowId)),
+                      'aria-label': t('grid.selectRow', {
+                        id: model.__rowId,
+                      }),
+                      onChange: (event: Event) =>
+                        selectRow(
+                          String(model.__rowId),
+                          (event.target as HTMLInputElement).checked,
+                        ),
+                    })
+                  : null,
                 render(
                   'button',
                   {
@@ -2721,9 +2812,10 @@ function sortFieldOptions(index: number) {
 }
 
 function selectRow(id: string, selected: boolean) {
+  if (!canWrite.value) return
   const next = new Set(selectedRows.value)
   if (selected) {
-    if (next.size >= 1000) {
+    if (!next.has(id) && next.size >= 1000) {
       error.value = t('grid.selectionLimit')
       return
     }
@@ -2889,7 +2981,6 @@ async function commitCell(detail: CellCommit) {
       cellDrafts.value.delete(key)
       cellErrors.value.delete(key)
     }
-    selectedRows.value.delete(row.id)
   } catch (cause) {
     if (disposed.value || !sameEditScope(origin)) return
     if (!editOriginCurrent(origin)) {
@@ -3167,11 +3258,163 @@ watch(
   },
 )
 
-async function deleteSelected() {
+function openDeleteDialog() {
+  if (!canWrite.value || !selectedRows.value.size || bulkActionsBlocked.value)
+    return
+  bulkActionError.value = ''
+  deleteDialog.value?.showModal()
+}
+
+function openBulkEdit() {
+  if (!canWrite.value || !selectedRows.value.size || bulkActionsBlocked.value)
+    return
+  bulkActionError.value = ''
+  bulkEditFieldId.value = ''
+  bulkEditValue.value = undefined
+  bulkEditOrigin.value = editOrigin()
+  bulkEditDialog.value?.showModal()
+}
+
+function clearBulkEdit() {
+  bulkEditFieldId.value = ''
+  bulkEditValue.value = undefined
+  bulkEditOrigin.value = null
+  bulkActionError.value = ''
+}
+
+function closeBulkEdit() {
+  if (saving.value) return
+  bulkEditDialog.value?.close()
+  clearBulkEdit()
+}
+
+function cancelBulkDialog(event: Event) {
+  if (saving.value) event.preventDefault()
+}
+
+function changeBulkEditField(event: Event) {
+  bulkEditFieldId.value = (event.target as HTMLSelectElement).value
+  bulkEditValue.value = undefined
+  bulkActionError.value = ''
+}
+
+function stageBulkValue(value: WireValue) {
+  const item = bulkEditField.value
+  if (!item) return
+  const normalized = item.bound.normalize(value)
+  if (!normalized.ok) {
+    bulkEditValue.value = undefined
+    bulkActionError.value = fieldErrorMessage(normalized.reason)
+    return
+  }
+  bulkEditValue.value = normalized.value
+  bulkActionError.value = ''
+}
+
+function resolveBulkUser(id: string) {
+  return userLabel(props.identity, props.schema.table.id, id)
+}
+
+async function editSelected() {
+  const origin = bulkEditOrigin.value
+  const item = bulkEditField.value
   const ids = [...selectedRows.value]
-  if (!ids.length || ids.length > 1000) return
+  if (!origin || !item || !canWrite.value || !ids.length || saving.value) return
+  if (hasPendingCellDrafts.value) {
+    bulkActionError.value = t('grid.pendingCellDrafts')
+    return
+  }
+  if (!bulkOriginCurrent(origin)) {
+    bulkActionError.value = editUnavailableMessage(origin)
+    return
+  }
+  const candidate = bulkEditValue.value
+  if (candidate === undefined) return
+  const normalized = item.bound.normalize(candidate)
+  if (!normalized.ok) {
+    bulkActionError.value = fieldErrorMessage(normalized.reason)
+    return
+  }
+  const body = {
+    rows: ids.map((id) => ({
+      id,
+      fields: { [item.field.id]: normalized.value },
+    })),
+  }
+  if (ids.length > 1000 || ids.length > 5000 || !requestBodyFits(body)) {
+    bulkActionError.value = t('grid.bulkEditLimit')
+    return
+  }
+  const controller = new AbortController()
+  bulkActionController.value = controller
+  const anchor = rows.snapshot().activePage * remotePageSize
   saving.value = true
   error.value = null
+  bulkActionError.value = ''
+  try {
+    const result = await mutate<RowMutation>(
+      `/tables/${origin.tableId}/rows`,
+      'PATCH',
+      body,
+      controller.signal,
+    )
+    if (!bulkOriginCurrent(origin)) return
+    if (
+      result.rows.length !== ids.length ||
+      result.rows.some((row, index) => row.id !== ids[index]) ||
+      !result.previous ||
+      result.previous.length !== ids.length
+    )
+      throw new Error(t('grid.saveFailed'))
+    const previousById = new Map(result.previous.map((row) => [row.id, row]))
+    if (
+      previousById.size !== ids.length ||
+      ids.some((id) => {
+        const previous = previousById.get(id)
+        return !previous || !Object.hasOwn(previous.fields, item.field.id)
+      })
+    )
+      throw new Error(t('grid.saveFailed'))
+    undo.record([patchUndoStep(origin.tableId, result.previous, result.rows)])
+    selectedRows.value = new Set()
+    bulkEditDialog.value?.close()
+    clearBulkEdit()
+    await initialize(anchor)
+  } catch (cause) {
+    if (!bulkOriginCurrent(origin)) return
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+    bulkActionError.value = errorMessage(cause)
+    error.value = cause
+  } finally {
+    if (bulkActionController.value === controller)
+      bulkActionController.value = null
+    if (!disposed.value) saving.value = false
+  }
+}
+
+async function deleteSelected() {
+  const ids = [...selectedRows.value]
+  if (!canWrite.value || !ids.length || saving.value) return
+  if (hasPendingCellDrafts.value) {
+    bulkActionError.value = t('grid.pendingCellDrafts')
+    return
+  }
+  const origin = editOrigin()
+  if (!bulkOriginCurrent(origin)) {
+    bulkActionError.value = editUnavailableMessage(origin)
+    return
+  }
+  const body = { ids }
+  if (
+    ids.length > 1000 ||
+    new TextEncoder().encode(JSON.stringify(body)).byteLength > 64 * 1024
+  ) {
+    bulkActionError.value = t('grid.deleteLimit')
+    return
+  }
+  const controller = new AbortController()
+  bulkActionController.value = controller
   const anchor = Math.max(
     0,
     Math.min(
@@ -3179,24 +3422,39 @@ async function deleteSelected() {
       rows.snapshot().activePage * remotePageSize,
     ),
   )
+  saving.value = true
+  error.value = null
+  bulkActionError.value = ''
   try {
     const result = await mutate<RowMutation>(
-      `/tables/${props.schema.table.id}/rows`,
+      `/tables/${origin.tableId}/rows`,
       'DELETE',
-      { ids },
+      body,
+      controller.signal,
     )
-    if (result.rows.length !== ids.length) throw new Error(t('grid.saveFailed'))
+    if (!bulkOriginCurrent(origin)) return
+    const deletedIds = new Set(result.rows.map((row) => row.id))
+    if (
+      result.rows.length !== ids.length ||
+      deletedIds.size !== ids.length ||
+      ids.some((id) => !deletedIds.has(id))
+    )
+      throw new Error(t('grid.saveFailed'))
     undo.record([
-      { kind: 'restore', tableId: props.schema.table.id, rows: result.rows },
+      { kind: 'restore', tableId: origin.tableId, rows: result.rows },
     ])
-    selectedRows.value.clear()
+    selectedRows.value = new Set()
     deleteDialog.value?.close()
     await initialize(anchor)
   } catch (cause) {
+    if (!bulkOriginCurrent(origin)) return
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
+    bulkActionError.value = errorMessage(cause)
     error.value = cause
   } finally {
+    if (bulkActionController.value === controller)
+      bulkActionController.value = null
     if (!disposed.value) saving.value = false
   }
 }
@@ -3775,6 +4033,38 @@ onBeforeUnmount(() => {
       <span v-else-if="loading" role="status">{{ t('grid.loading') }}</span>
       <div class="grid-toolbar-end">
         <slot name="toolbar-actions" />
+        <div
+          v-if="desktop && canWrite && selectedRows.size"
+          class="grid-row-actions"
+          role="group"
+          :aria-label="t('grid.rowSelectionActions')"
+        >
+          <span role="status">
+            {{ t('grid.selectedRowsCount', { count: selectedRows.size }) }}
+          </span>
+          <button
+            type="button"
+            class="grid-toolbar-button"
+            :disabled="bulkActionsBlocked"
+            @click="openBulkEdit"
+          >
+            {{ t('grid.editRows') }}
+          </button>
+          <button
+            type="button"
+            class="grid-toolbar-button"
+            :disabled="bulkActionsBlocked"
+            @click="openDeleteDialog"
+          >
+            {{ t('grid.deleteRows', { count: selectedRows.size }) }}
+          </button>
+        </div>
+        <span
+          v-if="desktop && selectedRows.size && hasPendingCellDrafts"
+          role="status"
+        >
+          {{ t('grid.pendingCellDrafts') }}
+        </span>
         <slot name="toolbar-end" />
       </div>
     </div>
@@ -3967,15 +4257,96 @@ onBeforeUnmount(() => {
     <p v-if="unsupportedField" role="alert">
       {{ t('grid.unsupportedField') }}
     </p>
-    <dialog ref="deleteDialog" :aria-label="t('grid.confirmDeleteTitle')">
+    <dialog
+      ref="deleteDialog"
+      :aria-label="t('grid.confirmDeleteTitle')"
+      @close="bulkActionError = ''"
+    >
       <h2>{{ t('grid.confirmDeleteTitle') }}</h2>
       <p>{{ t('grid.confirmDelete', { count: selectedRows.size }) }}</p>
+      <p v-if="hasPendingCellDrafts" role="status">
+        {{ t('grid.pendingCellDrafts') }}
+      </p>
+      <p v-if="bulkActionError" role="alert">{{ bulkActionError }}</p>
       <div class="grid-dialog-actions">
         <button type="button" :disabled="saving" @click="deleteDialog?.close()">
           {{ t('grid.cancel') }}
         </button>
-        <button type="button" :disabled="saving" @click="deleteSelected">
+        <button
+          type="button"
+          :disabled="bulkActionsBlocked"
+          @click="deleteSelected"
+        >
           {{ t('grid.deleteConfirm') }}
+        </button>
+      </div>
+    </dialog>
+    <dialog
+      ref="bulkEditDialog"
+      :aria-label="t('grid.bulkEditTitle')"
+      @close="clearBulkEdit"
+      @cancel="cancelBulkDialog"
+    >
+      <h2>{{ t('grid.bulkEditTitle') }}</h2>
+      <p v-if="hasPendingCellDrafts" role="status">
+        {{ t('grid.pendingCellDrafts') }}
+      </p>
+      <label class="grid-bulk-field-picker">
+        <span>{{ t('grid.bulkEditField') }}</span>
+        <select
+          :value="bulkEditFieldId"
+          :disabled="bulkActionsBlocked"
+          @change="changeBulkEditField"
+        >
+          <option value="">{{ t('grid.bulkEditChooseField') }}</option>
+          <option
+            v-for="item in bulkEditableFields"
+            :key="item.field.id"
+            :value="item.field.id"
+          >
+            {{ item.field.name }}
+          </option>
+        </select>
+      </label>
+      <p>{{ t('grid.bulkEditUnsupported') }}</p>
+      <FieldEditor
+        v-if="bulkEditField"
+        :key="bulkEditField.field.id"
+        :field="bulkEditField.bound"
+        :value="null"
+        :env="fieldEnvironment"
+        :label="t('field.editor.value')"
+        :table-id="schema.table.id"
+        :field-id="bulkEditField.field.id"
+        :identity="identity"
+        :resolve-user="resolveBulkUser"
+        :submit-label="t('grid.previewBulkEdit')"
+        @commit="stageBulkValue"
+        @cancel="closeBulkEdit"
+      />
+      <p v-if="bulkEditValue !== undefined" role="status">
+        {{
+          t('grid.bulkEditPreview', {
+            count: selectedRows.size,
+            field: bulkEditField?.field.name ?? '',
+            value: bulkEditPreview,
+          })
+        }}
+      </p>
+      <p v-if="bulkEditRequestLimitExceeded" role="alert">
+        {{ t('grid.bulkEditLimit') }}
+      </p>
+      <p v-if="bulkActionError" role="alert">{{ bulkActionError }}</p>
+      <div class="grid-dialog-actions">
+        <button type="button" :disabled="saving" @click="closeBulkEdit">
+          {{ t('grid.cancel') }}
+        </button>
+        <button
+          type="button"
+          :disabled="bulkEditApplyDisabled"
+          @click="editSelected"
+        >
+          {{ t('grid.applyBulkEdit') }}
         </button>
       </div>
     </dialog>
@@ -4087,6 +4458,19 @@ onBeforeUnmount(() => {
   min-height: 48px;
   margin-bottom: 0;
   border-bottom: 1px solid var(--border);
+}
+.grid-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.grid-bulk-field-picker {
+  display: grid;
+  gap: 6px;
+}
+.grid-bulk-field-picker select {
+  width: 100%;
 }
 .grid-toolbar-end {
   display: flex;

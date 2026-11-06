@@ -2,7 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { markRaw, watch, type Component } from 'vue'
+import { markRaw, nextTick, watch, type Component } from 'vue'
+import type {
+  CellTemplateProp,
+  ColumnRegular,
+  Providers,
+} from '@revolist/revogrid'
 import { i18n, loadLocale } from '../../i18n'
 import type { RowQueryRequest, TableSchema } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
@@ -473,13 +478,31 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
         rows?: { id: string; fields: Record<string, unknown> }[]
       }
       if (requestBody.rows) {
+        const previous = requestBody.rows.map(({ id, fields }) => {
+          const index = Number(BigInt(id) - BigInt('9007199254740993'))
+          const current = gridState.rowFields[index] ?? {
+            [schema.fields[0]!.id]: 'before',
+          }
+          const before = Object.fromEntries(
+            Object.keys(fields).map((fieldId) => [
+              fieldId,
+              current[fieldId] ?? null,
+            ]),
+          )
+          return { id, fields: before }
+        })
         const patched = requestBody.rows.map(({ id, fields }) => {
           const index = Number(BigInt(id) - BigInt('9007199254740993'))
-          const next = { ...(gridState.rowFields[index] ?? {}), ...fields }
+          const next = {
+            ...(gridState.rowFields[index] ?? {
+              [schema.fields[0]!.id]: 'before',
+            }),
+            ...fields,
+          }
           gridState.rowFields[index] = next
           return { id, fields: next }
         })
-        return Response.json({ eventId: 'event', rows: patched })
+        return Response.json({ eventId: 'event', rows: patched, previous })
       }
       return Response.json({
         row: {
@@ -504,8 +527,21 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
         rows,
       })
     }
-    if (init?.method === 'DELETE')
-      return Response.json({ eventId: 'event', rows: [] })
+    if (init?.method === 'DELETE') {
+      const requestBody = JSON.parse(String(init.body)) as { ids: string[] }
+      const rows = requestBody.ids.map((id) => {
+        const index = Number(BigInt(id) - BigInt('9007199254740993'))
+        return {
+          id,
+          fields: gridState.rowFields[index] ?? {
+            [schema.fields[0]!.id]: 'before',
+          },
+          restoreVersion: 'restore-version',
+        }
+      })
+      gridState.rowCount -= rows.length
+      return Response.json({ eventId: 'event', rows })
+    }
     throw new Error(`Unexpected API request: ${path}`)
   })
   vi.stubGlobal('fetch', fetch)
@@ -520,6 +556,237 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
   await flushPromises()
   return fetch
 }
+
+async function selectRow(id: string) {
+  const columns = wrapper!
+    .getComponent({ name: 'RevoGrid' })
+    .props('columns') as ColumnRegular[]
+  const column = columns.find((item) => item.prop === '__selected')
+  if (!column?.cellTemplate) throw new Error('Missing row selection column')
+  let change: ((event: Event) => void) | undefined
+  const render = ((tag: unknown, data?: unknown) => {
+    if (
+      tag === 'input' &&
+      typeof data === 'object' &&
+      data !== null &&
+      'onChange' in data &&
+      typeof data.onChange === 'function'
+    )
+      change = data.onChange as (event: Event) => void
+    // The test invokes the captured handler and never mounts the Stencil VNode.
+    return null as never
+  }) as Parameters<NonNullable<ColumnRegular['cellTemplate']>>[0]
+  const model = { __rowId: id, __rowNumber: 1 }
+  column.cellTemplate(render, {
+    prop: '__selected',
+    model,
+    column,
+    rowIndex: 0,
+    colIndex: 0,
+    colType: 'colPinStart',
+    type: 'rgRow',
+    data: [model],
+    providers: {} as Providers,
+  } as CellTemplateProp)
+  if (!change) return false
+  const event = new Event('change')
+  Object.defineProperty(event, 'target', { value: { checked: true } })
+  change(event)
+  await nextTick()
+  return true
+}
+
+it('shows visible selected-row actions only to writers', async () => {
+  const schema = schemaFor('text')
+  await mountGrid(schema)
+  const id = '9007199254740993'
+  expect(await selectRow(id)).toBe(true)
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('1 selected')
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('Edit selected')
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('Delete selected')
+
+  await wrapper!.setProps({ schema: { ...schema, myLevel: 'read' } })
+  expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
+  wrapper!.unmount()
+  wrapper = undefined
+  await mountGrid(schemaFor('text', 'read'))
+  expect(await selectRow(id)).toBe(false)
+  expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
+})
+
+it('omits system, relation, and attachment fields from the bulk editor', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'relation', 'link')
+  addField(schema, 'uploads', 'attachment', { accept: '', maxFiles: 10 })
+  await mountGrid(schema)
+  expect(await selectRow('9007199254740993')).toBe(true)
+  await wrapper!.get('.grid-row-actions button').trigger('click')
+
+  const options = wrapper!
+    .get('dialog[aria-label="Edit selected rows"] select')
+    .findAll('option')
+    .map((option) => option.attributes('value'))
+  expect(options).toEqual(['', 'name'])
+  expect(wrapper!.text()).toContain(
+    'Relation and attachment fields are not available for bulk editing.',
+  )
+})
+
+it('deletes only selected row IDs across pages and retains selection on cancel', async () => {
+  gridState.rowCount = 205
+  const fetch = await mountGrid(schemaFor('text'))
+  const first = '9007199254740994'
+  const later = String(BigInt('9007199254740993') + 150n)
+  expect(await selectRow(first)).toBe(true)
+  expect(await selectRow(later)).toBe(true)
+
+  await wrapper!.get('.grid-row-actions button:last-child').trigger('click')
+  const dialog = wrapper!.get('dialog[aria-label="Delete selected rows"]')
+  await dialog.get('.grid-dialog-actions button:first-child').trigger('click')
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('2 selected')
+  expect(
+    fetch.mock.calls.filter(([, init]) => init?.method === 'DELETE'),
+  ).toHaveLength(0)
+
+  await wrapper!.get('.grid-row-actions button:last-child').trigger('click')
+  await wrapper!
+    .get(
+      'dialog[aria-label="Delete selected rows"] .grid-dialog-actions button:last-child',
+    )
+    .trigger('click')
+  await flushPromises()
+  const deletion = fetch.mock.calls.find(
+    ([, init]) => init?.method === 'DELETE',
+  )
+  expect(deletion).toBeDefined()
+  expect(JSON.parse(String(deletion?.[1]?.body))).toEqual({
+    ids: [first, later],
+  })
+  expect(useUndoStore().undoStack.at(-1)?.steps).toEqual([
+    {
+      kind: 'restore',
+      tableId: 't',
+      rows: expect.arrayContaining([
+        expect.objectContaining({ id: first }),
+        expect.objectContaining({ id: later }),
+      ]),
+    },
+  ])
+  expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
+})
+
+it('previews and atomically edits selected IDs with a typed value and guarded undo', async () => {
+  gridState.rowCount = 205
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const first = '9007199254740994'
+  const later = String(BigInt('9007199254740993') + 150n)
+  expect(await selectRow(first)).toBe(true)
+  expect(await selectRow(later)).toBe(true)
+
+  await wrapper!.get('.grid-row-actions button').trigger('click')
+  let dialog = wrapper!.get('dialog[aria-label="Edit selected rows"]')
+  await dialog.get('select').setValue(schema.fields[0]!.id)
+  await dialog.get('input[aria-label="Field value"]').setValue('shared value')
+  await dialog.get('button').trigger('click')
+  expect(dialog.text()).toContain(
+    'Set Name to “shared value” for 2 selected rows?',
+  )
+  expect(
+    fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH'),
+  ).toHaveLength(0)
+  await dialog.get('.grid-dialog-actions button:first-child').trigger('click')
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('2 selected')
+  expect(
+    fetch.mock.calls.filter(([, init]) => init?.method === 'PATCH'),
+  ).toHaveLength(0)
+
+  await wrapper!.get('.grid-row-actions button').trigger('click')
+  dialog = wrapper!.get('dialog[aria-label="Edit selected rows"]')
+  await dialog.get('select').setValue(schema.fields[0]!.id)
+  await dialog.get('input[aria-label="Field value"]').setValue('shared value')
+  await dialog.get('button').trigger('click')
+
+  await dialog.get('.grid-dialog-actions button:last-child').trigger('click')
+  await flushPromises()
+  const patch = fetch.mock.calls.find(
+    ([path, init]) =>
+      String(path) === '/api/v1/tables/t/rows' && init?.method === 'PATCH',
+  )
+  expect(patch).toBeDefined()
+  expect(JSON.parse(String(patch?.[1]?.body))).toEqual({
+    rows: [
+      { id: first, fields: { [schema.fields[0]!.id]: 'shared value' } },
+      { id: later, fields: { [schema.fields[0]!.id]: 'shared value' } },
+    ],
+  })
+  expect(useUndoStore().undoStack.at(-1)?.steps).toEqual([
+    {
+      kind: 'patch',
+      tableId: 't',
+      rows: [
+        {
+          id: first,
+          fields: { [schema.fields[0]!.id]: 'before' },
+          expected: { [schema.fields[0]!.id]: 'shared value' },
+        },
+        {
+          id: later,
+          fields: { [schema.fields[0]!.id]: 'before' },
+          expected: { [schema.fields[0]!.id]: 'shared value' },
+        },
+      ],
+    },
+  ])
+  expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
+})
+
+it('retains the selection and reports atomic bulk edit failures', async () => {
+  const schema = schemaFor('text')
+  const fetch = await mountGrid(schema)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  fetch.mockImplementation((input, init) => {
+    const requestBody =
+      typeof init?.body === 'string'
+        ? (JSON.parse(init.body) as { rows?: unknown[] })
+        : undefined
+    if (
+      String(input) === '/api/v1/tables/t/rows' &&
+      init?.method === 'PATCH' &&
+      requestBody?.rows
+    )
+      return Promise.resolve(
+        Response.json(
+          {
+            error: {
+              code: 'ERR_UNIQUE_CONFLICT',
+              message: 'A unique value already exists.',
+            },
+          },
+          { status: 409 },
+        ),
+      )
+    return fallback(input, init)
+  })
+  const first = '9007199254740994'
+  const later = String(BigInt('9007199254740993') + 150n)
+  expect(await selectRow(first)).toBe(true)
+  expect(await selectRow(later)).toBe(true)
+  await wrapper!.get('.grid-row-actions button').trigger('click')
+  const dialog = wrapper!.get('dialog[aria-label="Edit selected rows"]')
+  await dialog.get('select').setValue(schema.fields[0]!.id)
+  await dialog.get('input[aria-label="Field value"]').setValue('duplicate')
+  await dialog.get('button').trigger('click')
+  await dialog.get('.grid-dialog-actions button:last-child').trigger('click')
+  await flushPromises()
+
+  expect(dialog.get('[role="alert"]').text()).toContain(
+    i18n.global.t('errors.ERR_UNIQUE_CONFLICT'),
+  )
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('2 selected')
+  expect(useUndoStore().undoStack).toHaveLength(0)
+})
 
 it('keeps the add-field action outside the selectable grid columns', async () => {
   await mountGrid(schemaFor('text'))

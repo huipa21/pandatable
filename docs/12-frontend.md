@@ -433,6 +433,18 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   successful cell edits through row PATCH. Add/delete row actions use the row
   APIs and show failures without optimistic success. T1.21 connects the Fields
   menu and native header resize/drag to versioned column config (D-148/D-149).
+  WG-07 exposes row-checkbox selection separately from cell-range selection.
+  Writers see a selected count and direct Delete/Edit toolbar actions; readers
+  have neither selection nor mutation controls. Delete confirms the selected
+  IDs, while Edit uses the bound typed editor to preview one normalized value
+  for one writable field across those IDs. Both use the existing all-or-nothing
+  row APIs and retain selection on failure; successful mutations refresh rows,
+  groups and summaries and record the existing delete/guarded-patch undo.
+  Selections are capped at 1,000 IDs. Delete observes its 1,000-ID/64-KiB
+  limit; bulk edit observes 1,000 rows/5,000 cells/512 KiB. Read-only,
+  computed, system, relation and attachment fields are not offered for bulk
+  edit. Pending cell drafts block selected-row actions, and table/view/user/
+  schema/permission changes invalidate the selection and pending bulk action.
   A transient ordered `fieldIds` query override (D-138) still supports immediate
   local visibility, including explicit system fields. T1.17 enables
   copy/cut/paste and vertical fill-down on this production grid: copy uses each
