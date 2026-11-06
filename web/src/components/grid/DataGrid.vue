@@ -85,6 +85,7 @@ import {
   useViewColumns,
   minColumnWidth,
   maxColumnWidth,
+  parseColumnWidthInput,
 } from './viewColumns'
 import { appendRowLayoutWidth } from './appendRowLayout'
 import { columnFooterCells, type ColumnFooterCell } from './columnFooters'
@@ -170,6 +171,7 @@ const relationField = ref<TableField | null>(null)
 const relationRow = ref<DataRow | null>(null)
 const gridSource = shallowRef<GridModel[]>([])
 const columnWidthDrafts = ref<Record<string, string>>({})
+const columnWidthErrors = ref<Record<string, string>>({})
 const frozenDraft = ref<string | null>(null)
 type HighlightDraft = Omit<HighlightRule, 'when'> & { when: FilterNode | null }
 const highlightColors: HighlightColor[] = [
@@ -2991,10 +2993,6 @@ async function reorderFields(ids: string[]) {
   return columnState.flush()
 }
 
-function selectedField(id: string) {
-  return visibleFieldIds.value.includes(id)
-}
-
 function moveColumn(id: string, direction: number) {
   const ids = columnFields.value.map((field) => field.id)
   const index = ids.indexOf(id)
@@ -3012,13 +3010,27 @@ function columnNeighbor(id: string, direction: number) {
   return fields[fields.findIndex((field) => field.id === id) + direction]?.id
 }
 
+function updateColumnWidthDraft(id: string, event: Event) {
+  columnWidthDrafts.value[id] = (event.target as HTMLInputElement).value
+  delete columnWidthErrors.value[id]
+}
+
 function commitColumnWidth(id: string, event: Event) {
+  const width = parseColumnWidthInput((event.target as HTMLInputElement).value)
+  if (width === undefined) {
+    columnWidthErrors.value[id] = t('grid.columnWidthInvalid', {
+      min: minColumnWidth,
+      max: maxColumnWidth,
+    })
+    return
+  }
+  delete columnWidthErrors.value[id]
+  delete columnWidthDrafts.value[id]
   columnState.change({
     kind: 'width',
     id,
-    width: Number((event.target as HTMLInputElement).value),
+    width,
   })
-  delete columnWidthDrafts.value[id]
 }
 
 function commitFrozen(event: Event) {
@@ -3027,6 +3039,15 @@ function commitFrozen(event: Event) {
     count: Number((event.target as HTMLInputElement).value),
   })
   frozenDraft.value = null
+}
+
+function closeToolbarPopover(event: KeyboardEvent) {
+  const panel = event.currentTarget
+  if (!(panel instanceof HTMLElement)) return
+  const menu = panel.closest('details')
+  if (!(menu instanceof HTMLDetailsElement)) return
+  menu.open = false
+  menu.querySelector<HTMLElement>(':scope > summary')?.focus()
 }
 
 function resizeColumns(event: CustomEvent<Record<number, ColumnRegular>>) {
@@ -3145,10 +3166,6 @@ watch(
     if (ready.value) void initialize(0)
   },
 )
-
-function askDelete() {
-  if (selectedRows.value.size > 0) deleteDialog.value?.showModal()
-}
 
 async function deleteSelected() {
   const ids = [...selectedRows.value]
@@ -3636,32 +3653,106 @@ onBeforeUnmount(() => {
         </fieldset>
       </details>
       <slot name="after-highlight" />
-      <details v-if="desktop" class="grid-row-height">
-        <summary :aria-label="t('grid.rowHeight')" :title="t('grid.rowHeight')">
-          <AppIcon name="height" />
+      <details v-if="desktop" class="grid-format">
+        <summary :aria-label="t('grid.format')" :title="t('grid.format')">
+          {{ t('grid.format') }}
         </summary>
-        <fieldset>
-          <legend>{{ t('grid.rowHeight') }}</legend>
-          <button
-            v-for="height in rowHeightOptions"
-            :key="height.value"
-            type="button"
-            :aria-pressed="
-              (columnState.config.value.rowHeight ?? 'short') === height.value
-            "
-            @click="
-              columnState.change({ kind: 'height', height: height.value })
-            "
-          >
-            {{ height.label }}
-          </button>
-        </fieldset>
+        <div
+          class="grid-format-menu"
+          @keydown.esc.stop.prevent="closeToolbarPopover"
+        >
+          <fieldset class="grid-format-section">
+            <legend>{{ t('grid.rowHeight') }}</legend>
+            <button
+              v-for="height in rowHeightOptions"
+              :key="height.value"
+              type="button"
+              :aria-pressed="
+                (columnState.config.value.rowHeight ?? 'short') === height.value
+              "
+              @click="
+                columnState.change({ kind: 'height', height: height.value })
+              "
+            >
+              {{ height.label }}
+            </button>
+          </fieldset>
+          <fieldset class="grid-format-section">
+            <legend>{{ t('grid.columnOptions') }}</legend>
+            <div
+              v-for="field in columnFields"
+              :key="field.id"
+              class="grid-column-control"
+            >
+              <span>{{ field.name }}</span>
+              <label>
+                <input
+                  type="number"
+                  :min="minColumnWidth"
+                  :max="maxColumnWidth"
+                  step="1"
+                  :value="columnWidthDrafts[field.id] ?? field.width ?? 180"
+                  :aria-label="t('grid.columnWidth', { name: field.name })"
+                  :aria-invalid="!!columnWidthErrors[field.id]"
+                  :aria-describedby="
+                    columnWidthErrors[field.id]
+                      ? `grid-column-width-error-${field.id}`
+                      : undefined
+                  "
+                  @input="updateColumnWidthDraft(field.id, $event)"
+                  @change="commitColumnWidth(field.id, $event)"
+                />
+              </label>
+              <button
+                type="button"
+                :disabled="!columnNeighbor(field.id, -1)"
+                :aria-label="t('grid.columnLeft', { name: field.name })"
+                @click="moveColumn(field.id, -1)"
+              >
+                {{ t('grid.moveLeft') }}
+              </button>
+              <button
+                type="button"
+                :disabled="!columnNeighbor(field.id, 1)"
+                :aria-label="t('grid.columnRight', { name: field.name })"
+                @click="moveColumn(field.id, 1)"
+              >
+                {{ t('grid.moveRight') }}
+              </button>
+              <span
+                v-if="columnWidthErrors[field.id]"
+                :id="`grid-column-width-error-${field.id}`"
+                class="grid-column-width-error"
+                role="alert"
+              >
+                {{ columnWidthErrors[field.id] }}
+              </span>
+            </div>
+            <label class="grid-frozen-control">
+              <span>{{ t('grid.frozenColumns') }}</span>
+              <input
+                type="number"
+                min="0"
+                :max="visibleFieldIds.length"
+                :value="frozenDraft ?? columnState.config.value.frozen"
+                @input="frozenDraft = ($event.target as HTMLInputElement).value"
+                @change="commitFrozen"
+              />
+            </label>
+          </fieldset>
+        </div>
       </details>
-      <details v-if="desktop" class="grid-more">
-        <summary :aria-label="t('grid.more')" :title="t('grid.more')">
-          <AppIcon name="more" />
+      <details v-if="desktop" class="grid-search">
+        <summary
+          :aria-label="t('grid.quickSearch')"
+          :title="t('grid.quickSearch')"
+        >
+          <AppIcon name="search" />
         </summary>
-        <div class="grid-more-menu">
+        <div
+          class="grid-search-menu"
+          @keydown.esc.stop.prevent="closeToolbarPopover"
+        >
           <label class="grid-quick-search">
             <span>{{ t('grid.quickSearch') }}</span>
             <input
@@ -3672,80 +3763,6 @@ onBeforeUnmount(() => {
               :placeholder="t('grid.quickSearchPlaceholder')"
             />
           </label>
-          <button
-            type="button"
-            :disabled="!canWrite || saving || selectedRows.size === 0"
-            @click="askDelete"
-          >
-            {{ t('grid.deleteRows', { count: selectedRows.size }) }}
-          </button>
-          <details class="grid-column-options">
-            <summary>{{ t('grid.columnOptions') }}</summary>
-            <fieldset>
-              <legend>{{ t('grid.visibleFields') }}</legend>
-              <div
-                v-for="field in columnFields"
-                :key="field.id"
-                class="grid-column-control"
-              >
-                <label>
-                  <input
-                    type="checkbox"
-                    :checked="selectedField(field.id)"
-                    @change="
-                      toggleField(
-                        field.id,
-                        ($event.target as HTMLInputElement).checked,
-                      )
-                    "
-                  />
-                  <span>{{ field.name }}</span>
-                </label>
-                <input
-                  type="number"
-                  :min="minColumnWidth"
-                  :max="maxColumnWidth"
-                  :value="columnWidthDrafts[field.id] ?? field.width ?? 180"
-                  :aria-label="t('grid.columnWidth', { name: field.name })"
-                  @input="
-                    columnWidthDrafts[field.id] = (
-                      $event.target as HTMLInputElement
-                    ).value
-                  "
-                  @change="commitColumnWidth(field.id, $event)"
-                />
-                <button
-                  type="button"
-                  :disabled="!columnNeighbor(field.id, -1)"
-                  :aria-label="t('grid.columnLeft', { name: field.name })"
-                  @click="moveColumn(field.id, -1)"
-                >
-                  {{ t('grid.moveLeft') }}
-                </button>
-                <button
-                  type="button"
-                  :disabled="!columnNeighbor(field.id, 1)"
-                  :aria-label="t('grid.columnRight', { name: field.name })"
-                  @click="moveColumn(field.id, 1)"
-                >
-                  {{ t('grid.moveRight') }}
-                </button>
-              </div>
-              <label>
-                <span>{{ t('grid.frozenColumns') }}</span>
-                <input
-                  type="number"
-                  min="0"
-                  :max="visibleFieldIds.length"
-                  :value="frozenDraft ?? columnState.config.value.frozen"
-                  @input="
-                    frozenDraft = ($event.target as HTMLInputElement).value
-                  "
-                  @change="commitFrozen"
-                />
-              </label>
-            </fieldset>
-          </details>
         </div>
       </details>
       <span v-if="!columnState.canPersist.value" role="status">{{
@@ -4098,10 +4115,10 @@ onBeforeUnmount(() => {
 .grid-toolbar > details > summary::-webkit-details-marker {
   display: none;
 }
-.grid-row-height > summary,
-.grid-more > summary {
+.grid-format > summary,
+.grid-search > summary {
   justify-content: center;
-  min-width: 36px;
+  min-width: 40px;
 }
 .grid-toolbar > details[open] > summary,
 .grid-toolbar > details > summary:hover,
@@ -4122,20 +4139,20 @@ onBeforeUnmount(() => {
   gap: 6px;
 }
 .grid-quick-search input {
-  max-width: min(260px, 40vw);
+  width: 100%;
 }
 .grid-groups,
 .grid-sorts,
 .grid-highlights,
-.grid-row-height,
-.grid-more {
+.grid-format,
+.grid-search {
   position: static;
 }
 .grid-groups > fieldset,
 .grid-sorts > fieldset,
 .grid-highlights > fieldset,
-.grid-row-height > fieldset,
-.grid-more-menu {
+.grid-format-menu,
+.grid-search-menu {
   position: absolute;
   z-index: 3;
   top: 100%;
@@ -4153,29 +4170,68 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
 }
-.grid-row-height > fieldset {
+.grid-format-menu {
   display: grid;
-  gap: 4px;
-  width: min(150px, 100%);
+  gap: 10px;
+  width: min(520px, calc(100vw - 24px));
+  max-height: 65vh;
+  overflow: auto;
 }
-.grid-row-height button[aria-pressed='true'] {
+.grid-format-section {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+}
+.grid-format-section legend {
+  grid-column: 1 / -1;
+}
+.grid-format-section button[aria-pressed='true'] {
   color: var(--accent);
   border-color: var(--accent);
 }
-.grid-more-menu {
+.grid-format-section .grid-column-control,
+.grid-format-section .grid-frozen-control {
+  grid-column: 1 / -1;
+}
+.grid-column-control {
   display: grid;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(70px, 0.55fr) auto auto;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+}
+.grid-column-control > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grid-column-control input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.grid-column-width-error {
+  grid-column: 2 / -1;
+  color: var(--danger);
+  font-size: 0.875em;
+}
+.grid-frozen-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.grid-frozen-control input {
+  width: 6em;
+}
+.grid-search-menu {
+  width: min(320px, calc(100vw - 24px));
   right: 0;
   left: auto;
-}
-.grid-more-menu details > summary {
-  cursor: pointer;
-}
-.grid-more-menu fieldset {
-  min-width: 0;
-  margin: 8px 0 0;
-  padding: 8px;
-  border: 1px solid var(--border);
 }
 .grid-group-fields {
   display: grid;
@@ -4188,16 +4244,6 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 8px;
 }
-.grid-column-control {
-  display: grid;
-  grid-template-columns: minmax(100px, 1fr) 75px auto auto;
-  align-items: center;
-  gap: 4px;
-}
-.grid-column-control > input {
-  width: 75px;
-}
-.grid-column-options label,
 .grid-groups label,
 .grid-sorts label {
   display: flex;

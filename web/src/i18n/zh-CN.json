@@ -314,6 +314,7 @@
     "fields": "字段",
     "visibleFields": "可见字段",
     "columnWidth": "{name}的宽度",
+    "columnWidthInvalid": "请输入 {min} 到 {max} 之间的整数。",
     "columnLeft": "将{name}向左移动",
     "columnRight": "将{name}向右移动",
     "moveLeft": "向左",
@@ -358,6 +359,7 @@
     "groupPending": "正在等待分组更改保存。",
     "cancelGroupChange": "取消分组更改",
     "highlightMenuLabel": "高亮",
+    "format": "格式",
     "rowHeight": "行高",
     "rowHeights": {
       "short": "紧凑",
@@ -365,7 +367,6 @@
       "tall": "高",
       "extra": "特高"
     },
-    "more": "更多网格选项",
     "columnOptions": "列宽、顺序和冻结",
     "quickSearch": "搜索可见字段",
     "quickSearchPlaceholder": "搜索记录",

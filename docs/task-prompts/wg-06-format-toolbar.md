@@ -60,4 +60,32 @@ progress and directly related frontend docs. Leave
 
 ## Record
 
-Not started.
+Implemented; awaiting WG-09 gates.
+
+- Format now owns row-height presets, bounded per-field width inputs, column
+  order and freezing; visibility remains in Fields. Search has a dedicated
+  accessible trigger/input with the existing transient query behavior. The old
+  Grid More panel and its hidden Delete button are removed; the row-delete
+  mutation and confirmation dialog remain, and WG-07 must wire the new opener.
+- Added localized invalid-width feedback and Escape focus return. Existing
+  width/height persistence and reader-local behavior are unchanged.
+- Focused validation: Vitest — **125 passed** across Format, viewColumns and
+  DataGrid; two toolbar/Visibility ResourcePage tests pass. Touched-file ESLint,
+  `vue-tsc --noEmit`, and i18n check pass. Browser specs are updated but not run
+  here; consolidated E2E/task gates remain WG-09.
+- Pre-commit `ptdev check`: lint, build and Go tests pass, with a warning that
+  `golangci-lint` is unavailable; the frontend suite reports **868 passed,
+  16 failed** (15 ResourcePage and 1 sharing), plus one jsdom `showModal` error.
+  These are the same suites and failure count recorded at the previous
+  checkpoint. Concurrent grid edits appeared during the run, so it was not an
+  isolated checkpoint validation; WG-09 gates remain open.
+- Changed: **18 files** (17 modified plus new `formatToolbar.test.ts`):
+  `DataGrid.vue`, `viewColumns.ts` and focused tests; `en.json` /
+  `zh-CN.json`; toolbar, column-keyboard, search, export, workspace and
+  visibility browser selectors; `ResourcePage.test.ts`; Grid frontend docs,
+  decisions and progress.
+- WG-07 insertion point: add selected-row actions in the visible DataGrid
+  toolbar after Format/Search and before status/trailing action slots. Do not
+  restore the removed More panel or move visibility controls out of Fields.
+- WG-07 follow-up: migrate the existing relations/undo E2E Delete callers and
+  remove the temporary `openGridMore` compatibility helper.

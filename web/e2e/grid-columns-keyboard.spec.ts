@@ -10,7 +10,10 @@ import {
 } from './fixtures'
 import type { DataRow, TableSchema, ViewColumns } from '../src/api/types'
 import { setLocale, setTheme } from './app-shell'
-import { observeViewQuerySchemaConflicts, openGridMore } from './table-controls'
+import {
+  observeViewQuerySchemaConflicts,
+  openGridFormat,
+} from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -175,15 +178,20 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     grid.evaluate(async (element) =>
       (element as HTMLElement & Components.RevoGrid).getSelectedRange(),
     )
-  const fieldsMenu = async (target: Page, messages: typeof en | typeof zh) => {
-    await openGridMore(target)
-    const details = target.locator('.grid-column-options')
-    if (!(await details.evaluate((element) => element.hasAttribute('open'))))
-      await details.locator('summary').click()
+  const formatMenu = async (target: Page, messages: typeof en | typeof zh) => {
+    const details = await openGridFormat(target)
     await expect(
-      target.getByText(messages.grid.visibleFields, { exact: true }),
+      details.getByText(messages.grid.columnOptions, { exact: true }),
     ).toBeVisible()
-    return details
+    return details.locator('.grid-format-menu')
+  }
+  const fieldsMenu = async (target: Page) => {
+    const trigger = target.locator('.grid-fields-trigger')
+    if ((await trigger.getAttribute('aria-expanded')) !== 'true')
+      await trigger.click()
+    const panel = target.locator('.grid-field-popover')
+    await expect(panel).toBeVisible()
+    return panel
   }
 
   for (const [language, theme] of [
@@ -303,17 +311,29 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       .getByRole('button', { name: messages.rowExpand.close, exact: true })
       .click()
     await expect(dialog).toHaveCount(0)
-    const localizedMenu = await fieldsMenu(page, messages)
+    const localizedMenu = await formatMenu(page, messages)
     const widthLabel = messages.grid.columnWidth.replace('{name}', name.name)
-    await localizedMenu.getByLabel(widthLabel, { exact: true }).fill('250')
-    await localizedMenu.getByLabel(widthLabel, { exact: true }).press('Tab')
+    const widthInput = localizedMenu.getByLabel(widthLabel, { exact: true })
+    await widthInput.fill('1001')
+    await widthInput.press('Tab')
+    await expect(widthInput).toHaveAttribute('aria-invalid', 'true')
+    await expect(
+      localizedMenu.getByText(
+        messages.grid.columnWidthInvalid
+          .replace('{min}', '60')
+          .replace('{max}', '1000'),
+        { exact: true },
+      ),
+    ).toBeVisible()
+    await widthInput.fill('250')
+    await widthInput.press('Tab')
+    await expect(widthInput).not.toHaveAttribute('aria-invalid', 'true')
     await localizedMenu
       .getByRole('button', {
         name: messages.grid.columnRight.replace('{name}', name.name),
         exact: true,
       })
       .click()
-    await localizedMenu.getByLabel(note.name, { exact: true }).uncheck()
     await localizedMenu
       .getByLabel(messages.grid.frozenColumns, { exact: true })
       .fill('2')
@@ -330,7 +350,6 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
         width: config.fields.find((field) => field.id === name.id)?.width,
       }
     }).toEqual({ ids: [qty.id, name.id, check.id], frozen: 2, width: 250 })
-    await localizedMenu.getByLabel(note.name, { exact: true }).check()
     await localizedMenu
       .getByRole('button', {
         name: messages.grid.columnLeft.replace('{name}', name.name),
@@ -352,7 +371,13 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
         frozen: config.frozen,
       }
     }).toEqual({ ids: [name.id, qty.id, check.id, note.id], frozen: 0 })
-    await localizedMenu.locator('summary').click()
+    await localizedMenu.locator('input[type="number"]').first().press('Escape')
+    await expect(page.locator('.grid-format')).not.toHaveAttribute('open', '')
+
+    await page.locator('.grid-fields-trigger').click()
+    await expect(page.locator('.grid-field-popover')).toBeVisible()
+    await page.locator('.grid-fields-trigger').click()
+    await expect(page.locator('.grid-field-popover')).not.toBeVisible()
   }
   await setLocale(page, 'en')
   await setTheme(page, 'light')
@@ -362,11 +387,11 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       .getByRole('region', { name: en.grid.title })
       .getByRole('button', { name: en.auth.retry, exact: true }),
   ).toHaveCount(0)
-  await openGridMore(page)
-  const more = page.locator('.grid-more')
-  await expect(more).toHaveAttribute('open', '')
+  await openGridFormat(page)
+  const format = page.locator('.grid-format')
+  await expect(format).toHaveAttribute('open', '')
   await page.locator('.grid-fields-trigger').click()
-  await expect(more).not.toHaveAttribute('open', '')
+  await expect(format).not.toHaveAttribute('open', '')
   await page.locator('.grid-fields-trigger').click()
 
   const nameHeader = grid.getByRole('columnheader', {
@@ -420,7 +445,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       .filter((field) => field.visible)
       .map((field) => field.id),
   ).toEqual([name.id, qty.id, note.id, check.id])
-  const menu = await fieldsMenu(page, en)
+  const menu = await formatMenu(page, en)
   await menu
     .getByLabel(en.grid.columnWidth.replace('{name}', name.name), {
       exact: true,
@@ -437,9 +462,15 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       exact: true,
     })
     .click()
-  await menu.getByLabel(note.name, { exact: true }).uncheck()
-  await menu.getByLabel(en.grid.frozenColumns, { exact: true }).fill('2')
-  await menu.getByLabel(en.grid.frozenColumns, { exact: true }).press('Tab')
+  const fields = await fieldsMenu(page)
+  await fields
+    .getByLabel(en.field.panel.showField.replace('{name}', note.name))
+    .uncheck()
+  const freezeMenu = await formatMenu(page, en)
+  await freezeMenu.getByLabel(en.grid.frozenColumns, { exact: true }).fill('2')
+  await freezeMenu
+    .getByLabel(en.grid.frozenColumns, { exact: true })
+    .press('Tab')
   await poll(async () => {
     const view = await configOf()
     return {
@@ -458,8 +489,10 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
         .map((column) => column.prop),
     ),
   ).toEqual(['__selected', qty.id, name.id])
-  await fieldsMenu(page, en)
-  await page.getByLabel(system.name, { exact: true }).check()
+  const systemFields = await fieldsMenu(page)
+  await systemFields
+    .getByLabel(en.field.panel.showField.replace('{name}', system.name))
+    .check()
   await poll(
     async () =>
       (await configOf()).config.fields.find((field) => field.id === system.id)
@@ -542,11 +575,14 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
         requests.push(request.postData() ?? '')
     })
     const stored = await configOf()
-    const local = await fieldsMenu(collaborator, en)
+    const localFields = await fieldsMenu(collaborator)
     await expect(
       collaborator.getByText(en.grid.columnsLocal, { exact: true }),
     ).toBeVisible()
-    await local.getByLabel(name.name, { exact: true }).uncheck()
+    await localFields
+      .getByLabel(en.field.panel.showField.replace('{name}', name.name))
+      .uncheck()
+    const local = await formatMenu(collaborator, en)
     await local
       .getByLabel(en.grid.columnWidth.replace('{name}', qty.name), {
         exact: true,
@@ -600,7 +636,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
       ).status(),
     ).toBe(200)
     await collaborator.reload()
-    const writable = await fieldsMenu(collaborator, en)
+    const writable = await formatMenu(collaborator, en)
     await writable
       .getByLabel(en.grid.columnWidth.replace('{name}', qty.name), {
         exact: true,
@@ -665,7 +701,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   await page.route(viewRoute, forceStaleVersion)
   try {
     expectHTTPFailure(page, 'PATCH', `/api/v1/views/${viewId}`, 409)
-    const conflictMenu = await fieldsMenu(page, en)
+    const conflictMenu = await formatMenu(page, en)
     await conflictMenu
       .getByLabel(en.grid.columnWidth.replace('{name}', name.name), {
         exact: true,

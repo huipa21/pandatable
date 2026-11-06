@@ -388,6 +388,13 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   refresh. The trailing action is UX-10's New Entry button (D-227). In the
   Grid toolbar the display-field/access summary only fills space left by the
   actions, so the desktop toolbar stays one row (D-229).
+- The desktop Grid's **Format** menu contains row-height presets and per-field
+  widths, ordering and leading-column freezing. Widths accept whole pixels
+  within the configured bounds and report invalid input; Fields remains the
+  only column-visibility control. Quick search has its own accessible toolbar
+  trigger and input, keeps its transient query/debounce behavior, and is not
+  persisted in view config. The obsolete Grid More menu and its hidden Delete
+  action are removed; selected-row actions belong in the visible toolbar.
 - Virtual rows & columns; windowed data fetch (page 100) with placeholders.
 - Frozen columns, resize, reorder (drag header) → saved to view config (if permitted) else local override.
 - Batch-1 and batch-2 pure `FieldKind` definitions live in `src/fields`, bound through

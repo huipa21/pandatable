@@ -12,6 +12,17 @@ import type {
 export const minColumnWidth = 60
 export const maxColumnWidth = 1000
 export const columnSaveDelay = 350
+
+export function parseColumnWidthInput(value: string): number | undefined {
+  const width = Number(value)
+  return value.trim() !== '' &&
+    Number.isInteger(width) &&
+    width >= minColumnWidth &&
+    width <= maxColumnWidth
+    ? width
+    : undefined
+}
+
 const filterOperatorsWithoutValue = new Set([
   'is_empty',
   'is_not_empty',

@@ -261,9 +261,9 @@ test('new table uses a compact, working field and filter toolbar', async ({
     .poll(async () => (await schemaOf()).views[0]!.config.groupBy ?? [])
     .toEqual([])
 
-  await page.locator('.grid-row-height summary').click()
+  await page.locator('.grid-format summary').click()
   await page
-    .locator('.grid-row-height')
+    .locator('.grid-format-menu')
     .getByRole('button', { name: en.grid.rowHeights.medium })
     .click()
   await expect

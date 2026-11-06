@@ -1138,7 +1138,8 @@ it('dismisses toolbar menus on outside pointer interactions', async () => {
   const root = wrapper!.element
   document.body.appendChild(root)
   try {
-    const menu = wrapper!.get('details.grid-more').element as HTMLDetailsElement
+    const menu = wrapper!.get('details.grid-format')
+      .element as HTMLDetailsElement
     menu.open = true
     menu
       .querySelector('input')!
@@ -1151,6 +1152,18 @@ it('dismisses toolbar menus on outside pointer interactions', async () => {
   } finally {
     root.remove()
   }
+})
+
+it('shows localized feedback for invalid Format widths without persisting them', async () => {
+  await mountGrid(schemaFor('text'))
+  const widthInput = wrapper!.get('.grid-column-control input[type="number"]')
+  await widthInput.setValue('1001')
+  await widthInput.trigger('change')
+  expect(widthInput.attributes('aria-invalid')).toBe('true')
+  expect(widthInput.attributes('aria-describedby')).toBeTruthy()
+  expect(wrapper!.get('.grid-column-width-error').text()).toBe(
+    'Enter a whole number from 60 to 1000.',
+  )
 })
 
 it('keeps an incomplete highlight draft while an earlier rule save finishes', async () => {
@@ -2932,9 +2945,8 @@ it('keeps read access read-only and explicitly fetches a selected system field',
   const schema = schemaFor('text', 'read')
   const fetch = await mountGrid(schema)
   expect(wrapper!.find('.grid-add-row').exists()).toBe(false)
-  const fieldCheckboxes = wrapper!.findAll('input[type="checkbox"]')
-  expect(fieldCheckboxes).toHaveLength(2)
-  await fieldCheckboxes[1]!.setValue(true)
+  expect(wrapper!.findAll('input[type="checkbox"]')).toHaveLength(0)
+  wrapper!.vm.$.exposed?.toggleField('system-id', true)
   await flushPromises()
 
   const queryBodies = fetch.mock.calls

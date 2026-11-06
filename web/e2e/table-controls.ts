@@ -119,10 +119,22 @@ export async function sidebarView(page: Page, tableId: string, name: string) {
   return link
 }
 
+export async function openGridFormat(page: Page) {
+  const format = page.locator('.grid-format')
+  await expect(format).toBeVisible()
+  if ((await format.getAttribute('open')) === null)
+    await format.locator(':scope > summary').click()
+  return format
+}
+
+export async function openGridSearch(page: Page) {
+  const search = page.locator('.grid-search')
+  await expect(search).toBeVisible()
+  if ((await search.getAttribute('open')) === null)
+    await search.locator(':scope > summary').click()
+  return search
+}
+
 export async function openGridMore(page: Page) {
-  const more = page.locator('.grid-more')
-  await expect(more).toBeVisible()
-  if ((await more.getAttribute('open')) === null)
-    await more.locator(':scope > summary').click()
-  return more
+  return openGridFormat(page)
 }

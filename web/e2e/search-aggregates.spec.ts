@@ -1,6 +1,6 @@
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
-import { openGridMore } from './table-controls'
+import { openGridSearch } from './table-controls'
 import type { Components } from '@revolist/revogrid'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
@@ -253,7 +253,7 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     return (request.postDataJSON() as { search?: string }).search === 'acme'
   })
   const acmeAggregates = waitForAggregates('acme')
-  await openGridMore(page)
+  await openGridSearch(page)
   await page.getByRole('searchbox', { name: en.grid.quickSearch }).fill('acme')
   const acmeResponse = await acmeQuery
   const acmeRows = (await acmeResponse.json()) as {

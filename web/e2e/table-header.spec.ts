@@ -191,6 +191,12 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
       )
       await expect(toolbar.locator('.visibility-menu')).toBeVisible()
       await expect(toolbar.locator('.view-export')).toBeVisible()
+      if (view.type === 'grid' && width >= 768) {
+        await expect(toolbar.locator('.grid-format')).toBeVisible()
+        await expect(toolbar.locator('.grid-search')).toBeVisible()
+        await expect(toolbar.locator('.grid-more')).toHaveCount(0)
+        await expect(toolbar.locator('.grid-column-options')).toHaveCount(0)
+      }
       await expect(
         page.locator('.table-management, .view-subheader'),
       ).toHaveCount(0)
@@ -260,8 +266,8 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
           ['.grid-groups > summary', '.grid-groups > fieldset'],
           ['.grid-sorts > summary', '.grid-sorts > fieldset'],
           ['.grid-highlights > summary', '.grid-highlights > fieldset'],
-          ['.grid-row-height > summary', '.grid-row-height > fieldset'],
-          ['.grid-more > summary', '.grid-more-menu'],
+          ['.grid-format > summary', '.grid-format-menu'],
+          ['.grid-search > summary', '.grid-search-menu'],
         ] as const) {
           await toolbar.locator(trigger).click()
           const popover = page.locator(panel)
@@ -273,6 +279,19 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
           )
           await toolbar.locator(trigger).click()
         }
+
+        const searchMenu = toolbar.locator('.grid-search')
+        const searchTrigger = searchMenu.locator(':scope > summary')
+        await searchTrigger.focus()
+        await page.keyboard.press('Enter')
+        const searchInput = searchMenu.getByRole('searchbox', {
+          name: labels.grid.quickSearch,
+          exact: true,
+        })
+        await searchInput.focus()
+        await page.keyboard.press('Escape')
+        await expect(searchMenu).not.toHaveAttribute('open', '')
+        await expect(searchTrigger).toBeFocused()
       } else {
         const filter = toolbar.locator('.view-filter')
         await filter.locator('summary').click()

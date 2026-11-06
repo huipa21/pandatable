@@ -68,7 +68,8 @@ test('Visibility menu hosts table sharing on desktop Grid, mobile and non-Grid v
   const highlight = order.indexOf('grid-highlights')
   expect(highlight).toBeGreaterThanOrEqual(0)
   expect(order[highlight + 1]).toBe('visibility-menu')
-  expect(order[highlight + 2]).toBe('grid-row-height')
+  expect(order[highlight + 2]).toBe('grid-format')
+  expect(order[highlight + 3]).toBe('grid-search')
   const trigger = visibility.getByLabel(en.grid.visibilityMenu.label, {
     exact: true,
   })

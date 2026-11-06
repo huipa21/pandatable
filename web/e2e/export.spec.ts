@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import type { Locator } from '@playwright/test'
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
-import { openExportMenu, openGridMore } from './table-controls'
+import { openExportMenu, openGridSearch } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
@@ -178,7 +178,7 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     expect(value).toBe(
       `${name.name},Group,Status\r\nOmega,A,Open\r\nAlpha,A,Open\r\n"中文,""引号""",B,Open\r\n`,
     )
-    await openGridMore(page)
+    await openGridSearch(page)
     await page.getByLabel(en.grid.quickSearch, { exact: true }).fill('Alpha')
     await openExportMenu(page)
     const searchRequest = page.waitForRequest(

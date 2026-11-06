@@ -314,6 +314,7 @@
     "fields": "Fields",
     "visibleFields": "Visible fields",
     "columnWidth": "Width of {name}",
+    "columnWidthInvalid": "Enter a whole number from {min} to {max}.",
     "columnLeft": "Move {name} left",
     "columnRight": "Move {name} right",
     "moveLeft": "Left",
@@ -358,6 +359,7 @@
     "groupPending": "Waiting for the grouping change to be saved.",
     "cancelGroupChange": "Cancel grouping change",
     "highlightMenuLabel": "Highlight",
+    "format": "Format",
     "rowHeight": "Row height",
     "rowHeights": {
       "short": "Short",
@@ -365,7 +367,6 @@
       "tall": "Tall",
       "extra": "Extra tall"
     },
-    "more": "More grid options",
     "columnOptions": "Column width, order and freezing",
     "quickSearch": "Search visible fields",
     "quickSearchPlaceholder": "Search rows",

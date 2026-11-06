@@ -75,7 +75,8 @@ async function setup(
               <button class="grid-create-field" @click="$emit('createField')">Add field</button>
               <details class="grid-highlights"><summary>Colour</summary></details>
               <slot name="after-highlight" />
-              <details class="grid-row-height"><summary>Height</summary></details>
+              <details class="grid-format"><summary>Format</summary></details>
+              <details class="grid-search"><summary>Search</summary></details>
               <div class="grid-toolbar-end">
                 <slot name="toolbar-actions" />
                 <slot name="toolbar-end" />
@@ -826,7 +827,8 @@ it('moves table sharing into the Grid Visibility menu with Escape, outside dismi
     ).toEqual([
       'grid-highlights',
       'visibility-menu visibility-menu--toolbar',
-      'grid-row-height',
+      'grid-format',
+      'grid-search',
     ])
     const menu = toolbar.get('.visibility-menu')
     const details = menu.element as HTMLDetailsElement
