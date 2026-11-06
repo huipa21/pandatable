@@ -108,3 +108,8 @@ deferred to UX-11. Central docs are coordinator-owned.
   e2e/grid-inline-editing.spec.ts` 3 passed, 2 mobile skipped. Needs a
   coordinated gate re-run. Physical touch is untested.
   Handoff: editor sources to UX-09.
+- 2026-11-06 (UX-11): gap coverage passed in the coordinated `ptdev check`
+  (DataGrid undo/rejected-toggle tests), the fast grid batch and both
+  production-image runs (zh-CN/dark choice scenario, AT-329). The later
+  production run failed the linked AT-305/311 PageDown regression; this task
+  remains open. See the [UX-11 record](workspace-grid-11-integration.md#record).

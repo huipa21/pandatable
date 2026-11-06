@@ -3,7 +3,6 @@ import type { Components } from '@revolist/revogrid'
 import {
   test,
   expect,
-  allowHTTPFailure,
   expectHTTPFailure,
   observeBrowser,
   expectBrowserClean,
@@ -11,7 +10,7 @@ import {
 } from './fixtures'
 import type { DataRow, TableSchema, ViewColumns } from '../src/api/types'
 import { setLocale, setTheme } from './app-shell'
-import { openGridMore } from './table-controls'
+import { observeViewQuerySchemaConflicts, openGridMore } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -77,20 +76,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   const schema = await schemaOf()
   const viewId = schema.views[0]!.id
   // Rapid visibility changes can race a view save under snapshot isolation.
-  allowHTTPFailure(page, 'POST', `/api/v1/views/${viewId}/query`, 409)
-  const queryConflicts: Promise<string>[] = []
-  page.on('response', (response) => {
-    if (
-      response.request().method() === 'POST' &&
-      new URL(response.url()).pathname === `/api/v1/views/${viewId}/query` &&
-      response.status() === 409
-    )
-      queryConflicts.push(
-        response
-          .json()
-          .then((body: { error: { code: string } }) => body.error.code),
-      )
-  })
+  const checkQueryConflicts = observeViewQuerySchemaConflicts(page, viewId)
   expect(
     (
       await page.request.patch(`/api/v1/views/${viewId}`, {
@@ -126,6 +112,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     await expect(
       page.getByLabel(en.grid.frozenColumns, { exact: true }),
     ).toHaveCount(0)
+    await checkQueryConflicts()
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -719,8 +706,5 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
   } finally {
     await page.unroute(viewRoute, forceStaleVersion)
   }
-  const observedConflicts = [...queryConflicts]
-  expect(await Promise.all(observedConflicts)).toEqual(
-    observedConflicts.map(() => 'ERR_SCHEMA_CHANGED'),
-  )
+  await checkQueryConflicts()
 })

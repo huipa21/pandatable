@@ -4,6 +4,7 @@ import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifyFields } from './fields'
 import { create as createResource, verifyDataGrid } from './navigation'
+import { observeViewQuerySchemaConflicts } from './table-controls'
 
 test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fallback', async ({
   page,
@@ -47,6 +48,9 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
   const viewId = parts[4]
   if (!tableId || !viewId) throw new Error('Created table route is incomplete')
 
+  // Field-driven view saves can race a grid query under snapshot isolation.
+  const checkQueryConflicts = observeViewQuerySchemaConflicts(page, viewId)
   await verifyFields(page, tableId)
   await verifyDataGrid(page, tableId, viewId)
+  await checkQueryConflicts()
 })

@@ -12,6 +12,7 @@ const props = defineProps<{
   csvReady: boolean
   exportBusy: boolean
   exportError: string
+  fillSummary?: boolean
 }>()
 const emit = defineEmits<{
   import: []
@@ -54,14 +55,23 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismiss))
 
 <template>
   <div class="table-toolbar-actions">
-    <dl class="schema-summary table-info">
-      <div class="table-info-field">
+    <dl
+      class="schema-summary table-info"
+      :class="{ 'table-info-fill': fillSummary }"
+    >
+      <div
+        class="table-info-field"
+        :title="`${t('nav.displayField')}: ${displayField?.name ?? t('nav.noDisplayField')}`"
+      >
         <dt>{{ t('nav.displayField') }}</dt>
         <dd :title="displayField?.name ?? t('nav.noDisplayField')">
           {{ displayField?.name ?? t('nav.noDisplayField') }}
         </dd>
       </div>
-      <div class="table-info-access">
+      <div
+        class="table-info-access"
+        :title="`${t('nav.access')}: ${accessLevelLabel(schema.myLevel)}`"
+      >
         <dt>{{ t('nav.access') }}</dt>
         <dd>{{ accessLevelLabel(schema.myLevel) }}</dd>
       </div>
@@ -109,6 +119,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismiss))
 <style scoped>
 .table-toolbar-actions {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
@@ -128,6 +139,16 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismiss))
   font-size: 0.75rem;
 }
 
+/* Zero intrinsic width: in the Grid toolbar the summary fills only the space
+   left by the actions, so it never pushes them onto a second row (D-229). */
+.table-info-fill {
+  flex: 1 1 0;
+  justify-content: flex-end;
+  row-gap: 0;
+  width: 0;
+  overflow: hidden;
+}
+
 .table-info > div {
   display: flex;
   gap: 4px;
@@ -140,6 +161,14 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismiss))
 
 .table-info dt {
   flex-shrink: 0;
+}
+
+.table-info-fill dt {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table-info dt::after {

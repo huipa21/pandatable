@@ -4042,6 +4042,7 @@ onBeforeUnmount(() => {
 }
 .grid-toolbar-end {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;

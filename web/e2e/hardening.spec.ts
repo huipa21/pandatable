@@ -1070,6 +1070,14 @@ test('AT-806 administrator forms and confirmations work at 390px in both languag
     }
   } finally {
     await closeDialogsAndRestoreEnglish(page)
+    // Later admin scenarios assert an empty group list; do not leak this one.
+    expect(
+      (
+        await page.request.delete(`/api/v1/admin/groups/${group.id}`, {
+          headers: headers(),
+        })
+      ).status(),
+    ).toBe(200)
   }
 })
 

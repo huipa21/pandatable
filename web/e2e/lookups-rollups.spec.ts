@@ -22,7 +22,7 @@ async function signIn(
   await page.getByLabel(en.auth.login, { exact: true }).fill(username)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/(home|change-password)$/)
+  await expect(page).toHaveURL(/\/(?:home|w\/[^/]+|change-password)$/)
 }
 
 async function createTable(page: Page, bookId: string, name: string) {

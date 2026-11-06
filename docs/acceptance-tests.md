@@ -237,6 +237,10 @@ membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
 - **AT-211 — Last owner protected** · M1 · alice (only owner of W) cannot remove or downgrade her own owner grant (`ERR_LAST_OWNER`); after granting bob owner, she can.
 - **AT-212 — Hidden resources are 404** · M1 *(API)* · dave (no grants) requesting T's rows gets 404, not 403; hidden books and their icon metadata are absent from navigation.
 - **AT-213 — Any user creates workspaces** · M1 · carol creates W2 and is its owner.
+- **AT-214 — Default workspace and preferred landing** · UX · A new account owns a workspace named `Default`; renaming it does not recreate a starter. Signing in or visiting `/home` opens the user's preferred workspace, which a reader can change to another accessible workspace; explicit links win; a lost preference repairs once without changing other users. Executable: `default-workspace.spec.ts` (UX-01), `workspace-navigation.spec.ts` (UX-02), PG18 preference/provisioning tests.
+- **AT-215 — All-workspace sidebar** · UX · The sidebar shows a static **Workspaces** heading with a right-aligned Add button and every accessible workspace in server order; selecting and expanding are separate; path-only ancestors show no structure controls or default action. Executable: `workspace-navigation.spec.ts`, `shell.spec.ts`.
+- **AT-216 — Workbook cards with stable icons** · UX · Selecting a workspace shows its accessible books as a responsive card grid. Each book has a stable fallback icon shared by authorized readers; a custom icon overrides it and clearing reveals the same fallback; hidden books are absent. Executable: `workbook-cards.spec.ts`, `workbook-icons.spec.ts`, PG18 `TestBookIcon*`.
+- **AT-217 — Table deletion revokes descendant views** · UX · Deleting a table moves it to Trash and makes all its views, including direct links, unavailable; restoring it restores them. Executable: `trash.spec.ts` (UX-05 scenario).
 
 UX-01 reran AT-101, AT-201, AT-203, AT-208, AT-212 and AT-213 in its task
 gate. New lifecycle scenarios and the UX-02 handoff are in its
@@ -538,6 +542,11 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-325 — Field soft delete** · M2/M3 · Deleting a field hides it everywhere; restoring from Trash brings values back.
   T3.6: **Pass** — desktop/mobile browser deletion hides the field and restores its original value after explicit optional confirmation; PG18 verifies retained configuration, defaults, required-state conflicts and relation storage. [Record](task-prompts/T3.6.md#record-2026-11-01).
 - **AT-326 — Currency default** · M2 · New currency field defaults to CNY (¥ formatting); owner switches it to USD and values display as $; admin changes default currency to EUR → new currency fields default to EUR, existing fields unchanged.
+- **AT-327 — Consolidated table header** · UX · The outer header starts with the workspace name beside the sidebar toggle; the inner table toolbar hosts history, presence, display-field/access information, Import, Export and (rightmost) New Entry in one row; **Views and table options**, the home welcome/signed-in copy and the content-area New Workspace button are absent; Visibility remains ACL sharing. Executable: `table-header.spec.ts`, `visibility-menu.spec.ts`, `workbook-cards.spec.ts` (removed home copy/button).
+- **AT-328 — Single-click scalar editing** · UX · One unmodified click on a writable scalar grid cell opens its editor; leaving it saves a valid draft that persists after reload; an invalid draft stays with its error; Escape cancels; double-click still works; readers cannot edit. Executable: `grid-inline-editing.spec.ts` (scalar scenario).
+- **AT-329 — One-click checkbox and choices** · UX · One click on a checkbox box toggles it once; one click on a single/multi-select opens its options; a single choice commits immediately and multiple choices commit once on leave/Enter; Escape cancels; values persist after reload in en/zh-CN and light/dark. Executable: `grid-inline-editing.spec.ts` (choice scenario), `DataGrid.test.ts` undo/error cases.
+- **AT-330 — Plus after the final row** · UX · Desktop writers see a small plus directly after the last loaded visible row (empty, paged and grouped results); it creates one row with defaults and undo, reveals it, and on required-field failure shows the error and offers New Entry without fabricating data. Executable: `grid-append-row.spec.ts`.
+- **AT-331 — New Entry form** · UX · The rightmost toolbar New Entry opens the existing creation form; cancel creates nothing; creation refreshes filtered/sorted/grouped views and opens the created row; readers have no action; 390 px keeps one add control. Executable: `new-entry.spec.ts`.
 
 ## AT-4xx Relations & Computed (M2)
 
@@ -570,6 +579,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-511 — Form view** · M2 · Owner builds form with custom labels/help/required; bob (write) submits → row created; carol (read) sees form disabled; form works on mobile viewport. **Evidence: PASS** — Go API/structure tests, `FormBuilder.test.ts` and `FormView.test.ts` (4/4), `ptdev check`, and production-browser `form.spec.ts` (3/3 fast E2E) verify configuration persistence/reload, required validation, owner/writer row creation, read-only submission denial, and overflow-free 390 px layout.
   UX-05 form creation and unchanged-refresh draft coverage: [record](task-prompts/workspace-grid-05-view-navigation.md#record).
 - **AT-512 — Filter/group performance** · M2 · On 200k rows: filter + sort + group each respond < 1 s (NFR-3). **Auto-index correctness PASS; target-host performance pending** — PG18 integration verifies strict >10k eligibility, btree/trigram selection, restart/idempotent scheduling, metadata preservation, and retry after metadata failure (T2.14). T2.15's authenticated loopback HTTP first/warm samples were filter 42.8/26.6 ms, sort 65.5/59.4 ms, group 81.2/71.2 ms, all locally <1 s. The 8-vCPU/2-GiB VM is not the 2-vCPU/4-GB target; TLS, reverse-proxy and browser overhead are excluded. Fixture, parameters and plans: [T2.15 record](task-prompts/T2.15.md#record-2026-10-31).
+- **AT-513 — Sidebar view management** · UX · A table's sidebar **⋯** menu creates personal/shared Grid, Form, Kanban and Gallery views that appear under the table and open; each view's menu offers the permitted rename, duplicate, reorder, lock and delete actions; readers create only personal views. Executable: `views.spec.ts` (UX-05 scenario).
 
 ## AT-6xx Collaboration (M3)
 
@@ -756,3 +766,104 @@ and WebKit; Firefox reports unexpected HTTP responses directly. Export tickets
 are redacted from reported failure paths.
 See the [T3.12 record](task-prompts/T3.12.md#record-2026-11-01) for focused
 reruns, gate results and release blockers.
+
+## UX-11 workspace/grid redesign evidence (2026-11-06)
+
+Combined UX-01..UX-10 state; commands and counts are in the
+[UX-11 record](task-prompts/workspace-grid-11-integration.md#record). Mobile
+skips below are the specs' intentional viewport-specific cases. Passes in this
+table are scoped results, not phase certification: the later production run
+failed AT-305/311 and AT-705, and the phase gate remains open.
+
+| Test | Status | Evidence / remaining boundary |
+|---|---|---|
+| AT-214 | Pass | `default-workspace` and `workspace-navigation` desktop/mobile; PG18 preference, provisioning and migration tests in `ptdev check`. |
+| AT-215 | Pass | `workspace-navigation` and `shell` desktop/mobile. |
+| AT-216 | Pass | `workbook-cards` desktop/mobile (custom override, clear-to-fallback, access pruning); `workbook-icons` desktop (API metadata); PG18 `TestBookIcon*`. No icon-picker UI exists; overrides are API-only. |
+| AT-217 | Pass (desktop) | `trash` UX-05 scenario: deleted table's views and deep links are unavailable; restore brings them back. |
+| AT-327 | Pass | `table-header` desktop/mobile, `visibility-menu`, `workbook-cards` absence checks. The integrated state first wrapped the 1280 px Grid toolbar to 82 px; D-229 restored one 48 px row (en/zh-CN). |
+| AT-328 | Pass (desktop) | `grid-inline-editing` scalar scenario including reload persistence, rejected drafts, Escape and reader denial. Physical IME hardware untested. |
+| AT-329 | Pass (desktop) | `grid-inline-editing` choice scenario including zh-CN/dark; `DataGrid.test.ts` checkbox undo and rejected-toggle cases. Physical touch untested. |
+| AT-330 | Pass (desktop) | `grid-append-row` five desktop scenarios (short, paged, grouped, filtered/sorted, errors/permissions); mobile keeps form creation. |
+| AT-331 | Pass | `new-entry` desktop (distinct paths, refresh, reader denial) and 390 px single add action. |
+| AT-513 | Pass | `views` UX-05 scenario desktop/mobile. |
+
+### Numbered redesign scenarios
+
+These IDs map every numbered scenario in the
+[UX-01..UX-10 prompts](task-prompts/workspace-grid-redesign.md#tasks-and-dependencies)
+to executable coverage. The scenario text in each prompt remains the detailed
+criterion; the descriptions below are abbreviated. A mapping is not by itself
+a pass: the phase failures and remaining boundaries are recorded below and in
+the [UX-11 record](task-prompts/workspace-grid-11-integration.md#record).
+Go test names run against required PG18 in `ptdev check`; browser filenames are
+under `web/e2e`, and frontend unit filenames are under `web/src`.
+
+| Scenario | ID | Criterion and executable coverage |
+|---|---|---|
+| UX-01.1 | AT-218 | Starter and owner provisioning: `default-workspace.spec.ts`, `TestSetupFlowPostgreSQL`, `TestAdminDefaultWorkspaceProvisioningRollback`. |
+| UX-01.2 | AT-219 | Concurrent legacy bootstrap and restart: `TestWorkspacePreferenceBootstrapConcurrentRestartAndRename`, `TestWorkspacePreferenceMigrationUpgradePostgreSQL`. |
+| UX-01.3 | AT-220 | Rename, persisted preference and user isolation: `default-workspace.spec.ts`, `TestWorkspacePreferenceBootstrapConcurrentRestartAndRename`, `TestWorkspacePreferenceHTTPContractAndLifecycle`. |
+| UX-01.4 | AT-221 | Invalid, hidden and path-only preference targets: `TestWorkspacePreferenceHTTPContractAndLifecycle`, `TestWorkspacePreferenceAuthorizationFallbackAndReplacement`. |
+| UX-01.5 | AT-222 | Revocation/deletion fallback and concurrent replacement: `default-workspace.spec.ts`, `TestWorkspacePreferenceAuthorizationFallbackAndReplacement`, `TestWorkspacePreferenceRevocationRaces`. |
+| UX-01.6 | AT-223 | Rollback and authorization errors: `TestWorkspacePreferenceFailureLeavesNoPartialData`, `TestSetupTransactionalRollbackPostgreSQL`, `TestAdminDefaultWorkspaceProvisioningRollback`. |
+| UX-02.1 | AT-224 | Default launch and old-copy removal: `default-workspace.spec.ts`, `workspace-navigation.spec.ts`, `workbook-cards.spec.ts`. |
+| UX-02.2 | AT-225 | All workspaces and heading Add: `workspace-navigation.spec.ts`. |
+| UX-02.3 | AT-226 | Rename and startup preference: `workspace-navigation.spec.ts`, `default-workspace.spec.ts`. |
+| UX-02.4 | AT-227 | Explicit links and back/forward navigation: `workspace-navigation.spec.ts`. |
+| UX-02.5 | AT-228 | Table-only ancestry and preference restrictions: `workspace-navigation.spec.ts`, `TestWorkspacePreferenceHTTPContractAndLifecycle`. |
+| UX-02.6 | AT-229 | Collapsed/drawer, keyboard, locale, theme and retry: `workspace-navigation.spec.ts`, `navigation.test.ts`. |
+| UX-03.1 | AT-230 | Stable fallback across readers and restart: `workbook-icons.spec.ts`, `TestBookIconConcurrentUpdatesAndServiceRestart`. |
+| UX-03.2 | AT-231 | Populated upgrade and backfill: `TestBookIconMigrationBackfillsStableFallbacksPostgreSQL`. |
+| UX-03.3 | AT-232 | Override, clear and invalid icon: `workbook-icons.spec.ts`, `TestBookIconAPIAndNavigation`. |
+| UX-03.4 | AT-233 | Icon ACL, hidden siblings, rename/reorder: `workbook-icons.spec.ts`, `TestBookIconNavigationHidesUnauthorizedSiblings`, `TestBookIconLifecycleAndSharedNavigation`. |
+| UX-03.5 | AT-234 | Concurrent updates and migration reruns: `TestBookIconConcurrentUpdatesAndServiceRestart`, `TestBookIconMigrationBackfillsStableFallbacksPostgreSQL`. |
+| UX-04.1 | AT-235 | Empty, single and multi-book workspace switching: `workbook-cards.spec.ts`, `ResourcePage.workbook-cards.test.ts`. |
+| UX-04.2 | AT-236 | Card navigation, icons and long names: `workbook-cards.spec.ts`, `ResourcePage.workbook-cards.test.ts`. |
+| UX-04.3 | AT-237 | Accessible/path-only cards and reader controls: `workbook-cards.spec.ts`, `ResourcePage.workbook-cards.test.ts`. |
+| UX-04.4 | AT-238 | Create/share and stale retry: `workbook-cards.spec.ts`, `ResourcePage.workbook-cards.test.ts`. |
+| UX-04.5 | AT-239 | Responsive cards, keyboard, locales and themes: `workbook-cards.spec.ts`. |
+| UX-05.1 | AT-514 | Create each sidebar view type and retain it: `views.spec.ts`, `viewNavigation.test.ts`. |
+| UX-05.2 | AT-515 | Personal/shared visibility and locking: `views.spec.ts`, `TestViewManagementHTTPAT506AT507`. |
+| UX-05.3 | AT-516 | Authorized view actions and conflicts: `views.spec.ts`, `viewNavigation.test.ts`, `TestViewManagementHTTPAT508ConcurrentSaves`. |
+| UX-05.4 | AT-517 | Cross-table/user guards and pointer/keyboard/touch menu: `views.spec.ts`, `viewNavigation.test.ts`. |
+| UX-05.5 | AT-518 | Descendant views on table trash and restore: `trash.spec.ts`, `TestTrashPersonalViewsAndScopedOwners`. |
+| UX-06.1 | AT-332 | Workspace breadcrumb and removed welcome: `table-header.spec.ts`, `workbook-cards.spec.ts`. |
+| UX-06.2 | AT-333 | Removed options panel and surviving actions: `table-header.spec.ts`, `views.spec.ts`. |
+| UX-06.3 | AT-334 | Visibility ACL sharing and field visibility: `visibility-menu.spec.ts`, `table-header.spec.ts`. |
+| UX-06.4 | AT-335 | Header import/export and permissions: `import.spec.ts`, `export.spec.ts`, `table-header.spec.ts`. |
+| UX-06.5 | AT-336 | Grid/non-grid/mobile actions and keyboard regressions: `table-header.spec.ts`, `grid-columns-keyboard.spec.ts`. |
+| UX-06.6 | AT-337 | Localized, keyboard and 390 px popovers: `table-header.spec.ts`, `hardening.spec.ts`. |
+| UX-07.1 | AT-338 | Single/double-click scalar save and reload: `grid-inline-editing.spec.ts`, `GridCellEditor.test.ts`. |
+| UX-07.2 | AT-339 | Enter/blur deduplication, Escape, composition and multiline: `grid-inline-editing.spec.ts`, `GridCellEditor.test.ts`, `DataGrid.test.ts`. |
+| UX-07.3 | AT-340 | Validation, server errors and ordered writes: `grid-inline-editing.spec.ts`, `DataGrid.test.ts`. |
+| UX-07.4 | AT-341 | Reader/computed cells and scope/revocation guards: `grid-inline-editing.spec.ts`, `DataGrid.test.ts`. |
+| UX-07.5 | AT-342 | Keyboard, ranges, expansion and form regressions: `grid-columns-keyboard.spec.ts`, `grid.spec.ts`, `row-expand.spec.ts`, `mobile-rows.spec.ts`. |
+| UX-07.6 | AT-343 | Bounded virtualization, undo and realtime: `DataGrid.test.ts`, `grid-inline-editing.spec.ts`, `undo.spec.ts`, `realtime.spec.ts`. |
+| UX-08.1 | AT-344 | Checkbox single toggle, reload, undo and failure: `grid-inline-editing.spec.ts`, `DataGrid.test.ts`. |
+| UX-08.2 | AT-345 | Single-select options and clear: `grid-inline-editing.spec.ts`, `GridCellEditor.test.ts`. The wire value is the configured **label**, not an ID (D-221 and UX-08 record). |
+| UX-08.3 | AT-346 | Multi-select draft, leave, Escape and reload: `grid-inline-editing.spec.ts`, `GridCellEditor.test.ts`. |
+| UX-08.4 | AT-347 | Unavailable choices, nulls and list codecs: `grid-inline-editing.spec.ts`, `GridCellEditor.test.ts`, `fields-batch2.spec.ts`. |
+| UX-08.5 | AT-348 | Read-only and scope guards: `grid-inline-editing.spec.ts`, `DataGrid.test.ts`. |
+| UX-08.6 | AT-349 | Keyboard, focus, locales/themes and row forms: `grid-inline-editing.spec.ts`, `GridCellEditor.test.ts`, `row-expand.spec.ts`. |
+| UX-09.1 | AT-350 | Tail gap <=2 CSS px for different lengths/heights: `grid-append-row.spec.ts`. |
+| UX-09.2 | AT-351 | Exactly one direct create, defaults, reload, undo/realtime: `grid-append-row.spec.ts`. |
+| UX-09.3 | AT-352 | Virtualized tail and bounded cache: `grid-append-row.spec.ts`, `remoteWindow.test.ts`. |
+| UX-09.4 | AT-353 | Filter/sort/group and creation errors: `grid-append-row.spec.ts`, `DataGrid.test.ts`. |
+| UX-09.5 | AT-354 | Reader/keyboard/revocation and mobile form: `grid-append-row.spec.ts`, `DataGrid.test.ts`. |
+| UX-10.1 | AT-355 | Rightmost New Entry opens a draft: `new-entry.spec.ts`, `ResourcePage.test.ts`. |
+| UX-10.2 | AT-356 | Typed values, defaults, reload and cancellation: `new-entry.spec.ts`, `RowExpandDialog.test.ts`. |
+| UX-10.3 | AT-357 | Required/unique/network errors, duplicate-submit and ACL: `new-entry.spec.ts`, `RowExpandDialog.test.ts`. |
+| UX-10.4 | AT-358 | Filtered/sorted/grouped refresh: `new-entry.spec.ts`. |
+| UX-10.5 | AT-359 | Scope/focus, locale/theme, mobile and deep links: `new-entry.spec.ts`, `RowExpandDialog.test.ts`, `ResourcePage.test.ts`. |
+| UX-10.6 | AT-360 | Distinct direct-plus and form paths: `new-entry.spec.ts`, `grid-append-row.spec.ts`. |
+
+The UX-11 grid console 409 occurred while field-driven view saves and queries
+overlapped. `grid.spec.ts` and AT-304 now allow only the optional
+`ERR_SCHEMA_CHANGED` query conflict, following the Fields-menu regression
+test. The cause of the earlier T3.12 grid 409 has not been established.
+AT-705's lifetime-peak RSS is order-dependent: a fast batch saw 310.9 MB and
+the latest production run 308,662,272 bytes already reached *before* the
+import. The latter peak was unchanged after import, but still exceeded the
+300,000,000-byte limit. Isolated runs passed (258-276 MB); the backend import
+path and threshold were not altered.

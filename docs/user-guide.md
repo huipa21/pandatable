@@ -32,7 +32,8 @@ default** to make it your startup workspace; simply visiting another workspace
 does not change that preference.
 
 Open a workspace and choose **New book**, then open the book and choose **New
-table**. A new table has a default grid and a display field named Name or 名称
+table**. A workspace shows its books as cards in a grid; each book keeps the same
+icon for everyone who can see it. A new table has a default grid and a display field named Name or 名称
 according to the creator's profile language. Select a book to show its tables,
 select a table name to open its default view, or activate the table icon to list
 its views. A path-only workspace is context for shared descendants, not an
@@ -72,9 +73,12 @@ exists. Attachment
 fields support file selection and drag-and-drop; the administrator's upload
 limit applies.
 
-In the desktop grid, click a checkbox to toggle it or click a select cell to
-choose an option. Multi-select choices stay open while you make changes; leave
-the editor or press Enter to save them, or press Escape to cancel.
+In the desktop grid, click a text, number or date cell once to edit it (double-click,
+Enter or F2 also work). Leaving the cell saves a valid value; an invalid value
+stays in the editor with its error, and Escape cancels. Click a checkbox to
+toggle it or click a select cell to choose an option. Multi-select choices stay
+open while you make changes; leave the editor or press Enter to save them, or
+press Escape to cancel.
 
 On desktop, copy and paste cell ranges, use Ctrl+D to fill down, and use Ctrl+Z
 or Ctrl+Y to undo or redo. An undo can ask for confirmation if another user
@@ -195,7 +199,8 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 使用标题右侧的**新建工作区**按钮可创建其他工作区。在可访问工作区的 **⋯** 菜单中
 选择**设为默认工作区**可更改启动时打开的工作区；仅访问其他工作区不会更改此设置。
 
-打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。新表默认包含
+打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。工作区以卡片网格
+显示其工作簿；每个工作簿对所有可见用户显示相同的图标。新表默认包含
 一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或名称。选择工作簿
 可展开其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。仅路径
 工作区只为共享的下级资源提供上下文，不能设为默认工作区，也不能管理其结构。页眉
@@ -220,6 +225,11 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 同时保存数据表的字段顺序），用复选框显示或隐藏它，或打开 **⋯** 菜单编辑、移动或删除。
 **编辑**与**添加字段**使用相同布局，高级设置中可设为显示字段；存在安全转换时，所有者可在其中更改字段类型。
 附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
+
+在桌面网格中，单击文本、数字或日期单元格即可编辑（双击、Enter 或 F2 同样可用）。
+离开单元格时会保存有效值；无效值会连同错误提示保留在编辑器中，按 Escape 取消。
+单击复选框可切换其状态，单击选择字段单元格可选择选项。多选选项在修改期间保持打开；
+离开编辑器或按 Enter 保存，按 Escape 取消。
 
 在桌面端，可以复制粘贴单元格区域、使用 Ctrl+D 向下填充，以及使用 Ctrl+Z 或
 Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需要确认。在窄屏上，行以

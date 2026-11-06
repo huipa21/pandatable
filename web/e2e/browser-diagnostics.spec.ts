@@ -7,6 +7,7 @@ import {
   observeBrowser,
   test,
 } from './fixtures'
+import { observeViewQuerySchemaConflicts } from './table-controls'
 
 test('browser diagnostics match an expected console failure by URL and status', () => {
   const failures = [{ status: 409, url: 'http://127.0.0.1/expected' }]
@@ -82,6 +83,42 @@ test('browser diagnostics preserve unexpected failures beside expected failures'
     expect(diagnostics.errors[2]).toContain('intentional diagnostic warning')
     expect(diagnostics.errors[3]).toContain('intentional diagnostic error')
     diagnostics.errors.splice(0)
+    expectBrowserClean(probe, diagnostics)
+  } finally {
+    await probe.close()
+  }
+})
+
+test('optional view-query conflicts must carry the schema-change error', async ({
+  browser,
+}) => {
+  const probe = await browser.newPage({ baseURL: process.env.PT_E2E_BASE_URL })
+  const diagnostics = await observeBrowser(probe)
+  try {
+    await probe.route('**/api/v1/views/*/query', (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: {
+            code: route.request().url().includes('/expected/')
+              ? 'ERR_SCHEMA_CHANGED'
+              : 'ERR_VERSION_CONFLICT',
+          },
+        }),
+      }),
+    )
+    await probe.goto('/login')
+    const checkExpected = observeViewQuerySchemaConflicts(probe, 'expected')
+    const checkWrong = observeViewQuerySchemaConflicts(probe, 'wrong')
+    const statuses = await probe.evaluate(async () => [
+      (await fetch('/api/v1/views/expected/query', { method: 'POST' })).status,
+      (await fetch('/api/v1/views/wrong/query', { method: 'POST' })).status,
+    ])
+    expect(statuses).toEqual([409, 409])
+    await checkExpected()
+    await expect(checkWrong()).rejects.toThrow()
+    await expect.poll(() => diagnostics.pendingFailures).toEqual([])
     expectBrowserClean(probe, diagnostics)
   } finally {
     await probe.close()

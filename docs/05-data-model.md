@@ -36,7 +36,7 @@ are never renamed and trashed physical-name reservations are never reused.
 
 The SQL below describes the core schema; the executable source is
 [`0001_initial.sql`](../migrations/0001_initial.sql) and the forward-only
-migrations through [`0007_workspace_preferences.sql`](../migrations/0007_workspace_preferences.sql). Never edit an applied
+migrations through [`0008_book_icons.sql`](../migrations/0008_book_icons.sql). Never edit an applied
 migration. See D-069..D-071 for the T1.1 integrity clarifications.
 
 ```sql

@@ -108,6 +108,39 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     }
   }
   if (!isMobile) {
+    await page.setViewportSize({ width: 1280, height: 844 })
+    const toolbar = page.locator('.grid-toolbar')
+    for (const locale of ['en', 'zh-CN'] as const) {
+      for (const theme of ['light', 'dark'] as const) {
+        await setLocale(page, locale)
+        await setTheme(page, theme)
+        const labels = locale === 'en' ? en : zh
+        const newEntry = toolbar.getByRole('button', {
+          name: labels.workspaceGrid.ux10.newEntry,
+          exact: true,
+        })
+        await expect(newEntry).toBeVisible()
+        await expect
+          .poll(async () => (await toolbar.boundingBox())?.height)
+          .toBeLessThanOrEqual(56)
+        const actionBounds = (await toolbar
+          .locator('.table-toolbar-actions')
+          .boundingBox())!
+        const entryBounds = (await newEntry.boundingBox())!
+        expect(entryBounds.x).toBeGreaterThanOrEqual(
+          actionBounds.x + actionBounds.width - 1,
+        )
+        expect(
+          await toolbar
+            .locator('.table-info-fill dt')
+            .first()
+            .evaluate((element) => getComputedStyle(element).flexShrink),
+        ).toBe('1')
+        await noPageOverflow(page)
+      }
+    }
+    await setLocale(page, 'en')
+    await setTheme(page, 'light')
     await page.getByRole('button', { name: en.nav.collapseSidebar }).click()
     await bounded(page, page.locator('.breadcrumbs .breadcrumb-workspace'))
     await expect(page.locator('.avatar-button')).toBeVisible()

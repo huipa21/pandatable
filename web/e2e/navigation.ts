@@ -20,7 +20,11 @@ import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { verifySharing } from './sharing'
 import { verifyFieldReader, verifyFields } from './fields'
-import { openFieldPanel, sidebarView } from './table-controls'
+import {
+  observeViewQuerySchemaConflicts,
+  openFieldPanel,
+  sidebarView,
+} from './table-controls'
 import { formatTsv } from '../src/components/grid/tsv'
 
 const headers = () => ({
@@ -696,7 +700,7 @@ export async function verifyNavigation(
       }),
     ])
     // Field-driven view saves can race a grid query under snapshot isolation.
-    allowHTTPFailure(alice, 'POST', `/api/v1/views/${viewId}/query`, 409)
+    const checkQueryConflicts = observeViewQuerySchemaConflicts(alice, viewId)
     const fieldFixture = await verifyFields(alice, tid)
     const nav = await tree(alice)
     await expect(nav.locator('[data-nav-id]')).toHaveCount(4)
@@ -811,6 +815,15 @@ export async function verifyNavigation(
       error: { code: 'ERR_NOT_FOUND' },
     })
     await (await adminLink(admin, en.workspaces.title)).click()
+    // Every account now owns a starter workspace (UX-01), so a long run can
+    // push this workspace past the first inventory page; search for it.
+    await admin
+      .getByLabel(en.workspaces.searchHint, { exact: true })
+      .fill('工作区 W')
+    await admin
+      .locator('main')
+      .getByRole('button', { name: en.admin.search, exact: true })
+      .click()
     const inventory = admin.locator(`[data-workspace="${wid}"]`)
     await expect(inventory).toContainText('工作区 W')
     await expect(inventory).toContainText(aliceUsername)
@@ -998,6 +1011,7 @@ export async function verifyNavigation(
       .getByRole('button', { name: en.admin.cancel, exact: true })
       .click()
     await closeDrawer(alice)
+    await checkQueryConflicts()
   } finally {
     expect(
       (

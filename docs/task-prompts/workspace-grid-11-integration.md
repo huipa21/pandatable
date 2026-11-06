@@ -73,4 +73,42 @@ and change approach or report the blocker, not repeated long reruns.
 
 ## Record
 
-Not started.
+2026-11-06: Started alone after the UX-01..UX-10 handoffs were committed.
+Integration is implemented, but UX-11 and the affected tasks remain open:
+the phase gate failed and the canonical 600-second budget was not verified.
+
+- D-229 restores a single 48 px Grid toolbar row at 1280 px with New Entry
+  rightmost. Updated the data/frontend docs, bilingual guide and D-228/D-229;
+  mapped all numbered redesign scenarios to AT IDs and executable tests.
+- Test integration: updated preferred-workspace landing assertions; searched
+  paginated admin inventory; removed a leaked test group; waited for the
+  realtime dialog route to close; narrowly allowed deliberate revocation 401s;
+  increased the mail log-read buffer; and checked that optional field-save/query
+  conflicts have the `ERR_SCHEMA_CHANGED` code. Assertions were retained.
+- `ptdev check` passed three times, including after the final code changes
+  (869 frontend tests; optional golangci-lint absent). Required-PG18
+  `ptdev test -v -run 'Test(WorkspacePreference|BookIcon|Setup.*PostgreSQL|AdminDefaultWorkspaceProvisioning|.*ACL|.*Migration|ViewManagementHTTP|TrashPersonalViews)'`
+  passed 38 selected Go tests and all 869 frontend tests.
+  Eleven final bounded `ptdev e2e --fast` batches covered the affected specs
+  under the unmodified 600-second budget: 114 passed, 26 intentionally skipped
+  (counts include repeated setup). The isolated import suite passed 4/1;
+  four repeated desktop AT-305/311 scenarios also passed. Earlier large fast
+  batches hit the 600-second limit, one failed AT-705, and several reruns used
+  `--global-timeout=1800000`; the final bounded batches supersede those
+  nonstandard task-gate runs. One initial backslash-containing Playwright
+  filename pattern matched no tests; corrected filename patterns were used.
+- Browser inspection at exactly 390, 820 and 1280 CSS px, en/zh-CN and
+  light/dark: five tests passed, with tail-plus geometry, rightmost New Entry,
+  removed copy/panel, keyboard Export and no unexpected console errors checked.
+- Both complete production-image runs used the explicit
+  `--global-timeout=7200000` override, **not** D-155/D-158's 600-second budget.
+  Each reported 121 passed, 35 skipped, 4 failed. Run 1 failed the grid 409,
+  mail log buffer, revocation diagnostic and leaked-group scenarios; targeted
+  fixes passed. Run 2 failed AT-305/311 PageDown, AT-705, a stale lookup landing
+  selector and mobile admin inventory pagination; the last two fixes passed
+  focused reruns. In zh-CN/dark, PageDown after Ctrl+End/Ctrl+Home stayed on
+  row ID 1 instead of 18; its cause is unproven despite passing repeats.
+  AT-705's process-lifetime peak was 308,662,272 bytes before import and did
+  not rise afterward, already exceeding the unchanged 300,000,000-byte limit.
+- Physical IME/touch, unrelated AT-307 and target-host certification remain
+  unverified. No further production rerun was used to mask the failures.

@@ -32,7 +32,7 @@ async function signIn(page: Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/(home|change-password)$/)
+  await expect(page).toHaveURL(/\/(?:home|w\/[^/]+|change-password)$/)
 }
 
 function dateInZone(timeZone: string) {

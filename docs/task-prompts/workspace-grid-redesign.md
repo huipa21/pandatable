@@ -1,6 +1,8 @@
 # Workspace and grid redesign - execution index
 
-Status: planning only; no application changes or acceptance passes are claimed.
+Status: UX-01..UX-10 implemented and integrated; UX-11 assigned acceptance IDs
+and attempted phase validation with an extended timeout. The canonical phase
+gate remains open (see its [Record](workspace-grid-11-integration.md#record)).
 Run one numbered prompt per session. Read this index before its task prompt.
 
 ## Requested outcome and interpretations

@@ -11,8 +11,12 @@ const app = process.env.PT_E2E_APP_CONTAINER!
 const baseURL = process.env.PT_E2E_BASE_URL!
 const project = process.env.COMPOSE_PROJECT_NAME!
 const headers = () => ({ Origin: baseURL, 'X-PT-CSRF': '1' })
+// App logs grow across a full production run; keep them above the 1 MiB default.
 const run = (...args: string[]) =>
-  execFileSync(engine, args, { encoding: 'utf8' }).trim()
+  execFileSync(engine, args, {
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+  }).trim()
 
 interface CapturedMail {
   recipient: string

@@ -4,7 +4,10 @@ import { test, expect, expectHTTPFailure, paceLogin } from './fixtures'
 import type { DataRow, RowQueryResult, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
 import { create as createResource } from './navigation'
-import { openFieldPanel } from './table-controls'
+import {
+  observeViewQuerySchemaConflicts,
+  openFieldPanel,
+} from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -972,7 +975,9 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
     ).toHaveCount(0)
   }
 
-  // The Fields control reveals them.
+  // The Fields control reveals them. Rapid column saves can conflict with a
+  // concurrent grid query, as in the Fields menu specs.
+  const checkQueryConflicts = observeViewQuerySchemaConflicts(page, viewId)
   const fieldsMenu = await openFieldPanel(page)
   await fieldsMenu
     .getByRole('button', { name: en.field.panel.systemFields })
@@ -1147,4 +1152,5 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
     headers: headers(),
     data: { status: 'disabled' },
   })
+  await checkQueryConflicts()
 })

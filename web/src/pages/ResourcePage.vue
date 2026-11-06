@@ -1139,6 +1139,7 @@ onBeforeUnmount(() => {
               </template>
               <template #toolbar-actions>
                 <TableToolbarActions
+                  fill-summary
                   :schema="schema"
                   :view="view"
                   :identity="auth.user?.id ?? ''"

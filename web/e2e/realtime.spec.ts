@@ -286,11 +286,16 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
       (element) => getComputedStyle(element).borderTopColor,
     )
     expect(outlineColor).toBe(avatarColor)
-    if (isMobile)
+    if (isMobile) {
       await bob
         .locator('dialog.row-expand')
         .getByRole('button', { name: en.rowExpand.close, exact: true })
         .click()
+      // Closing navigates away from the row route; the drawer closes on
+      // navigation, so open it only after that route change settles.
+      await expect(bob).not.toHaveURL(/\/r\/[^/]+$/)
+      await expect(bob.locator('dialog.row-expand')).toHaveCount(0)
+    }
     const beforeSwitch = aliceFrames.length
     await (await sidebarView(bob, tableId, 'Bob private')).click()
     await expect
@@ -538,6 +543,7 @@ test('AT-601/602/603/605/107: live grid, LWW, reconnect and revocation', async (
 
     allowHTTPFailure(bob, 'GET', '/api/v1/nav', 401)
     allowHTTPFailure(bob, 'GET', `/api/v1/tables/${tableId}/schema`, 401)
+    allowHTTPFailure(bob, 'GET', '/api/v1/notifications', 401)
     const disabledAt = Date.now()
     const disable = await page.request.patch(`/api/v1/admin/users/${userId}`, {
       headers: h,

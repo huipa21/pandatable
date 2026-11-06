@@ -1,6 +1,30 @@
 import type { Page } from '@playwright/test'
-import { expect } from './fixtures'
+import { allowHTTPFailure, expect } from './fixtures'
 import en from '../src/i18n/en.json' with { type: 'json' }
+
+export function observeViewQuerySchemaConflicts(page: Page, viewId: string) {
+  const path = `/api/v1/views/${viewId}/query`
+  const conflicts: Promise<string>[] = []
+  allowHTTPFailure(page, 'POST', path, 409)
+  page.on('response', (response) => {
+    if (
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === path &&
+      response.status() === 409
+    )
+      conflicts.push(
+        response
+          .json()
+          .then((body: { error: { code: string } }) => body.error.code),
+      )
+  })
+  return async () => {
+    const observed = [...conflicts]
+    expect(await Promise.all(observed)).toEqual(
+      observed.map(() => 'ERR_SCHEMA_CHANGED'),
+    )
+  }
+}
 
 export async function openFieldPanel(page: Page) {
   const panel = page.getByRole('region', {

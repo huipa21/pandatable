@@ -114,3 +114,11 @@ evidence for AT-204, AT-301, AT-302, AT-305, AT-306, AT-309 and AT-320.
 Preserve the uncommitted UX-01/planning changes and avoid mixed commits. The
 full production-image gate remains reserved for UX-11; physical IME behavior
 has not been claimed as tested.
+
+### 2026-11-06 - UX-11 verification
+
+D-228 recorded. The coordinated `ptdev check`, fast grid batch and both
+production-image runs passed the scalar scenario (AT-328). The later
+production-image run failed the linked AT-305/311 PageDown regression;
+focused repetitions pass, but the cause is unproven and this task remains open.
+See the [UX-11 record](workspace-grid-11-integration.md#record).

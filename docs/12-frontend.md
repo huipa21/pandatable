@@ -375,7 +375,9 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   visible columns. Toolbar popovers stay above row content and close other menus
   when activated. Field and filter popovers remain outside the schema-keyed Grid
   and track the wrapping toolbar's height, preserving editor feedback on schema
-  refresh. The trailing action position is reserved for UX-10.
+  refresh. The trailing action is UX-10's New Entry button (D-227). In the
+  Grid toolbar the display-field/access summary only fills space left by the
+  actions, so the desktop toolbar stays one row (D-229).
 - Virtual rows & columns; windowed data fetch (page 100) with placeholders.
 - Frozen columns, resize, reorder (drag header) → saved to view config (if permitted) else local override.
 - Batch-1 and batch-2 pure `FieldKind` definitions live in `src/fields`, bound through
@@ -391,6 +393,15 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   the separate, permission-checked label resolver (D-161/D-162).
   The real table route lazy-loads these components through T1.16's production
   grid. The synthetic spike stays isolated in `SpikeDataGrid.vue`.
+- UX-07's grid-only scalar editing (D-228) opens the cell editor on a single
+  unmodified primary click of a writable scalar cell (not a drag); double-click,
+  Enter and F2 still open it. Leaving the editor commits a valid draft once
+  through the existing serialized cell PATCH and undo; invalid drafts stay open
+  with their localized error, Escape cancels, and IME composition is never
+  committed mid-compose. Read-only, computed, system and non-scalar cells keep
+  their own behavior. Pending writes are guarded against table, view, user,
+  schema and permission changes; overlapping realtime updates reconcile
+  without clearing the loaded window. Row forms keep explicit Save.
 - UX-08's grid-only choice interactions (D-221) toggle a writable checkbox once
   when its box is clicked; clicking elsewhere selects the cell and Space also
   toggles it. One click opens a single- or multi-select listbox. A single choice
@@ -420,7 +431,7 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   is visible. It uses the existing row API and undo, then requeries and reveals
   the created row if present; filters, sorting or collapsed groups may affect
   its visibility. Required/unique failures show the server error and point to
-  the upcoming New Entry action rather than fabricating values.
+  the New Entry form rather than fabricating values.
   Append requery keeps the previous logical length as empty, non-data
   placeholders until authoritative rows arrive, avoiding virtual-scroll resets
   (D-223). Grouped requery likewise retains geometry and loads the anchored
