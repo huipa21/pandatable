@@ -43,6 +43,42 @@ it('coalesces reads, preserves server order and prevents old/other-identity resp
   expect(nav.items).toEqual([])
 })
 
+it('maps workspace metadata and sends optional icon/description on create and update', async () => {
+  const fetch = vi.fn((_path: string, options: RequestInit) =>
+    Promise.resolve(
+      Response.json(
+        options.method === 'GET'
+          ? navigation()
+          : { workspace: { id: 'created' }, eventId: 'opaque' },
+      ),
+    ),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const nav = useNavStore()
+  await nav.refresh()
+  expect(nav.items[0]).toMatchObject({
+    description: 'Workspace description',
+    bookIcon: 'star',
+  })
+
+  await nav.submit(
+    { operation: 'create', kind: 'workspace' },
+    'Created',
+    { icon: 'calendar', description: 'New workspace' },
+  )
+  await nav.submit(
+    { operation: 'rename', kind: 'workspace', id: 'w' },
+    'Updated',
+    { icon: null, description: '' },
+  )
+
+  const writes = fetch.mock.calls.filter(([, options]) => options.method !== 'GET')
+  expect(writes.map(([path, options]) => [path, options.method, options.body])).toEqual([
+    ['/api/v1/workspaces', 'POST', '{"name":"Created","icon":"calendar","description":"New workspace"}'],
+    ['/api/v1/workspaces/w', 'PATCH', '{"name":"Updated","icon":null,"description":""}'],
+  ])
+})
+
 it('mirrors owner-of-parent and path-only controls, not the admin role', async () => {
   const tree = navigation()
   const w = tree.workspaces[0]!

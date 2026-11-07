@@ -13,11 +13,13 @@ import (
 // structure by UUID only (D-002).
 
 type Workspace struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Icon      *string   `json:"icon"`
-	Color     *string   `json:"color"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Icon         *string   `json:"icon"`
+	Color        *string   `json:"color"`
+	Description  string    `json:"description"`
+	FallbackIcon string    `json:"fallbackIcon"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 type Book struct {

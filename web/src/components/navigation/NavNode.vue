@@ -17,8 +17,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const nav = useNavStore()
 const route = useRoute()
-// Workbooks start open; a table's view list is a dropdown opened on demand.
-const expanded = ref(props.item.kind === 'book')
+const expanded = ref(false)
 const current = computed(
   () =>
     (props.item.kind === 'book' && route.params.bookId === props.item.id) ||
@@ -26,15 +25,28 @@ const current = computed(
       route.params.tableId === props.item.id &&
       !route.params.viewId),
 )
-watch(
-  [() => route.params.tableId, () => route.params.viewId],
-  ([tableId, viewId]) => {
-    if (
-      props.item.kind === 'table' &&
-      tableId === props.item.id &&
-      typeof viewId === 'string'
+const routeRequiresExpansion = computed(() => {
+  if (props.item.kind === 'book')
+    return props.item.children.some(
+      (child) => child.id === route.params.tableId,
     )
-      expanded.value = true
+  return (
+    props.item.kind === 'table' &&
+    route.params.tableId === props.item.id &&
+    typeof route.params.viewId === 'string'
+  )
+})
+watch(
+  () => props.item.id,
+  () => {
+    expanded.value = false
+    if (routeRequiresExpansion.value) expanded.value = true
+  },
+)
+watch(
+  routeRequiresExpansion,
+  (requiresExpansion) => {
+    if (requiresExpansion) expanded.value = true
   },
   { immediate: true },
 )
@@ -49,16 +61,29 @@ watch(
       @dragover.prevent
       @drop.prevent.stop="emit('drop', item)"
     >
-      <button
-        v-if="item.kind === 'book'"
-        class="book-toggle"
-        :aria-expanded="expanded"
-        @click="expanded = !expanded"
-      >
-        <AppIcon :name="expanded ? 'chevronDown' : 'chevronRight'" :size="14" />
-        <AppIcon name="book" :size="16" />
-        <span class="nav-name">{{ item.name }}</span>
-      </button>
+      <template v-if="item.kind === 'book'">
+        <button
+          class="book-toggle"
+          :aria-label="t('nav.toggle', { name: item.name })"
+          :title="t('nav.toggle', { name: item.name })"
+          :aria-expanded="expanded"
+          @click="expanded = !expanded"
+        >
+          <AppIcon
+            :name="expanded ? 'chevronDown' : 'chevronRight'"
+            :size="14"
+          />
+        </button>
+        <RouterLink
+          class="nav-name book-link"
+          :to="item.path"
+          :aria-current="current ? 'page' : undefined"
+          @click="emit('navigate')"
+        >
+          <AppIcon name="book" :size="16" />
+          <span>{{ item.name }}</span>
+        </RouterLink>
+      </template>
       <template v-else>
         <button
           class="table-toggle"
@@ -125,3 +150,32 @@ watch(
     </ul>
   </li>
 </template>
+
+<style scoped>
+.nav-row-book .book-toggle {
+  flex: 0 0 24px;
+  justify-content: center;
+}
+
+.nav-row-book .book-link {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+}
+
+.book-link span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .nav-row-book .book-toggle {
+    flex-basis: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
+</style>

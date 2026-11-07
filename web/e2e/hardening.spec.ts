@@ -21,6 +21,7 @@ import type {
 } from '../src/api/types'
 import { openAccountMenu, setLocale } from './app-shell'
 import { openCreateView } from './table-controls'
+import { closeMobileNavigation, openShare } from './sharing'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { expect, paceLogin, test } from './fixtures'
@@ -267,12 +268,14 @@ async function closeDialogsAndRestoreEnglish(page: Page) {
   await english(page)
 }
 
-async function inspectSharing(page: Page, locale: typeof en, search: boolean) {
-  if (search) await page.locator('.visibility-menu > summary').click()
-  await page
-    .locator('main')
-    .getByRole('button', { name: locale.sharing.open, exact: true })
-    .click()
+async function inspectSharing(
+  page: Page,
+  locale: typeof en,
+  kind: 'workspace' | 'table',
+  id: string,
+  search: boolean,
+) {
+  await openShare(page, kind, id, locale)
   const sharing = page.getByRole('dialog', {
     name: locale.sharing.title,
     exact: true,
@@ -299,6 +302,7 @@ async function inspectSharing(page: Page, locale: typeof en, search: boolean) {
     .getByRole('button', { name: locale.sharing.close, exact: true })
     .click()
   await expect(sharing).not.toBeVisible()
+  await closeMobileNavigation(page, locale)
 }
 
 async function inspectImport(
@@ -516,7 +520,14 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
           await page
             .getByRole('button', { name: locale.nav.close, exact: true })
             .click()
-        if (target.kind === 'book') await inspectSharing(page, locale, false)
+        if (target.kind === 'book')
+          await inspectSharing(
+            page,
+            locale,
+            'workspace',
+            data.workspaceId,
+            false,
+          )
         if (target.kind === 'table')
           await inspectImport(page, locale, 'newTable')
       }
@@ -564,7 +575,7 @@ test('AT-806 table dialogs at 390px in both languages', async ({
       if (locale === zh) await setLocale(page, 'zh-CN')
       await page.goto(`/t/${data.tableId}/v/${data.viewId}`)
 
-      await inspectSharing(page, locale, true)
+      await inspectSharing(page, locale, 'table', data.tableId, true)
       await inspectImport(page, locale, 'append')
 
       const selectedRow = page.getByRole('checkbox', {

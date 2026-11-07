@@ -25,15 +25,22 @@ export const themeToggleName = exactly([
   zh.common.useLight,
 ])
 
-/** The header language toggle shows the name of the language it switches to. */
+/** Selects a locale from the header language menu. */
 export async function setLocale(page: Page, locale: 'en' | 'zh-CN') {
-  const toggle = page.locator('.language-toggle')
+  const toggle = page.locator('.language-menu-trigger')
   await expect(toggle).toBeVisible()
-  const target =
-    locale === 'en' ? en.common.languages.en : en.common.languages.zhCN
-  if ((await toggle.textContent())?.trim() === target) await toggle.click()
+  await toggle.click()
+  const option = page
+    .locator('.language-menu-item')
+    .filter({ has: page.locator(`.language-menu-native[lang="${locale}"]`) })
+  await expect(option).toBeVisible()
+  if ((await option.getAttribute('aria-checked')) === 'true') {
+    await page.keyboard.press('Escape')
+  } else {
+    await option.click()
+  }
   await expect(page.locator('html')).toHaveAttribute('lang', locale)
-  await expect(toggle).not.toHaveText(target)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
 }
 
 /** Clicks the header theme toggle only when the effective theme differs. */

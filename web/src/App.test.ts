@@ -24,14 +24,20 @@ it('AT-003: header toggles update the login surface and Naive UI configuration',
   })
   try {
     expect(wrapper.find('h1').text()).toBe('Welcome to PandaTable')
-    const language = wrapper.get('.preferences .language-toggle')
-    expect(language.text()).toBe('中文')
+    const language = wrapper.get('.preferences .language-menu-trigger')
+    expect(language.attributes('aria-haspopup')).toBe('menu')
     await language.trigger('click')
+    expect(wrapper.findAll('[role="menuitemradio"]')).toHaveLength(2)
+    await wrapper.findAll('[role="menuitemradio"]')[1]!.trigger('click')
     await flushPromises()
     await vi.waitFor(() =>
       expect(wrapper.find('h1').text()).toBe('欢迎使用 PandaTable'),
     )
-    expect(wrapper.get('.preferences .language-toggle').text()).toBe('English')
+    expect(
+      wrapper
+        .get('.preferences .language-menu-trigger')
+        .attributes('aria-expanded'),
+    ).toBe('false')
     await wrapper.get('[aria-label="切换到深色主题"]').trigger('click')
     expect(usePreferencesStore(pinia).theme).toBe('dark')
     expect(wrapper.find('[aria-label="切换到浅色主题"]').exists()).toBe(true)

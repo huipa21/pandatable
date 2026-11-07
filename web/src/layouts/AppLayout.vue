@@ -12,6 +12,7 @@ import AppBreadcrumbs from '../components/navigation/AppBreadcrumbs.vue'
 import NavSidebar from '../components/navigation/NavSidebar.vue'
 import SearchPalette from '../components/navigation/SearchPalette.vue'
 import UserMenu from '../components/account/UserMenu.vue'
+import LanguageMenu from '../components/account/LanguageMenu.vue'
 
 const { t } = useI18n()
 const preferences = usePreferencesStore()
@@ -33,15 +34,6 @@ const sidebarShown = computed(
   () =>
     navigationVisible.value && !mobile.value && !preferences.sidebarCollapsed,
 )
-const otherLocale = computed(() =>
-  preferences.locale === 'en' ? 'zh-CN' : 'en',
-)
-const otherLocaleName = computed(() =>
-  otherLocale.value === 'en'
-    ? t('common.languages.en')
-    : t('common.languages.zhCN'),
-)
-
 watch(
   routeWorkspaceId,
   (id) => {
@@ -102,14 +94,7 @@ function toggleSidebar() {
         <AppBreadcrumbs v-if="navigationVisible" />
         <div class="preferences" :aria-label="t('common.preferences')">
           <SearchPalette v-if="navigationVisible" />
-          <button
-            class="icon-button language-toggle"
-            :title="t('common.switchLanguage', { name: otherLocaleName })"
-            :lang="otherLocale"
-            @click="preferences.setLocale(otherLocale)"
-          >
-            {{ otherLocaleName }}
-          </button>
+          <LanguageMenu />
           <button
             class="icon-button"
             :aria-label="

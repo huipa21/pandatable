@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { test, expect, expectHTTPFailure, allowHTTPFailure } from './fixtures'
 import type {
   GrantLevel,
@@ -41,16 +41,74 @@ function waitForGrantRefresh(page: Page, kind: ResourceKind, id: string) {
     )
   })
 }
+export async function shareAction(
+  page: Page,
+  kind: ResourceKind,
+  id: string,
+  locale = en,
+): Promise<Locator> {
+  const mobile = page.viewportSize()!.width < 768
+  const sidebar = page.locator(mobile ? '.nav-drawer' : '.sidebar-desktop')
+  if (mobile) {
+    if (!(await sidebar.isVisible()))
+      await page
+        .getByRole('button', { name: locale.nav.open, exact: true })
+        .click()
+    await expect(sidebar).toBeVisible()
+  } else if (!(await sidebar.locator('.nav-tree').isVisible())) {
+    await page
+      .getByRole('button', { name: locale.nav.expandSidebar, exact: true })
+      .click()
+  }
+  const actions = sidebar.locator(
+    `[data-nav-id="${id}"][data-kind="${kind}"] > .node-actions`,
+  )
+  if ((await actions.count()) === 0)
+    return actions.getByRole('button', {
+      name: locale.sharing.open,
+      exact: true,
+    })
+  await openNodeActions(actions)
+  return actions.getByRole('button', {
+    name: locale.sharing.open,
+    exact: true,
+  })
+}
+export async function openShare(
+  page: Page,
+  kind: ResourceKind,
+  id: string,
+  locale = en,
+) {
+  const action = await shareAction(page, kind, id, locale)
+  if (page.viewportSize()!.width < 768) await action.tap()
+  else await action.click()
+}
+export async function closeMobileNavigation(page: Page, locale = en) {
+  const drawer = page.locator('.nav-drawer')
+  if (page.viewportSize()!.width < 768 && (await drawer.isVisible())) {
+    await page
+      .getByRole('button', { name: locale.nav.close, exact: true })
+      .click()
+    await expect(drawer).not.toBeVisible()
+  }
+}
 async function open(page: Page, path: string, locale = en) {
   await page.goto(path)
-  const main = page.locator('main')
-  if (path.startsWith('/t/'))
-    await main
-      .getByLabel(locale.grid.visibilityMenu.label, { exact: true })
-      .click()
-  await main
-    .getByRole('button', { name: locale.sharing.open, exact: true })
-    .click()
+  const segments = new URL(path, 'http://pandatable.test').pathname
+    .split('/')
+    .filter(Boolean)
+  const target =
+    segments[0] === 't' && segments[1]
+      ? { kind: 'table' as const, id: segments[1] }
+      : segments[0] === 'w' && segments[1] && segments[2] === 'b' && segments[3]
+        ? { kind: 'book' as const, id: segments[3] }
+        : segments[0] === 'w' && segments[1]
+          ? { kind: 'workspace' as const, id: segments[1] }
+          : null
+  if (!target)
+    throw new Error(`Cannot determine sharing target from path: ${path}`)
+  await openShare(page, target.kind, target.id, locale)
   await expect(dialog(page, locale)).toBeVisible()
   await expect(
     dialog(page, locale).getByRole('heading', {
@@ -65,6 +123,7 @@ async function close(page: Page, locale = en) {
     .getByRole('button', { name: locale.sharing.close, exact: true })
     .click()
   await expect(dialog(page, locale)).not.toBeVisible()
+  await closeMobileNavigation(page, locale)
 }
 async function reviewAdd(
   page: Page,
@@ -173,16 +232,7 @@ export async function verifySharing(
   try {
     await setLocale(alice, 'en')
     // Native dialog stacks above the mobile drawer and returns keyboard focus.
-    if (alice.viewportSize()!.width < 768)
-      await alice
-        .getByRole('button', { name: en.nav.open, exact: true })
-        .click()
-    const actions = alice.locator(`[data-nav-id="${wid}"] > .node-actions`)
-    await openNodeActions(actions)
-    const trigger = actions.getByRole('button', {
-      name: en.sharing.open,
-      exact: true,
-    })
+    const trigger = await shareAction(alice, 'workspace', wid)
     if (alice.viewportSize()!.width < 768) await trigger.tap()
     else await trigger.click()
     await expect(dialog(alice)).toBeVisible()
@@ -245,11 +295,8 @@ export async function verifySharing(
     await schema(bob, tid, 'read')
     await focus(bob)
     await expect(bob.locator('.schema-summary')).toHaveCount(0)
-    await expect(
-      bob
-        .locator('main')
-        .getByRole('button', { name: en.sharing.open, exact: true }),
-    ).toHaveCount(0)
+    await expect(await shareAction(bob, 'workspace', wid)).toHaveCount(0)
+    await closeMobileNavigation(bob)
     expect(
       (
         await bob.request.get(
@@ -270,6 +317,8 @@ export async function verifySharing(
     await add(alice, b.username, b.id, 'write')
     await close(alice)
     await schema(bob, tid, 'write')
+    await expect(await shareAction(bob, 'book', bid)).toHaveCount(0)
+    await closeMobileNavigation(bob)
     expect(
       (
         await bob.request.post(`/api/v1/books/${bid}/tables`, {
@@ -287,6 +336,8 @@ export async function verifySharing(
     await add(alice, b.username, b.id, 'write')
     await close(alice)
     await schema(bob, tid, 'write')
+    await expect(await shareAction(bob, 'table', tid)).toHaveCount(0)
+    await closeMobileNavigation(bob)
     await schema(bob, siblingTable, 'read')
     await open(alice, workspacePath)
     await add(alice, b.username, b.id, 'write')
@@ -372,11 +423,8 @@ export async function verifySharing(
     await remove(alice, b.id)
     await close(alice)
     await bob.goto(bookPath)
-    await expect(
-      bob
-        .locator('main')
-        .getByRole('button', { name: en.sharing.open, exact: true }),
-    ).toBeVisible()
+    await expect(await shareAction(bob, 'book', bid)).toBeVisible()
+    await closeMobileNavigation(bob)
     expect(
       (
         await bob.request.get(`/api/v1/grants?resource=workspace:${wid}`)
@@ -458,20 +506,14 @@ export async function verifySharing(
       en.errors.ERR_PERMISSION_DENIED,
     )
     await close(alice)
-    await expect(
-      alice
-        .locator('main')
-        .getByRole('button', { name: en.sharing.open, exact: true }),
-    ).toHaveCount(0)
+    await expect(await shareAction(alice, 'workspace', wid)).toHaveCount(0)
+    await closeMobileNavigation(alice)
     await open(bob, workspacePath)
     await add(bob, aliceUsername, me.id, 'owner')
     await close(bob)
     await focus(alice)
-    await expect(
-      alice
-        .locator('main')
-        .getByRole('button', { name: en.sharing.open, exact: true }),
-    ).toBeVisible()
+    await expect(await shareAction(alice, 'workspace', wid)).toBeVisible()
+    await closeMobileNavigation(alice)
 
     // A real principal can disappear between search and confirmation.
     const disposable = await admin.request.post('/api/v1/admin/groups', {

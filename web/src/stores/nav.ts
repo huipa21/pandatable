@@ -17,6 +17,7 @@ import { useAuthStore } from './auth'
 export interface NavigationItem {
   id: string
   name: string
+  description: string
   kind: ResourceKind
   path: string
   parentId: string | null
@@ -38,6 +39,11 @@ export interface StructureAction {
   id?: string
   parentId?: string
   name?: string
+}
+
+export interface WorkspaceDetails {
+  icon?: BookIconName | null
+  description?: string
 }
 
 export function tablePath(id: string, views: NavView[]) {
@@ -295,7 +301,7 @@ export const useNavStore = defineStore('nav', () => {
     }
   }
 
-  async function submit(action: StructureAction, name: string) {
+  async function submit(action: StructureAction, name: string, workspace?: WorkspaceDetails) {
     const plural = `${action.kind}s`
     if (action.operation === 'create') {
       if (action.kind === 'table') {
@@ -317,14 +323,18 @@ export const useNavStore = defineStore('nav', () => {
       const result = await mutate<{ workspace: { id: string } } & AuthMutation>(
         '/workspaces',
         'POST',
-        { name },
+        { name, ...workspace },
       )
       return `/w/${result.workspace.id}`
     }
     await mutate(
       `/${plural}/${action.id}`,
       action.operation === 'delete' ? 'DELETE' : 'PATCH',
-      action.operation === 'rename' ? { name } : undefined,
+      action.operation === 'rename'
+        ? action.kind === 'workspace'
+          ? { name, ...workspace }
+          : { name }
+        : undefined,
     )
     return null
   }
@@ -337,10 +347,11 @@ export const useNavStore = defineStore('nav', () => {
     tree.value.workspaces.map((w, wi, workspaces) => ({
       id: w.id,
       name: w.name,
+      description: w.description,
       kind: 'workspace',
       path: `/w/${w.id}`,
       parentId: null,
-      bookIcon: null,
+      bookIcon: w.icon ?? w.fallbackIcon,
       level: w.level,
       pathOnly: w.pathOnly,
       canEdit: !w.pathOnly && w.level === 'owner',
@@ -352,6 +363,7 @@ export const useNavStore = defineStore('nav', () => {
       children: w.books.map((b, bi, books) => ({
         id: b.id,
         name: b.name,
+        description: '',
         kind: 'book',
         path: `/w/${w.id}/b/${b.id}`,
         parentId: w.id,
@@ -367,6 +379,7 @@ export const useNavStore = defineStore('nav', () => {
         children: b.tables.map((table, ti, tables) => ({
           id: table.id,
           name: table.name,
+          description: '',
           kind: 'table',
           // The bare table route shows the default view (breadcrumb without a view).
           path: `/t/${table.id}`,

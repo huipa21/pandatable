@@ -8,6 +8,7 @@ import type {
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { setLocale, setTheme } from './app-shell'
+import { closeMobileNavigation, openShare, shareAction } from './sharing'
 import {
   expect,
   expectBrowserClean,
@@ -216,9 +217,10 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     await expect(main).not.toContainText(en.nav.chooseWorkspace)
     await verifyStaleRetry(page, 0)
 
-    await main
-      .getByRole('button', { name: en.sharing.open, exact: true })
-      .click()
+    await expect(
+      main.getByRole('button', { name: en.sharing.open, exact: true }),
+    ).toHaveCount(0)
+    await openShare(page, 'workspace', firstWorkspace, en)
     const sharing = page.getByRole('dialog', {
       name: en.sharing.title,
       exact: true,
@@ -230,6 +232,7 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     await sharing
       .getByRole('button', { name: en.sharing.close, exact: true })
       .click()
+    await closeMobileNavigation(page, en)
 
     await main
       .getByRole('button', { name: en.nav.create.book, exact: true })
@@ -425,8 +428,9 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     const readerMain = reader.locator('main')
     await expect(readerMain.locator('.workbook-card')).toHaveCount(3)
     await expect(
-      readerMain.getByRole('button', { name: en.sharing.open, exact: true }),
+      await shareAction(reader, 'workspace', otherWorkspace),
     ).toHaveCount(0)
+    await closeMobileNavigation(reader)
     await expect(
       readerMain.getByRole('button', { name: en.nav.create.book, exact: true }),
     ).toHaveCount(0)

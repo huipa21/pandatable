@@ -9,9 +9,9 @@ SELECT COALESCE(
 );
 
 -- name: InsertWorkspace :one
-INSERT INTO meta.workspaces (name, icon, color, created_by)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, icon, color, created_at;
+INSERT INTO meta.workspaces (name, icon, color, description, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, icon, color, description, fallback_icon, created_at;
 
 -- name: InsertWorkspaceOwnerGrant :exec
 INSERT INTO meta.grants (resource_type, resource_id, principal_type, principal_id, level, granted_by)
@@ -55,14 +55,14 @@ ORDER BY gr.id
 FOR SHARE OF gr;
 
 -- name: GetWorkspace :one
-SELECT id, name, icon, color, created_at
+SELECT id, name, icon, color, description, fallback_icon, created_at
 FROM meta.workspaces
 WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: UpdateWorkspace :one
-UPDATE meta.workspaces SET name = $2, icon = $3, color = $4
+UPDATE meta.workspaces SET name = $2, icon = $3, color = $4, description = $5
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, icon, color, created_at;
+RETURNING id, name, icon, color, description, fallback_icon, created_at;
 
 -- name: TrashWorkspace :one
 UPDATE meta.workspaces SET deleted_at = now(), deleted_by = $2
@@ -458,7 +458,7 @@ WHERE w.deleted_at IS NULL AND (
 );
 
 -- name: NavWorkspaces :many
-SELECT id, name, icon, color, created_at
+SELECT id, name, icon, color, description, fallback_icon, created_at
 FROM meta.workspaces
 WHERE id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NULL;
 

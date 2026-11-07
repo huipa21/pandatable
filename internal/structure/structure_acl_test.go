@@ -361,6 +361,12 @@ func TestNavReturnsOnlyPermittedLivePathsWithoutSiblingLeakage(t *testing.T) {
 	}
 
 	// Table-only grant: path-only workspace/book holding exactly that table.
+	description := "workspace secret"
+	if _, err := f.service.UpdateWorkspace(f.ctx, x.alice, x.workspace.ID, WorkspacePatch{
+		Description: &description,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	carol := f.user("user", "active", "en")
 	f.grant(acl.Table, x.other.Table.ID, "user", carol.ID, acl.Read)
 	nav, err = f.service.Nav(f.ctx, carol)
@@ -369,7 +375,8 @@ func TestNavReturnsOnlyPermittedLivePathsWithoutSiblingLeakage(t *testing.T) {
 	}
 	w := nav.Workspaces[0]
 	if !w.PathOnly || w.Level != "none" || len(w.Books) != 1 || !w.Books[0].PathOnly || w.Books[0].Level != "none" ||
-		len(w.Books[0].Tables) != 1 || w.Books[0].Tables[0].ID != x.other.Table.ID || w.Books[0].Tables[0].Level != "read" {
+		w.Description != "" || len(w.Books[0].Tables) != 1 || w.Books[0].Tables[0].ID != x.other.Table.ID ||
+		w.Books[0].Tables[0].Level != "read" {
 		t.Fatalf("path-only tree = %+v", w)
 	}
 

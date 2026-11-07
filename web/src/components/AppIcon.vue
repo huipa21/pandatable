@@ -8,6 +8,10 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), {
 const paths = {
   panelClose: ['M4 4h16v16H4z', 'M9 4v16', 'M16 9l-3 3 3 3'],
   panelOpen: ['M4 4h16v16H4z', 'M9 4v16', 'M13 9l3 3-3 3'],
+  language: [
+    'M3 5h10M8 3v2M4 8h9M5 8l7 7M12 8l-7 7',
+    'M16 20l3-10 3 10M17 17h4',
+  ],
   search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M20 20l-4-4'],
   sun: [
     'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
@@ -37,6 +41,7 @@ const paths = {
   expand: ['M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7'],
   fullscreen: ['M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4'],
   close: ['M6 6l12 12M18 6L6 18'],
+  checkMark: ['M4 12l5 5L20 6'],
   duplicate: ['M9 9h11v11H9z', 'M15 9V4H4v11h5'],
   chevronUp: ['M6 15l6-6 6 6'],
   comments: ['M4 4h16v12H9l-5 4z'],

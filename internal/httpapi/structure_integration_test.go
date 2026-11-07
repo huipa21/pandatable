@@ -81,6 +81,71 @@ func navTables(nav structure.Nav) map[string]structure.NavTable {
 	return tables
 }
 
+func TestWorkspaceDetailsAPI(t *testing.T) {
+	f := newACLFixture(t)
+	owner, reader := f.user("user", false), f.user("user", false)
+	body, err := json.Marshal(map[string]string{
+		"name": "Workspace details", "icon": "calendar", "description": "  first line\nsecond line  ",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := decode[workspaceBody](f, f.api(owner, "POST", "/workspaces", string(body)), http.StatusCreated).Workspace
+	f.spaces = append(f.spaces, created.ID)
+	if created.Description != "first line\nsecond line" || created.Icon == nil || *created.Icon != "calendar" ||
+		!isWorkspaceFallbackIcon(created.FallbackIcon) {
+		t.Fatalf("workspace create = %+v", created)
+	}
+	f.grantOK(owner, acl.Workspace, created.ID, "user", reader.id, acl.Read)
+	readerNav := f.nav(reader)
+	if len(readerNav.Workspaces) != 1 || readerNav.Workspaces[0].Description != created.Description ||
+		readerNav.Workspaces[0].FallbackIcon != created.FallbackIcon {
+		t.Fatalf("reader nav = %+v", readerNav)
+	}
+
+	for _, invalidBody := range []string{
+		`{"name":"Bad icon","icon":"not-an-icon"}`,
+		`{"name":"Long description","description":"` + strings.Repeat("界", 501) + `"}`,
+		`{"name":"Control character","description":"bad\tcontrol"}`,
+	} {
+		f.expectStatus(f.api(owner, "POST", "/workspaces", invalidBody), http.StatusBadRequest, "ERR_VALIDATION")
+	}
+	f.expectStatus(f.api(owner, "PATCH", "/workspaces/"+created.ID, `{"description":null}`),
+		http.StatusBadRequest, "ERR_VALIDATION")
+
+	book := f.newBook(owner, created.ID, "Path only book")
+	table := f.newTable(owner, book.ID, "Path only table")
+	pathOnly := f.user("user", false)
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", pathOnly.id, acl.Read)
+	pathOnlyNav := f.nav(pathOnly)
+	if len(pathOnlyNav.Workspaces) != 1 || !pathOnlyNav.Workspaces[0].PathOnly ||
+		pathOnlyNav.Workspaces[0].Description != "" {
+		t.Fatalf("path-only workspace nav = %+v", pathOnlyNav)
+	}
+
+	updatedBody := `{"icon":null,"description":""}`
+	updated := decode[workspaceBody](f, f.api(owner, "PATCH", "/workspaces/"+created.ID, updatedBody), http.StatusOK).Workspace
+	if updated.Description != "" || updated.Icon != nil || updated.FallbackIcon != created.FallbackIcon {
+		t.Fatalf("workspace clear = %+v", updated)
+	}
+	f.expectStatus(f.api(reader, "PATCH", "/workspaces/"+created.ID, `{"description":"unauthorized"}`),
+		http.StatusForbidden, "ERR_PERMISSION_DENIED")
+
+	withoutDetails := f.newWorkspace(owner, "No details")
+	if withoutDetails.Description != "" || !isWorkspaceFallbackIcon(withoutDetails.FallbackIcon) {
+		t.Fatalf("workspace defaults = %+v", withoutDetails)
+	}
+}
+
+func isWorkspaceFallbackIcon(icon string) bool {
+	switch icon {
+	case "book", "table", "view", "fields", "calendar", "star", "group", "link":
+		return true
+	default:
+		return false
+	}
+}
+
 func TestStructureAPIAcceptanceAT201AT203AT213(t *testing.T) {
 	f := newACLFixture(t)
 	alice, carol := f.user("user", false), f.user("user", false)

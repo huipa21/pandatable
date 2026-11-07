@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	maxNameRunes = 100
-	maxIconRunes = 16
+	maxNameRunes          = 100
+	maxIconRunes          = 16
+	maxWorkspaceDescRunes = 500
 )
 
 func validation(message string) *apperr.Error {
@@ -49,4 +50,15 @@ func cleanColor(value string) (string, error) {
 		}
 	}
 	return strings.ToLower(value), nil
+}
+
+func cleanWorkspaceDescription(value string) (string, error) {
+	description := strings.TrimSpace(value)
+	if !utf8.ValidString(value) || utf8.RuneCountInString(description) > maxWorkspaceDescRunes ||
+		strings.ContainsFunc(description, func(character rune) bool {
+			return unicode.IsControl(character) && character != '\n' && character != '\r'
+		}) {
+		return "", validation("Description must be at most 500 characters; control characters other than newlines are not allowed")
+	}
+	return description, nil
 }

@@ -105,6 +105,73 @@ func TestBookIconLifecycleAndSharedNavigation(t *testing.T) {
 	}
 }
 
+func TestWorkspaceIconAndDescriptionLifecycle(t *testing.T) {
+	f := newFixture(t)
+	owner := f.user("user", "active", "en")
+	description := "  Shared\nworkspace notes  "
+	workspace, err := f.service.CreateWorkspace(f.ctx, owner, WorkspaceInput{
+		Name: "Workspace details", Description: description,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.spaces = append(f.spaces, workspace.ID)
+	if workspace.Description != "Shared\nworkspace notes" || workspace.Icon != nil {
+		t.Fatalf("workspace details = %+v", workspace)
+	}
+	fallback := workspace.FallbackIcon
+	if _, ok := bookIconNames[fallback]; !ok {
+		t.Fatalf("fallback icon %q is outside the book vocabulary", fallback)
+	}
+
+	reader := f.user("user", "active", "en")
+	f.grant(acl.Workspace, workspace.ID, "user", reader.ID, acl.Read)
+	assertVisible := func(user Actor, wantIcon *string, wantDescription string) {
+		t.Helper()
+		nav, err := f.service.Nav(f.ctx, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(nav.Workspaces) != 1 {
+			t.Fatalf("navigation = %+v", nav)
+		}
+		got := nav.Workspaces[0]
+		if got.FallbackIcon != fallback || got.Description != wantDescription ||
+			(got.Icon == nil) != (wantIcon == nil) || got.Icon != nil && *got.Icon != *wantIcon {
+			t.Fatalf("workspace navigation = %+v; want icon %v, fallback %q, description %q",
+				got, wantIcon, fallback, wantDescription)
+		}
+	}
+	assertVisible(owner, nil, workspace.Description)
+	assertVisible(reader, nil, workspace.Description)
+
+	custom := "calendar"
+	updated, err := f.service.UpdateWorkspace(f.ctx, owner, workspace.ID, WorkspacePatch{
+		Icon: OptionalText{Set: true, Value: &custom},
+	})
+	if err != nil || updated.Icon == nil || *updated.Icon != custom || updated.FallbackIcon != fallback {
+		t.Fatalf("custom icon update = %+v, %v", updated, err)
+	}
+	assertVisible(reader, &custom, workspace.Description)
+
+	updated, err = f.service.UpdateWorkspace(f.ctx, owner, workspace.ID, WorkspacePatch{
+		Icon: OptionalText{Set: true}, Description: ptr(""),
+	})
+	if err != nil || updated.Icon != nil || updated.FallbackIcon != fallback || updated.Description != "" {
+		t.Fatalf("clearing icon and description = %+v, %v", updated, err)
+	}
+	assertVisible(reader, nil, "")
+
+	_, err = f.service.UpdateWorkspace(f.ctx, reader, workspace.ID, WorkspacePatch{
+		Description: ptr("not allowed"),
+	})
+	expectError(t, err, 403, "ERR_PERMISSION_DENIED")
+	_, err = f.service.UpdateWorkspace(f.ctx, owner, workspace.ID, WorkspacePatch{
+		Icon: OptionalText{Set: true, Value: ptr("unknown")},
+	})
+	expectError(t, err, 400, "ERR_VALIDATION")
+}
+
 func TestCreateBookWithCustomIcon(t *testing.T) {
 	f := newFixture(t)
 	owner := f.user("user", "active", "en")

@@ -41,14 +41,16 @@ type NavBook struct {
 }
 
 type NavWorkspace struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Icon      *string   `json:"icon"`
-	Color     *string   `json:"color"`
-	CreatedAt time.Time `json:"createdAt"`
-	Level     string    `json:"level"`
-	PathOnly  bool      `json:"pathOnly"`
-	Books     []NavBook `json:"books"`
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Icon         *string   `json:"icon"`
+	Color        *string   `json:"color"`
+	Description  string    `json:"description"`
+	FallbackIcon string    `json:"fallbackIcon"`
+	CreatedAt    time.Time `json:"createdAt"`
+	Level        string    `json:"level"`
+	PathOnly     bool      `json:"pathOnly"`
+	Books        []NavBook `json:"books"`
 }
 
 // Nav is the sidebar tree: only live resources the caller can reach, each with
@@ -168,6 +170,10 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 		if level == 0 && len(visible) == 0 {
 			continue
 		}
+		description := row.Description
+		if level == 0 {
+			description = ""
+		}
 		sort.Slice(visible, func(i, j int) bool {
 			return before(visible[i].Position, visible[j].Position, visible[i].ID, visible[j].ID)
 		})
@@ -175,7 +181,8 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 			visible = []NavBook{}
 		}
 		result.Workspaces = append(result.Workspaces, NavWorkspace{ID: row.ID.String(), Name: row.Name,
-			Icon: textPointer(row.Icon), Color: textPointer(row.Color), CreatedAt: timeOf(row.CreatedAt),
+			Icon: textPointer(row.Icon), Color: textPointer(row.Color), Description: description,
+			FallbackIcon: row.FallbackIcon, CreatedAt: timeOf(row.CreatedAt),
 			Level: levelName(level), PathOnly: level == 0, Books: visible})
 	}
 	sort.Slice(result.Workspaces, func(i, j int) bool {

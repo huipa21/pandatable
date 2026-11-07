@@ -131,9 +131,10 @@ func optionalText(raw json.RawMessage) (structure.OptionalText, error) {
 
 func (api *authHTTP) createWorkspace(w http.ResponseWriter, r *http.Request, user auth.User) {
 	var input struct {
-		Name  string          `json:"name"`
-		Icon  json.RawMessage `json:"icon"`
-		Color json.RawMessage `json:"color"`
+		Name        string          `json:"name"`
+		Icon        json.RawMessage `json:"icon"`
+		Color       json.RawMessage `json:"color"`
+		Description json.RawMessage `json:"description"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		api.fail(w, r, err)
@@ -149,8 +150,17 @@ func (api *authHTTP) createWorkspace(w http.ResponseWriter, r *http.Request, use
 		api.fail(w, r, err)
 		return
 	}
+	description, err := patchString(input.Description, false)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	descriptionText := ""
+	if description != nil {
+		descriptionText = *description
+	}
 	workspace, err := api.structure.CreateWorkspace(r.Context(), actorOf(user),
-		structure.WorkspaceInput{Name: input.Name, Icon: icon.Value, Color: color.Value})
+		structure.WorkspaceInput{Name: input.Name, Icon: icon.Value, Color: color.Value, Description: descriptionText})
 	if err != nil {
 		api.fail(w, r, err)
 		return
@@ -163,9 +173,10 @@ func (api *authHTTP) createWorkspace(w http.ResponseWriter, r *http.Request, use
 
 func (api *authHTTP) updateWorkspace(w http.ResponseWriter, r *http.Request, user auth.User) {
 	var input struct {
-		Name  *string         `json:"name"`
-		Icon  json.RawMessage `json:"icon"`
-		Color json.RawMessage `json:"color"`
+		Name        *string         `json:"name"`
+		Icon        json.RawMessage `json:"icon"`
+		Color       json.RawMessage `json:"color"`
+		Description json.RawMessage `json:"description"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		api.fail(w, r, err)
@@ -181,8 +192,13 @@ func (api *authHTTP) updateWorkspace(w http.ResponseWriter, r *http.Request, use
 		api.fail(w, r, err)
 		return
 	}
+	description, err := patchString(input.Description, false)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
 	workspace, err := api.structure.UpdateWorkspace(r.Context(), actorOf(user), chi.URLParam(r, "id"),
-		structure.WorkspacePatch{Name: input.Name, Icon: icon, Color: color})
+		structure.WorkspacePatch{Name: input.Name, Icon: icon, Color: color, Description: description})
 	if err != nil {
 		api.fail(w, r, err)
 		return

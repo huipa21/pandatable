@@ -23,6 +23,8 @@ export function navigation(): Navigation {
         name: 'Workspace',
         icon: null,
         color: null,
+        description: 'Workspace description',
+        fallbackIcon: 'star',
         createdAt: '',
         level: 'owner',
         pathOnly: false,

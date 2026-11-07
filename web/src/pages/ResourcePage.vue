@@ -28,7 +28,6 @@ import type {
 } from '../api/types'
 import { useAuthStore } from '../stores/auth'
 import { useNavStore } from '../stores/nav'
-import { useSharingStore } from '../stores/sharing'
 import { useRealtimeStore } from '../stores/realtime'
 import { useUndoStore, viewUndoStep } from '../stores/undo'
 import {
@@ -45,7 +44,6 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const nav = useNavStore()
-const sharing = useSharingStore()
 const realtime = useRealtimeStore()
 const undo = useUndoStore()
 const viewManagement = useViewManagementStore()
@@ -945,9 +943,6 @@ onBeforeUnmount(() => {
       <header v-if="kind !== 'table'" class="resource-heading">
         <h1>{{ schema?.table.name ?? node.name }}</h1>
       </header>
-      <button v-if="canShare && kind !== 'table'" @click="sharing.open(node)">
-        {{ t('sharing.open') }}
-      </button>
       <p v-if="node.pathOnly">{{ t('nav.pathNotice') }}</p>
       <template v-if="kind !== 'table'">
         <p

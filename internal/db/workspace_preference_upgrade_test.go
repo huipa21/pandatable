@@ -56,7 +56,10 @@ func TestWorkspacePreferenceMigrationUpgradePostgreSQL(t *testing.T) {
 		VALUES ('workspace',$1,'user',$2,'owner')`, workspace, user)
 	const snapshot = `SELECT jsonb_build_object(
 		'user',(SELECT to_jsonb(u) FROM meta.users u WHERE id=$1),
-		'workspace',(SELECT to_jsonb(w) FROM meta.workspaces w WHERE id=$2),
+		'workspace',(SELECT jsonb_build_object(
+			'id',w.id,'name',w.name,'icon',w.icon,'color',w.color,'created_by',w.created_by,
+			'created_at',w.created_at,'deleted_at',w.deleted_at,'deleted_by',w.deleted_by
+		) FROM meta.workspaces w WHERE id=$2),
 		'grant',(SELECT to_jsonb(g) FROM meta.grants g WHERE resource_id=$2))::text`
 	var before, after string
 	if err := pool.QueryRow(ctx, snapshot, user, workspace).Scan(&before); err != nil {

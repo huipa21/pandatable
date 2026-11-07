@@ -25,6 +25,7 @@
 | — | [Task prompts](task-prompts/) | Ready-to-use prompts for starting each task in a fresh agent session ([template](task-prompts/TEMPLATE.md)) |
 | — | [Workspace/grid redesign tasks](task-prompts/workspace-grid-redesign.md) | Focused UI follow-up prompts, dependencies and safe parallel-run waves (planning only) |
 | — | [Workspace/grid refinement tasks](task-prompts/workspace-grid-refinement.md) | WG-01..WG-09: flat workspaces, workbook context, grid footer/Format/bulk actions and transfer icon; quick-task waves with one final full-verification session |
+| — | [Dashboard/sidebar redesign tasks](task-prompts/dashboard-sidebar.md) | DS-01..DS-10: workspace dashboard search with icons/descriptions and recents, workbook search, slim sidebar, collapsed workbook tree, Share removal, language icon menu; four waves |
 | — | [Archive](archive/) | Historical M0–M1 verification evidence; search by task/AT ID, never read at task start |
 
 ## Reading budget (D-158)

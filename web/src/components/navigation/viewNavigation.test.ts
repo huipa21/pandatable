@@ -130,6 +130,8 @@ it.each(['/t/t/v/v', '/w/w/b/b'] as const)(
     vi.stubGlobal('fetch', fetcher)
     const { wrapper, router } = await setup(tree, path)
     try {
+      if (path === '/w/w/b/b')
+        await wrapper.get('[data-nav-id="b"] .book-toggle').trigger('click')
       const selector = '[data-nav-id="t2"] > .node-actions'
       const menu = await openMenu(wrapper, selector)
       const summary = menu.querySelector('summary')!

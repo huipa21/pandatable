@@ -1,7 +1,8 @@
 import { createI18n } from 'vue-i18n'
 import type { AccessLevel, ResourceKind, TrashKind } from '../api/types'
 
-export type Locale = 'en' | 'zh-CN'
+export const supportedLocales = ['en', 'zh-CN'] as const
+export type Locale = (typeof supportedLocales)[number]
 
 export const i18n = createI18n({
   legacy: false,

@@ -69,10 +69,20 @@ func TestWorkspaceCreationRejectsInvalidInputAndInactiveUsers(t *testing.T) {
 		{Name: "ok", Color: ptr("#abc")},
 		{Name: "ok", Icon: ptr(strings.Repeat("x", 17))},
 		{Name: "ok", Icon: ptr(" ")},
+		{Name: "ok", Icon: ptr("not-an-icon")},
+		{Name: "ok", Description: strings.Repeat("界", 501)},
+		{Name: "ok", Description: "bad\tcontrol"},
 	} {
 		_, err := f.service.CreateWorkspace(f.ctx, user, input)
 		expectError(t, err, 400, "ERR_VALIDATION")
 	}
+	validDescription, err := f.service.CreateWorkspace(f.ctx, user, WorkspaceInput{
+		Name: "ok", Description: strings.Repeat("界", 498) + "\n界",
+	})
+	if err != nil {
+		t.Fatalf("500-rune description with a newline must be accepted: %v", err)
+	}
+	f.spaces = append(f.spaces, validDescription.ID)
 	workspace, err := f.service.CreateWorkspace(f.ctx, user, WorkspaceInput{Name: strings.Repeat("名", 100)})
 	if err != nil {
 		t.Fatalf("100 code points must be accepted: %v", err)

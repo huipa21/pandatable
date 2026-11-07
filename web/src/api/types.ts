@@ -374,8 +374,10 @@ export interface Book {
 export interface NavWorkspace {
   id: string
   name: string
-  icon: string | null
+  icon: BookIconName | null
   color: string | null
+  description: string
+  fallbackIcon: BookIconName
   createdAt: string
   level: AccessLevel
   pathOnly: boolean

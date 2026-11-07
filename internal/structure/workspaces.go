@@ -15,9 +15,10 @@ import (
 )
 
 type WorkspaceInput struct {
-	Name  string
-	Icon  *string
-	Color *string
+	Name        string
+	Icon        *string
+	Color       *string
+	Description string
 }
 
 // OptionalText distinguishes an absent PATCH member from an explicit null.
@@ -27,13 +28,16 @@ type OptionalText struct {
 }
 
 type WorkspacePatch struct {
-	Name  *string
-	Icon  OptionalText
-	Color OptionalText
+	Name        *string
+	Icon        OptionalText
+	Color       OptionalText
+	Description *string
 }
 
-func workspaceDTO(id pgtype.UUID, name string, icon, color pgtype.Text, created pgtype.Timestamptz) Workspace {
-	return Workspace{ID: id.String(), Name: name, Icon: textPointer(icon), Color: textPointer(color), CreatedAt: timeOf(created)}
+func workspaceDTO(id pgtype.UUID, name string, icon, color pgtype.Text, description, fallbackIcon string,
+	created pgtype.Timestamptz) Workspace {
+	return Workspace{ID: id.String(), Name: name, Icon: textPointer(icon), Color: textPointer(color),
+		Description: description, FallbackIcon: fallbackIcon, CreatedAt: timeOf(created)}
 }
 
 func cleanOptional(value *string, clean func(string) (string, error)) (*string, error) {
@@ -68,11 +72,15 @@ func (s *Service) CreateWorkspace(ctx context.Context, actor Actor, input Worksp
 	if err != nil {
 		return Workspace{}, err
 	}
-	icon, err := cleanOptional(input.Icon, cleanIcon)
+	icon, err := cleanOptional(input.Icon, cleanBookIcon)
 	if err != nil {
 		return Workspace{}, err
 	}
 	color, err := cleanOptional(input.Color, cleanColor)
+	if err != nil {
+		return Workspace{}, err
+	}
+	description, err := cleanWorkspaceDescription(input.Description)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -89,11 +97,11 @@ func (s *Service) CreateWorkspace(ctx context.Context, actor Actor, input Worksp
 		}
 		queries := s.queries.WithTx(tx)
 		row, err := workspace.CreateOwned(ctx, queries, structuresql.InsertWorkspaceParams{
-			Name: name, Icon: textValue(icon), Color: textValue(color), CreatedBy: user})
+			Name: name, Icon: textValue(icon), Color: textValue(color), Description: description, CreatedBy: user})
 		if err != nil {
 			return err
 		}
-		created = workspaceDTO(row.ID, row.Name, row.Icon, row.Color, row.CreatedAt)
+		created = workspaceDTO(row.ID, row.Name, row.Icon, row.Color, row.Description, row.FallbackIcon, row.CreatedAt)
 		written = true
 		return events.Emit(ctx, tx, events.Event{Type: "nav.changed", By: actor.ID})
 	})
@@ -111,7 +119,7 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor Actor, id string, p
 	if err != nil {
 		return Workspace{}, err
 	}
-	if patch.Name == nil && !patch.Icon.Set && !patch.Color.Set {
+	if patch.Name == nil && !patch.Icon.Set && !patch.Color.Set && patch.Description == nil {
 		return Workspace{}, validation("At least one workspace field is required")
 	}
 	var name string
@@ -120,7 +128,7 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor Actor, id string, p
 			return Workspace{}, err
 		}
 	}
-	icon, err := cleanOptional(patch.Icon.Value, cleanIcon)
+	icon, err := cleanOptional(patch.Icon.Value, cleanBookIcon)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -128,13 +136,20 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor Actor, id string, p
 	if err != nil {
 		return Workspace{}, err
 	}
+	var description string
+	if patch.Description != nil {
+		if description, err = cleanWorkspaceDescription(*patch.Description); err != nil {
+			return Workspace{}, err
+		}
+	}
 	var updated Workspace
 	err = s.run(ctx, actor, scope{target: target}, func(c *txn) error {
 		current, err := c.q.GetWorkspace(ctx, target.ID)
 		if err != nil {
 			return notFoundIfNoRows(err, "read workspace")
 		}
-		params := structuresql.UpdateWorkspaceParams{ID: target.ID, Name: current.Name, Icon: current.Icon, Color: current.Color}
+		params := structuresql.UpdateWorkspaceParams{ID: target.ID, Name: current.Name, Icon: current.Icon,
+			Color: current.Color, Description: current.Description}
 		if patch.Name != nil {
 			params.Name = name
 		}
@@ -144,11 +159,14 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor Actor, id string, p
 		if patch.Color.Set {
 			params.Color = textValue(color)
 		}
+		if patch.Description != nil {
+			params.Description = description
+		}
 		row, err := c.q.UpdateWorkspace(ctx, params)
 		if err != nil {
 			return notFoundIfNoRows(err, "update workspace")
 		}
-		updated = workspaceDTO(row.ID, row.Name, row.Icon, row.Color, row.CreatedAt)
+		updated = workspaceDTO(row.ID, row.Name, row.Icon, row.Color, row.Description, row.FallbackIcon, row.CreatedAt)
 		return nil
 	})
 	return updated, err

@@ -345,6 +345,35 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   await expect(
     sidebar.locator(`.workbook-root > li[data-nav-id="${book}"]`),
   ).toBeVisible()
+  const bookRow = sidebar.locator(`.workbook-root > li[data-nav-id="${book}"]`)
+  const bookToggle = bookRow.locator(':scope > .nav-row .book-toggle')
+  const bookLink = bookRow.locator(':scope > .nav-row .book-link')
+  await expect(bookToggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(bookToggle).toHaveAccessibleName(
+    en.nav.toggle.replace('{name}', 'Visible book'),
+  )
+  if (isMobile) {
+    const hitTarget = await bookToggle.boundingBox()
+    expect(hitTarget?.width).toBeGreaterThanOrEqual(44)
+    expect(hitTarget?.height).toBeGreaterThanOrEqual(44)
+  }
+  await expect(bookLink).toHaveAttribute('href', bookPath)
+  await expect(bookLink).toHaveAttribute('aria-current', 'page')
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${table}"]`),
+  ).toHaveCount(0)
+  await bookToggle.focus()
+  await page.keyboard.press('Enter')
+  await expect(bookToggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${table}"]`),
+  ).toBeVisible()
+  expect(new URL(page.url()).pathname).toBe(bookPath)
+  await page.keyboard.press('Space')
+  await expect(bookToggle).toHaveAttribute('aria-expanded', 'false')
+  await page.keyboard.press('Enter')
+  await expect(bookToggle).toHaveAttribute('aria-expanded', 'true')
+  expect(new URL(page.url()).pathname).toBe(bookPath)
   await expect(
     sidebar.locator('.workspace-root [data-kind="table"]'),
   ).toHaveCount(0)
@@ -358,7 +387,18 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   await expect(
     sidebar.locator(`.workbook-root [data-nav-id="${table}"] > .nav-row`),
   ).toHaveClass(/current/)
+  await expect(bookToggle).toHaveAttribute('aria-expanded', 'true')
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${table}"] .table-toggle`),
+  ).toHaveAttribute('aria-expanded', 'false')
   await expect(sidebar.locator('.workbook-root .view-list')).toHaveCount(0)
+  await bookLink.focus()
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(new RegExp(`${bookPath}$`))
+  sidebar = await tree(page, isMobile)
+  await expect(
+    sidebar.locator(`.workbook-root > li[data-nav-id="${book}"] .book-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true')
 
   await page.goto(viewPath)
   sidebar = await tree(page, isMobile)
@@ -369,6 +409,12 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   await expect(
     sidebar.locator(`.workbook-root [data-view-id="${view}"] a`),
   ).toHaveAttribute('aria-current', 'page')
+  await expect(
+    sidebar.locator(`.workbook-root > li[data-nav-id="${book}"] .book-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true')
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${table}"] .table-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true')
   await page.reload()
   await expect(page).toHaveURL(new RegExp(`${viewPath}$`))
   sidebar = await tree(page, isMobile)
@@ -379,6 +425,25 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   await expect(
     sidebar.locator(`.workbook-root [data-view-id="${view}"] a`),
   ).toHaveAttribute('aria-current', 'page')
+  await expect(
+    sidebar.locator(`.workbook-root > li[data-nav-id="${book}"] .book-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true')
+  await expect(
+    sidebar.locator(`.workbook-root [data-nav-id="${table}"] .table-toggle`),
+  ).toHaveAttribute('aria-expanded', 'true')
+
+  await page.goto(`/w/${second}/b/${siblingBook}`)
+  sidebar = await tree(page, isMobile)
+  await expect(
+    sidebar.locator(
+      `.workbook-root > li[data-nav-id="${siblingBook}"] .book-toggle`,
+    ),
+  ).toHaveAttribute('aria-expanded', 'false')
+  await expect(
+    sidebar.locator(
+      `.workbook-root [data-nav-id="${siblingBook}"] [data-kind="table"]`,
+    ),
+  ).toHaveCount(0)
 
   await page.goto(rowPath)
   await expect(page).toHaveURL(new RegExp(`${rowPath}$`))

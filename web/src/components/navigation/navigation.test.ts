@@ -100,6 +100,31 @@ it('keeps workspaces flat and renders only the active workbook tree with its con
     expect(wrapper.get('[data-nav-id="b"] > .nav-row').classes()).toContain(
       'current',
     )
+    const book = wrapper.get('[data-nav-id="b"] .book-toggle')
+    const bookLink = wrapper.get('[data-nav-id="b"] .book-link')
+    expect(book.attributes('aria-expanded')).toBe('false')
+    expect(book.attributes('aria-label')).toBe('Expand or collapse Book')
+    expect(bookLink.attributes('href')).toBe('/w/w/b/b')
+    expect(bookLink.attributes('aria-current')).toBe('page')
+    await book.trigger('click')
+    expect(router.currentRoute.value.path).toBe('/w/w/b/b')
+    expect(book.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('[data-nav-id="t"]').exists()).toBe(true)
+    await bookLink.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/w/w/b/b')
+    expect(book.attributes('aria-expanded')).toBe('true')
+    await router.push('/t/t2')
+    await nextTick()
+    expect(book.attributes('aria-expanded')).toBe('true')
+    expect(
+      wrapper
+        .get('[data-nav-id="t2"] .table-toggle')
+        .attributes('aria-expanded'),
+    ).toBe('false')
+    await router.push('/w/w/b/b')
+    await nextTick()
+    expect(book.attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('[data-nav-id="t"] a.nav-name').attributes('href')).toBe(
       '/t/t',
     )
@@ -112,7 +137,6 @@ it('keeps workspaces flat and renders only the active workbook tree with its con
     ).toBe('/t/t/v/v')
     await views.trigger('click')
     expect(wrapper.find('.view-list').exists()).toBe(false)
-    const book = wrapper.get('[data-nav-id="b"] .book-toggle')
     expect(book.attributes('aria-expanded')).toBe('true')
     await book.trigger('click')
     expect(wrapper.find('[data-nav-id="t"]').exists()).toBe(false)
@@ -186,6 +210,10 @@ it('resolves contextual trees only from fresh authorized route ancestry', async 
 
     await router.push('/t/t')
     await nextTick()
+    expect(
+      wrapper.get('[data-nav-id="b"] .book-toggle').attributes('aria-expanded'),
+    ).toBe('true')
+    expect(wrapper.find('[data-nav-id="t"]').exists()).toBe(true)
     expect(wrapper.get('[data-nav-id="t"] > .nav-row').classes()).toContain(
       'current',
     )
@@ -232,6 +260,11 @@ it('resolves contextual trees only from fresh authorized route ancestry', async 
       'b2',
     )
     expect(wrapper.find('[data-nav-id="b"]').exists()).toBe(false)
+    expect(
+      wrapper
+        .get('[data-nav-id="b2"] .book-toggle')
+        .attributes('aria-expanded'),
+    ).toBe('false')
 
     nav.loading = true
     await nextTick()
@@ -348,6 +381,7 @@ it('keeps one structure action menu open and closes it outside or on Escape', as
   const { global } = await setup('/w/w/b/b')
   const wrapper = mount(NavContents, { global, attachTo: document.body })
   try {
+    await wrapper.get('[data-nav-id="b"] .book-toggle').trigger('click')
     const menu = (id: string) =>
       wrapper.get(`[data-nav-id="${id}"] > .node-actions`)
         .element as HTMLDetailsElement

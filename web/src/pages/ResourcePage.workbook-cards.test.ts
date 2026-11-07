@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { i18n, loadLocale } from '../i18n'
 import { useAuthStore } from '../stores/auth'
 import { useNavStore } from '../stores/nav'
-import { useSharingStore } from '../stores/sharing'
 import { navigation, navUser } from '../test/navigation'
 import { ThemeMedia } from '../test/setup'
 import ResourcePage from './ResourcePage.vue'
@@ -121,7 +120,7 @@ it('renders ordered workbook links with effective icons and switches workspaces 
   }
 })
 
-it('keeps first-book creation and workspace sharing available only to owners', async () => {
+it('keeps first-book creation available only to workspace owners', async () => {
   const { wrapper, nav } = await setup()
   try {
     const workspace = nav.tree.workspaces[0]!
@@ -130,18 +129,9 @@ it('keeps first-book creation and workspace sharing available only to owners', a
     expect(wrapper.text()).toContain('This workspace has no visible books.')
     expect(wrapper.find('.workbook-grid').exists()).toBe(false)
     const buttons = wrapper.findAll('button')
-    expect(buttons.map((button) => button.text())).toEqual([
-      'Share',
-      'New book',
-    ])
+    expect(buttons.map((button) => button.text())).toEqual(['New book'])
 
-    const sharing = useSharingStore()
-    const open = vi.spyOn(sharing, 'open')
     await buttons[0]!.trigger('click')
-    expect(open).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'w', kind: 'workspace' }),
-    )
-    await buttons[1]!.trigger('click')
     expect(nav.editor).toEqual({
       operation: 'create',
       kind: 'book',
@@ -156,6 +146,32 @@ it('keeps first-book creation and workspace sharing available only to owners', a
     await flushPromises()
     expect(wrapper.text()).toContain('Only accessible descendants')
     expect(wrapper.findAll('button')).toHaveLength(0)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('omits page-level sharing while retaining workspace and workbook controls', async () => {
+  const { wrapper, router, nav } = await setup()
+  try {
+    const workspace = nav.tree.workspaces[0]!
+    const book = workspace.books[0]!
+    expect(wrapper.get('h1').text()).toBe(workspace.name)
+    expect(
+      wrapper.findAll('button').map((button) => button.text()),
+    ).not.toContain('Share')
+    expect(wrapper.findAll('button').map((button) => button.text())).toContain(
+      'New book',
+    )
+
+    await router.push(`/w/${workspace.id}/b/${book.id}`)
+    await flushPromises()
+
+    expect(wrapper.get('h1').text()).toBe(book.name)
+    const buttons = wrapper.findAll('button').map((button) => button.text())
+    expect(buttons).not.toContain('Share')
+    expect(buttons).toContain('New table')
+    expect(buttons).toContain(i18n.global.t('import.newTable'))
   } finally {
     wrapper.unmount()
   }

@@ -463,17 +463,19 @@ func (q *Queries) GetViewForQuery(ctx context.Context, id pgtype.UUID) (GetViewF
 }
 
 const getWorkspace = `-- name: GetWorkspace :one
-SELECT id, name, icon, color, created_at
+SELECT id, name, icon, color, description, fallback_icon, created_at
 FROM meta.workspaces
 WHERE id = $1 AND deleted_at IS NULL
 `
 
 type GetWorkspaceRow struct {
-	ID        pgtype.UUID
-	Name      string
-	Icon      pgtype.Text
-	Color     pgtype.Text
-	CreatedAt pgtype.Timestamptz
+	ID           pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	Color        pgtype.Text
+	Description  string
+	FallbackIcon string
+	CreatedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (GetWorkspaceRow, error) {
@@ -484,6 +486,8 @@ func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (GetWorkspac
 		&i.Name,
 		&i.Icon,
 		&i.Color,
+		&i.Description,
+		&i.FallbackIcon,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -827,24 +831,27 @@ func (q *Queries) InsertUserField(ctx context.Context, arg InsertUserFieldParams
 }
 
 const insertWorkspace = `-- name: InsertWorkspace :one
-INSERT INTO meta.workspaces (name, icon, color, created_by)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, icon, color, created_at
+INSERT INTO meta.workspaces (name, icon, color, description, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, name, icon, color, description, fallback_icon, created_at
 `
 
 type InsertWorkspaceParams struct {
-	Name      string
-	Icon      pgtype.Text
-	Color     pgtype.Text
-	CreatedBy pgtype.UUID
+	Name        string
+	Icon        pgtype.Text
+	Color       pgtype.Text
+	Description string
+	CreatedBy   pgtype.UUID
 }
 
 type InsertWorkspaceRow struct {
-	ID        pgtype.UUID
-	Name      string
-	Icon      pgtype.Text
-	Color     pgtype.Text
-	CreatedAt pgtype.Timestamptz
+	ID           pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	Color        pgtype.Text
+	Description  string
+	FallbackIcon string
+	CreatedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams) (InsertWorkspaceRow, error) {
@@ -852,6 +859,7 @@ func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams
 		arg.Name,
 		arg.Icon,
 		arg.Color,
+		arg.Description,
 		arg.CreatedBy,
 	)
 	var i InsertWorkspaceRow
@@ -860,6 +868,8 @@ func (q *Queries) InsertWorkspace(ctx context.Context, arg InsertWorkspaceParams
 		&i.Name,
 		&i.Icon,
 		&i.Color,
+		&i.Description,
+		&i.FallbackIcon,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -2094,17 +2104,19 @@ func (q *Queries) NavViews(ctx context.Context, arg NavViewsParams) ([]NavViewsR
 }
 
 const navWorkspaces = `-- name: NavWorkspaces :many
-SELECT id, name, icon, color, created_at
+SELECT id, name, icon, color, description, fallback_icon, created_at
 FROM meta.workspaces
 WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
 `
 
 type NavWorkspacesRow struct {
-	ID        pgtype.UUID
-	Name      string
-	Icon      pgtype.Text
-	Color     pgtype.Text
-	CreatedAt pgtype.Timestamptz
+	ID           pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	Color        pgtype.Text
+	Description  string
+	FallbackIcon string
+	CreatedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWorkspacesRow, error) {
@@ -2121,6 +2133,8 @@ func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWo
 			&i.Name,
 			&i.Icon,
 			&i.Color,
+			&i.Description,
+			&i.FallbackIcon,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -2617,24 +2631,27 @@ func (q *Queries) UpdateRowComment(ctx context.Context, arg UpdateRowCommentPara
 }
 
 const updateWorkspace = `-- name: UpdateWorkspace :one
-UPDATE meta.workspaces SET name = $2, icon = $3, color = $4
+UPDATE meta.workspaces SET name = $2, icon = $3, color = $4, description = $5
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, icon, color, created_at
+RETURNING id, name, icon, color, description, fallback_icon, created_at
 `
 
 type UpdateWorkspaceParams struct {
-	ID    pgtype.UUID
-	Name  string
-	Icon  pgtype.Text
-	Color pgtype.Text
+	ID          pgtype.UUID
+	Name        string
+	Icon        pgtype.Text
+	Color       pgtype.Text
+	Description string
 }
 
 type UpdateWorkspaceRow struct {
-	ID        pgtype.UUID
-	Name      string
-	Icon      pgtype.Text
-	Color     pgtype.Text
-	CreatedAt pgtype.Timestamptz
+	ID           pgtype.UUID
+	Name         string
+	Icon         pgtype.Text
+	Color        pgtype.Text
+	Description  string
+	FallbackIcon string
+	CreatedAt    pgtype.Timestamptz
 }
 
 func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (UpdateWorkspaceRow, error) {
@@ -2643,6 +2660,7 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		arg.Name,
 		arg.Icon,
 		arg.Color,
+		arg.Description,
 	)
 	var i UpdateWorkspaceRow
 	err := row.Scan(
@@ -2650,6 +2668,8 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		&i.Name,
 		&i.Icon,
 		&i.Color,
+		&i.Description,
+		&i.FallbackIcon,
 		&i.CreatedAt,
 	)
 	return i, err

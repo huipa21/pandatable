@@ -96,9 +96,27 @@ test('locale and theme toggles persist in the actual production shell', async ({
   await page.emulateMedia({ colorScheme: 'light' })
   await expect(html).toHaveAttribute('data-theme', 'light')
 
-  await page
-    .getByRole('button', { name: en.common.languages.zhCN, exact: true })
-    .click()
+  const languageButton = page.getByRole('button', {
+    name: en.common.language,
+    exact: true,
+  })
+  await expect(languageButton).toHaveAttribute('aria-haspopup', 'menu')
+  await expect(languageButton).toHaveAttribute('aria-expanded', 'false')
+  await expect(languageButton).toHaveCSS('border-top-width', '0px')
+  await languageButton.click()
+  await expect(page.getByRole('menuitemradio')).toHaveCount(2)
+  await expect(page.locator('.language-menu-native[lang="en"]')).toHaveText(
+    en.common.nativeLanguages.en,
+  )
+  await expect(page.locator('.language-menu-native[lang="zh-CN"]')).toHaveText(
+    en.common.nativeLanguages.zhCN,
+  )
+  await expect(
+    page.getByRole('menuitemradio', {
+      name: /English/,
+    }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await page.locator('.language-menu-native[lang="zh-CN"]').click()
   await expect(
     page.getByRole('heading', { name: zh.login.title }),
   ).toBeVisible()
@@ -120,15 +138,16 @@ test('locale and theme toggles persist in the actual production shell', async ({
   ).toBeVisible()
   await expect(html).toHaveAttribute('data-theme', 'dark')
   await expect(
-    page.getByRole('button', { name: zh.common.languages.en, exact: true }),
+    page.getByRole('button', { name: zh.common.language, exact: true }),
   ).toBeVisible()
   await expect(
     page.getByRole('button', { name: zh.common.useLight, exact: true }),
   ).toBeVisible()
 
   await page
-    .getByRole('button', { name: zh.common.languages.en, exact: true })
+    .getByRole('button', { name: zh.common.language, exact: true })
     .click()
+  await page.locator('.language-menu-native[lang="en"]').click()
   await expect(html).toHaveAttribute('lang', 'en')
   await page
     .getByRole('button', { name: en.common.useLight, exact: true })
@@ -147,7 +166,7 @@ test('locale and theme toggles persist in the actual production shell', async ({
   ).toBeVisible()
 
   const language = await page
-    .locator('.preferences .language-toggle')
+    .locator('.preferences .language-menu-trigger')
     .boundingBox()
   const theme = await page
     .locator('.preferences')
@@ -164,6 +183,68 @@ test('locale and theme toggles persist in the actual production shell', async ({
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true)
+
+  await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
+  await page
+    .getByLabel(en.auth.password, { exact: true })
+    .fill('Setup-password-123')
+  await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
+  await expect(page).toHaveURL(/\/home$/)
+  await page
+    .getByRole('button', { name: en.common.language, exact: true })
+    .click()
+  await page.locator('.language-menu-native[lang="zh-CN"]').click()
+  await expect(html).toHaveAttribute('lang', 'zh-CN')
+  await page.reload()
+  await expect(html).toHaveAttribute('lang', 'zh-CN')
+  await expect(
+    page.getByRole('button', { name: zh.common.language, exact: true }),
+  ).toBeVisible()
+})
+
+test('language menu supports keyboard dismissal and fits a 390px viewport', async ({
+  page,
+}) => {
+  await page.goto('/login')
+  await page.setViewportSize({ width: 390, height: 844 })
+  const trigger = page.getByRole('button', {
+    name: en.common.language,
+    exact: true,
+  })
+
+  await trigger.click()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('html')).toHaveAttribute('lang', 'zh-CN')
+  await expect(
+    page.getByRole('heading', { name: zh.login.title }),
+  ).toBeVisible()
+
+  const chineseTrigger = page.getByRole('button', {
+    name: zh.common.language,
+    exact: true,
+  })
+  await chineseTrigger.click()
+  await page.keyboard.press('ArrowUp')
+  await page.keyboard.press('Escape')
+  await expect(chineseTrigger).toBeFocused()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+
+  await chineseTrigger.click()
+  const menu = page.getByRole('menu')
+  const bounds = await menu.boundingBox()
+  expect(bounds).not.toBeNull()
+  expect(bounds!.x).toBeGreaterThanOrEqual(0)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844)
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <= window.innerWidth &&
+        document.querySelector('.app-header')!.scrollWidth <=
+          document.querySelector('.app-header')!.clientWidth,
     ),
   ).toBe(true)
 })

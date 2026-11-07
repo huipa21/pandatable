@@ -171,8 +171,26 @@ test('UX-05 creates every supported view under the selected sidebar table', asyn
     await expect(
       await sidebarView(page, target.table.id, name),
     ).toHaveAttribute('aria-current', 'page')
+    const activeTable = await sidebarTable(page, target.table.id)
+    await expect(
+      activeTable.locator(':scope > .nav-row .table-toggle'),
+    ).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      page.locator(
+        `.workbook-root > li[data-nav-id="${book.book.id}"] .book-toggle`,
+      ),
+    ).toHaveAttribute('aria-expanded', 'true')
     await page.reload()
     await expect(await sidebarView(page, target.table.id, name)).toBeVisible()
+    const reloadedTable = await sidebarTable(page, target.table.id)
+    await expect(
+      reloadedTable.locator(':scope > .nav-row .table-toggle'),
+    ).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      page.locator(
+        `.workbook-root > li[data-nav-id="${book.book.id}"] .book-toggle`,
+      ),
+    ).toHaveAttribute('aria-expanded', 'true')
   }
 
   if (isMobile) {

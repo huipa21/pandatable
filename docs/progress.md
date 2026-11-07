@@ -18,6 +18,9 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| DS-03 | Borderless language menu | 🟨 | 2026-11-07 | Translate icon menu, native/localized locale names, persistence, keyboard and outside-click handling; focused Vitest, touched-file ESLint and i18n checks pass. E2E and consolidated task gates await DS-10. [Record](task-prompts/ds-03-language-menu.md#record). |
+| DS-PLAN | Dashboard/sidebar redesign execution prompts | ✅ | 2026-11-07 | D-234; ten bounded prompts (DS-01..DS-10) in four waves with disjoint ownership; DS-03/DS-05 implemented awaiting DS-10 gates. [Plan](task-prompts/dashboard-sidebar.md). |
+| DS-05 | Remove content-area Share button | 🟨 | 2026-11-07 | Implemented; focused unit, lint, formatting and typecheck pass. E2E deferred to DS-10. [Record](task-prompts/ds-05-remove-content-share.md). |
 | WG-09 | Refinement integration and phase gates | 🟨 | 2026-11-07 | Check and consolidated fast E2E pass; post-phase login-assertion and grid editor re-entry fixes pass focused gates. The production phase failed (timeout, 135 not run) and needs one authorized rerun. [Record](task-prompts/wg-09-verification.md). |
 | WG-01 | Flat workspace browsing | 🟨 | 2026-11-06 | D-230; flat ordered sidebar with existing workbook cards and access states retained. Focused Vitest/ESLint pass; E2E and consolidated task gates deferred to WG-09. [Record](task-prompts/wg-01-flat-workspaces.md). |
 | WG-02 | Active-workbook navigation tree | 🟨 | 2026-11-06 | D-230; flat workspace list with an authorized route-resolved tree for only the active workbook. Focused navigation/view tests pass; consolidated E2E and gates await WG-09. [Record](task-prompts/wg-02-workbook-tree.md). |
@@ -142,6 +145,9 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | Implemented DS-03's borderless translate-icon locale menu and keyboard/outside dismissal; focused checks pass, with DS-10 E2E and consolidated gates pending. |
+| 2026-11-07 | Implemented DS-05: removed page-level Share, routed helpers through sidebar actions and released ResourcePage to DS-08; E2E awaits DS-10. |
+| 2026-11-07 | Planned DS-01..DS-10 dashboard/sidebar redesign (workspace dashboard search, workspace icon/description, recents, collapsed workbook tree, Share removal, language icon menu); planning only. |
 | 2026-11-07 | WG-09 checkpoint: fixed stale post-login assertions and a grid editor re-entry data-loss path; check and focused fast E2E pass. The failed production phase still needs one authorized rerun. |
 | 2026-11-07 | Reopened UI-FIELD-TILES after two WG-09 production-phase login assertion failures; the phase also hit its suite timeout. Focused repair is in progress. |
 | 2026-11-07 | Started WG-09: integrated WG-01..08 acceptance mappings/docs, removed obsolete toolbar compatibility hooks and refreshed metadata/transfer assertions; consolidated gates remain in progress. |
