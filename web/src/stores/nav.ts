@@ -18,6 +18,7 @@ export interface NavigationItem {
   id: string
   name: string
   description: string
+  lastOpenedAt: string | null
   kind: ResourceKind
   path: string
   parentId: string | null
@@ -272,6 +273,33 @@ export const useNavStore = defineStore('nav', () => {
     return writePreference('/auth/workspace-preference', 'PUT', { workspaceId })
   }
 
+  function recordOpen(kind: 'workspace' | 'book', id: string) {
+    if (!auth.user) return
+    const openedAt = new Date().toISOString()
+    for (const workspace of tree.value.workspaces) {
+      if (kind === 'workspace' && workspace.id === id) {
+        workspace.lastOpenedAt = openedAt
+        break
+      }
+      const book = workspace.books.find(
+        (candidate) => kind === 'book' && candidate.id === id,
+      )
+      if (book) {
+        book.lastOpenedAt = openedAt
+        break
+      }
+    }
+    void request<void>(
+      '/recent',
+      'POST',
+      { kind, id },
+      AbortSignal.timeout(10_000),
+    ).catch((cause: unknown) => {
+      if (cause instanceof RequestError && cause.status === 404) return
+      console.warn('Failed to record recent resource open', cause)
+    })
+  }
+
   async function mutate<T>(path: string, method: string, body?: unknown) {
     busy.value = true
     mutationError.value = null
@@ -348,6 +376,7 @@ export const useNavStore = defineStore('nav', () => {
       id: w.id,
       name: w.name,
       description: w.description,
+      lastOpenedAt: w.lastOpenedAt,
       kind: 'workspace',
       path: `/w/${w.id}`,
       parentId: null,
@@ -364,6 +393,7 @@ export const useNavStore = defineStore('nav', () => {
         id: b.id,
         name: b.name,
         description: '',
+        lastOpenedAt: b.lastOpenedAt,
         kind: 'book',
         path: `/w/${w.id}/b/${b.id}`,
         parentId: w.id,
@@ -380,6 +410,7 @@ export const useNavStore = defineStore('nav', () => {
           id: table.id,
           name: table.name,
           description: '',
+          lastOpenedAt: null,
           kind: 'table',
           // The bare table route shows the default view (breadcrumb without a view).
           path: `/t/${table.id}`,
@@ -428,6 +459,7 @@ export const useNavStore = defineStore('nav', () => {
     refreshPreference,
     resolvePreference,
     setPreferredWorkspace,
+    recordOpen,
     submit,
     reorder,
   }

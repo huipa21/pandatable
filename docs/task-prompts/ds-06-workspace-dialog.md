@@ -57,4 +57,24 @@ Read [execution plan](dashboard-sidebar.md). Requires the DS-01 handoff. Wave 2
 Record the component APIs for DS-07 (how to open create/edit), counts and
 integrated handoffs. Leave it **implemented, awaiting DS-10 gates**.
 
-## Record
+## Record (2026-11-07)
+
+- Implemented workspace create/edit fields in `StructureDialog.vue`; random
+  sends no icon, editing submits only changed icon/description details, and
+  oversized descriptions show an inline counter error. Added reusable
+  `IconPicker.vue` with all server-allowed icons and roving arrow-key selection.
+- `NavActions.vue` now exposes owner-only **Edit workspace** while preserving
+  other resource rename and sharing/default/delete behavior. DS-07 opens create
+  with `{ operation: 'create', kind: 'workspace' }` and edit with
+  `{ operation: 'rename', kind: 'workspace', id, name }`. `IconPicker` exposes
+  `v-model` as `BookIconName | null`. The existing `nav.submit`
+  `WorkspaceDetails` helper was sufficient; `stores/nav.ts` was not changed.
+- Added unit coverage for permissions, keyboard selection, changed/cleared
+  metadata and inline validation. `workspace-navigation.spec.ts` covers
+  name-only/custom creation, metadata editing and clearing on desktop/mobile.
+- Checks: focused Vitest 12/12; touched-file ESLint; typecheck; i18n check
+  (1,301 matching keys); Prettier; production frontend build; Playwright spec
+  discovery — all pass. Browser E2E and consolidated gates remain deferred to
+  DS-10; implementation awaits those gates.
+- Wave 2 coordination: integrated the completed DS-02 progress handoff; its API
+  documentation and acceptance mapping remain with DS-10.

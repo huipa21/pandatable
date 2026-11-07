@@ -859,9 +859,11 @@ button:disabled {
 
 .structure-dialog {
   width: min(460px, calc(100vw - 32px));
+  max-height: 90dvh;
   border-radius: 12px;
   padding: 24px;
   overflow-wrap: anywhere;
+  overflow-y: auto;
 }
 
 .share-dialog {
@@ -927,7 +929,8 @@ dialog::backdrop {
 }
 
 .structure-name input,
-.structure-name select {
+.structure-name select,
+.structure-name textarea {
   width: 100%;
   color: var(--text);
   background: var(--surface);
@@ -935,6 +938,49 @@ dialog::backdrop {
   border-radius: 6px;
   padding: 10px;
   font: inherit;
+}
+
+.structure-name textarea {
+  resize: vertical;
+}
+
+.workspace-icon-field,
+.workspace-description-field {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.icon-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.structure-dialog .icon-picker-option {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  padding: 0;
+  border-color: transparent;
+}
+
+.structure-dialog .icon-picker-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.icon-picker-random {
+  font-size: 11px;
+}
+
+.structure-name .field-error {
+  color: var(--highlight-red-2-text);
+  font-size: 12px;
 }
 
 .view-dialog .structure-name + .structure-name {

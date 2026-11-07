@@ -140,7 +140,48 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   const structure = page.getByRole('dialog', { name: en.nav.dialogTitle })
   await structure
     .getByRole('textbox', { name: en.nav.name })
+    .fill(`UX02 name only ${suffix}`)
+  const nameOnlyCreated = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/v1/workspaces',
+  )
+  await structure.getByRole('button', { name: en.admin.confirm }).click()
+  const nameOnlyResponse = await nameOnlyCreated
+  expect(nameOnlyResponse.status()).toBe(201)
+  const nameOnlyWorkspace = (await nameOnlyResponse.json()) as {
+    workspace: {
+      id: string
+      icon: string | null
+      description: string
+      fallbackIcon: string
+    }
+  }
+  const nameOnly = nameOnlyWorkspace.workspace.id
+  expect(nameOnlyWorkspace.workspace.icon).toBeNull()
+  expect(nameOnlyWorkspace.workspace.description).toBe('')
+  expect(nameOnlyWorkspace.workspace.fallbackIcon).toBeTruthy()
+  cleanup.workspaceIds.push(nameOnly)
+  await expect(structure).not.toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/w/${nameOnly}$`))
+  if (isMobile) await expect(page.locator('.nav-drawer')).not.toBeVisible()
+
+  sidebar = await tree(page, isMobile)
+  await sidebar
+    .locator('.workspace-heading')
+    .getByRole('button', { name: en.nav.create.workspace, exact: true })
+    .click()
+  await structure
+    .getByRole('textbox', { name: en.nav.name })
     .fill(`UX02 second ${suffix}`)
+  await structure
+    .getByRole('radio', {
+      name: en.dashboard.ds06.iconOption.replace('{icon}', 'star'),
+    })
+    .click()
+  await structure
+    .getByRole('textbox', { name: en.dashboard.ds06.descriptionLabel })
+    .fill(`Workspace description ${suffix}`)
   const workspaceCreated = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
@@ -149,9 +190,14 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   await structure.getByRole('button', { name: en.admin.confirm }).click()
   const secondResponse = await workspaceCreated
   expect(secondResponse.status()).toBe(201)
-  const second = (
-    (await secondResponse.json()) as { workspace: { id: string } }
-  ).workspace.id
+  const secondWorkspace = (await secondResponse.json()) as {
+    workspace: { id: string; icon: string | null; description: string }
+  }
+  const second = secondWorkspace.workspace.id
+  expect(secondWorkspace.workspace.icon).toBe('star')
+  expect(secondWorkspace.workspace.description).toBe(
+    `Workspace description ${suffix}`,
+  )
   cleanup.workspaceIds.push(second)
   await expect(structure).not.toBeVisible()
   await expect(page).toHaveURL(new RegExp(`/w/${second}$`))
@@ -159,6 +205,70 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
   expect(second).not.toBe(first)
 
   sidebar = await tree(page, isMobile)
+  const secondActions = sidebar.locator(
+    `[data-nav-id="${second}"] > .node-actions`,
+  )
+  await openNodeActions(secondActions)
+  await secondActions
+    .getByRole('button', {
+      name: en.dashboard.ds06.editWorkspace,
+      exact: true,
+    })
+    .click()
+  await structure
+    .getByRole('radio', {
+      name: en.dashboard.ds06.iconOption.replace('{icon}', 'book'),
+    })
+    .click()
+  await structure
+    .getByRole('textbox', { name: en.dashboard.ds06.descriptionLabel })
+    .fill(`Updated description ${suffix}`)
+  const workspaceUpdated = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === `/api/v1/workspaces/${second}`,
+  )
+  await structure.getByRole('button', { name: en.admin.confirm }).click()
+  const updatedResponse = await workspaceUpdated
+  expect(updatedResponse.status()).toBe(200)
+  const updatedNavigation = (await (
+    await page.request.get('/api/v1/nav')
+  ).json()) as Navigation
+  const updated = updatedNavigation.workspaces.find(
+    (item) => item.id === second,
+  )
+  expect(updated?.icon).toBe('book')
+  expect(updated?.description).toBe(`Updated description ${suffix}`)
+
+  await openNodeActions(secondActions)
+  await secondActions
+    .getByRole('button', {
+      name: en.dashboard.ds06.editWorkspace,
+      exact: true,
+    })
+    .click()
+  await structure
+    .getByRole('radio', { name: en.dashboard.ds06.randomIcon, exact: true })
+    .click()
+  await structure
+    .getByRole('textbox', { name: en.dashboard.ds06.descriptionLabel })
+    .fill('')
+  const workspaceCleared = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === `/api/v1/workspaces/${second}`,
+  )
+  await structure.getByRole('button', { name: en.admin.confirm }).click()
+  expect((await workspaceCleared).status()).toBe(200)
+  const clearedNavigation = (await (
+    await page.request.get('/api/v1/nav')
+  ).json()) as Navigation
+  const cleared = clearedNavigation.workspaces.find(
+    (item) => item.id === second,
+  )
+  expect(cleared?.icon).toBeNull()
+  expect(cleared?.description).toBe('')
+
   const serverTree = (await (
     await page.request.get('/api/v1/nav')
   ).json()) as Navigation
@@ -176,14 +286,17 @@ test('UX-02: workspace navigation, preference, deep links and restricted ancestr
       '[data-kind="book"], [data-kind="table"], .workspace-section',
     ),
   ).toHaveCount(0)
-  for (const id of [original, first, second])
+  for (const id of [original, first, nameOnly, second])
     await expect(sidebar.locator(`[data-nav-id="${id}"]`)).toBeVisible()
 
   const renamed = `UX02 renamed ${suffix}`
   const actions = sidebar.locator(`[data-nav-id="${first}"] > .node-actions`)
   await openNodeActions(actions)
   await actions
-    .getByRole('button', { name: en.nav.rename, exact: true })
+    .getByRole('button', {
+      name: en.dashboard.ds06.editWorkspace,
+      exact: true,
+    })
     .click()
   await structure.getByRole('textbox', { name: en.nav.name }).fill(renamed)
   await structure.getByRole('button', { name: en.admin.confirm }).click()

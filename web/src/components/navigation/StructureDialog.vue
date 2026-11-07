@@ -3,15 +3,63 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { createResourceLabel } from '../../i18n'
 import { useRouter } from 'vue-router'
-import { errorMessage } from '../../api/client'
-import { useNavStore } from '../../stores/nav'
+import { errorMessage, RequestError } from '../../api/client'
+import { useNavStore, type WorkspaceDetails } from '../../stores/nav'
+import type { BookIconName } from '../../api/types'
+import IconPicker from '../common/IconPicker.vue'
 
 const { t } = useI18n()
 const router = useRouter()
 const nav = useNavStore()
 const dialog = ref<HTMLDialogElement>()
 const name = ref('')
+const icon = ref<BookIconName | null>(null)
+const description = ref('')
 const error = ref<unknown>(null)
+const workspace = computed(() => {
+  const action = nav.editor
+  if (!action || action.kind !== 'workspace' || !action.id) return undefined
+  return nav.tree.workspaces.find((item) => item.id === action.id)
+})
+const workspaceEditor = computed(
+  () => nav.editor?.kind === 'workspace' && nav.editor.operation !== 'delete',
+)
+const descriptionLength = computed(() => [...description.value].length)
+const descriptionInvalid = computed(() => descriptionLength.value > 500)
+const inlineError = computed(() => {
+  if (
+    workspaceEditor.value &&
+    error.value instanceof RequestError &&
+    error.value.code === 'ERR_VALIDATION'
+  )
+    return t('dashboard.ds06.workspaceValidationError')
+  return errorMessage(error.value)
+})
+const submitDisabled = computed(() => {
+  const action = nav.editor
+  return (
+    nav.busy ||
+    (action?.operation !== 'delete' &&
+      action !== null &&
+      (invalid.value || (workspaceEditor.value && descriptionInvalid.value)))
+  )
+})
+const workspaceDetails = computed<WorkspaceDetails | undefined>(() => {
+  const action = nav.editor
+  if (!action || action.kind !== 'workspace' || action.operation === 'delete')
+    return undefined
+  const details: WorkspaceDetails = {}
+  if (action.operation === 'create') {
+    if (icon.value !== null) details.icon = icon.value
+    if (description.value !== '') details.description = description.value
+  } else {
+    if (icon.value !== (workspace.value?.icon ?? null))
+      details.icon = icon.value
+    if (description.value !== (workspace.value?.description ?? ''))
+      details.description = description.value
+  }
+  return details
+})
 const invalid = computed(
   () =>
     [...name.value.trim()].length < 1 ||
@@ -23,6 +71,10 @@ watch(
   async (action) => {
     error.value = null
     name.value = action?.name ?? ''
+    icon.value =
+      action?.kind === 'workspace' ? (workspace.value?.icon ?? null) : null
+    description.value =
+      action?.kind === 'workspace' ? (workspace.value?.description ?? '') : ''
     await nextTick()
     if (action) dialog.value?.showModal()
     else dialog.value?.close()
@@ -33,10 +85,19 @@ function close() {
 }
 async function save() {
   const action = nav.editor
-  if (!action || nav.busy || (action.operation !== 'delete' && invalid.value))
+  if (
+    !action ||
+    nav.busy ||
+    (action.operation !== 'delete' &&
+      (invalid.value || (workspaceEditor.value && descriptionInvalid.value)))
+  )
     return
   try {
-    const path = await nav.submit(action, name.value.trim())
+    const path = await nav.submit(
+      action,
+      name.value.trim(),
+      workspaceDetails.value,
+    )
     nav.editor = null
     if (path) await router.push(path)
   } catch (cause) {
@@ -58,7 +119,9 @@ async function save() {
           nav.editor.operation === 'create'
             ? createResourceLabel(nav.editor.kind)
             : nav.editor.operation === 'rename'
-              ? t('nav.rename')
+              ? nav.editor.kind === 'workspace'
+                ? t('dashboard.ds06.editWorkspace')
+                : t('nav.rename')
               : t('nav.delete')
         }}
       </h2>
@@ -76,12 +139,44 @@ async function save() {
         />
         <span id="structure-name-policy">{{ t('nav.namePolicy') }}</span>
       </label>
-      <p v-if="error" role="alert">{{ errorMessage(error) }}</p>
+      <template v-if="workspaceEditor">
+        <div class="workspace-icon-field">
+          <span>{{ t('dashboard.ds06.iconLabel') }}</span>
+          <IconPicker v-model="icon" />
+        </div>
+        <label class="structure-name workspace-description-field">
+          <span>{{ t('dashboard.ds06.descriptionLabel') }}</span>
+          <textarea
+            v-model="description"
+            :disabled="nav.busy"
+            :aria-label="t('dashboard.ds06.descriptionLabel')"
+            :aria-invalid="descriptionInvalid"
+            :aria-describedby="
+              descriptionInvalid
+                ? 'workspace-description-counter workspace-description-error'
+                : 'workspace-description-counter'
+            "
+            rows="3"
+          />
+          <span id="workspace-description-counter">
+            {{
+              t('dashboard.ds06.descriptionCounter', {
+                count: descriptionLength,
+              })
+            }}
+          </span>
+          <span
+            v-if="descriptionInvalid"
+            id="workspace-description-error"
+            class="field-error"
+          >
+            {{ t('dashboard.ds06.descriptionTooLong') }}
+          </span>
+        </label>
+      </template>
+      <p v-if="error" role="alert">{{ inlineError }}</p>
       <div class="nav-actions">
-        <button
-          type="submit"
-          :disabled="nav.busy || (nav.editor.operation !== 'delete' && invalid)"
-        >
+        <button type="submit" :disabled="submitDisabled">
           {{ t('admin.confirm') }}
         </button>
         <button type="button" :disabled="nav.busy" @click="close">

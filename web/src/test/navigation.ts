@@ -26,6 +26,7 @@ export function navigation(): Navigation {
         description: 'Workspace description',
         fallbackIcon: 'star',
         createdAt: '',
+        lastOpenedAt: null,
         level: 'owner',
         pathOnly: false,
         books: [
@@ -34,6 +35,7 @@ export function navigation(): Navigation {
             name: 'Book',
             icon: null,
             fallbackIcon: 'book',
+            lastOpenedAt: null,
             position: 1024,
             level: 'owner',
             pathOnly: false,

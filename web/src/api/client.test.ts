@@ -1,6 +1,6 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { i18n, loadLocale } from '../i18n'
-import { errorMessage, RequestError } from './client'
+import { errorMessage, request, RequestError } from './client'
 import enRaw from '../i18n/en.json?raw'
 import zhRaw from '../i18n/zh-CN.json?raw'
 
@@ -23,6 +23,14 @@ describe('row API errors', () => {
     expect(errorMessage(new RequestError('ERR_SCHEMA_CHANGED', 409))).toBe(
       i18n.global.t('errors.ERR_SCHEMA_CHANGED'),
     )
+  })
+
+  it('accepts an empty 204 response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 204 })),
+    )
+    await expect(request<void>('/recent', 'POST', {})).resolves.toBeUndefined()
   })
 
   it('translates relation conflict and restrict errors', () => {

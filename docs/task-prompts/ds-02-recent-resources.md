@@ -65,3 +65,29 @@ Record the API/DTO shape, composable signature and counts. Put the API doc
 patch in the Record for DS-10. Leave it **implemented, awaiting DS-10 gates**.
 
 ## Record
+
+- Implemented migration `0010_recent_resources.sql`, per-user recent-resource
+  upserts/pruning and caller-scoped `/nav` `lastOpenedAt`; `POST /recent`
+  requires live workspace/book access (including path-only reachability),
+  returns 204, and emits no navigation event. Hidden, missing and trashed
+  targets return the same 404. Foreign keys cascade on user/resource deletion.
+- Frontend DTOs include nullable `lastOpenedAt` on workspaces/books.
+  `recordOpen(kind: 'workspace' | 'book', id: string): void` updates local
+  state optimistically and posts asynchronously; `useRecentOpen()` is wired
+  once in `AppLayout.vue`, records workspace/book routes and resolves
+  table/view/row ancestry. A route identity is recorded once; stale 404s are
+  silent. `useResourceSearch<T>(items, query, pinnedId?)` returns an ordered
+  computed list, applying NFKC/case-folded name/description matching and
+  recency → pinned ID → server-index tie-breaking.
+- Verification passed: `go build ./...`; focused PG18 tests (6 passed: 4
+  recent-resource structure tests, existing nav test and HTTP API test);
+  focused Vitest (26 passed); frontend typecheck and touched-file ESLint.
+  Task-specific E2E and consolidated/phase gates remain with DS-10.
+- DS-10 API-doc handoff for `09-api.md` → Structure: add
+  `POST /recent` (`{kind:'workspace'|'book',id}` → 204; authorized reachable
+  live targets only; hidden/missing/trashed targets are uniform 404; no event
+  or permission change). Extend `/nav` workspace and book objects with
+  `lastOpenedAt: string|null`, populated only from the caller's recents.
+  Assign the new PG18, route-hook and search cases to acceptance tests; revise
+  existing AT-214/215/216 only in DS-10.
+- Status: implemented, awaiting DS-10 gates.

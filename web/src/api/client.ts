@@ -48,6 +48,7 @@ export interface RequestOptions {
 }
 
 async function readResponse<T>(response: Response): Promise<T> {
+  if (response.status === 204) return undefined as T
   const result: unknown = await response.json()
   if (!response.ok) {
     const failure =

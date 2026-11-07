@@ -1568,6 +1568,22 @@ func (q *Queries) LockMentionUsers(ctx context.Context, usernames []string) ([]L
 	return items, nil
 }
 
+const lockRecentResources = `-- name: LockRecentResources :exec
+
+SELECT pg_advisory_xact_lock(hashtextextended(
+  'pandatable.recent-resources:' || $1::uuid::text, 0
+))
+`
+
+// Navigation: the user's effective grants and the live workspaces they touch.
+// Level arithmetic and path-only pruning happen in Go (internal/structure/nav.go)
+// and are tested against the resolver. Disabled users and trashed ancestors
+// yield nothing, exactly like the resolver queries.
+func (q *Queries) LockRecentResources(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockRecentResources, userID)
+	return err
+}
+
 const lockRowComment = `-- name: LockRowComment :one
 SELECT id, table_id, row_id, user_id, mentions
 FROM meta.comments
@@ -1875,10 +1891,18 @@ func (q *Queries) MoveManagedView(ctx context.Context, arg MoveManagedViewParams
 }
 
 const navBooks = `-- name: NavBooks :many
-SELECT id, workspace_id, name, icon, fallback_icon, position
-FROM meta.books
-WHERE workspace_id = ANY($1::uuid[]) AND deleted_at IS NULL
+SELECT b.id, b.workspace_id, b.name, b.icon, b.fallback_icon, b.position,
+       recent.opened_at AS last_opened_at
+FROM meta.books b
+LEFT JOIN meta.recent_resources recent
+  ON recent.user_id = $1::uuid AND recent.book_id = b.id
+WHERE b.workspace_id = ANY($2::uuid[]) AND b.deleted_at IS NULL
 `
+
+type NavBooksParams struct {
+	UserID       pgtype.UUID
+	WorkspaceIds []pgtype.UUID
+}
 
 type NavBooksRow struct {
 	ID           pgtype.UUID
@@ -1887,10 +1911,11 @@ type NavBooksRow struct {
 	Icon         pgtype.Text
 	FallbackIcon string
 	Position     float64
+	LastOpenedAt pgtype.Timestamptz
 }
 
-func (q *Queries) NavBooks(ctx context.Context, workspaceIds []pgtype.UUID) ([]NavBooksRow, error) {
-	rows, err := q.db.Query(ctx, navBooks, workspaceIds)
+func (q *Queries) NavBooks(ctx context.Context, arg NavBooksParams) ([]NavBooksRow, error) {
+	rows, err := q.db.Query(ctx, navBooks, arg.UserID, arg.WorkspaceIds)
 	if err != nil {
 		return nil, err
 	}
@@ -1905,6 +1930,7 @@ func (q *Queries) NavBooks(ctx context.Context, workspaceIds []pgtype.UUID) ([]N
 			&i.Icon,
 			&i.FallbackIcon,
 			&i.Position,
+			&i.LastOpenedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -1965,7 +1991,6 @@ func (q *Queries) NavGrantedWorkspaces(ctx context.Context, userID pgtype.UUID) 
 }
 
 const navGrants = `-- name: NavGrants :many
-
 WITH principals AS (
   SELECT 'user'::text AS principal_type, u.id AS principal_id
   FROM meta.users u
@@ -1989,10 +2014,6 @@ type NavGrantsRow struct {
 	Level        int32
 }
 
-// Navigation: the user's effective grants and the live workspaces they touch.
-// Level arithmetic and path-only pruning happen in Go (internal/structure/nav.go)
-// and are tested against the resolver. Disabled users and trashed ancestors
-// yield nothing, exactly like the resolver queries.
 func (q *Queries) NavGrants(ctx context.Context, userID pgtype.UUID) ([]NavGrantsRow, error) {
 	rows, err := q.db.Query(ctx, navGrants, userID)
 	if err != nil {
@@ -2104,10 +2125,18 @@ func (q *Queries) NavViews(ctx context.Context, arg NavViewsParams) ([]NavViewsR
 }
 
 const navWorkspaces = `-- name: NavWorkspaces :many
-SELECT id, name, icon, color, description, fallback_icon, created_at
-FROM meta.workspaces
-WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL
+SELECT w.id, w.name, w.icon, w.color, w.description, w.fallback_icon, w.created_at,
+       recent.opened_at AS last_opened_at
+FROM meta.workspaces w
+LEFT JOIN meta.recent_resources recent
+  ON recent.user_id = $1::uuid AND recent.workspace_id = w.id
+WHERE w.id = ANY($2::uuid[]) AND w.deleted_at IS NULL
 `
+
+type NavWorkspacesParams struct {
+	UserID pgtype.UUID
+	Ids    []pgtype.UUID
+}
 
 type NavWorkspacesRow struct {
 	ID           pgtype.UUID
@@ -2117,10 +2146,11 @@ type NavWorkspacesRow struct {
 	Description  string
 	FallbackIcon string
 	CreatedAt    pgtype.Timestamptz
+	LastOpenedAt pgtype.Timestamptz
 }
 
-func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWorkspacesRow, error) {
-	rows, err := q.db.Query(ctx, navWorkspaces, ids)
+func (q *Queries) NavWorkspaces(ctx context.Context, arg NavWorkspacesParams) ([]NavWorkspacesRow, error) {
+	rows, err := q.db.Query(ctx, navWorkspaces, arg.UserID, arg.Ids)
 	if err != nil {
 		return nil, err
 	}
@@ -2136,6 +2166,7 @@ func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWo
 			&i.Description,
 			&i.FallbackIcon,
 			&i.CreatedAt,
+			&i.LastOpenedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -2145,6 +2176,26 @@ func (q *Queries) NavWorkspaces(ctx context.Context, ids []pgtype.UUID) ([]NavWo
 		return nil, err
 	}
 	return items, nil
+}
+
+const pruneRecentResources = `-- name: PruneRecentResources :exec
+WITH ranked AS (
+  SELECT user_id, workspace_id, book_id, row_number() OVER (
+    ORDER BY opened_at DESC, workspace_id, book_id
+  ) AS position
+  FROM meta.recent_resources
+  WHERE user_id = $1::uuid
+)
+DELETE FROM meta.recent_resources recent
+USING ranked
+WHERE recent.user_id = ranked.user_id AND ranked.position > 200
+  AND ((ranked.workspace_id IS NOT NULL AND recent.workspace_id = ranked.workspace_id)
+    OR (ranked.book_id IS NOT NULL AND recent.book_id = ranked.book_id))
+`
+
+func (q *Queries) PruneRecentResources(ctx context.Context, userID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, pruneRecentResources, userID)
+	return err
 }
 
 const purgeRowHistory = `-- name: PurgeRowHistory :execrows
@@ -2690,6 +2741,94 @@ func (q *Queries) UpdateWorkspacePreference(ctx context.Context, arg UpdateWorks
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const upsertRecentBook = `-- name: UpsertRecentBook :one
+WITH principals AS (
+  SELECT 'user'::text AS principal_type, u.id AS principal_id
+  FROM meta.users u
+  WHERE u.id = $1::uuid AND u.status = 'active'
+  UNION ALL
+  SELECT 'group'::text, gm.group_id
+  FROM meta.group_members gm
+  JOIN meta.users u ON u.id = gm.user_id AND u.status = 'active'
+  WHERE gm.user_id = $1::uuid
+), granted AS (
+  SELECT g.resource_type, g.resource_id
+  FROM meta.grants g
+  JOIN principals p ON p.principal_type = g.principal_type AND p.principal_id = g.principal_id
+)
+INSERT INTO meta.recent_resources (user_id, book_id, opened_at)
+SELECT $1::uuid, b.id, now()
+FROM meta.books b
+JOIN meta.workspaces w ON w.id = b.workspace_id AND w.deleted_at IS NULL
+WHERE b.id = $2::uuid AND b.deleted_at IS NULL
+  AND (
+    EXISTS (SELECT 1 FROM granted g WHERE g.resource_type = 'workspace' AND g.resource_id = w.id)
+    OR EXISTS (SELECT 1 FROM granted g WHERE g.resource_type = 'book' AND g.resource_id = b.id)
+    OR EXISTS (SELECT 1 FROM granted g JOIN meta.tables t ON t.id = g.resource_id
+               WHERE g.resource_type = 'table' AND t.book_id = b.id AND t.deleted_at IS NULL)
+  )
+ON CONFLICT (user_id, book_id) WHERE book_id IS NOT NULL
+DO UPDATE SET opened_at = now()
+RETURNING opened_at
+`
+
+type UpsertRecentBookParams struct {
+	UserID pgtype.UUID
+	BookID pgtype.UUID
+}
+
+func (q *Queries) UpsertRecentBook(ctx context.Context, arg UpsertRecentBookParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, upsertRecentBook, arg.UserID, arg.BookID)
+	var opened_at pgtype.Timestamptz
+	err := row.Scan(&opened_at)
+	return opened_at, err
+}
+
+const upsertRecentWorkspace = `-- name: UpsertRecentWorkspace :one
+WITH principals AS (
+  SELECT 'user'::text AS principal_type, u.id AS principal_id
+  FROM meta.users u
+  WHERE u.id = $1::uuid AND u.status = 'active'
+  UNION ALL
+  SELECT 'group'::text, gm.group_id
+  FROM meta.group_members gm
+  JOIN meta.users u ON u.id = gm.user_id AND u.status = 'active'
+  WHERE gm.user_id = $1::uuid
+), granted AS (
+  SELECT g.resource_type, g.resource_id
+  FROM meta.grants g
+  JOIN principals p ON p.principal_type = g.principal_type AND p.principal_id = g.principal_id
+)
+INSERT INTO meta.recent_resources (user_id, workspace_id, opened_at)
+SELECT $1::uuid, w.id, now()
+FROM meta.workspaces w
+WHERE w.id = $2::uuid AND w.deleted_at IS NULL
+  AND (
+    EXISTS (SELECT 1 FROM granted g WHERE g.resource_type = 'workspace' AND g.resource_id = w.id)
+    OR EXISTS (SELECT 1 FROM granted g JOIN meta.books b ON b.id = g.resource_id
+               WHERE g.resource_type = 'book' AND b.workspace_id = w.id AND b.deleted_at IS NULL)
+    OR EXISTS (SELECT 1 FROM granted g JOIN meta.tables t ON t.id = g.resource_id
+               JOIN meta.books b ON b.id = t.book_id
+               WHERE g.resource_type = 'table' AND b.workspace_id = w.id
+                 AND b.deleted_at IS NULL AND t.deleted_at IS NULL)
+  )
+ON CONFLICT (user_id, workspace_id) WHERE workspace_id IS NOT NULL
+DO UPDATE SET opened_at = now()
+RETURNING opened_at
+`
+
+type UpsertRecentWorkspaceParams struct {
+	UserID      pgtype.UUID
+	WorkspaceID pgtype.UUID
+}
+
+func (q *Queries) UpsertRecentWorkspace(ctx context.Context, arg UpsertRecentWorkspaceParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, upsertRecentWorkspace, arg.UserID, arg.WorkspaceID)
+	var opened_at pgtype.Timestamptz
+	err := row.Scan(&opened_at)
+	return opened_at, err
 }
 
 const validFieldTimezone = `-- name: ValidFieldTimezone :one

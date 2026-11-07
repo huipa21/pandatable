@@ -965,6 +965,17 @@
       "timeout": "采集已超时",
       "invalid": "存储指标类型不受支持或无效",
       "query": "数据库指标采集失败"
+    },
+    "ds06": {
+      "editWorkspace": "编辑工作区",
+      "iconLabel": "图标",
+      "randomIcon": "随机图标（使用工作区默认图标）",
+      "randomIconShort": "随机",
+      "iconOption": "选择 {icon} 图标",
+      "descriptionLabel": "描述（可选）",
+      "descriptionCounter": "{count}/500 个字符",
+      "descriptionTooLong": "描述不能超过 500 个字符。",
+      "workspaceValidationError": "请检查工作区名称、图标和描述。"
     }
   },
   "setup": {

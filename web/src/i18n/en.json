@@ -965,6 +965,17 @@
       "timeout": "Collection deadline reached",
       "invalid": "Unsupported or invalid storage observation",
       "query": "Database observation failed"
+    },
+    "ds06": {
+      "editWorkspace": "Edit workspace",
+      "iconLabel": "Icon",
+      "randomIcon": "Random icon (use the workspace fallback)",
+      "randomIconShort": "Random",
+      "iconOption": "Select {icon} icon",
+      "descriptionLabel": "Description (optional)",
+      "descriptionCounter": "{count}/500 characters",
+      "descriptionTooLong": "Description must be 500 characters or fewer.",
+      "workspaceValidationError": "Check the workspace name, icon, and description."
     }
   },
   "setup": {

@@ -777,9 +777,9 @@ failed AT-305/311 and AT-705, and the phase gate remains open.
 
 | Test | Status | Evidence / remaining boundary |
 |---|---|---|
-| AT-214 | Pass | `default-workspace` and `workspace-navigation` desktop/mobile; PG18 preference, provisioning and migration tests in `ptdev check`. |
+| AT-214 | Pass (existing scenarios) | `default-workspace` and `workspace-navigation` desktop/mobile; PG18 preference, provisioning and migration tests in `ptdev check`. DS-06's updated create/edit-dialog browser coverage awaits DS-10. |
 | AT-215 | Pending WG-09 | Existing `workspace-navigation`/`shell` evidence retained; new flat-list and active-workbook-tree regression coverage is AT-519..524. |
-| AT-216 | Pass | `workbook-cards` desktop/mobile (custom override, clear-to-fallback, access pruning); `workbook-icons` desktop (API metadata); PG18 `TestBookIcon*`. No icon-picker UI exists; overrides are API-only. |
+| AT-216 | Pass (existing workbook scenarios) | `workbook-cards` desktop/mobile (custom override, clear-to-fallback, access pruning); `workbook-icons` desktop (API metadata); PG18 `TestBookIcon*`. DS-06 adds workspace icon-picker create/edit/clear coverage to `workspace-navigation.spec.ts`; updated browser assertions await DS-10. |
 | AT-217 | Pass (desktop) | `trash` UX-05 scenario: deleted table's views and deep links are unavailable; restore brings them back. |
 | AT-327 | Pending WG-09 | `table-header`, `export`, `visibility-menu`, `workbook-cards`; verifies one transfer trigger, no toolbar metadata summary, and preserved compact header in both locales. New WG-06/08 assertions are AT-534..536 and AT-541..543. |
 | AT-328 | Pass (desktop) | `grid-inline-editing` scalar scenario including reload persistence, rejected drafts, Escape and reader denial. Physical IME hardware untested. |

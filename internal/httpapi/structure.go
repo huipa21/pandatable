@@ -17,6 +17,7 @@ func actorOf(user auth.User) structure.Actor {
 
 func (api *authHTTP) mountStructure(router chi.Router) {
 	router.Get("/nav", api.authenticated(api.nav))
+	router.Post("/recent", api.authenticated(api.recordRecent))
 	router.Get("/auth/workspace-preference", api.authenticated(api.getWorkspacePreference))
 	router.Put("/auth/workspace-preference", api.authenticated(api.setWorkspacePreference))
 	router.Post("/auth/workspace-preference/resolve", api.authenticated(api.resolveWorkspacePreference))
@@ -116,6 +117,26 @@ func (api *authHTTP) nav(w http.ResponseWriter, r *http.Request, user auth.User)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (api *authHTTP) recordRecent(w http.ResponseWriter, r *http.Request, user auth.User) {
+	var input struct {
+		Kind string `json:"kind"`
+		ID   string `json:"id"`
+	}
+	if err := decodeJSON(w, r, &input); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	if input.Kind != "workspace" && input.Kind != "book" {
+		api.fail(w, r, apperr.New(400, "ERR_VALIDATION", "Invalid resource kind"))
+		return
+	}
+	if err := api.structure.RecordRecent(r.Context(), actorOf(user), input.Kind, input.ID); err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func optionalText(raw json.RawMessage) (structure.OptionalText, error) {

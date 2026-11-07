@@ -137,6 +137,53 @@ func TestWorkspaceDetailsAPI(t *testing.T) {
 	}
 }
 
+func TestRecentResourcesAPIAndCallerScopedNavTimestamps(t *testing.T) {
+	f := newACLFixture(t)
+	owner, reader, stranger := f.user("user", false), f.user("user", false), f.user("user", false)
+	workspace := f.newWorkspace(owner, "Recent workspace")
+	book := f.newBook(owner, workspace.ID, "Recent book")
+	table := f.newTable(owner, book.ID, "Recent table")
+	f.grantOK(owner, acl.Table, table.Table.ID, "user", reader.id, acl.Read)
+
+	for _, target := range []map[string]string{
+		{"kind": "workspace", "id": workspace.ID},
+		{"kind": "book", "id": book.ID},
+	} {
+		f.expectStatus(f.api(reader, "POST", "/recent", mustJSON(t, target)), http.StatusNoContent, "")
+	}
+	readerNav := f.nav(reader)
+	if len(readerNav.Workspaces) != 1 || readerNav.Workspaces[0].LastOpenedAt == nil ||
+		len(readerNav.Workspaces[0].Books) != 1 || readerNav.Workspaces[0].Books[0].LastOpenedAt == nil {
+		t.Fatalf("reader nav recency = %+v", readerNav)
+	}
+	ownerNav := f.nav(owner)
+	if len(ownerNav.Workspaces) != 1 || ownerNav.Workspaces[0].LastOpenedAt != nil ||
+		ownerNav.Workspaces[0].Books[0].LastOpenedAt != nil {
+		t.Fatalf("reader recents leaked to owner: %+v", ownerNav)
+	}
+
+	f.expectStatus(f.api(stranger, "POST", "/recent", `{"kind":"workspace","id":"`+workspace.ID+`"}`),
+		http.StatusNotFound, "ERR_NOT_FOUND")
+	f.expectStatus(f.api(reader, "POST", "/recent", `{"kind":"unknown","id":"`+workspace.ID+`"}`),
+		http.StatusBadRequest, "ERR_VALIDATION")
+	var count int
+	if err := f.pool.QueryRow(f.ctx, "SELECT count(*) FROM meta.recent_resources WHERE user_id=$1", stranger.id).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("hidden target left %d recent rows", count)
+	}
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	body, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
 func isWorkspaceFallbackIcon(icon string) bool {
 	switch icon {
 	case "book", "table", "view", "fields", "calendar", "star", "group", "link":

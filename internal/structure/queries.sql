@@ -413,6 +413,87 @@ WHERE table_id = sqlc.arg(table_id)::uuid
 -- and are tested against the resolver. Disabled users and trashed ancestors
 -- yield nothing, exactly like the resolver queries.
 
+-- name: LockRecentResources :exec
+SELECT pg_advisory_xact_lock(hashtextextended(
+  'pandatable.recent-resources:' || sqlc.arg(user_id)::uuid::text, 0
+));
+
+-- name: UpsertRecentWorkspace :one
+WITH principals AS (
+  SELECT 'user'::text AS principal_type, u.id AS principal_id
+  FROM meta.users u
+  WHERE u.id = sqlc.arg(user_id)::uuid AND u.status = 'active'
+  UNION ALL
+  SELECT 'group'::text, gm.group_id
+  FROM meta.group_members gm
+  JOIN meta.users u ON u.id = gm.user_id AND u.status = 'active'
+  WHERE gm.user_id = sqlc.arg(user_id)::uuid
+), granted AS (
+  SELECT g.resource_type, g.resource_id
+  FROM meta.grants g
+  JOIN principals p ON p.principal_type = g.principal_type AND p.principal_id = g.principal_id
+)
+INSERT INTO meta.recent_resources (user_id, workspace_id, opened_at)
+SELECT sqlc.arg(user_id)::uuid, w.id, now()
+FROM meta.workspaces w
+WHERE w.id = sqlc.arg(workspace_id)::uuid AND w.deleted_at IS NULL
+  AND (
+    EXISTS (SELECT 1 FROM granted g WHERE g.resource_type = 'workspace' AND g.resource_id = w.id)
+    OR EXISTS (SELECT 1 FROM granted g JOIN meta.books b ON b.id = g.resource_id
+               WHERE g.resource_type = 'book' AND b.workspace_id = w.id AND b.deleted_at IS NULL)
+    OR EXISTS (SELECT 1 FROM granted g JOIN meta.tables t ON t.id = g.resource_id
+               JOIN meta.books b ON b.id = t.book_id
+               WHERE g.resource_type = 'table' AND b.workspace_id = w.id
+                 AND b.deleted_at IS NULL AND t.deleted_at IS NULL)
+  )
+ON CONFLICT (user_id, workspace_id) WHERE workspace_id IS NOT NULL
+DO UPDATE SET opened_at = now()
+RETURNING opened_at;
+
+-- name: UpsertRecentBook :one
+WITH principals AS (
+  SELECT 'user'::text AS principal_type, u.id AS principal_id
+  FROM meta.users u
+  WHERE u.id = sqlc.arg(user_id)::uuid AND u.status = 'active'
+  UNION ALL
+  SELECT 'group'::text, gm.group_id
+  FROM meta.group_members gm
+  JOIN meta.users u ON u.id = gm.user_id AND u.status = 'active'
+  WHERE gm.user_id = sqlc.arg(user_id)::uuid
+), granted AS (
+  SELECT g.resource_type, g.resource_id
+  FROM meta.grants g
+  JOIN principals p ON p.principal_type = g.principal_type AND p.principal_id = g.principal_id
+)
+INSERT INTO meta.recent_resources (user_id, book_id, opened_at)
+SELECT sqlc.arg(user_id)::uuid, b.id, now()
+FROM meta.books b
+JOIN meta.workspaces w ON w.id = b.workspace_id AND w.deleted_at IS NULL
+WHERE b.id = sqlc.arg(book_id)::uuid AND b.deleted_at IS NULL
+  AND (
+    EXISTS (SELECT 1 FROM granted g WHERE g.resource_type = 'workspace' AND g.resource_id = w.id)
+    OR EXISTS (SELECT 1 FROM granted g WHERE g.resource_type = 'book' AND g.resource_id = b.id)
+    OR EXISTS (SELECT 1 FROM granted g JOIN meta.tables t ON t.id = g.resource_id
+               WHERE g.resource_type = 'table' AND t.book_id = b.id AND t.deleted_at IS NULL)
+  )
+ON CONFLICT (user_id, book_id) WHERE book_id IS NOT NULL
+DO UPDATE SET opened_at = now()
+RETURNING opened_at;
+
+-- name: PruneRecentResources :exec
+WITH ranked AS (
+  SELECT user_id, workspace_id, book_id, row_number() OVER (
+    ORDER BY opened_at DESC, workspace_id, book_id
+  ) AS position
+  FROM meta.recent_resources
+  WHERE user_id = sqlc.arg(user_id)::uuid
+)
+DELETE FROM meta.recent_resources recent
+USING ranked
+WHERE recent.user_id = ranked.user_id AND ranked.position > 200
+  AND ((ranked.workspace_id IS NOT NULL AND recent.workspace_id = ranked.workspace_id)
+    OR (ranked.book_id IS NOT NULL AND recent.book_id = ranked.book_id));
+
 -- name: NavGrants :many
 WITH principals AS (
   SELECT 'user'::text AS principal_type, u.id AS principal_id
@@ -458,14 +539,20 @@ WHERE w.deleted_at IS NULL AND (
 );
 
 -- name: NavWorkspaces :many
-SELECT id, name, icon, color, description, fallback_icon, created_at
-FROM meta.workspaces
-WHERE id = ANY(sqlc.arg(ids)::uuid[]) AND deleted_at IS NULL;
+SELECT w.id, w.name, w.icon, w.color, w.description, w.fallback_icon, w.created_at,
+       recent.opened_at AS last_opened_at
+FROM meta.workspaces w
+LEFT JOIN meta.recent_resources recent
+  ON recent.user_id = sqlc.arg(user_id)::uuid AND recent.workspace_id = w.id
+WHERE w.id = ANY(sqlc.arg(ids)::uuid[]) AND w.deleted_at IS NULL;
 
 -- name: NavBooks :many
-SELECT id, workspace_id, name, icon, fallback_icon, position
-FROM meta.books
-WHERE workspace_id = ANY(sqlc.arg(workspace_ids)::uuid[]) AND deleted_at IS NULL;
+SELECT b.id, b.workspace_id, b.name, b.icon, b.fallback_icon, b.position,
+       recent.opened_at AS last_opened_at
+FROM meta.books b
+LEFT JOIN meta.recent_resources recent
+  ON recent.user_id = sqlc.arg(user_id)::uuid AND recent.book_id = b.id
+WHERE b.workspace_id = ANY(sqlc.arg(workspace_ids)::uuid[]) AND b.deleted_at IS NULL;
 
 -- name: NavTables :many
 SELECT t.id, t.book_id, t.name, t.position, t.schema_version

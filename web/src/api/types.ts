@@ -305,6 +305,7 @@ export interface NavBook {
   name: string
   icon: BookIconName | null
   fallbackIcon: BookIconName
+  lastOpenedAt: string | null
   position: number
   level: AccessLevel
   pathOnly: boolean
@@ -379,6 +380,7 @@ export interface NavWorkspace {
   description: string
   fallbackIcon: BookIconName
   createdAt: string
+  lastOpenedAt: string | null
   level: AccessLevel
   pathOnly: boolean
   books: NavBook[]

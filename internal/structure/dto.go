@@ -81,6 +81,14 @@ type TableSchema struct {
 
 func timeOf(value pgtype.Timestamptz) time.Time { return value.Time.UTC() }
 
+func timePointer(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	openedAt := value.Time.UTC()
+	return &openedAt
+}
+
 func textPointer(value pgtype.Text) *string {
 	if !value.Valid {
 		return nil

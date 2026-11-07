@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { nextTick } from 'vue'
+import { RequestError } from '../../api/client'
 import { i18n, loadLocale } from '../../i18n'
 import { useNavStore } from '../../stores/nav'
 import { useAuthStore } from '../../stores/auth'
@@ -10,8 +11,10 @@ import { usePreferencesStore } from '../../stores/preferences'
 import { navigation, navUser } from '../../test/navigation'
 import { themeMedia } from '../../test/setup'
 import NavContents from './NavContents.vue'
+import NavActions from './NavActions.vue'
 import NavSidebar from './NavSidebar.vue'
 import StructureDialog from './StructureDialog.vue'
+import IconPicker from '../common/IconPicker.vue'
 
 let pinia: ReturnType<typeof createPinia>
 beforeEach(async () => {
@@ -463,6 +466,135 @@ it('validates code points, retains localized mutation errors and closes confirme
   } finally {
     wrapper.unmount()
     i18n.global.locale.value = 'en'
+  }
+})
+
+it('offers owner-only workspace editing instead of Rename', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  const item = nav.items[0]!
+  const wrapper = mount(NavActions, {
+    global,
+    props: { item },
+  })
+  try {
+    expect(wrapper.text()).toContain('Edit workspace')
+    expect(wrapper.text()).not.toContain('Rename')
+    await wrapper.setProps({ item: { ...item, canEdit: false, level: 'read' } })
+    expect(wrapper.text()).not.toContain('Edit workspace')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('announces icon choices as a radio group and supports arrow-key selection', async () => {
+  const { global } = await setup()
+  const wrapper = mount(IconPicker, {
+    global,
+    props: { modelValue: null },
+    attachTo: document.body,
+  })
+  try {
+    expect(wrapper.get('[role="radiogroup"]').attributes('aria-label')).toBe(
+      'Icon',
+    )
+    expect(
+      wrapper
+        .get('[aria-label="Random icon (use the workspace fallback)"]')
+        .attributes('aria-checked'),
+    ).toBe('true')
+    await wrapper
+      .get('[aria-label="Random icon (use the workspace fallback)"]')
+      .trigger('keydown', { key: 'ArrowRight' })
+    await nextTick()
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual(['panelClose'])
+    expect(document.activeElement).toBe(
+      wrapper.get('[aria-label="Select panelClose icon"]').element,
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('submits only changed workspace metadata and supports clearing fields', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  nav.tree.workspaces[0]!.icon = 'star'
+  nav.tree.workspaces[0]!.description = 'Before'
+  const submit = vi.spyOn(nav, 'submit').mockResolvedValue(null)
+  const wrapper = mount(StructureDialog, { global, attachTo: document.body })
+  try {
+    const action = {
+      operation: 'rename' as const,
+      kind: 'workspace' as const,
+      id: 'w',
+      name: 'Workspace',
+    }
+    nav.editor = action
+    await flushPromises()
+    expect(wrapper.get('h2').text()).toBe('Edit workspace')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe(
+      'Before',
+    )
+    await wrapper.get('[aria-label="Select book icon"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(submit).toHaveBeenLastCalledWith(action, 'Workspace', {
+      icon: 'book',
+    })
+
+    nav.editor = { ...action }
+    await flushPromises()
+    await wrapper
+      .get('[aria-label="Random icon (use the workspace fallback)"]')
+      .trigger('click')
+    await wrapper.get('textarea').setValue('')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(submit).toHaveBeenLastCalledWith(action, 'Workspace', {
+      icon: null,
+      description: '',
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('renders overlong descriptions and server validation errors inline', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  const submit = vi.spyOn(nav, 'submit')
+  const wrapper = mount(StructureDialog, { global, attachTo: document.body })
+  try {
+    nav.editor = { operation: 'create', kind: 'workspace' }
+    await flushPromises()
+    await wrapper.get('textarea').setValue('x'.repeat(501))
+    expect(wrapper.get('#workspace-description-counter').text()).toBe(
+      '501/500 characters',
+    )
+    expect(wrapper.get('#workspace-description-error').text()).toBe(
+      'Description must be 500 characters or fewer.',
+    )
+    expect(
+      wrapper.get('button[type="submit"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(submit).not.toHaveBeenCalled()
+
+    await wrapper.get('textarea').setValue('')
+    await wrapper.get('input').setValue('Workspace')
+    submit.mockRejectedValue(new RequestError('ERR_VALIDATION', 400))
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(submit).toHaveBeenLastCalledWith(
+      { operation: 'create', kind: 'workspace' },
+      'Workspace',
+      {},
+    )
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'Check the workspace name, icon, and description.',
+    )
+  } finally {
+    wrapper.unmount()
   }
 })
 

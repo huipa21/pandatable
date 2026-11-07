@@ -107,7 +107,11 @@ function createView() {
           }
         "
       >
-        {{ t('nav.rename') }}
+        {{
+          item.kind === 'workspace'
+            ? t('dashboard.ds06.editWorkspace')
+            : t('nav.rename')
+        }}
       </button>
       <button
         v-if="item.canEdit"

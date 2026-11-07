@@ -34,6 +34,7 @@ type NavBook struct {
 	Name         string     `json:"name"`
 	Icon         *string    `json:"icon"`
 	FallbackIcon string     `json:"fallbackIcon"`
+	LastOpenedAt *time.Time `json:"lastOpenedAt"`
 	Position     float64    `json:"position"`
 	Level        string     `json:"level"`
 	PathOnly     bool       `json:"pathOnly"`
@@ -41,16 +42,17 @@ type NavBook struct {
 }
 
 type NavWorkspace struct {
-	ID           string    `json:"id"`
-	Name         string    `json:"name"`
-	Icon         *string   `json:"icon"`
-	Color        *string   `json:"color"`
-	Description  string    `json:"description"`
-	FallbackIcon string    `json:"fallbackIcon"`
-	CreatedAt    time.Time `json:"createdAt"`
-	Level        string    `json:"level"`
-	PathOnly     bool      `json:"pathOnly"`
-	Books        []NavBook `json:"books"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Icon         *string    `json:"icon"`
+	Color        *string    `json:"color"`
+	Description  string     `json:"description"`
+	FallbackIcon string     `json:"fallbackIcon"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	LastOpenedAt *time.Time `json:"lastOpenedAt"`
+	Level        string     `json:"level"`
+	PathOnly     bool       `json:"pathOnly"`
+	Books        []NavBook  `json:"books"`
 }
 
 // Nav is the sidebar tree: only live resources the caller can reach, each with
@@ -94,11 +96,11 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 	if len(workspaceIDs) == 0 {
 		return result, nil
 	}
-	workspaces, err := q.NavWorkspaces(ctx, workspaceIDs)
+	workspaces, err := q.NavWorkspaces(ctx, structuresql.NavWorkspacesParams{Ids: workspaceIDs, UserID: user})
 	if err != nil {
 		return Nav{}, fmt.Errorf("list navigation workspaces: %w", err)
 	}
-	books, err := q.NavBooks(ctx, workspaceIDs)
+	books, err := q.NavBooks(ctx, structuresql.NavBooksParams{WorkspaceIds: workspaceIDs, UserID: user})
 	if err != nil {
 		return Nav{}, fmt.Errorf("list navigation books: %w", err)
 	}
@@ -162,7 +164,8 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 		}
 		booksByWorkspace[row.WorkspaceID] = append(booksByWorkspace[row.WorkspaceID], NavBook{ID: row.ID.String(),
 			Name: row.Name, Icon: textPointer(row.Icon), FallbackIcon: row.FallbackIcon,
-			Position: row.Position, Level: levelName(level), PathOnly: level == 0, Tables: visible})
+			LastOpenedAt: timePointer(row.LastOpenedAt), Position: row.Position,
+			Level: levelName(level), PathOnly: level == 0, Tables: visible})
 	}
 	for _, row := range workspaces {
 		level := workspaceLevel[row.ID]
@@ -183,7 +186,8 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 		result.Workspaces = append(result.Workspaces, NavWorkspace{ID: row.ID.String(), Name: row.Name,
 			Icon: textPointer(row.Icon), Color: textPointer(row.Color), Description: description,
 			FallbackIcon: row.FallbackIcon, CreatedAt: timeOf(row.CreatedAt),
-			Level: levelName(level), PathOnly: level == 0, Books: visible})
+			LastOpenedAt: timePointer(row.LastOpenedAt),
+			Level:        levelName(level), PathOnly: level == 0, Books: visible})
 	}
 	sort.Slice(result.Workspaces, func(i, j int) bool {
 		left, right := result.Workspaces[i], result.Workspaces[j]

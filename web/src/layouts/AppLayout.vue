@@ -7,6 +7,7 @@ import { useAuthStore } from '../stores/auth'
 import { useAppSettingsStore } from '../stores/appSettings'
 import { useNavStore } from '../stores/nav'
 import { useNavLocation } from '../composables/useNavLocation'
+import { useRecentOpen } from '../composables/useRecentOpen'
 import AppIcon from '../components/AppIcon.vue'
 import AppBreadcrumbs from '../components/navigation/AppBreadcrumbs.vue'
 import NavSidebar from '../components/navigation/NavSidebar.vue'
@@ -21,6 +22,7 @@ const appSettings = useAppSettingsStore()
 const nav = useNavStore()
 const route = useRoute()
 const { routeWorkspaceId } = useNavLocation()
+useRecentOpen()
 const media = window.matchMedia('(max-width: 767px)')
 const mobile = ref(media.matches)
 const resize = (event: MediaQueryListEvent) => (mobile.value = event.matches)

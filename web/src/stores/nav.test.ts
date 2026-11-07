@@ -79,6 +79,37 @@ it('maps workspace metadata and sends optional icon/description on create and up
   ])
 })
 
+it('optimistically records a recent open and silently ignores a stale 404', async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json(navigation()))
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(
+      Response.json({ error: { code: 'ERR_NOT_FOUND' } }, { status: 404 }),
+    )
+  vi.stubGlobal('fetch', fetch)
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const nav = useNavStore()
+  await nav.refresh()
+  nav.recordOpen('book', 'b')
+  expect(nav.tree.workspaces[0]!.books[0]!.lastOpenedAt).toMatch(
+    /^\d{4}-\d\d-\d\dT/,
+  )
+  expect(fetch).toHaveBeenNthCalledWith(
+    2,
+    '/api/v1/recent',
+    expect.objectContaining({
+      method: 'POST',
+      body: '{"kind":"book","id":"b"}',
+    }),
+  )
+  await Promise.resolve()
+  nav.recordOpen('workspace', 'missing')
+  await Promise.resolve()
+  await Promise.resolve()
+  expect(warn).not.toHaveBeenCalled()
+})
+
 it('mirrors owner-of-parent and path-only controls, not the admin role', async () => {
   const tree = navigation()
   const w = tree.workspaces[0]!
