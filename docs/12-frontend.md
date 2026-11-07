@@ -456,6 +456,9 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
   separate lab-only implementation (D-139).
 - UX-09's blank-row action (D-222) sits in RevoGrid's native footer directly
   after the loaded visible tail, including an empty grid and grouped results.
+  Its single clickable row spans at least the grid viewport and the visible
+  rendered columns, with the plus at the leading edge; horizontal overflow is
+  clipped by the grid viewport. It remains distinct from summaries and data.
   It is available to desktop writers only once the query is ready and the end
   is visible. It uses the existing row API and undo, then requeries and reveals
   the created row if present; filters, sorting or collapsed groups may affect
@@ -510,14 +513,28 @@ Our own `DataGrid` component wraps RevoGrid so the grid engine is swappable (D-0
 - Highlight row/cell backgrounds resolve six palette tokens through light/
   dark theme CSS pairs; highlighted text, links, and validation messages remain
   readable in both themes.
-- T2.11 adds an accessible quick-search input and footer aggregate controls to
-  the production grid. Search stays transient and matches only effectively
-  visible searchable fields; paging, filters, groups, and footer results share
-  the same term. Per-visible-field aggregate choices use the field codec's
-  supported operations, persist through the versioned merged view config when
-  allowed, and remain local overrides for read-only/locked views. The footer
-  refreshes on search, filter, visibility, and aggregate changes, formats
-  values with the field codec, and surfaces request failures.
+- T2.11 adds transient quick search and API-backed footer aggregates. Search
+  matches only effectively visible searchable fields; paging, filters, groups,
+  and footer results share the same term. The footer has one summary cell per
+  visible data column, aligned through resize, reorder, freeze, visibility and
+  horizontal scroll. Each opens a type-aware picker, and values use the field
+  codec; percentage operations are exact server ratios. Summaries sit below
+  the full-width append action and are not data rows. Allowed view configs
+  persist through the versioned merge; read-only/locked changes remain local.
+  Search/filter/visibility changes refresh results, and errors/retry stay
+  explicit.
+- WG-06 replaces the row-height-only control with **Format** for row height,
+  per-field widths, column order and freezing. Search has a separate accessible
+  trigger and retains its transient query behavior. The grid More panel and its
+  old hidden Delete action are removed; Fields remains the visibility control.
+  WG-07 adds a writer-only selected-row bar with count, direct Edit and
+  confirmed Delete. Edit applies one codec-normalized value to exact selected
+  IDs through the bounded atomic API; failures retain selection and undo uses
+  authoritative prior values.
+- WG-08 uses one accessible transfer icon for Import, CSV and workbook export.
+  It preserves permission/readiness checks and feedback while removing the
+  display-field/access summary from table/view toolbars. Presence and sharing
+  controls remain.
 - Link cells: chips of display values; editor opens picker modal (search target rows, multi-select for many sides).
 - Attachment cells: thumbnails; drag-drop upload onto cell; preview modal.
 - Row expand modal: all live fields in a form layout. T1.18 implements the

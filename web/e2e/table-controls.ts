@@ -134,7 +134,3 @@ export async function openGridSearch(page: Page) {
     await search.locator(':scope > summary').click()
   return search
 }
-
-export async function openGridMore(page: Page) {
-  return openGridFormat(page)
-}

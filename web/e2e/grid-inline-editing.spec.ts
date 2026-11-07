@@ -65,6 +65,87 @@ async function gridCell(
   return cell
 }
 
+test('rapid Enter after a scalar click preserves the next edit', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Inline grid editing is a desktop interaction.')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await paceLogin(page)
+  await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await setLocale(page, 'en')
+  await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
+  await page
+    .getByLabel(en.auth.password, { exact: true })
+    .fill('Setup-password-123')
+  await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    page,
+    '/api/v1/workspaces',
+    { name: `Rapid grid edit ${Date.now()}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    page,
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: 'Rapid grid edit book' },
+  )
+  const schema = await create<TableSchema>(
+    page,
+    `/api/v1/books/${book.id}/tables`,
+    { name: 'Rapid grid edit table' },
+  )
+  const { field } = await create<FieldMutation>(
+    page,
+    `/api/v1/tables/${schema.table.id}/fields`,
+    { name: 'Moment', uiType: 'datetime' },
+  )
+  const view = schema.views[0]
+  if (!field || !view) throw new Error('The field or view was not returned')
+  const { rows } = await create<{ rows: DataRow[] }>(
+    page,
+    `/api/v1/tables/${schema.table.id}/rows`,
+    { rows: [{ fields: {} }] },
+  )
+  const row = rows[0]
+  if (!row) throw new Error('The row was not returned')
+
+  await page.goto(`/t/${schema.table.id}/v/${view.id}`)
+  const grid = page.locator('revo-grid')
+  const cell = await gridCell(page, field.id, 0)
+  const [gridBox, cellBox] = await Promise.all([
+    grid.boundingBox(),
+    cell.boundingBox(),
+  ])
+  if (!gridBox || !cellBox) throw new Error('The grid cell is not visible')
+  await grid.click({
+    position: {
+      x: cellBox.x + cellBox.width / 2 - gridBox.x,
+      y: cellBox.y + cellBox.height / 2 - gridBox.y,
+    },
+  })
+  await page.keyboard.press('Enter')
+  const editor = page.getByRole('textbox', {
+    name: en.field.editor.value,
+    exact: true,
+  })
+  await expect(editor).toBeFocused()
+  await page.keyboard.type('2026-01-01T00:30:00Z')
+  await expect(editor).toHaveValue('2026-01-01T00:30:00Z')
+  await page.keyboard.press('Enter')
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(
+        `/api/v1/tables/${schema.table.id}/rows/${row.id}`,
+      )
+      expect(response.status()).toBe(200)
+      return ((await response.json()) as DataRow).fields[field.id]
+    })
+    .toBe('2026-01-01T00:30:00Z')
+})
+
 test('scalar grid editing commits on leave and retains rejected drafts', async ({
   page,
   browser,

@@ -179,7 +179,9 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
       `${name.name},Group,Status\r\nOmega,A,Open\r\nAlpha,A,Open\r\n"中文,""引号""",B,Open\r\n`,
     )
     await openGridSearch(page)
-    await page.getByLabel(en.grid.quickSearch, { exact: true }).fill('Alpha')
+    await page
+      .getByRole('searchbox', { name: en.grid.quickSearch, exact: true })
+      .fill('Alpha')
     await openExportMenu(page)
     const searchRequest = page.waitForRequest(
       (request) =>
@@ -211,6 +213,7 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     name: en.export.package,
     exact: true,
   })
+  await openExportMenu(page)
   await expectUnobscured(packageButton)
   await packageButton.click()
   expect((await packageRequest).postDataJSON()).toEqual({ format: 'xlsx' })

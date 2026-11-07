@@ -142,6 +142,7 @@ const appendFailure = shallowRef<unknown>(null)
 const appendNotice = ref(false)
 const appendAtEnd = ref(false)
 const appendWidth = ref(0)
+const footerScrollLeft = ref(0)
 const searchTerm = ref('')
 const footerAggregates = shallowRef<RowAggregate[]>([])
 const footerAggregateError = ref('')
@@ -162,7 +163,7 @@ const cellDrafts = ref(new Map<string, CellDraft>())
 const cellIntents = new Map<string, CellIntent>()
 const cellControllers = new Set<AbortController>()
 let cellDraftRevision = 0
-let pendingCellWrites = 0
+const pendingCellWrites = ref(0)
 let cellWriteTail: Promise<void> = Promise.resolve()
 const clipboardErrors = ref<string[]>([])
 const clipboardMessage = ref('')
@@ -233,6 +234,10 @@ const desktop = ref(window.matchMedia('(min-width: 768px)').matches)
 const media = window.matchMedia('(min-width: 768px)')
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
+  if (!event.matches) {
+    detachFooterViewport()
+    footerScrollLeft.value = 0
+  }
 }
 const fieldEnvironment = computed<FieldEnv>(() => ({
   timeZone: auth.user?.effectiveTimezone,
@@ -263,7 +268,7 @@ const bulkEditField = computed(() =>
 )
 const hasPendingCellDrafts = computed(
   () =>
-    pendingCellWrites > 0 ||
+    pendingCellWrites.value > 0 ||
     cellDrafts.value.size > 0 ||
     activeEdit.value !== null,
 )
@@ -891,7 +896,7 @@ function footerCellStyle(cell: ColumnFooterCell) {
     flex: `0 0 ${cell.width}px`,
     width: `${cell.width}px`,
     ...(cell.stickyLeft === undefined
-      ? {}
+      ? { transform: `translateX(-${footerScrollLeft.value}px)` }
       : {
           position: 'sticky' as const,
           left: `${cell.stickyLeft}px`,
@@ -2238,10 +2243,21 @@ async function keydown(event: KeyboardEvent) {
   }
   if (['Home', 'End', 'PageUp', 'PageDown'].includes(event.key)) {
     stop()
-    let rowIndex = focusedRowIndex()
+    const own = ++keyboardRequestGeneration
+    const identity = props.identity
+    const liveFocus = await host.value?.$el.getFocused()
+    if (
+      own !== keyboardRequestGeneration ||
+      disposed.value ||
+      identity !== auth.user?.id ||
+      !liveFocus
+    )
+      return
+    const rowId: unknown = liveFocus.model?.__rowId
+    let rowIndex = typeof rowId === 'string' ? rows.indexOfRow(rowId) : -1
     const prop =
-      focused?.column?.prop ??
-      clipboardColumn(focused?.colIndex ?? -1)?.field.id
+      liveFocus.column?.prop ??
+      clipboardColumn(liveFocus.cell.x, liveFocus.colType)?.field.id
     let fieldIndex = visibleFieldIds.value.indexOf(String(prop))
     if (rowIndex < 0 || !visibleFieldIds.value.length) return
     if (event.key === 'Home') {
@@ -2307,6 +2323,7 @@ async function keydown(event: KeyboardEvent) {
 }
 
 let keyboardGeneration = 0
+let keyboardRequestGeneration = 0
 function focusedRowIndex() {
   const id = focused?.model?.__rowId
   return typeof id === 'string' ? rows.indexOfRow(id) : -1
@@ -2314,32 +2331,53 @@ function focusedRowIndex() {
 
 async function focusGlobalCell(rowIndex: number, fieldIndex: number) {
   const own = ++keyboardGeneration
-  const identity = props.identity
+  const origin = editOrigin()
   const id = visibleFieldIds.value[fieldIndex]
   if (!id || rowIndex < 0 || rowIndex >= rows.total) return
-  if (!(await rows.ensureLoaded(rowIndex))) return
+  const targetRow = await rows.ensureLoaded(rowIndex)
   if (
+    !targetRow ||
     own !== keyboardGeneration ||
     disposed.value ||
-    identity !== auth.user?.id ||
-    !rows.rowAt(rowIndex)
+    !sameEditScope(origin) ||
+    rows.rowAt(rowIndex)?.id !== targetRow.id
   )
     return
+  const grid = host.value?.$el
+  if (!grid) return
   const column = columns.value.find((column) => column.prop === id)
   if (!column) return
   const type = column.pin ?? 'rgCol'
   const x = columns.value
     .filter((candidate) => (candidate.pin ?? 'rgCol') === type)
     .findIndex((candidate) => candidate.prop === id)
+  const current = () =>
+    own === keyboardGeneration &&
+    !disposed.value &&
+    sameEditScope(origin) &&
+    host.value?.$el === grid &&
+    rows.rowAt(rowIndex)?.id === targetRow.id
   await nextTick()
-  await host.value?.$el.scrollToRow(rowIndex)
-  if (type === 'rgCol') await host.value?.$el.scrollToColumnProp(id)
+  if (!current()) return
+  await grid.scrollToRow(rowIndex)
+  if (!current()) return
+  if (type === 'rgCol') await grid.scrollToColumnProp(id)
   await nextTick()
-  await host.value?.$el.setCellsFocus(
-    { x, y: rowIndex },
-    { x, y: rowIndex },
-    type,
+  if (!current()) return
+  await grid.setCellsFocus({ x, y: rowIndex }, { x, y: rowIndex }, type)
+  if (!current()) return
+  const liveFocus = await grid.getFocused()
+  if (
+    !current() ||
+    liveFocus?.model?.__rowId !== targetRow.id ||
+    liveFocus.column?.prop !== id
   )
+    return
+  recordFocus({
+    ...liveFocus,
+    rowIndex: liveFocus.cell.y,
+    colIndex: liveFocus.cell.x,
+  })
 }
 
 function documentKeydown(event: KeyboardEvent) {
@@ -2470,11 +2508,40 @@ function created() {
 let appendLayoutFrame: number | undefined
 let appendResizeObserver: ResizeObserver | undefined
 let appendObservedGrid: HTMLElement | undefined
+let footerViewport: HTMLElement | undefined
 let pendingAppendReveal: { id: string; origin: EditOrigin } | undefined
+
+function syncFooterScroll() {
+  if (!disposed.value && desktop.value && footerViewport)
+    footerScrollLeft.value = footerViewport.scrollLeft
+}
+
+function detachFooterViewport() {
+  footerViewport?.removeEventListener('scroll', syncFooterScroll)
+  footerViewport = undefined
+}
+
+function observeFooterViewport(grid: HTMLElement) {
+  const viewport = grid.querySelector<HTMLElement>(
+    'revogr-viewport-scroll.rgCol',
+  )
+  if (!viewport) {
+    detachFooterViewport()
+    return false
+  }
+  if (viewport !== footerViewport) {
+    detachFooterViewport()
+    footerViewport = viewport
+    viewport.addEventListener('scroll', syncFooterScroll, { passive: true })
+  }
+  syncFooterScroll()
+  return true
+}
 
 function observeAppendLayout() {
   const grid = host.value?.$el
   if (!grid || disposed.value) return
+  if (desktop.value) observeFooterViewport(grid)
   if (grid !== appendObservedGrid) {
     appendResizeObserver?.disconnect()
     appendObservedGrid = grid
@@ -2492,6 +2559,7 @@ function scheduleAppendLayout() {
     appendLayoutFrame = undefined
     const grid = host.value?.$el
     if (!grid) return
+    if (desktop.value) observeFooterViewport(grid)
     appendWidth.value = appendRowLayoutWidth(
       grid.clientWidth,
       columns.value.map((column) => column.size ?? 180),
@@ -2713,10 +2781,10 @@ function beforeEditStart(event: CustomEvent<BeforeSaveDataDetails>) {
     event.preventDefault()
 }
 
-function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
-  focused = event.detail
-  const rowId = event.detail.model?.__rowId
-  const fieldId = event.detail.column?.prop
+function recordFocus(detail: FocusAfterRenderEvent) {
+  focused = detail
+  const rowId = detail.model?.__rowId
+  const fieldId = detail.column?.prop
   realtime.setFocus(
     props.schema.table.id,
     typeof rowId === 'string' &&
@@ -2725,6 +2793,10 @@ function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
       ? { rowId, fieldId }
       : null,
   )
+}
+
+function focusChanged(event: CustomEvent<FocusAfterRenderEvent>) {
+  recordFocus(event.detail)
 }
 
 function focusLeft(event: FocusEvent) {
@@ -2737,6 +2809,13 @@ function focusLeft(event: FocusEvent) {
 }
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
+  if (event.detail.dimension === 'rgCol') {
+    const grid = host.value?.$el
+    if (disposed.value || !desktop.value || !grid) return
+    if (!observeFooterViewport(grid))
+      throw new Error('RevoGrid column viewport is unavailable')
+    return
+  }
   if (event.detail.dimension !== 'rgRow') return
   if (pendingAppendReveal) {
     // Replacing the source can report row zero before the new tail is rendered.
@@ -2919,7 +2998,7 @@ async function commitCell(detail: CellCommit) {
   cellWriteTail = new Promise<void>((resolve) => {
     release = resolve
   })
-  pendingCellWrites++
+  pendingCellWrites.value++
   saving.value = true
   error.value = null
   const controller = new AbortController()
@@ -2968,7 +3047,7 @@ async function commitCell(detail: CellCommit) {
         [result.row],
       ),
     ])
-    if (activeEdit.value || pendingCellWrites > 1)
+    if (activeEdit.value || pendingCellWrites.value > 1)
       deferredRows.set(row.id, result.row)
     else {
       deferredRows.delete(row.id)
@@ -3013,9 +3092,9 @@ async function commitCell(detail: CellCommit) {
   } finally {
     cellControllers.delete(controller)
     if (cellIntents.get(key) === intent) cellIntents.delete(key)
-    pendingCellWrites--
+    pendingCellWrites.value--
     release()
-    if (!disposed.value && pendingCellWrites === 0) saving.value = false
+    if (!disposed.value && pendingCellWrites.value === 0) saving.value = false
   }
 }
 
@@ -3500,12 +3579,14 @@ defineExpose({
 onBeforeUnmount(() => {
   disposed.value = true
   if (appendLayoutFrame !== undefined) cancelAnimationFrame(appendLayoutFrame)
+  detachFooterViewport()
   appendResizeObserver?.disconnect()
   editorBoundary?.editor.captureBeforeUnmount()
   editorBoundary = null
   cellPointerActivation = null
   realtime.setFocus(props.schema.table.id, null)
   keyboardGeneration++
+  keyboardRequestGeneration++
   clearTimeout(searchTimer)
   footerController?.abort()
   footerGeneration++
@@ -4431,7 +4512,7 @@ onBeforeUnmount(() => {
 .data-grid .grid-add-row {
   display: flex;
   order: 1;
-  flex: 0 0 38px;
+  flex: 0 0 auto;
   align-items: center;
   width: 100%;
   height: 38px;

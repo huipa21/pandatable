@@ -12,7 +12,6 @@ const props = defineProps<{
   csvReady: boolean
   exportBusy: boolean
   exportError: string
-  fillSummary?: boolean
 }>()
 const emit = defineEmits<{
   import: []

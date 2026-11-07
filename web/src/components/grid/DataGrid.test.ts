@@ -67,6 +67,16 @@ vi.mock('@revolist/vue3-datagrid', async () => {
       setup(_props, { emit, slots }) {
         const root = vue.ref<HTMLElement>()
         const viewport = vue.ref<HTMLElement>()
+        const currentFocus = () => ({
+          model: _props.source[gridState.focus.rowIndex],
+          cell: { x: gridState.focus.colIndex, y: gridState.focus.rowIndex },
+          rowType: 'rgRow',
+          column: _props.columns.filter(
+            (column: { pin?: string }) =>
+              (column.pin ?? 'rgCol') === gridState.focus.colType,
+          )[gridState.focus.colIndex],
+          ...gridState.focus,
+        })
         vue.onMounted(() => {
           const element = root.value as
             | (HTMLElement & {
@@ -85,6 +95,7 @@ vi.mock('@revolist/vue3-datagrid', async () => {
               setCellsFocus: gridState.focusCells,
               scrollToRow: gridState.scrollRow,
               scrollToColumnProp: vi.fn(),
+              getFocused: async () => currentFocus(),
             })
           }
           if (viewport.value) {
@@ -144,15 +155,7 @@ vi.mock('@revolist/vue3-datagrid', async () => {
                     emit(
                       'afterfocus',
                       new CustomEvent('afterfocus', {
-                        detail: {
-                          model: _props.source[gridState.focus.rowIndex],
-                          column: _props.columns.filter(
-                            (column: { pin?: string }) =>
-                              (column.pin ?? 'rgCol') ===
-                              gridState.focus.colType,
-                          )[gridState.focus.colIndex],
-                          ...gridState.focus,
-                        },
+                        detail: currentFocus(),
                       }),
                     ),
                 },
@@ -613,6 +616,97 @@ it('shows visible selected-row actions only to writers', async () => {
   expect(await selectRow(id)).toBe(false)
   expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
 })
+
+it.each([
+  { outcome: 'succeeds', rejected: false },
+  { outcome: 'fails and the draft is discarded', rejected: true },
+])(
+  're-enables selected-row actions when a cell save $outcome',
+  async ({ rejected }) => {
+    const fetch = await mountGrid(schemaFor('text'))
+    const original = fetch.getMockImplementation()!
+    let release: ((response: Response) => void) | undefined
+    fetch.mockImplementation((input, init) => {
+      if (init?.method !== 'PATCH') return original(input, init)
+      return new Promise<Response>((resolve) => {
+        release = resolve
+      })
+    })
+    const openEditor = () =>
+      mount(gridState.editorComponent!, {
+        props: {
+          column: { prop: 'name' },
+          prop: 'name',
+          rowIndex: 0,
+          val: 'before',
+          save: (value: string) => {
+            gridState.value = value
+            ;(
+              wrapper!.get('[data-testid="fake-grid"] button:first-child')
+                .element as HTMLButtonElement
+            ).click()
+          },
+          close: vi.fn(),
+        },
+        global: { plugins: [pinia, i18n] },
+      })
+    const editor = openEditor()
+    await editor.get('input').setValue('saved')
+    await editor
+      .get('input')
+      .trigger('focusout', { relatedTarget: document.body })
+    await flushPromises()
+    editor.unmount()
+    expect(release).toBeDefined()
+    expect(await selectRow('9007199254740993')).toBe(true)
+    expect(
+      wrapper!
+        .get('.grid-row-actions')
+        .findAll('button')
+        .every((button) => button.attributes('disabled') !== undefined),
+    ).toBe(true)
+    expect(wrapper!.text()).toContain(i18n.global.t('grid.pendingCellDrafts'))
+
+    release!(
+      rejected
+        ? Response.json(
+            { error: { code: 'ERR_UNIQUE_CONFLICT' } },
+            { status: 409 },
+          )
+        : Response.json({
+            row: { id: '9007199254740993', fields: { name: 'saved' } },
+          }),
+    )
+    await flushPromises()
+    if (rejected) {
+      expect(
+        wrapper!
+          .get('.grid-row-actions')
+          .findAll('button')
+          .every((button) => button.attributes('disabled') !== undefined),
+      ).toBe(true)
+      expect(wrapper!.text()).toContain(
+        i18n.global.t('errors.ERR_UNIQUE_CONFLICT'),
+      )
+      const reopened = openEditor()
+      expect((reopened.get('input').element as HTMLInputElement).value).toBe(
+        'saved',
+      )
+      await reopened.get('input').trigger('keydown', { key: 'Escape' })
+      reopened.unmount()
+      await flushPromises()
+    }
+    expect(
+      wrapper!
+        .get('.grid-row-actions')
+        .findAll('button')
+        .every((button) => button.attributes('disabled') === undefined),
+    ).toBe(true)
+    expect(wrapper!.text()).not.toContain(
+      i18n.global.t('grid.pendingCellDrafts'),
+    )
+  },
+)
 
 it('omits system, relation, and attachment fields from the bulk editor', async () => {
   const schema = schemaFor('text')
@@ -2990,6 +3084,80 @@ it('sends transient quick search and renders configured footer aggregates', asyn
   ).toContain('42')
 })
 
+it('tracks the rendered viewport when it scrolls after the grid scroll event', async () => {
+  await mountGrid(schemaFor('text'))
+  const frames: FrameRequestCallback[] = []
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frames.push(callback)
+    return frames.length
+  })
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  const viewport = wrapper!.get<HTMLElement>('revogr-viewport-scroll.rgCol')
+  const scroller = document.createElement('revogr-scroll-virtual')
+  scroller.className = 'horizontal'
+  scroller.scrollLeft = 165
+  grid.element.appendChild(scroller)
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', { detail: { dimension: 'rgCol' } }),
+  )
+  for (const frame of frames) frame(performance.now())
+  viewport.element.scrollLeft = 260
+  viewport.element.dispatchEvent(new Event('scroll'))
+  await nextTick()
+  expect(
+    (
+      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
+        .element as HTMLElement
+    ).style.transform,
+  ).toBe('translateX(-260px)')
+})
+
+it('rebinds footer scrolling when the desktop grid is removed and restored', async () => {
+  await mountGrid(schemaFor('text'))
+  const media = window.matchMedia('(min-width: 768px)')
+  if (!(media instanceof ThemeMedia)) throw new Error('Missing media mock')
+  const oldViewport = wrapper!.get<HTMLElement>(
+    'revogr-viewport-scroll.rgCol',
+  ).element
+  oldViewport.scrollLeft = 150
+  oldViewport.dispatchEvent(new Event('scroll'))
+  await nextTick()
+  expect(
+    (
+      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
+        .element as HTMLElement
+    ).style.transform,
+  ).toBe('translateX(-150px)')
+
+  media.setDark(false)
+  await nextTick()
+  expect(wrapper!.find('[data-testid="fake-grid"]').exists()).toBe(false)
+
+  media.setDark(true)
+  await flushPromises()
+  expect(
+    (
+      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
+        .element as HTMLElement
+    ).style.transform,
+  ).toBe('translateX(-0px)')
+  const newViewport = wrapper!.get<HTMLElement>(
+    'revogr-viewport-scroll.rgCol',
+  ).element
+  newViewport.scrollLeft = 75
+  newViewport.dispatchEvent(new Event('scroll'))
+  oldViewport.scrollLeft = 300
+  oldViewport.dispatchEvent(new Event('scroll'))
+  await nextTick()
+  expect(
+    (
+      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
+        .element as HTMLElement
+    ).style.transform,
+  ).toBe('translateX(-75px)')
+})
+
 it('offers type-aware aggregate operations, renders API values, and clears config', async () => {
   const schema = schemaFor('text')
   addField(schema, 'amount', 'integer', { size: 'int' })
@@ -3581,6 +3749,121 @@ it('maps Home/End and Ctrl/Cmd+Home/End through loaded row identity, not viewpor
   }
   expect(fetch.mock.calls.every(([, init]) => init?.method !== 'PATCH')).toBe(
     true,
+  )
+})
+
+it('uses the live grid focus for consecutive keyboard jumps across evicted pages', async () => {
+  gridState.rowCount = 401
+  await mountGrid(schemaFor('text'))
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  gridState.focusCells.mockImplementation(
+    async (
+      from: { x: number; y: number },
+      _to: { x: number; y: number },
+      type: string,
+    ) => {
+      gridState.focus = {
+        rowIndex: from.y,
+        colIndex: from.x,
+        colType: type,
+      }
+    },
+  )
+
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: 'End', ctrlKey: true })
+  await flushPromises()
+  expect(gridState.focusCells).toHaveBeenLastCalledWith(
+    { x: 0, y: 400 },
+    { x: 0, y: 400 },
+    'rgCol',
+  )
+
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: 'Home', ctrlKey: true })
+  await flushPromises()
+  expect(gridState.focusCells).toHaveBeenLastCalledWith(
+    { x: 0, y: 0 },
+    { x: 0, y: 0 },
+    'rgCol',
+  )
+})
+
+it('edits and expands the focused row immediately after a cross-page jump', async () => {
+  gridState.rowCount = 401
+  await mountGrid(schemaFor('text'))
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+  gridState.focusCells.mockImplementation(
+    async (
+      from: { x: number; y: number },
+      _to: { x: number; y: number },
+      type: string,
+    ) => {
+      gridState.focus = {
+        rowIndex: from.y,
+        colIndex: from.x,
+        colType: type,
+      }
+    },
+  )
+
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: 'End', ctrlKey: true })
+  await flushPromises()
+  await wrapper!.get('.data-grid').trigger('keydown', { key: 'F2' })
+  expect(gridState.editCell).toHaveBeenLastCalledWith(400, 'name')
+  await wrapper!.get('.data-grid').trigger('keydown', { key: ' ' })
+  expect(wrapper!.emitted('expand')?.at(-1)).toEqual([
+    String(BigInt('9007199254740993') + 400n),
+  ])
+})
+
+it('keeps an in-flight keyboard jump when the current cell is temporarily unloaded', async () => {
+  const schema = schemaFor('text')
+  gridState.rowCount = 401
+  const fetch = await mountGrid(schema)
+  const fallback = fetch.getMockImplementation()
+  if (!fallback) throw new Error('Missing fetch implementation')
+  let finishTarget: ((response: Response) => void) | undefined
+  fetch.mockImplementation((input, init) => {
+    if (
+      String(input).endsWith('/query') &&
+      (JSON.parse(String(init?.body)) as RowQueryRequest).offset === 400
+    )
+      return new Promise<Response>((resolve) => {
+        finishTarget = resolve
+      })
+    return fallback(input, init)
+  })
+  await wrapper!
+    .findAll('button')
+    .find((button) => button.text() === 'focus')!
+    .trigger('click')
+
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: 'End', ctrlKey: true })
+  await flushPromises()
+  if (!finishTarget) throw new Error('Target page was not requested')
+  await wrapper!
+    .get('.data-grid')
+    .trigger('keydown', { key: 'Home', ctrlKey: true })
+  await flushPromises()
+  finishTarget(Response.json(queryResponse(schema, ['name'], 400, 100)))
+  await flushPromises()
+  expect(gridState.focusCells).toHaveBeenLastCalledWith(
+    { x: 0, y: 400 },
+    { x: 0, y: 400 },
+    'rgCol',
   )
 })
 

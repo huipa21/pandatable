@@ -131,7 +131,10 @@ it('downloads the active desktop view and full-table package using native links'
     expect(wrapper.get('.view-export p').text()).toContain(
       'View locks are not included.',
     )
-    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await wrapper
+      .findAll('.view-export button')
+      .find((button) => button.text() === i18n.global.t('export.csv'))!
+      .trigger('click')
     await flushPromises()
     const csvRequest = fetcher.mock.calls.find(([path]) =>
       String(path).endsWith('/export'),
@@ -145,7 +148,10 @@ it('downloads the active desktop view and full-table package using native links'
       filter: { field: 'name', cmp: 'contains', value: 'active' },
     })
     expect(links).toEqual([`/api/v1/exports/${'A'.repeat(26)}`])
-    await wrapper.findAll('.view-export button')[1]!.trigger('click')
+    await wrapper
+      .findAll('.view-export button')
+      .find((button) => button.text() === i18n.global.t('export.package'))!
+      .trigger('click')
     await flushPromises()
     const packageRequest = fetcher.mock.calls
       .filter(([path]) => String(path).endsWith('/export'))
@@ -154,8 +160,8 @@ it('downloads the active desktop view and full-table package using native links'
     expect(links).toHaveLength(2)
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
-    expect(wrapper.get('.view-export summary').text()).toBe(
-      i18n.global.t('export.title'),
+    expect(wrapper.get('.view-export summary').attributes('aria-label')).toBe(
+      i18n.global.t('transfer.title'),
     )
     expect(wrapper.get('.view-export p').text()).toContain(
       '不包含视图锁定状态。',
@@ -195,7 +201,10 @@ it('exports mobile field overrides, reports failures, and cancels stale navigati
     .mockImplementation(() => {})
   const { wrapper, router } = await setup('/t/t/v/v')
   try {
-    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await wrapper
+      .findAll('.view-export button')
+      .find((button) => button.text() === i18n.global.t('export.csv'))!
+      .trigger('click')
     await flushPromises()
     const request = fetcher.mock.calls.find(([path]) =>
       String(path).endsWith('/export'),
@@ -210,7 +219,10 @@ it('exports mobile field overrides, reports failures, and cancels stale navigati
       wrapper.get('.table-export-feedback[role="alert"]').text(),
     ).toContain('Export could not be started.')
     mode = 'pending'
-    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await wrapper
+      .findAll('.view-export button')
+      .find((button) => button.text() === i18n.global.t('export.csv'))!
+      .trigger('click')
     expect(wrapper.find('.table-export-feedback[role="status"]').exists()).toBe(
       true,
     )
@@ -428,14 +440,13 @@ it('opens row deep links without reloading schema or remounting the grid, and re
     wrapper.unmount()
   }
 })
-it('shows real schema metadata, levels, view links and the production grid', async () => {
+it('shows the authorized table route and production grid without metadata summaries', async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json(tableSchema()))
   vi.stubGlobal('fetch', fetch)
   const { wrapper } = await setup('/t/t/v/v')
   try {
     expect(wrapper.get('h1').text()).toBe('Table')
-    expect(wrapper.get('.schema-summary').text()).toContain('Name')
-    expect(wrapper.get('.schema-summary').text()).toContain('Owner')
+    expect(wrapper.find('.schema-summary').exists()).toBe(false)
     expect(wrapper.find('.breadcrumbs').exists()).toBe(false)
     expect(wrapper.find('[data-testid="production-grid"]').exists()).toBe(true)
     expect(fetch).toHaveBeenCalledWith(
@@ -485,27 +496,30 @@ it.each([
           : '.table-toolbar',
       )
       expect(toolbar.findAll('.table-history button')).toHaveLength(2)
-      const accessLabels = {
-        owner: i18n.global.t('nav.level.owner'),
-        read: i18n.global.t('nav.level.read'),
-        write: i18n.global.t('nav.level.write'),
-      }
-      expect(toolbar.get('.schema-summary').text()).toContain(
-        accessLabels[level],
+      expect(toolbar.find('.schema-summary').exists()).toBe(false)
+      const transferMenu = toolbar.get('.view-export')
+      expect(transferMenu.get('summary').attributes('aria-label')).toBe(
+        i18n.global.t('transfer.title'),
       )
-      expect(toolbar.get('.schema-summary').text()).toContain('Name')
-      expect(
-        toolbar.find('button[aria-label="Import into this table"]').exists(),
-      ).toBe(level !== 'read')
+      const actions = transferMenu
+        .findAll('button')
+        .map((button) => button.text())
+      expect(actions.includes(i18n.global.t('import.append'))).toBe(
+        level !== 'read',
+      )
+      expect(actions.includes(i18n.global.t('export.csv'))).toBe(
+        type === 'grid',
+      )
+      expect(actions.includes(i18n.global.t('export.package'))).toBe(true)
+      expect(actions).toHaveLength(
+        1 + Number(level !== 'read') + Number(type === 'grid'),
+      )
       expect(toolbar.find('.visibility-menu').exists()).toBe(level === 'owner')
       const newEntry = toolbar.find('.new-entry')
       expect(newEntry.exists()).toBe(
         type === 'grid' && desktop && level !== 'read',
       )
       if (newEntry.exists()) expect(newEntry.text()).toBe('New Entry')
-      expect(toolbar.findAll('.view-export button')).toHaveLength(
-        type === 'grid' ? 2 : 1,
-      )
       expect(
         toolbar.get('.view-export button:last-of-type').attributes('disabled'),
       ).toBeUndefined()
@@ -514,7 +528,9 @@ it.each([
       i18n.global.locale.value = 'zh-CN'
       await flushPromises()
       expect(wrapper.text()).not.toContain('视图和数据表选项')
-      expect(toolbar.get('.view-export summary').text()).toBe('导出')
+      expect(toolbar.get('.view-export summary').attributes('aria-label')).toBe(
+        i18n.global.t('transfer.title'),
+      )
       if (newEntry.exists()) expect(newEntry.text()).toBe('新建条目')
     } finally {
       wrapper.unmount()
@@ -582,7 +598,10 @@ it('uses the newly selected table and view for the next export', async () => {
     })
     await router.push('/t/t2/v/v2')
     await flushPromises()
-    await wrapper.findAll('.view-export button')[0]!.trigger('click')
+    await wrapper
+      .findAll('.view-export button')
+      .find((button) => button.text() === i18n.global.t('export.csv'))!
+      .trigger('click')
     await flushPromises()
     const exportCall = fetcher.mock.calls.find(([path]) =>
       String(path).endsWith('/export'),
@@ -785,7 +804,12 @@ it('refreshes unchanged-route schema on nav revision and removes sharing when th
     nav.revision++
     await flushPromises()
     expect(fetch).toHaveBeenCalledTimes(2)
-    expect(wrapper.get('.schema-summary').text()).toContain('Read')
+    expect(wrapper.find('.schema-summary').exists()).toBe(false)
+    expect(
+      wrapper
+        .findAll('.view-export button')
+        .some((button) => button.text() === i18n.global.t('import.append')),
+    ).toBe(false)
     expect(
       wrapper.findAll('button').some((button) => button.text() === 'Share'),
     ).toBe(false)
@@ -926,7 +950,12 @@ it('preserves the open row dialog when navigation reports a permission change', 
     await flushPromises()
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(wrapper.get('[data-testid="row-dialog"]').element).toBe(dialog)
-    expect(wrapper.get('.schema-summary').text()).toContain('Read')
+    expect(wrapper.find('.schema-summary').exists()).toBe(false)
+    expect(
+      wrapper
+        .findAll('.view-export button')
+        .some((button) => button.text() === i18n.global.t('import.append')),
+    ).toBe(false)
   } finally {
     wrapper.unmount()
   }
@@ -951,7 +980,12 @@ it('restarts an in-flight schema read when the navigation permission changes', a
     expect(fetcher).toHaveBeenCalledTimes(2)
     release(Response.json(tableSchema()))
     await flushPromises()
-    expect(wrapper.get('.schema-summary').text()).toContain('Read')
+    expect(wrapper.find('.schema-summary').exists()).toBe(false)
+    expect(
+      wrapper
+        .findAll('.view-export button')
+        .some((button) => button.text() === i18n.global.t('import.append')),
+    ).toBe(false)
   } finally {
     wrapper.unmount()
   }

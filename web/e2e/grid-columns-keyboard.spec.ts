@@ -241,6 +241,11 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     await expectFocus(5, note.id)
     await page.keyboard.press('Control+End')
     await expectFocus(data.length - 1, note.id)
+    await page.keyboard.press('F2')
+    await expect(editor).toBeVisible()
+    await editor.press('Escape')
+    await expect(editor).toHaveCount(0)
+    await grid.focus()
     await page.keyboard.press('Control+Home')
     await expectFocus(0, name.id)
     await page.keyboard.press('PageDown')
@@ -349,7 +354,11 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
         frozen: config.frozen,
         width: config.fields.find((field) => field.id === name.id)?.width,
       }
-    }).toEqual({ ids: [qty.id, name.id, check.id], frozen: 2, width: 250 })
+    }).toEqual({
+      ids: [qty.id, name.id, check.id, note.id],
+      frozen: 2,
+      width: 250,
+    })
     await localizedMenu
       .getByRole('button', {
         name: messages.grid.columnLeft.replace('{name}', name.name),
@@ -490,6 +499,9 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     ),
   ).toEqual(['__selected', qty.id, name.id])
   const systemFields = await fieldsMenu(page)
+  await systemFields
+    .getByRole('button', { name: en.field.panel.systemFields, exact: true })
+    .click()
   await systemFields
     .getByLabel(en.field.panel.showField.replace('{name}', system.name))
     .check()

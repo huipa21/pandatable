@@ -238,7 +238,7 @@ membership removal is simulated by SQL plus `Invalidate()` until T1.6. See
 - **AT-212 — Hidden resources are 404** · M1 *(API)* · dave (no grants) requesting T's rows gets 404, not 403; hidden books and their icon metadata are absent from navigation.
 - **AT-213 — Any user creates workspaces** · M1 · carol creates W2 and is its owner.
 - **AT-214 — Default workspace and preferred landing** · UX · A new account owns a workspace named `Default`; renaming it does not recreate a starter. Signing in or visiting `/home` opens the user's preferred workspace, which a reader can change to another accessible workspace; explicit links win; a lost preference repairs once without changing other users. Executable: `default-workspace.spec.ts` (UX-01), `workspace-navigation.spec.ts` (UX-02), PG18 preference/provisioning tests.
-- **AT-215 — All-workspace sidebar** · UX · The sidebar shows a static **Workspaces** heading with a right-aligned Add button and every accessible workspace in server order; selecting and expanding are separate; path-only ancestors show no structure controls or default action. Executable: `workspace-navigation.spec.ts`, `shell.spec.ts`.
+- **AT-215 — All-workspace sidebar** · UX · The sidebar shows a static **Workspaces** heading with a right-aligned Add button and every accessible workspace exactly once in server order. Workspace entries stay flat: selecting one opens its workbook-card grid; no workspace entry expands books/tables/views or shows book counts/empty-book messages. Current/default markers and permitted workspace actions remain; path-only ancestors show no structure controls or default action. Workbook/table/view/row routes use a separate tree for only the authorized active workbook. Executable: `workspace-navigation.spec.ts`, `workbook-cards.spec.ts`, `shell.spec.ts`; new WG-01/02 cases AT-519..524.
 - **AT-216 — Workbook cards with stable icons** · UX · Selecting a workspace shows its accessible books as a responsive card grid. Each book has a stable fallback icon shared by authorized readers; a custom icon overrides it and clearing reveals the same fallback; hidden books are absent. Executable: `workbook-cards.spec.ts`, `workbook-icons.spec.ts`, PG18 `TestBookIcon*`.
 - **AT-217 — Table deletion revokes descendant views** · UX · Deleting a table moves it to Trash and makes all its views, including direct links, unavailable; restoring it restores them. Executable: `trash.spec.ts` (UX-05 scenario).
 
@@ -542,10 +542,10 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
 - **AT-325 — Field soft delete** · M2/M3 · Deleting a field hides it everywhere; restoring from Trash brings values back.
   T3.6: **Pass** — desktop/mobile browser deletion hides the field and restores its original value after explicit optional confirmation; PG18 verifies retained configuration, defaults, required-state conflicts and relation storage. [Record](task-prompts/T3.6.md#record-2026-11-01).
 - **AT-326 — Currency default** · M2 · New currency field defaults to CNY (¥ formatting); owner switches it to USD and values display as $; admin changes default currency to EUR → new currency fields default to EUR, existing fields unchanged.
-- **AT-327 — Consolidated table header** · UX · The outer header starts with the workspace name beside the sidebar toggle; the inner table toolbar hosts history, presence, display-field/access information, Import, Export and (rightmost) New Entry in one row; **Views and table options**, the home welcome/signed-in copy and the content-area New Workspace button are absent; Visibility remains ACL sharing. Executable: `table-header.spec.ts`, `visibility-menu.spec.ts`, `workbook-cards.spec.ts` (removed home copy/button).
+- **AT-327 — Consolidated table header** · UX · The outer header starts with the workspace name beside the sidebar toggle; the inner table toolbar hosts history, presence, one permission-aware Import/Export trigger and (rightmost) New Entry in one row. Grid views also expose Format. Display-field/access metadata, the old table-toolbar More control, **Views and table options**, the home welcome/signed-in copy and the content-area New Workspace button are absent; Visibility remains ACL sharing. Executable: `table-header.spec.ts`, `export.spec.ts`, `visibility-menu.spec.ts`, `workbook-cards.spec.ts` (removed home copy/button).
 - **AT-328 — Single-click scalar editing** · UX · One unmodified click on a writable scalar grid cell opens its editor; leaving it saves a valid draft that persists after reload; an invalid draft stays with its error; Escape cancels; double-click still works; readers cannot edit. Executable: `grid-inline-editing.spec.ts` (scalar scenario).
 - **AT-329 — One-click checkbox and choices** · UX · One click on a checkbox box toggles it once; one click on a single/multi-select opens its options; a single choice commits immediately and multiple choices commit once on leave/Enter; Escape cancels; values persist after reload in en/zh-CN and light/dark. Executable: `grid-inline-editing.spec.ts` (choice scenario), `DataGrid.test.ts` undo/error cases.
-- **AT-330 — Plus after the final row** · UX · Desktop writers see a small plus directly after the last loaded visible row (empty, paged and grouped results); it creates one row with defaults and undo, reveals it, and on required-field failure shows the error and offers New Entry without fabricating data. Executable: `grid-append-row.spec.ts`.
+- **AT-330 — Plus after the final row** · UX · Desktop writers see a plus in a full-width action directly after the last loaded visible row (empty, paged and grouped results). Its hit target spans the larger of the grid viewport and rendered visible-column width; it creates one row with defaults and undo, reveals it, and on required-field failure shows the error and offers New Entry without fabricating data. Executable: `grid-append-row.spec.ts`.
 - **AT-331 — New Entry form** · UX · The rightmost toolbar New Entry opens the existing creation form; cancel creates nothing; creation refreshes filtered/sorted/grouped views and opens the created row; readers have no action; 390 px keeps one add control. Executable: `new-entry.spec.ts`.
 
 ## AT-4xx Relations & Computed (M2)
@@ -575,7 +575,7 @@ awaits datetime/filter UI, AT-804 awaits T2.6. No promotion from seed/API tests.
   UX-05 sidebar management, locking and conflict coverage for AT-506..508: [record](task-prompts/workspace-grid-05-view-navigation.md#record).
   UX-06 rechecked those view actions with the consolidated header: [record](task-prompts/workspace-grid-06-table-header.md#record).
 - **AT-509 — Quick search** · M2 · Searching "acme" finds rows matching in any visible text field, incl. Chinese text search "项目". **Evidence: PASS** — PG18 `TestQuickSearchAndFooterAggregatesUseVisibleFilteredRows` and production-browser `search-aggregates.spec.ts` verify visible-field English/Chinese search, hidden-field exclusion, and transient filtering (2 passed, 1 intentional mobile skip); `ptdev check` passes.
-- **AT-510 — Footer aggregates** · M2 · Sum/avg/count/empty/unique values correct and respect filters. **Evidence: PASS** — PG18 `TestQuickSearchAndFooterAggregatesUseVisibleFilteredRows` and production-browser `search-aggregates.spec.ts` verify filtered and search-scoped sum/avg/count/empty/unique values, empty averages, and UI configuration (2 passed, 1 intentional mobile skip); `ptdev check` passes.
+- **AT-510 — Footer aggregates** · M2 · Sum/avg/count/empty/unique and percentage values are correct for the full filtered/searched result set. Percent empty/filled/unique are exact decimal-string ratios from 0 to 1, use the field's established empty/unique semantics, and return `"0"` for zero matching rows. Supported operations are offered only for compatible fields. Each visible field has an aligned footer picker that follows column resize, order, freezing and horizontal scrolling; hidden fields have no picker. **Evidence: existing PASS preserved** — PG18 `TestQuickSearchAndFooterAggregatesUseVisibleFilteredRows` and production-browser `search-aggregates.spec.ts` cover the original operations; new percentage and column-picker obligations are WG-04/05 AT-528..533 and remain pending until WG-09 gates.
 - **AT-511 — Form view** · M2 · Owner builds form with custom labels/help/required; bob (write) submits → row created; carol (read) sees form disabled; form works on mobile viewport. **Evidence: PASS** — Go API/structure tests, `FormBuilder.test.ts` and `FormView.test.ts` (4/4), `ptdev check`, and production-browser `form.spec.ts` (3/3 fast E2E) verify configuration persistence/reload, required validation, owner/writer row creation, read-only submission denial, and overflow-free 390 px layout.
   UX-05 form creation and unchanged-refresh draft coverage: [record](task-prompts/workspace-grid-05-view-navigation.md#record).
 - **AT-512 — Filter/group performance** · M2 · On 200k rows: filter + sort + group each respond < 1 s (NFR-3). **Auto-index correctness PASS; target-host performance pending** — PG18 integration verifies strict >10k eligibility, btree/trigram selection, restart/idempotent scheduling, metadata preservation, and retry after metadata failure (T2.14). T2.15's authenticated loopback HTTP first/warm samples were filter 42.8/26.6 ms, sort 65.5/59.4 ms, group 81.2/71.2 ms, all locally <1 s. The 8-vCPU/2-GiB VM is not the 2-vCPU/4-GB target; TLS, reverse-proxy and browser overhead are excluded. Fixture, parameters and plans: [T2.15 record](task-prompts/T2.15.md#record-2026-10-31).
@@ -778,13 +778,13 @@ failed AT-305/311 and AT-705, and the phase gate remains open.
 | Test | Status | Evidence / remaining boundary |
 |---|---|---|
 | AT-214 | Pass | `default-workspace` and `workspace-navigation` desktop/mobile; PG18 preference, provisioning and migration tests in `ptdev check`. |
-| AT-215 | Pass | `workspace-navigation` and `shell` desktop/mobile. |
+| AT-215 | Pending WG-09 | Existing `workspace-navigation`/`shell` evidence retained; new flat-list and active-workbook-tree regression coverage is AT-519..524. |
 | AT-216 | Pass | `workbook-cards` desktop/mobile (custom override, clear-to-fallback, access pruning); `workbook-icons` desktop (API metadata); PG18 `TestBookIcon*`. No icon-picker UI exists; overrides are API-only. |
 | AT-217 | Pass (desktop) | `trash` UX-05 scenario: deleted table's views and deep links are unavailable; restore brings them back. |
-| AT-327 | Pass | `table-header` desktop/mobile, `visibility-menu`, `workbook-cards` absence checks. The integrated state first wrapped the 1280 px Grid toolbar to 82 px; D-229 restored one 48 px row (en/zh-CN). |
+| AT-327 | Pending WG-09 | `table-header`, `export`, `visibility-menu`, `workbook-cards`; verifies one transfer trigger, no toolbar metadata summary, and preserved compact header in both locales. New WG-06/08 assertions are AT-534..536 and AT-541..543. |
 | AT-328 | Pass (desktop) | `grid-inline-editing` scalar scenario including reload persistence, rejected drafts, Escape and reader denial. Physical IME hardware untested. |
 | AT-329 | Pass (desktop) | `grid-inline-editing` choice scenario including zh-CN/dark; `DataGrid.test.ts` checkbox undo and rejected-toggle cases. Physical touch untested. |
-| AT-330 | Pass (desktop) | `grid-append-row` five desktop scenarios (short, paged, grouped, filtered/sorted, errors/permissions); mobile keeps form creation. |
+| AT-330 | Pending WG-09 | Existing `grid-append-row` creation/permission scenarios retained; full-width hit-target and column-span geometry is newly covered by AT-525..527 using browser bounds/clicks. Mobile keeps form creation. |
 | AT-331 | Pass | `new-entry` desktop (distinct paths, refresh, reader denial) and 390 px single add action. |
 | AT-513 | Pass | `views` UX-05 scenario desktop/mobile. |
 
@@ -857,6 +857,40 @@ under `web/e2e`, and frontend unit filenames are under `web/src`.
 | UX-10.4 | AT-358 | Filtered/sorted/grouped refresh: `new-entry.spec.ts`. |
 | UX-10.5 | AT-359 | Scope/focus, locale/theme, mobile and deep links: `new-entry.spec.ts`, `RowExpandDialog.test.ts`, `ResourcePage.test.ts`. |
 | UX-10.6 | AT-360 | Distinct direct-plus and form paths: `new-entry.spec.ts`, `grid-append-row.spec.ts`. |
+
+### WG-01..WG-08 refinement scenarios
+
+These are new obligations, not inferred passes from the earlier UX or focused
+unit checks. The consolidated fast gate and canonical production-image run are
+recorded in WG-09's task Record.
+
+| Scenario | ID | Criterion and executable coverage |
+|---|---|---|
+| WG-01.1 | AT-519 | Every accessible workspace appears once in server order with current/default markers and no descendant tree, counts or empty-book copy: `flatWorkspaces.test.ts`, `workspace-navigation.spec.ts`. |
+| WG-01.2 | AT-520 | Empty/one/many-book cards, switching, hidden-book pruning and workbook routes: `ResourcePage.workbook-cards.test.ts`, `workbook-cards.spec.ts`. |
+| WG-01.3 | AT-521 | Keyboard/direct links, mobile drawer, stale/retry and path-only controls: `flatWorkspaces.test.ts`, `workspace-navigation.spec.ts`. |
+| WG-02.1 | AT-522 | Active workbook tree is separate from the flat list and contains only that workbook: `navigation.test.ts`, `workspace-navigation.spec.ts`. |
+| WG-02.2 | AT-523 | Table/view/row deep links, refresh, workspace-card return and context clearing: `viewNavigation.test.ts`, `workspace-navigation.spec.ts`, `views.spec.ts`. |
+| WG-02.3 | AT-524 | View actions, ownership/path-only restrictions and stale/identity guards: `viewNavigation.test.ts`, `navigation.test.ts`, `views.spec.ts`. |
+| WG-03.1 | AT-525 | Empty and narrow tables expose one full-width, keyboard-clickable append row: `appendRowLayout.test.ts`, `grid-append-row.spec.ts`. |
+| WG-03.2 | AT-526 | Append geometry follows viewport/visible column span through resize, reorder, freeze, horizontal scroll and grouped tails: `appendRowLayout.test.ts`, `grid-append-row.spec.ts` browser bounds. |
+| WG-03.3 | AT-527 | One create per activation; pending, reader, required-field, logical-end and keyboard behavior remain correct: `DataGrid.test.ts`, `grid-append-row.spec.ts`. |
+| WG-04.1 | AT-528 | Percentage empty/filled/unique produce 25%/75%/50% and exact ratio strings over the complete result set: `TestQuickSearchAndFooterAggregatesUseVisibleFilteredRows`, `search_aggregates_integration_test.go`, `fields.test.ts`. |
+| WG-04.2 | AT-529 | Zero rows, all-empty, duplicates, zero/false, arrays, filters/search and hidden fields preserve established semantics: `search_aggregates_integration_test.go`, `fields.test.ts`. |
+| WG-04.3 | AT-530 | Unsupported pairs reject, saved configurations round-trip, ACL remains enforced and existing/grouped sums/averages are unchanged: `search_aggregates_integration_test.go`, aggregate Go tests, `search-aggregates.spec.ts`. |
+| WG-05.1 | AT-531 | Every visible column has an aligned type-aware picker; values, percent labels and clearing use API-backed results: `columnFooters.test.ts`, `DataGrid.test.ts`, `search-aggregates.spec.ts`. |
+| WG-05.2 | AT-532 | Footer alignment survives width/order/freeze/scroll/visibility changes and coexists with append/group tails: `columnFooters.test.ts`, `search-aggregates.spec.ts` browser geometry. |
+| WG-05.3 | AT-533 | Search/filter, stale/error/retry, locked/read-only local overrides and permission behavior remain explicit: `DataGrid.test.ts`, `search-aggregates.spec.ts`. |
+| WG-06.1 | AT-534 | Format controls height/width with bounds, feedback, persistence and reader-local overrides: `formatToolbar.test.ts`, `grid-columns-keyboard.spec.ts`. |
+| WG-06.2 | AT-535 | Old More panel is absent; search, Fields visibility, order/freeze and footer controls remain reachable: `table-header.spec.ts`, `search-aggregates.spec.ts`, `visibility-menu.spec.ts`. |
+| WG-06.3 | AT-536 | Keyboard/PageDown, resize, popup bounds, dismissal and focus return survive in supported viewports/locales: `grid-columns-keyboard.spec.ts`, `table-header.spec.ts`. |
+| WG-07.1 | AT-537 | Nonadjacent selected IDs across pages are edited/deleted exactly; cancel, deselection and undo work: `DataGrid.test.ts`, `bulk-row-actions.spec.ts`. |
+| WG-07.2 | AT-538 | Typed text/number/false/select/date/null edits normalize and invalid/required/unique values fail atomically with visible errors: `DataGrid.test.ts`, `bulk-row-actions.spec.ts`. |
+| WG-07.3 | AT-539 | Conflicts, limits, removed fields, route/identity/permission changes, pending writes and duplicate submits cannot partially mutate: `DataGrid.test.ts`, `bulk-row-actions.spec.ts`. |
+| WG-07.4 | AT-540 | Group/filter summaries refresh; row selection stays distinct from cell ranges; readers have no actions: `DataGrid.test.ts`, `bulk-row-actions.spec.ts`. |
+| WG-08.1 | AT-541 | Exactly one localized transfer trigger, no display/access summary or separate import/export triggers across toolbar variants: `transferToolbar.test.ts`, `table-header.spec.ts`, `export.spec.ts`. |
+| WG-08.2 | AT-542 | Import/export events, permission/readiness, disabled/pending/error behavior remain correct: `transferToolbar.test.ts`, `import.spec.ts`, `export.spec.ts`. |
+| WG-08.3 | AT-543 | Keyboard/Escape/outside/route dismissal, focus, locale, feedback and presence remain correct: `transferToolbar.test.ts`, `export.spec.ts`, `table-header.spec.ts`. |
 
 The UX-11 grid console 409 occurred while field-driven view saves and queries
 overlapped. `grid.spec.ts` and AT-304 now allow only the optional

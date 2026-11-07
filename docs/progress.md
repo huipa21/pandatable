@@ -18,7 +18,12 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| WG-09 | Refinement integration and phase gates | 🟨 | 2026-11-07 | Check and consolidated fast E2E pass; post-phase login-assertion and grid editor re-entry fixes pass focused gates. The production phase failed (timeout, 135 not run) and needs one authorized rerun. [Record](task-prompts/wg-09-verification.md). |
 | WG-01 | Flat workspace browsing | 🟨 | 2026-11-06 | D-230; flat ordered sidebar with existing workbook cards and access states retained. Focused Vitest/ESLint pass; E2E and consolidated task gates deferred to WG-09. [Record](task-prompts/wg-01-flat-workspaces.md). |
+| WG-02 | Active-workbook navigation tree | 🟨 | 2026-11-06 | D-230; flat workspace list with an authorized route-resolved tree for only the active workbook. Focused navigation/view tests pass; consolidated E2E and gates await WG-09. [Record](task-prompts/wg-02-workbook-tree.md). |
+| WG-03 | Full-width append action | 🟨 | 2026-11-06 | D-230; one footer action spans the viewport or visible column span and retains existing add-row behavior. Focused Vitest/ESLint pass; browser geometry and gates await WG-09. [Record](task-prompts/wg-03-append-row.md). |
+| WG-04 | Percentage footer aggregate contracts | 🟨 | 2026-11-06 | D-230/D-233; added percent-empty/filled/unique exact ratio contracts with zero-row behavior and type capabilities. Focused PG18, codec, Vitest and vet checks pass; consolidated gates await WG-09. [Record](task-prompts/wg-04-aggregate-contracts.md). |
+| WG-05 | Column-aligned footer summaries | 🟨 | 2026-11-06 | D-230; per-visible-column API-backed pickers align to grid layout and include percentage operations. Focused Vitest/typecheck/i18n pass; browser geometry and gates await WG-09. [Record](task-prompts/wg-05-column-footers.md). |
 | WG-06 | Format and toolbar cleanup | 🟨 | 2026-11-06 | D-230/D-232; Format owns height and column sizing/order/freezing, search has a dedicated trigger, and the old More/Delete controls are removed. Focused checks pass; pre-commit check retains 16 frontend failures, with WG-09 gates pending. [Record](task-prompts/wg-06-format-toolbar.md). |
 | WG-07 | Selected-row bulk actions | 🟨 | 2026-11-06 | D-230; writer-only row selection with typed preview/Edit, confirmed Delete, bounded atomic existing APIs, and undo. 118 focused Vitest tests, typecheck, touched-file ESLint and i18n pass; API-backed E2E and consolidated gates deferred to WG-09. [Record](task-prompts/wg-07-bulk-actions.md). |
 | WG-08 | Unified import/export toolbar trigger | 🟨 | 2026-11-06 | D-230; one localized transfer icon replaces separate import/export triggers and removes toolbar metadata while preserving permissions, readiness, dismissal and feedback. Focused Vitest/ESLint, typecheck and i18n checks pass; WG-09 gates deferred. [Record](task-prompts/wg-08-transfer-toolbar.md). |
@@ -79,7 +84,7 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 | T2.8 | Grouping | ✅ | 2026-10-30 | AT-504 and task gates pass: filtered three-level buckets, empty and sorted multi-select keys, grouped row paging, localized desktop/mobile headers, and persistent expansion; D-176 records view-config storage. [Record](task-prompts/T2.8.md#record-2026-10-30). |
 | T2.9 | Highlight | ✅ | 2026-10-30 | D-177: ordered, filter-backed row/cell rules use first-match semantics and light/dark palette tokens. AT-505 and both task gates pass. [Record](task-prompts/T2.9.md#record-2026-10-30). |
 | UI-HIGHLIGHT | Highlight rules clarity | ✅ | 2026-11-04 | Highlight menu clarifies ordered rules; persistence, precedence, contrast and task gates pass. [Record](task-prompts/ui-highlight-rules.md#record-2026-11-04). |
-| UI-FIELD-TILES | Fields dropdown tiles | ✅ | 2026-11-04 | D-215: compact draggable field tiles, anchored ⋯ menu, Edit reuses the Add layout with safe type conversion, and reorder persists schema plus active-view order after flushing pending column changes. Check and fast browser gate pass. [Record](task-prompts/ui-field-tiles.md#record-2026-11-04). |
+| UI-FIELD-TILES | Fields dropdown tiles | 🟨 | 2026-11-07 | Reopened by two production-phase `/home` login-assertion failures; corrected spec passes fast E2E (4 passed, 3 skipped). Awaits the WG-09 phase rerun. [Record](task-prompts/ui-field-tiles.md#record-2026-11-04). |
 | UI-VISIBILITY | Sharing in Visibility menu | ✅ | 2026-11-04 | D-214: table Share moves into an eye-icon Visibility menu after Highlight; mobile/non-Grid keep it in the table utility area. Check and fast browser gate pass. [Record](task-prompts/ui-visibility-sharing.md#record-2026-11-04). |
 | T2.10 | View management | ✅ | 2026-10-30 | D-178; AT-506–508 and task gates pass. Shared/personal lifecycle, locks, ordering, local overrides, and version conflicts are implemented; no migration. |
 | T2.11 | Search & aggregates | ✅ | 2026-10-30 | D-179; AT-509/510 and task gates pass. Visible-field quick search and filtered footer aggregates are complete. [Record](task-prompts/T2.11.md#record-2026-10-30). |
@@ -137,9 +142,16 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | WG-09 checkpoint: fixed stale post-login assertions and a grid editor re-entry data-loss path; check and focused fast E2E pass. The failed production phase still needs one authorized rerun. |
+| 2026-11-07 | Reopened UI-FIELD-TILES after two WG-09 production-phase login assertion failures; the phase also hit its suite timeout. Focused repair is in progress. |
+| 2026-11-07 | Started WG-09: integrated WG-01..08 acceptance mappings/docs, removed obsolete toolbar compatibility hooks and refreshed metadata/transfer assertions; consolidated gates remain in progress. |
 | 2026-11-06 | Implemented WG-07 selected-row Delete/Edit with typed previews, authoritative undo values, explicit API limits and focused unit coverage; production API E2E and consolidated gates remain for WG-09. |
 | 2026-11-06 | Implemented WG-06 Format controls, dedicated search, width validation and toolbar cleanup; focused checks are in the handoff, with consolidated gates deferred to WG-09. |
 | 2026-11-06 | Started and implemented WG-08: unified transfer icon with focused behavior coverage; locale additions and export browser assertions are ready for WG-09 gates. |
+| 2026-11-06 | Implemented WG-05 column-aligned footer pickers and localized percentage/retry labels; focused unit/type/i18n checks passed, browser geometry and gates deferred to WG-09. |
+| 2026-11-06 | Implemented WG-04 percentage aggregate contracts and PG18/API coverage; focused Go/Vitest checks passed, consolidated gates deferred to WG-09. |
+| 2026-11-06 | Implemented WG-03 full-width append action with responsive browser bounds/click cases; focused tests passed, E2E geometry and consolidated gates deferred to WG-09. |
+| 2026-11-06 | Implemented WG-02 active-workbook-only navigation tree; focused navigation/view tests passed, E2E and consolidated gates deferred to WG-09. |
 | 2026-11-06 | Started and implemented WG-01 flat workspace browsing; focused Vitest/ESLint pass, with E2E and consolidated gates deferred to WG-09. |
 | 2026-11-06 | Planned WG-01..09 workspace/grid refinement with source ownership, quick-task handoffs and one final full-verification session; implementation and earlier phase failures unchanged. |
 | 2026-11-06 | Reopened UX-06 and kept UX-07/08 open: the UX-11 production AT-305/311 PageDown regression failed; focused repetitions pass, phase verification remains open. |

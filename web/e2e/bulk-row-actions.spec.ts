@@ -50,8 +50,9 @@ async function openBulkEdit(page: Page, fieldName: string) {
     name: en.grid.bulkEditTitle,
     exact: true,
   })
+  await expect(dialog).toBeVisible()
   await dialog
-    .getByLabel(en.grid.bulkEditField, { exact: true })
+    .getByRole('combobox', { name: en.grid.bulkEditField, exact: true })
     .selectOption({ label: fieldName })
   return dialog
 }
@@ -283,6 +284,20 @@ test('WG-07: selected rows support typed atomic edits, delete and undo', async (
     )
     .toBe(404)
   await page.getByRole('button', { name: en.undo.undo, exact: true }).click()
+  await expect
+    .poll(async () =>
+      (
+        await page.request.get(`/api/v1/tables/${tableId}/rows/${first.id}`)
+      ).status(),
+    )
+    .toBe(200)
+  await expect
+    .poll(async () =>
+      (
+        await page.request.get(`/api/v1/tables/${tableId}/rows/${later.id}`)
+      ).status(),
+    )
+    .toBe(200)
   await expect
     .poll(async () => (await readRow(first.id)).fields[nameField])
     .toBe('Shared value')

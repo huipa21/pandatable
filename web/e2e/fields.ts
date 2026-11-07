@@ -261,7 +261,6 @@ export async function verifyFields(owner: Page, tid: string) {
     .click()
   if (owner.viewportSize()!.width < 768)
     await expect(row).toContainText(en.field.panel.display)
-  await expect(owner.locator('.schema-summary')).toContainText('数量')
   await fieldAction(owner, stage.id, en.field.panel.moveUp)
   await expect
     .poll(async () =>
@@ -311,7 +310,6 @@ export async function verifyFields(owner: Page, tid: string) {
     ).status(),
   ).toBe(200)
   await owner.reload()
-  await expect(owner.locator('.schema-summary')).toContainText('Name')
   return { qty: { id: qty.id, version: renamed.version } }
 }
 

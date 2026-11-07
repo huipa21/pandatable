@@ -71,11 +71,11 @@ async function setup() {
     history: createMemoryHistory(),
     routes: [
       { path: '/w/:workspaceId', component: { template: '<div />' } },
+      { path: '/t/:tableId/v/:viewId', component: { template: '<div />' } },
       { path: '/:pathMatch(.*)*', component: { template: '<div />' } },
     ],
   })
-  // The sidebar tree shows the workspace named by the route.
-  await router.push('/w/w')
+  await router.push('/t/t/v/v')
   return { plugins: [pinia, i18n, router] }
 }
 
@@ -155,30 +155,29 @@ it('offers Share to book/table effective owners independently of structure owner
   nav.tree = tree
   const wrapper = mount(NavContents, { global })
   try {
-    expect(wrapper.get('[data-nav-id="b"] > .node-actions').text()).toContain(
-      'Share',
-    )
     expect(
-      wrapper.get('[data-nav-id="b"] > .node-actions').text(),
+      wrapper.get('.workbook-root [data-nav-id="b"] > .node-actions').text(),
+    ).toContain('Share')
+    expect(
+      wrapper.get('.workbook-root [data-nav-id="b"] > .node-actions').text(),
     ).not.toContain('Rename')
     b.level = 'none'
     b.pathOnly = true
     nav.tree = structuredClone(tree)
     await flushPromises()
-    expect(wrapper.get('[data-nav-id="t"] > .node-actions').text()).toContain(
-      'Share',
-    )
     expect(
-      wrapper.get('[data-nav-id="t"] > .node-actions').text(),
+      wrapper.get('.workbook-root [data-nav-id="t"] > .node-actions').text(),
+    ).toContain('Share')
+    expect(
+      wrapper.get('.workbook-root [data-nav-id="t"] > .node-actions').text(),
     ).not.toContain('Rename')
     for (const level of ['read', 'write'] as const) {
       b.tables[0]!.level = level
       nav.tree = structuredClone(tree)
       await flushPromises()
-      expect(wrapper.findAll('.node-actions')).toHaveLength(1)
       expect(
         wrapper
-          .get('[data-nav-id="t"] > .node-actions')
+          .get('.workbook-root [data-nav-id="t"] > .node-actions')
           .findAll('button')
           .map((button) => button.text()),
       ).toEqual(['Create view'])

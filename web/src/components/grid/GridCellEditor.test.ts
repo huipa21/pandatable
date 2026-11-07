@@ -80,6 +80,46 @@ describe('grid scalar editor lifecycle', () => {
     expect(cancelled.close).toHaveBeenCalledOnce()
   })
 
+  it('accepts a new draft if the editor remains mounted after a commit', async () => {
+    const { wrapper, save } = mountEditor('datetime', null)
+    const input = wrapper.get('input')
+    await input.trigger('keydown', { key: 'Enter' })
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(save).toHaveBeenCalledExactlyOnceWith(null, false)
+
+    await input.setValue('2026-01-01 00:30')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(save).toHaveBeenNthCalledWith(2, '2026-01-01T00:30:00Z', false)
+    await input.trigger('focusout', { relatedTarget: document.body })
+    expect(save).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains a new uncommitted draft even when it matches the original value', async () => {
+    const { wrapper, save, saveDraft } = mountEditor('text', 'before')
+    const input = wrapper.get('input')
+    await input.setValue('after')
+    await input.trigger('keydown', { key: 'Enter' })
+    await input.setValue('before')
+    wrapper.vm.captureBeforeUnmount()
+    expect(save).toHaveBeenCalledExactlyOnceWith('after', false)
+    expect(saveDraft).toHaveBeenLastCalledWith(
+      'before',
+      false,
+      i18n.global.t('errors.ERR_INTERNAL'),
+    )
+  })
+
+  it('does not rearm a retained editor after cancellation', async () => {
+    const { wrapper, save } = mountEditor('text', 'before')
+    const input = wrapper.get('input')
+    await input.setValue('after')
+    await input.trigger('keydown', { key: 'Enter' })
+    await input.trigger('keydown', { key: 'Escape' })
+    await input.setValue('discarded')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(save).toHaveBeenCalledExactlyOnceWith('after', false)
+  })
+
   it('retains invalid raw text and restores it when reopened', async () => {
     const invalid = mountEditor('integer', 7)
     await invalid.wrapper.get('input').setValue('abc')

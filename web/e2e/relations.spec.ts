@@ -1,7 +1,7 @@
 import { expect, test, paceLogin, expectHTTPFailure } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
-import { openFieldTypeActions, openGridMore } from './table-controls'
+import { openFieldTypeActions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
 const headers = () => ({
@@ -19,7 +19,7 @@ async function login(page: import('@playwright/test').Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 }
 
 async function createWorkspace(page: import('@playwright/test').Page) {
@@ -433,7 +433,6 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
   })
   await rowSelector.focus()
   await rowSelector.press('Space')
-  await openGridMore(page)
   await page
     .getByRole('button', {
       name: en.grid.deleteRows.replace('{count}', '1'),
@@ -453,7 +452,7 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
   await deleteDialog
     .getByRole('button', { name: en.grid.deleteConfirm, exact: true })
     .click()
-  await expect(page.getByRole('alert')).toContainText(
+  await expect(deleteDialog.getByRole('alert')).toContainText(
     en.errors.ERR_RESTRICT_VIOLATION,
   )
 

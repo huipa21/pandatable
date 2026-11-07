@@ -82,6 +82,8 @@ const initialText =
 let finished = false
 let leaving = false
 let leaveAfterComposition = false
+let committedText: string | undefined
+let baselineText = initialText
 
 async function commit(next: WireValue) {
   if (scalar.value) {
@@ -93,6 +95,8 @@ async function commit(next: WireValue) {
       props.close()
       return
     }
+    committedText = text
+    baselineText = text
     props.saveDraft(text, true)
     props.save(next, leaving)
     if (leaving) props.close()
@@ -108,6 +112,7 @@ async function commit(next: WireValue) {
 function cancel() {
   if (scalar.value || choice) {
     finished = true
+    committedText = undefined
     props.discardDraft()
   }
   const grid = gridHost()
@@ -247,6 +252,19 @@ function compositionFinished() {
   queueMicrotask(leave)
 }
 
+function draftChanged() {
+  // RevoGrid can retain an editor after overlapping requests to open a cell.
+  if (
+    scalar.value &&
+    finished &&
+    committedText !== undefined &&
+    editor.value?.currentDraft() !== committedText
+  ) {
+    finished = false
+    committedText = undefined
+  }
+}
+
 function captureBeforeUnmount() {
   if (choice && !finished && choiceEditor.value) {
     const labels = choiceEditor.value.selection()
@@ -257,7 +275,7 @@ function captureBeforeUnmount() {
   }
   if (finished || !scalar.value || !editor.value) return
   const text = editor.value.currentDraft()
-  if (text !== initialText || props.initialDraft !== undefined)
+  if (text !== baselineText || props.initialDraft !== undefined)
     props.saveDraft(text, false, t('errors.ERR_INTERNAL'))
   finished = true
 }
@@ -272,7 +290,7 @@ defineExpose({
 </script>
 
 <template>
-  <div ref="root" @focusout="focusLeft">
+  <div ref="root" @focusout="focusLeft" @input="draftChanged">
     <span v-if="changedBy" class="remote-edit-indicator" role="status">
       {{ t('realtime.changedBy', { name: changedBy }) }}
     </span>

@@ -1139,7 +1139,6 @@ onBeforeUnmount(() => {
               </template>
               <template #toolbar-actions>
                 <TableToolbarActions
-                  fill-summary
                   :schema="schema"
                   :view="view"
                   :identity="auth.user?.id ?? ''"
@@ -1366,11 +1365,14 @@ onBeforeUnmount(() => {
 
 .workbook-card-content {
   display: grid;
+  flex: 1 1 0;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 6px;
 }
 
 .workbook-card-name {
+  min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 600;
 }

@@ -244,9 +244,7 @@ export async function verifySharing(
     await close(alice)
     await schema(bob, tid, 'read')
     await focus(bob)
-    await expect(bob.locator('.schema-summary')).toContainText(
-      en.nav.level.read,
-    )
+    await expect(bob.locator('.schema-summary')).toHaveCount(0)
     await expect(
       bob
         .locator('main')
@@ -281,9 +279,7 @@ export async function verifySharing(
       ).status(),
     ).toBe(403)
     await focus(bob)
-    await expect(bob.locator('.schema-summary')).toContainText(
-      en.nav.level.write,
-    )
+    await expect(bob.locator('.schema-summary')).toHaveCount(0)
     await open(alice, bookPath)
     await remove(alice, b.id)
     await close(alice)
@@ -342,9 +338,7 @@ export async function verifySharing(
     await close(alice)
     await schema(carol, tid, 'write')
     await carol.goto(tablePath)
-    await expect(carol.locator('.schema-summary')).toContainText(
-      en.nav.level.write,
-    )
+    await expect(carol.locator('.schema-summary')).toHaveCount(0)
     // Carol's open table may revalidate any number of times after revocation.
     allowHTTPFailure(carol, 'POST', '/api/v1/views/*/query', 404)
     allowHTTPFailure(carol, 'GET', '/api/v1/tables/*/schema', 404)
@@ -411,9 +405,7 @@ export async function verifySharing(
     await remove(bob, c.id)
     await close(bob)
     await carol.goto(tablePath)
-    await expect(carol.locator('.schema-summary')).toContainText(
-      en.nav.level.owner,
-    )
+    await expect(carol.locator('.schema-summary')).toHaveCount(0)
     expect(
       (
         await carol.request.patch(`/api/v1/tables/${tid}`, {

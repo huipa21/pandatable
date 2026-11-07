@@ -130,12 +130,6 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
         expect(entryBounds.x).toBeGreaterThanOrEqual(
           actionBounds.x + actionBounds.width - 1,
         )
-        expect(
-          await toolbar
-            .locator('.table-info-fill dt')
-            .first()
-            .evaluate((element) => getComputedStyle(element).flexShrink),
-        ).toBe('1')
         await noPageOverflow(page)
       }
     }
@@ -180,15 +174,7 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
       await expect(
         toolbar.getByRole('button', { name: labels.undo.redo }),
       ).toBeVisible()
-      await expect(
-        toolbar.getByRole('button', {
-          name: labels.import.append,
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(toolbar.locator('.schema-summary')).toContainText(
-        labels.nav.level.owner,
-      )
+      await expect(toolbar.locator('.schema-summary')).toHaveCount(0)
       await expect(toolbar.locator('.visibility-menu')).toBeVisible()
       await expect(toolbar.locator('.view-export')).toBeVisible()
       if (view.type === 'grid' && width >= 768) {
@@ -213,6 +199,12 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
       await exportTrigger.focus()
       await page.keyboard.press('Enter')
       await bounded(page, exportMenu.locator('.view-export-panel'))
+      await expect(
+        exportMenu.getByRole('button', {
+          name: labels.import.append,
+          exact: true,
+        }),
+      ).toBeVisible()
       await expect(
         exportMenu.getByRole('button', {
           name: labels.export.csv,

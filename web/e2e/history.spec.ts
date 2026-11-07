@@ -24,7 +24,7 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(/\/w\/[^/]+$/)
 
   const h = headers()
   const workspace = await page.request.post('/api/v1/workspaces', {

@@ -155,7 +155,7 @@ async function createReader(page: Page, browser: Browser, username: string) {
     await reader
       .getByRole('button', { name: en.auth.signIn, exact: true })
       .click()
-    await expect(reader).toHaveURL(/\/home$/)
+    await expect(reader).toHaveURL(/\/w\/[^/]+$/)
   }
   return { context, reader, user }
 }

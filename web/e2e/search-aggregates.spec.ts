@@ -186,8 +186,24 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
       .boundingBox()
     if (!headerBox || !summaryBox)
       throw new Error(`Missing ${fieldName} column geometry`)
-    expect(Math.abs(summaryBox.x - headerBox.x)).toBeLessThanOrEqual(2)
-    expect(Math.abs(summaryBox.width - headerBox.width)).toBeLessThanOrEqual(2)
+    const footerTransform = await page
+      .locator(`.grid-summary-cell[data-field-id="${fieldId}"]`)
+      .evaluate((element) => getComputedStyle(element).transform)
+    const horizontalScroll = await grid
+      .locator('revogr-scroll-virtual.horizontal')
+      .evaluate((element) => ({
+        scrollLeft: (element as HTMLElement).scrollLeft,
+        scrollWidth: (element as HTMLElement).scrollWidth,
+        clientWidth: (element as HTMLElement).clientWidth,
+      }))
+    expect(
+      Math.abs(summaryBox.x - headerBox.x),
+      `${fieldName} summary x=${summaryBox.x}, header x=${headerBox.x}, footer transform=${footerTransform}, horizontal=${JSON.stringify(horizontalScroll)}`,
+    ).toBeLessThanOrEqual(2)
+    expect(
+      Math.abs(summaryBox.width - headerBox.width),
+      `${fieldName} summary width=${summaryBox.width}, header width=${headerBox.width}`,
+    ).toBeLessThanOrEqual(2)
   }
   await expectAligned('Amount', amount.id)
   const amountHeader = grid.getByRole('columnheader', {

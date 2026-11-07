@@ -227,13 +227,18 @@ transient search requests and personal views do not schedule indexes (D-020).
 ## 6. Footer aggregates
 
 Per visible field: none, count, count_empty, count_filled, unique, sum, avg,
-min, max, earliest, latest, percent_checked. The view stores supported
+min, max, earliest, latest, percent_checked, percent_empty, percent_filled,
+percent_unique. The view stores supported
 `{fieldId,aggregate}` entries in an ordered `aggregates` array. The
 `POST /views/{id}/aggregates` endpoint applies the same effective filter and
 transient search as the displayed rows; optional request overrides are
-validated and never mutate view config. Numeric sum/avg/min/max and
-percent_checked results are JSON strings to preserve exact PostgreSQL values;
-count-style results are JSON numbers.
+validated and never mutate view config. The percentage operations are offered
+only where the corresponding checked, empty/filled or unique capability exists.
+Percent empty/filled/unique divide their existing count numerator by all
+matching rows, return a ratio from 0 to 1, and return zero when no rows match.
+Numeric sum/avg/min/max and all percentage results are exact JSON strings;
+count-style results are JSON numbers. Existing `percent_checked` keeps its
+null result for no matching rows.
 
 ## 7. Formula language (D-018)
 

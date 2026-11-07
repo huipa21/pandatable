@@ -77,4 +77,52 @@ This is the **only full-verification session** in this batch.
 
 ## Record
 
-Not started.
+### 2026-11-07 — task gates pass; phase gate failed and awaits one rerun
+
+- Integrated the WG-01..08 handoffs, removed the obsolete toolbar compatibility
+  prop/helper, mapped numbered cases to AT-519..543, documented D-233 and
+  updated the frontend, query/API and bilingual workflow documentation.
+- Corrected card and append geometry, view-deletion focus, cross-page keyboard
+  focus and footer alignment. RevoGrid can update its column viewport after its
+  synthetic scroll event and independently of its virtual scrollbar; the footer
+  now follows the viewport's native scroll event and rebinds across resizing.
+- A non-reactive pending-write counter left selected-row actions disabled after
+  saving; it is now reactive, with successful-save and rejected-draft coverage.
+  The AT-608 browser reproduction passed 2 tests. A transient missing
+  bounding box after paged append led to polling the same 2px geometry bounds;
+  its focused browser reproduction passed 2.
+- Final `ptdev check` passed lint, required PG18 Go tests, 65 frontend files /
+  896 tests, type/i18n and build; `golangci-lint` was unavailable and warned.
+  An earlier check failed formatting and one PG cleanup; formatting was fixed,
+  the isolated doctor test passed, and subsequent full checks passed.
+- The non-overlapping fast gate passed: navigation 8/1 skipped, grid 13/8,
+  aggregates/transfer 8/3, entry/editing 13/8 and grid/admin 5/0. Across the
+  five batches this is 47 passed and 20 intentional skips, including five
+  required setup runs. Real-browser bounds cover card layout, append width and
+  footer alignment; the toolbar and permission cases cover desktop/mobile,
+  long names, both locales/themes and writer/reader access.
+- An earlier grid batch had 11 passed, 8 skips and 2 failures; a later pre-final
+  batch had 13 passed and 8 skips. Two footer batches each had 7 passed, 3 skips
+  and 1 alignment failure; after the native-scroll fix the same batch passed
+  8 tests with 3 intentional skips. These are not the final consolidated gate.
+- The single production-image phase gate failed: 28 passed, 2 failed, 1
+  skipped and 135 did not run. Both Fields-menu failures expected `/home`
+  after login although the preferred workspace correctly resolved to `/w/...`;
+  the 600-second suite and teardown limits also expired (135 scenarios never
+  ran, so the phase result covers only the first 31).
+- Post-phase repair: stale `/home` login assertions now expect `/w/<id>` in
+  fields-menu, backup, history, lookups, profile and relations specs; the
+  relations Delete no longer opens Format first. The profile trace showed its
+  extra Enter re-opening an already-open single-click editor, which then
+  ignored the next draft (a real data-loss path). `GridCellEditor` now re-arms
+  a retained editor when its draft changes after a commit and preserves that
+  draft on unmount; Escape still discards. New unit and browser regressions
+  cover it. Focused fast E2E: Fields-menu 4/3 skipped, history+relations 4/1,
+  profile 2/0, backup 3/0, rapid re-entry 2/0. Final `ptdev check`: 65 files /
+  899 frontend tests, PG18 Go, lint, type/i18n, build pass (`golangci-lint`
+  absent, warning only).
+- Next step: one separately authorized `go run .\tools\ptdev e2e` phase run.
+  Its 600 s global budget is now likely too small for 166 scenarios; that is a
+  harness decision (D-155) for the user, not something to relax silently.
+  UX-11 PageDown (AT-305/311) and AT-705 memory remain open, unrerun. WG-01..09
+  stay In progress until the phase passes. Logs remain in session storage.

@@ -153,18 +153,25 @@ async function expectPlusAtEnd(
       ? grid.locator('.header-rgRow.actual-rgRow').first()
       : grid.locator(`revogr-data .rgRow[data-rgrow="${count - 1}"]`).first()
   await expect(end).toBeVisible()
-  const rowBox = await end.boundingBox()
-  const plusBox = await plus.boundingBox()
-  const gridBox = await grid.boundingBox()
-  if (!rowBox || !plusBox || !gridBox)
-    throw new Error('Grid bounds are unavailable')
-  expect(Math.abs(plusBox.y - (rowBox.y + rowBox.height))).toBeLessThanOrEqual(
-    2,
-  )
-  expect(Math.abs(plusBox.x - gridBox.x)).toBeLessThanOrEqual(2)
-  expect(
-    Math.abs(plusBox.width - Math.max(gridBox.width, renderedColumnWidth ?? 0)),
-  ).toBeLessThanOrEqual(2)
+  await expect
+    .poll(
+      async () => {
+        const [rowBox, plusBox, gridBox] = await Promise.all([
+          end.boundingBox(),
+          plus.boundingBox(),
+          grid.boundingBox(),
+        ])
+        if (!rowBox || !plusBox || !gridBox) return Infinity
+        const expectedWidth = Math.max(gridBox.width, renderedColumnWidth ?? 0)
+        return Math.max(
+          Math.abs(plusBox.y - (rowBox.y + rowBox.height)),
+          Math.abs(plusBox.x - gridBox.x),
+          Math.abs(plusBox.width - expectedWidth),
+        )
+      },
+      { message: 'Append row must align with the rendered grid within 2px' },
+    )
+    .toBeLessThanOrEqual(2)
 }
 
 async function clickAppendRowAtTrailingEdge(page: Page) {
@@ -350,6 +357,12 @@ test('the plus stays at the logical end of a bounded paged result', async ({
   await openGrid(page, table.path)
   const grid = page.locator('revo-grid')
   const plus = page.locator('.grid-add-row')
+  const renderedColumnWidth = await grid.evaluate(async (element) =>
+    (await (element as HTMLElement & Components.RevoGrid).getColumns()).reduce(
+      (total, column) => total + (column.size ?? 180),
+      0,
+    ),
+  )
   await expect(grid).toHaveAttribute('aria-rowcount', '450')
   expect(
     await grid
@@ -409,7 +422,7 @@ test('the plus stays at the logical end of a bounded paged result', async ({
     releaseTail()
     await page.unrouteAll({ behavior: 'wait' })
   }
-  await expectPlusAtEnd(page, 450)
+  await expectPlusAtEnd(page, 450, renderedColumnWidth)
   const source = await grid.evaluate(async (element) => {
     const rows = await (
       element as HTMLElement & Components.RevoGrid
@@ -436,7 +449,7 @@ test('the plus stays at the logical end of a bounded paged result', async ({
   await expect
     .poll(async () => (await query(page, table.viewId)).total)
     .toBe(451)
-  await expectPlusAtEnd(page, 451)
+  await expectPlusAtEnd(page, 451, renderedColumnWidth)
   expect(
     await grid.evaluate(
       async (element) =>
@@ -671,7 +684,10 @@ test('filtered, sorted, and grouped results retain one truthful table action', a
   ).toEqual(['B', 'A'])
   await openGrid(page, table.path)
   await expectPlusAtEnd(page, 1)
-  await expect(page.locator('.grid-aggregate-footer')).toContainText('7')
+  const amountSummary = page.locator(
+    `.grid-summary-cell[data-field-id="${amount.id}"] output`,
+  )
+  await expect(amountSummary).toContainText('7')
   await page
     .getByRole('button', { name: 'Expand Status: Open', exact: false })
     .click()
@@ -693,7 +709,7 @@ test('filtered, sorted, and grouped results retain one truthful table action', a
         'Row created. Filters, sorting, or collapsed groups may affect where it appears.',
     }),
   ).toBeVisible()
-  await expect(page.locator('.grid-aggregate-footer')).toContainText('7')
+  await expect(amountSummary).toContainText('7')
 })
 
 test('blank-create errors and permission changes do not fabricate rows', async ({

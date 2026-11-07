@@ -138,10 +138,21 @@ async function save() {
     const next = views.schema?.views[0]
     views.dismissEditor()
     await nextTick()
-    if (wasActive && route.fullPath === origin && auth.user?.id === identity)
+    if (wasActive && route.fullPath === origin && auth.user?.id === identity) {
       await router.replace(
         next ? `/t/${action.tableId}/v/${next.id}` : `/t/${action.tableId}`,
       )
+      await nextTick()
+      const tableToggle = document.querySelector<HTMLElement>(
+        `[data-nav-id="${action.tableId}"] > .nav-row .table-toggle`,
+      )
+      if (
+        route.params.tableId === action.tableId &&
+        auth.user?.id === identity &&
+        tableToggle?.isConnected
+      )
+        tableToggle.focus()
+    }
   }
 }
 </script>

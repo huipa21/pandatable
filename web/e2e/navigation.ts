@@ -673,7 +673,7 @@ export async function verifyNavigation(
     const bid = new URL(alice.url()).pathname.split('/')[4]!
     await expect(alice.locator('main')).toContainText(en.nav.emptyTables)
     await create(alice, 'table', 'Table T')
-    await expect(alice.locator('.schema-summary')).toContainText('Name')
+    await expect(alice.locator('.schema-summary')).toHaveCount(0)
     const tid = new URL(alice.url()).pathname.split('/')[2]!
     const viewId = new URL(alice.url()).pathname.split('/')[4]!
     await expect(await sidebarView(alice, tid, 'Grid')).toHaveAttribute(
@@ -709,7 +709,7 @@ export async function verifyNavigation(
     ).toHaveCount(1)
     await expect(
       nav.locator(
-        `[data-nav-id="${wid}"] [data-nav-id="${bid}"] [data-nav-id="${tid}"]`,
+        `.workbook-root [data-nav-id="${bid}"] [data-nav-id="${tid}"]`,
       ),
     ).toBeVisible()
     await expect(nav.locator('.book-toggle')).toHaveAttribute(
@@ -757,6 +757,7 @@ export async function verifyNavigation(
           .tables.map((item) => item.id)
       })
       .toEqual([siblingTable, tid])
+    await openNodeActions(tableActions)
     if (alice.viewportSize()!.width >= 768) {
       // The API poll can observe the new order before the client refresh
       // finishes; drag only once the rendered tree is idle and reordered.
@@ -886,9 +887,16 @@ export async function verifyNavigation(
         participantDiagnostics.push(diagnostics)
         await page.goto(`/t/${tid}/v/${viewId}`)
         await setLocale(page, 'en')
-        await expect(page.locator('.schema-summary')).toContainText(
-          en.nav.level.read,
-        )
+        await expect(page.locator('.schema-summary')).toHaveCount(0)
+        const transferMenu = page.locator('.transfer-menu')
+        await transferMenu.locator(':scope > summary').click()
+        await expect(
+          transferMenu.getByRole('button', {
+            name: en.import.append,
+            exact: true,
+          }),
+        ).toHaveCount(0)
+        await transferMenu.locator(':scope > summary').click()
         await verifyFieldReader(page, tid, fieldFixture.qty)
         const visibleTree = await tree(page)
         // Readers may choose a readable workspace as their own default only.
@@ -992,6 +1000,7 @@ export async function verifyNavigation(
       (await alice.request.get(`/api/v1/tables/${tid}/schema`)).status(),
     ).toBe(404)
     await setLocale(alice, 'en')
+    await alice.goto(`/w/${wid}/b/${bid}`)
     const staleRename = await startRename(alice, siblingTable, 'Gone')
     expectHTTPFailure(alice, 'PATCH', `/api/v1/tables/${siblingTable}`, 404)
     expect(

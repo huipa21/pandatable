@@ -433,8 +433,11 @@ test('creation refreshes filtered, sorted and grouped views without inventing vi
     exact: true,
   })
   const dialog = page.locator('dialog.row-expand')
+  const amountSummary = page.locator(
+    `.grid-summary-cell[data-field-id="${amount.id}"] output`,
+  )
   await expect(grid).toHaveAttribute('aria-rowcount', '1')
-  await expect(page.locator('.grid-aggregate-footer')).toContainText('7')
+  await expect(amountSummary).toContainText('7')
 
   await action.click()
   await applyText(dialog, table.name, 'Hidden')
@@ -449,7 +452,7 @@ test('creation refreshes filtered, sorted and grouped views without inventing vi
   expect((await query(page, table.viewId, filter)).total).toBe(2)
   await expect(grid).toHaveAttribute('aria-rowcount', '1')
   await expect(grid.getByText('Hidden', { exact: true })).toHaveCount(0)
-  await expect(page.locator('.grid-aggregate-footer')).toContainText('7')
+  await expect(amountSummary).toContainText('7')
 
   await action.click()
   await applyText(dialog, table.name, 'Z')
@@ -465,7 +468,7 @@ test('creation refreshes filtered, sorted and grouped views without inventing vi
       ),
     )
     .toEqual(['Z', 'B', 'A'])
-  await expect(page.locator('.grid-aggregate-footer')).toContainText('16')
+  await expect(amountSummary).toContainText('16')
   await page
     .getByRole('button', { name: 'Expand Status: Open', exact: false })
     .click()

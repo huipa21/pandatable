@@ -3,7 +3,7 @@ import type { Components } from '@revolist/revogrid'
 import { expect, expectHTTPFailure, paceLogin, test } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
 import { setLocale } from './app-shell'
-import { openFieldPanel, openGridMore } from './table-controls'
+import { openFieldPanel } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 
@@ -257,13 +257,12 @@ test('AT-608: reverse-order undo and redo preserve rows, links, comments and vie
         exact: true,
       })
       .check()
-  await openGridMore(page)
-  await page
-    .getByRole('button', {
-      name: en.grid.deleteRows.replace('{count}', '3'),
-      exact: true,
-    })
-    .click()
+  const deleteSelected = page.getByRole('button', {
+    name: en.grid.deleteRows.replace('{count}', '3'),
+    exact: true,
+  })
+  await expect(deleteSelected).toBeEnabled()
+  await deleteSelected.click()
   const deleteDialog = page.getByRole('dialog', {
     name: en.grid.confirmDeleteTitle,
     exact: true,

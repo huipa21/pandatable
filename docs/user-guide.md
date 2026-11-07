@@ -25,19 +25,23 @@ PandaTable organizes data as workspaces (a company or program), books (a project
 whose tables can relate to each other), tables, and views (filtered or sorted
 tables). Signing in opens your default workspace. New accounts start with a
 workspace named **Default**, which its owner can rename. The **Workspaces**
-sidebar lists every workspace available to you; select a name to open it or its
-arrow to expand its books. Use the heading's **New workspace** button to create
-another workspace. In an accessible workspace's **⋯** menu, choose **Set as
-default** to make it your startup workspace; simply visiting another workspace
-does not change that preference.
+sidebar lists every workspace available to you as a flat list in server order.
+Select a name to open its workbook cards; workbooks, tables, and views do not
+expand beneath workspace entries. Use the heading's **New workspace** button
+to create another workspace. In an accessible workspace's **⋯** menu, choose
+**Set as default** to make it your startup workspace; simply visiting another
+workspace does not change that preference.
 
 Open a workspace and choose **New book**, then open the book and choose **New
-table**. A workspace shows its books as cards in a grid; each book keeps the same
-icon for everyone who can see it. A new table has a default grid and a display field named Name or 名称
-according to the creator's profile language. Select a book to show its tables,
-select a table name to open its default view, or activate the table icon to list
-its views. A path-only workspace is context for shared descendants, not an
-eligible default or an invitation to manage its structure. The header shows
+table**. A workspace shows its visible books as cards in a grid; each book keeps
+the same icon for everyone who can see it. A new table has a default grid and a
+display field named Name or 名称 according to the creator's profile language.
+Select a book to show its tables, select a table name to open its default view,
+or activate the table icon to list its views. On workbook, table, view, or row
+pages, the sidebar separately shows only the current workbook, its tables, and
+their views; use the workspace list or workbook cards to switch context. A
+path-only workspace is context for shared descendants, not an eligible default
+or an invitation to manage its structure. The header shows
 where you are and its search button (Ctrl+K) jumps to any workspace, book,
 table, or view by name. The arrow next to the logo hides the sidebar; on a
 narrow screen it opens the navigation drawer.
@@ -53,7 +57,8 @@ control or resource is unavailable, contact its owner.
 ### 3. Work with rows and fields
 
 Open a table's grid and edit cells with the appropriate editor. On desktop, the
-plus after the last row creates a row immediately using defaults. To fill in
+full-width plus row after the last row creates one row immediately using
+defaults. To fill in
 values before creating it, choose **New Entry** at the right of the toolbar,
 apply each edited field, and choose **Create row**. Untouched fields use their
 defaults; closing the draft creates nothing. If a required field has no
@@ -98,10 +103,13 @@ shared view, you can apply temporary changes and use **Save current changes as a
 personal view** on the table page.
 
 The desktop grid toolbar provides **Filter**, **Group**, **Sort**, **Highlight**,
-and row-height controls. Apply a filter to use it temporarily;
-grouping is saved to a view you can edit. Search across visible fields, column
-width and order, freezing, row deletion, and footer aggregates are under **More
-grid options**. In a form view, an owner can configure the fields and labels;
+and **Format** controls. Format contains row height, column width, order, and
+freezing; **Fields** controls visibility, and the separate search control
+searches visible fields. With selected rows, writers can directly **Edit** or
+**Delete** them; bulk Edit applies one typed value to the selected rows, and
+Delete asks for confirmation. A summary cell below each visible column opens
+its aggregate picker, including percentage operations. These controls are no
+longer under a More menu. In a form view, an owner can configure the fields and labels;
 users with write access can submit new rows, while readers cannot submit.
 
 In an editable view, use **Highlight** to add up to 20 independent rules. Each
@@ -152,8 +160,10 @@ choose **Analyze file**, review the detected columns, types, or mappings, and
 choose **Start import**. Review the result and download the invalid-cell report
 when offered.
 
-From a grid, **Export → CSV (current view)** in the toolbar downloads the visible
-fields and respects the current filter, sort, and search. A **PandaTable XLSX package**
+From a table or view, open the single **Import or export** toolbar icon to
+choose **Import**, **Export CSV (current view)**, or **Export workbook** when
+available. CSV downloads the visible fields and respects the current filter,
+sort, and search. A **PandaTable XLSX package**
 can also be exported and imported, but it is **not a complete backup**:
 nonempty attachment identities and contents are not recovered, distinct
 timestamps may collapse to the same value, and view locks are not preserved.
@@ -195,15 +205,18 @@ guide.
 PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其中的数据表可以相互
 关联）、数据表和视图（经过筛选或排序的数据表）组织数据。登录后会打开你的默认
 工作区。新账户最初有一个名为 **Default** 的工作区，所有者可将其重命名。侧边栏的
-**工作区**列出你可访问的所有工作区；选择名称可打开工作区，选择箭头可展开工作簿。
+**工作区**按服务器顺序平铺列出你可访问的所有工作区；选择名称可打开工作簿卡片。
+工作簿、数据表和视图不会嵌套显示在工作区条目下。
 使用标题右侧的**新建工作区**按钮可创建其他工作区。在可访问工作区的 **⋯** 菜单中
 选择**设为默认工作区**可更改启动时打开的工作区；仅访问其他工作区不会更改此设置。
 
 打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。工作区以卡片网格
 显示其工作簿；每个工作簿对所有可见用户显示相同的图标。新表默认包含
 一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或名称。选择工作簿
-可展开其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。仅路径
-工作区只为共享的下级资源提供上下文，不能设为默认工作区，也不能管理其结构。页眉
+可查看其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。在工作簿、
+数据表、视图或行页面，侧边栏会单独显示当前工作簿及其数据表和视图；切换工作区请使用
+工作区列表或工作簿卡片。仅路径工作区只为共享的下级资源提供上下文，不能设为默认工作区，
+也不能管理其结构。页眉
 显示当前位置，搜索按钮（Ctrl+K）可按名称跳转到任意工作区、工作簿、数据表或视图。
 徽标旁的箭头可隐藏侧边栏；在窄屏上它会打开导航抽屉。
 
@@ -214,8 +227,8 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 
 ### 3. 使用行和字段
 
-打开数据表的网格，并使用相应的编辑器修改单元格。在桌面端，最后一行后的加号会使用
-默认值直接创建行；要先填写内容，请选择工具栏右侧的**新建条目**，逐个应用编辑值，
+打开数据表的网格，并使用相应的编辑器修改单元格。在桌面端，最后一行下方横跨表格的
+加号会使用默认值直接创建一行；要先填写内容，请选择工具栏右侧的**新建条目**，逐个应用编辑值，
 然后选择**创建行**。未编辑的字段使用默认值；关闭草稿不会创建行。如果必填字段没有
 默认值，请使用表单而不是加号。无效值会显示错误且不会保存。在桌面端，使用**字段**
 搜索字段并控制显示哪些列；选择**系统字段**
@@ -244,9 +257,11 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 移动和删除操作；所有者还可以锁定或解锁共享视图。如果无法保存共享视图的更改，可以
 临时调整，并在数据表页面选择**将当前更改保存为个人视图**。
 
-桌面网格工具栏提供**筛选**、**分组**、**排序**、**高亮**和行高控件。
-应用筛选后可临时使用；分组会保存到有编辑权限的视图。搜索可见字段、列宽和顺序、
-冻结、删除行及底部汇总位于**更多网格选项**中。在表单视图中，所有者可以配置字段
+桌面网格工具栏提供**筛选**、**分组**、**排序**、**高亮**和**格式**控件。**格式**
+包含行高、列宽、顺序和冻结；**字段**控制列的可见性，独立的搜索控件搜索可见字段。
+选择行后，写入者可以直接**编辑**或**删除**所选行；批量编辑会将一个类型化的值应用到
+所选行，删除前会要求确认。每个可见列下方的汇总单元格可打开汇总选项，包括百分比运算。
+这些控件不再位于“更多”菜单中。在表单视图中，所有者可以配置字段
 和标签；有写入权限的用户可以提交新行，读取者不能提交。
 
 在可编辑的视图中，使用**高亮**添加最多 20 条独立规则。每条规则都有条件、颜色和目标
@@ -284,7 +299,8 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 **分析文件**，检查检测到的列、类型或映射，然后选择**开始导入**。检查结果，并在
 提供报告时下载无效单元格报告。
 
-在网格中，工具栏中的**导出 → CSV（当前视图）**会下载可见字段，并遵循当前筛选、排序和
+在数据表或视图中，打开工具栏中的**导入或导出**图标，可选择**导入**、**导出 CSV
+（当前视图）**，以及可用时的**导出工作簿**。CSV 会下载可见字段，并遵循当前筛选、排序和
 搜索。也可以导出和导入 **PandaTable XLSX 数据包**，但它**不是完整备份**：
 非空附件的身份和内容无法恢复，不同时间戳可能合并为同一值，视图锁定状态也不会
 保留。导入数据包后，请检查关联选项和报告的依赖问题。

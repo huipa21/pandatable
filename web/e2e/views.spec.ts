@@ -174,6 +174,20 @@ test('UX-05 creates every supported view under the selected sidebar table', asyn
     await page.reload()
     await expect(await sidebarView(page, target.table.id, name)).toBeVisible()
   }
+
+  if (isMobile) {
+    const deletedURL = page.url()
+    const row = await viewActions(page, target.table.id, 'Sidebar gallery')
+    await row.getByRole('button', { name: en.nav.deleteView }).tap()
+    const dialog = page.getByRole('dialog', { name: en.nav.deleteView })
+    await dialog.getByRole('button', { name: en.admin.confirm }).tap()
+    await expect(dialog).not.toBeVisible()
+    await expect(page).not.toHaveURL(deletedURL)
+    await expect(page.locator('.nav-drawer')).not.toBeVisible()
+    await expect(
+      page.getByRole('button', { name: en.nav.open, exact: true }),
+    ).toBeFocused()
+  }
 })
 
 test('AT-506–508 manages private/shared views, locked overrides, ordering, and version conflicts', async ({
@@ -239,9 +253,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     const writerDiagnostics = await observeBrowser(writerPage)
     await setLanguageEnglish(writerPage)
     await writerPage.goto(`/t/${tableId}/v/${initialView.id}`)
-    await expect(writerPage.locator('.schema-summary')).toContainText(
-      en.nav.level.write,
-    )
+    await expect(writerPage.locator('.schema-summary')).toHaveCount(0)
 
     let createForm = await openCreateView(writerPage, tableId)
     await createForm
@@ -281,9 +293,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     const readerDiagnostics = await observeBrowser(readerPage)
     await setLanguageEnglish(readerPage)
     await readerPage.goto(`/t/${tableId}/v/${shared.id}`)
-    await expect(readerPage.locator('.schema-summary')).toContainText(
-      en.nav.level.read,
-    )
+    await expect(readerPage.locator('.schema-summary')).toHaveCount(0)
     let readerSchemaResponse = await readerPage.request.get(
       `/api/v1/tables/${tableId}/schema`,
     )
@@ -330,16 +340,25 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     const ownerPage = page
     await ownerPage.goto(`/t/${tableId}/v/${shared.id}`)
     const lockRow = await viewActions(ownerPage, tableId, 'Shared board')
+    const lockSaved = ownerPage.waitForResponse((response) => {
+      const request = response.request()
+      return (
+        request.method() === 'PATCH' &&
+        new URL(response.url()).pathname === `/api/v1/views/${shared.id}`
+      )
+    })
     await lockRow.getByRole('button', { name: en.nav.lockView }).click()
-    await expect(
-      lockRow.getByRole('button', { name: en.nav.unlockView }),
-    ).toBeVisible()
+    expect((await lockSaved).status()).toBe(200)
     const lockedResponse = await ownerPage.request.get(
       `/api/v1/tables/${tableId}/schema`,
     )
     const lockedSchema = (await lockedResponse.json()) as TableSchema
     const lockedView = lockedSchema.views.find((item) => item.id === shared.id)!
     expect(lockedView.locked).toBe(true)
+    await viewActions(ownerPage, tableId, 'Shared board')
+    await expect(
+      lockRow.getByRole('button', { name: en.nav.unlockView }),
+    ).toBeVisible()
     expect(
       (
         await writerPage.request.patch(`/api/v1/views/${shared.id}`, {
@@ -408,6 +427,7 @@ test('AT-506–508 manages private/shared views, locked overrides, ordering, and
     expect(((await unlockResponse.json()) as ViewMutation).view.locked).toBe(
       false,
     )
+    await viewActions(ownerPage, tableId, 'Shared board')
     await expect(
       unlockRow.getByRole('button', { name: en.nav.lockView }),
     ).toBeVisible()

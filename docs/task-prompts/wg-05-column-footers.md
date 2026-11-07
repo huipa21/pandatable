@@ -75,8 +75,8 @@ Implemented 2026-11-06; **implemented, awaiting WG-09 gates**; no commit.
   contract lists `percent_empty`, `percent_filled`, and `percent_unique`, their
   0..1 ratios, zero-row behavior, and field-type capabilities;
   `docs/09-api.md` documents footer ratios as exact JSON strings (e.g. `"0.25"`).
-  D-231 records the ratio/zero-row rule; D-179 already covers exact footer
-  strings. WG-05 made no shared-doc or decision edits.
+  WG-09 recorded the ratio/zero-row rule in D-233; D-179 already covers exact
+  footer strings. WG-05 made no shared-doc or decision edits.
 - `grid-more` retains quick search, column options, grouping, sorting,
   highlights and row-height controls for WG-06. Removed only its duplicate
   aggregate-settings subsection.
