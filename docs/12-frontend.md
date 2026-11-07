@@ -10,11 +10,10 @@ Shell per D-209 (supersedes the earlier sketch):
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│ PT PandaTable ⇤ │ Workspace › Book › Table [› View]   🔍  中文/EN  ☀/🌙 │  ← header
+│ PT PandaTable ⇤ │ Workspaces › Workspace › Book › Table [› View] 🔍 … │  ← header
 ├─────────────────┬──────────────────────────────────────────────────────┤
-│ Workspaces    + │ ↶ ↷ Fields · Filter · Group · … · Import · Export   │
-│ Workspace    ⋯  │                                                      │
-│ Workspace 2  ⋯  │                                                      │
+│ Workspaces      │ ↶ ↷ Fields · Filter · Group · … · Import · Export   │
+│ Workspace       │                                                      │
 │ ──────────────  │ ┌──────────────────────────────────────────────────┐ │
 │ 📘 Book      ⋯  │ │ Grid / Form / Kanban …                           │ │
 │   ▦ Table    ⋯  │ │                                                  │ │
@@ -26,23 +25,21 @@ Shell per D-209 (supersedes the earlier sketch):
 - Workspace = company/program; book ("workbook") = project holding tables and
   their relations; table = sheet; view = filtered/sorted table.
 - Header: logo → `/home`; ⇤ hides/shows the sidebar (remembered) or opens the
-  mobile drawer; breadcrumb (view segment only when the URL names one); 🔍
-  quick-jump palette (Ctrl/Cmd+K, client-side over the nav tree); language and
-  light↔dark toggles. The workspace remains visible beside the sidebar toggle on
-  narrow screens, with the current resource retained as space permits. When the
-  sidebar is hidden the avatar moves to the header.
-- Sidebar: a static Workspaces heading and Add action precede every accessible
-  workspace in server order. The workspace list stays flat, with no descendant
-  expansion, book counts or book-empty messages. A workspace link selects it;
-  its route shows visible workbooks as cards. Workbook/table/view/row routes
-  show a separate tree only when the current route resolves through fresh
-  authorized navigation ancestry; it contains the active workbook, its tables
-  and views, outside the flat workspace entries. Loading, stale navigation and
-  identity changes clear this context. The workspace link remains available to
-  return to its cards, and opening a workbook card resolves the tree from the
-  route again rather than a remembered ID. The selected route/last-visited
-  context is independent of the visibly marked per-user default. Eligible
-  workspace actions set that default; path-only ancestors remain context
+  mobile drawer; breadcrumbs start with Workspaces and include the current
+  workspace/resource; 🔍 quick-jump palette (Ctrl/Cmd+K, client-side over the
+  nav tree); language and light↔dark toggles. The workspace remains visible
+  beside the sidebar toggle on narrow screens, with the current resource
+  retained as space permits. When the sidebar is hidden the avatar moves to the
+  header.
+- Sidebar: a Workspaces link always returns to `/home`. On a workspace or deeper
+  route it shows only the current workspace link with its custom/fallback icon;
+  it never lists other workspace names or workspace actions. Workbook/table/
+  view/row routes also show a separate tree only when the current route resolves
+  through fresh authorized navigation ancestry; it contains the active workbook,
+  its tables and views. Loading, stale navigation and identity changes clear
+  this context. Opening a workbook card resolves the tree from the route rather
+  than a remembered ID. The selected route/last-visited context is independent
+  of the visibly marked per-user default. Path-only ancestors remain context
   without owner controls. In the contextual tree, books toggle their tables;
   hovering/focusing a table's icon turns it into the views dropdown; the table
   name opens `/t/:tableId` (default view, no redirect). Table "⋯" menus include
@@ -50,17 +47,25 @@ Shell per D-209 (supersedes the earlier sketch):
   alongside the sharing and structure menus.
 - Avatar menu (unread badge): notifications, Profile, Change password, Trash,
   Admin submenu (admins), Sign out. No footer.
-- `/home`: loading/error-aware resolver to the preferred workspace. Retry is
-  explicit; navigating to a resource directly never invokes the resolver.
+- `/home`: a full-width search and one row per accessible workspace, showing
+  its custom/fallback icon, name, optional description, default marker and
+  path-only context badge. Rows use recent-open ordering, then the preferred
+  workspace and server order; search ranks name/description matches locally.
+  Row menus expose only permitted actions. Entering the page resolves or repairs
+  the preference (including first-run provisioning) without redirecting;
+  loading, stale, retry and resolver-error states stay visible. The query is
+  transient and is not stored in the URL (D-235). Direct resource links do not
+  invoke this resolver.
 - `/w/:workspaceId`: accessible workbooks appear in server order as responsive
-  links with their custom icon or persisted fallback. Path-only books are
-  labeled as context; long names wrap within their cards. Workspace owners
-  retain sharing and first-book creation. A failed navigation refresh is marked
-  stale with retry, including while a retry is pending; a stale empty list is
-  not presented as a confirmed empty workspace.
+  links with their custom icon or persisted fallback, ordered by recent opens
+  when not searching. Search filters workbook names and keeps its query in the
+  URL. Path-only books are labeled as context; long names wrap within their
+  cards. Workspace owners retain sharing and first-book creation. A failed
+  navigation refresh is marked stale with retry, including while a retry is
+  pending; a stale empty list is not presented as a confirmed empty workspace.
 
 Routes:
-- `/setup`, `/login`, `/change-password`
+- `/setup`, `/login`, `/change-password`, `/home`
 - `/w/:workspaceId`, `/w/:wid/b/:bookId`, `/t/:tableId` (default view), `/t/:tableId/v/:viewId`, `/t/:tableId/v/:viewId/r/:rowId` (row modal deep link)
 - `/admin/{dashboard,users,groups,workspaces,settings,backups}` (guarded by role)
 
@@ -90,15 +95,16 @@ Routes:
   mutations and resource 403/404. Ordinary reads coalesce; forced refresh aborts
   an older read. Requests have ten-second client deadlines. Failed reads keep
   previous data explicitly stale with retry; there is no realtime subsystem.
-- The sidebar lists all accessible workspace contexts flat and offers workspace
-  creation; `/home` resolves the per-user default (D-219). `/w/:workspaceId`
-  shows visible workbooks as cards; `/w/:wid/b/:bookId` shows only visible
-  tables, breadcrumbs and explicit empty states. Workbook/table/view/row routes
-  use a separate active-workbook-only tree, not nested under workspace entries.
-  Path-only ancestors are labeled context, with no structure controls or default
-  selection. Book creation/rename/delete/reorder needs workspace owner; table
-  creation/rename/delete/reorder needs book owner. Table ownership alone never
-  grants parent-structure controls.
+- The sidebar links to the Workspaces dashboard; resource routes show only the
+  current workspace and, for workbook/table/view/row routes, a separate
+  active-workbook-only tree. `/home` resolves the per-user default and renders
+  the searchable accessible-workspace dashboard without redirecting (D-234).
+  `/w/:workspaceId` shows visible workbooks as searchable cards;
+  `/w/:wid/b/:bookId` shows only visible tables, breadcrumbs and explicit empty
+  states. Path-only ancestors are labeled context, with no structure controls
+  or default selection. Book creation/rename/delete/reorder needs workspace
+  owner; table creation/rename/delete/reorder needs book owner. Table ownership
+  alone never grants parent-structure controls.
 - Native modal forms create/rename resources with trimmed 1..100-code-point
   names, no controls. Confirmed deletion honestly describes moving the item and
   descendants to Trash; restore/purge are not implemented. The Trash entry is
@@ -236,8 +242,8 @@ Unknown routes have a localized not-found page after setup.
 ### T1.5 authentication and admin users (D-081..D-083)
 
 - `/login` preserves the welcome copy/card and adjacent local preference controls
-  and adds username/email/password sign-in. Its original `/home` identity notice
-  was replaced by the preferred-workspace resolver in D-219.
+  and adds username/email/password sign-in. Signing in lands on the workspace
+  dashboard; it resolves the preferred workspace without redirecting (D-234).
 - Router navigation checks setup, then `/auth/me`. Missing sessions are expected
   401s; network/server errors render `/connection-error` with an explicit retry,
   never a success-shaped bypass. Forced users go to `/change-password` before

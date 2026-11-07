@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { type NavigationItem, useNavStore } from '../../stores/nav'
 import { useNavLocation } from '../../composables/useNavLocation'
 import AppIcon from '../AppIcon.vue'
-import NavActions from './NavActions.vue'
 import NavNode from './NavNode.vue'
 
 const emit = defineEmits<{ navigate: [] }>()
@@ -27,18 +26,6 @@ function drop(item: NavigationItem) {
 
 <template>
   <nav :aria-label="t('nav.title')" class="nav-tree">
-    <div class="workspace-heading">
-      <h2>{{ t('workspaceGrid.ux02.workspaces') }}</h2>
-      <button
-        class="icon-button"
-        :aria-label="t('nav.create.workspace')"
-        :title="t('nav.create.workspace')"
-        :disabled="nav.busy"
-        @click="nav.editor = { operation: 'create', kind: 'workspace' }"
-      >
-        <AppIcon name="plus" :size="16" />
-      </button>
-    </div>
     <p v-if="nav.loading && !nav.loaded" role="status">
       {{ t('nav.loading') }}
     </p>
@@ -54,46 +41,42 @@ function drop(item: NavigationItem) {
     >
       {{ t('nav.empty') }}
     </p>
-    <ul v-if="nav.loaded" class="workspace-root">
-      <li
-        v-for="item in nav.items"
-        :key="item.id"
-        :data-nav-id="item.id"
-        data-kind="workspace"
-      >
-        <div :class="['workspace-box', { current: workspace?.id === item.id }]">
+    <ul class="workspace-root">
+      <li data-kind="dashboard">
+        <div :class="['workspace-box', { current: $route.path === '/home' }]">
           <RouterLink
             class="workspace-link"
-            :to="item.path"
-            :aria-current="
-              workspace?.id === item.id
-                ? routeWorkspaceId === item.id
-                  ? $route.path === item.path
-                    ? 'page'
-                    : 'location'
-                  : undefined
-                : undefined
-            "
+            to="/home"
+            :aria-current="$route.path === '/home' ? 'page' : undefined"
             @click="emit('navigate')"
           >
-            {{ item.name }}
+            {{ t('workspaceGrid.ux02.workspaces') }}
           </RouterLink>
-          <span
-            v-if="nav.preferenceLoaded && nav.preferredWorkspaceId === item.id"
-            class="workspace-default"
-            role="img"
-            :aria-label="
-              t('workspaceGrid.ux02.defaultMarker', { name: item.name })
-            "
-            :title="t('workspaceGrid.ux02.defaultMarker', { name: item.name })"
+        </div>
+      </li>
+      <li
+        v-if="routeWorkspaceId && workspace"
+        :data-nav-id="workspace.id"
+        data-kind="workspace"
+      >
+        <div class="workspace-box current">
+          <RouterLink
+            class="workspace-link"
+            :to="workspace.path"
+            :aria-current="$route.path === workspace.path ? 'page' : 'location'"
+            @click="emit('navigate')"
           >
-            {{ t('workspaceGrid.ux02.default') }}
-          </span>
-          <span v-if="item.pathOnly" class="path-only">
+            <AppIcon
+              v-if="workspace.bookIcon"
+              :name="workspace.bookIcon"
+              :size="16"
+            />
+            {{ workspace.name }}
+          </RouterLink>
+          <span v-if="workspace.pathOnly" class="path-only">
             {{ t('nav.pathOnly') }}
           </span>
         </div>
-        <NavActions :item="item" />
       </li>
     </ul>
     <ul

@@ -18,10 +18,13 @@ Status legend: ⬜ Not started · 🟨 In progress · ✅ Done · ⏸ Blocked ·
 
 | Task | Title | Status | Updated | Notes |
 |---|---|---|---|---|
+| DS-07 | Workspace dashboard on `/home` | 🟨 | 2026-11-08 | Dashboard search/recency, permission-gated row actions and non-redirecting resolver implemented; 7 focused tests, touched-file ESLint, typecheck and i18n pass. E2E written for DS-10. [Record](task-prompts/ds-07-workspace-dashboard.md#record). |
+| DS-08 | Workbook search and recency on workspace page | 🟨 | 2026-11-08 | URL-backed workbook search, recency ordering and shared search input implemented; 39 focused tests and touched-file ESLint pass. DS-07 integrated locale keys; E2E and consolidated gates await DS-10. [Record](task-prompts/ds-08-workbook-search.md#record). |
+| DS-09 | Sidebar without workspace list | 🟨 | 2026-11-08 | Sidebar context and breadcrumbs now lead to the dashboard/current workspace; 16 focused tests, touched-file ESLint and typecheck pass. AT-215/docs handoff integrated; E2E and consolidated gates await DS-10. [Record](task-prompts/ds-09-sidebar-context.md#record). |
 | DS-06 | Workspace create/edit dialog with icon and description | 🟨 | 2026-11-07 | Workspace icon/description form and owner Edit action implemented; focused Vitest, touched-file ESLint, typecheck, i18n and formatting pass. `workspace-navigation.spec.ts` covers name-only/custom create, metadata edits and clearing; DS-10 task/phase gates remain. [Record](task-prompts/ds-06-workspace-dialog.md#record). |
 | DS-02 | Recently opened resources and shared search | 🟨 | 2026-11-07 | Per-user workspace/book recency API, route hook and search/order composable implemented; `go build`, six focused PG18 tests, 26 Vitest tests, typecheck and touched-file ESLint pass. API-doc, acceptance and consolidated/phase gates are handed to DS-10. [Record](task-prompts/ds-02-recent-resources.md#record). |
 | DS-03 | Borderless language menu | 🟨 | 2026-11-07 | Translate icon menu, native/localized locale names, persistence, keyboard and outside-click handling; focused Vitest, touched-file ESLint and i18n checks pass. E2E and consolidated task gates await DS-10. [Record](task-prompts/ds-03-language-menu.md#record). |
-| DS-PLAN | Dashboard/sidebar redesign execution prompts | ✅ | 2026-11-07 | D-234; ten bounded prompts (DS-01..DS-10) in four waves with disjoint ownership; DS-02/03/05/06 implemented awaiting DS-10 gates. [Plan](task-prompts/dashboard-sidebar.md). |
+| DS-PLAN | Dashboard/sidebar redesign execution prompts | ✅ | 2026-11-07 | D-234; ten bounded prompts (DS-01..DS-10) in four waves with disjoint ownership; DS-02/03/05/06/07/08/09 implemented awaiting DS-10 gates. [Plan](task-prompts/dashboard-sidebar.md). |
 | DS-05 | Remove content-area Share button | 🟨 | 2026-11-07 | Implemented; focused unit, lint, formatting and typecheck pass. E2E deferred to DS-10. [Record](task-prompts/ds-05-remove-content-share.md). |
 | WG-09 | Refinement integration and phase gates | 🟨 | 2026-11-07 | Check and consolidated fast E2E pass; post-phase login-assertion and grid editor re-entry fixes pass focused gates. The production phase failed (timeout, 135 not run) and needs one authorized rerun. [Record](task-prompts/wg-09-verification.md). |
 | WG-01 | Flat workspace browsing | 🟨 | 2026-11-06 | D-230; flat ordered sidebar with existing workbook cards and access states retained. Focused Vitest/ESLint pass; E2E and consolidated task gates deferred to WG-09. [Record](task-prompts/wg-01-flat-workspaces.md). |
@@ -147,6 +150,9 @@ Newest first: add new lines directly below the header row.
 
 | Date | Change |
 |---|---|
+| 2026-11-08 | Integrated DS-09's AT-215/sidebar documentation handoff; revised AT-215 and marked AT-214/215 pending DS-10. |
+| 2026-11-08 | Implemented DS-07 workspace dashboard and integrated DS-08 search-input/locale handoff; focused checks pass, E2E and consolidated gates await DS-10. |
+| 2026-11-08 | Started DS-07 workspace dashboard implementation; DS-10 retains acceptance mapping and consolidated gates. |
 | 2026-11-07 | Implemented DS-06 workspace icon/description create/edit form, reusable keyboard radio-grid IconPicker and owner-only Edit workspace action; focused checks pass, browser/task gates await DS-10. |
 | 2026-11-07 | Integrated the DS-02 handoff: per-user recency API, route tracking, search/order composable and focused checks are implemented; API documentation, acceptance mapping and gates await DS-10. |
 | 2026-11-07 | Implemented DS-03's borderless translate-icon locale menu and keyboard/outside dismissal; focused checks pass, with DS-10 E2E and consolidated gates pending. |

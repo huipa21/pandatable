@@ -48,3 +48,21 @@ Record the changed files, counts and locale handoffs to DS-07. Leave it
 **implemented, awaiting DS-10 gates**.
 
 ## Record
+
+- Implemented, awaiting DS-10 gates. Added URL-backed workbook search on
+  workspace pages using `useResourceSearch`; the cards retain server order for
+  equal/absent recency, path-only metadata, and the original empty/stale states.
+  Search resets when the destination workspace has no `q`, while browser back
+  restores the prior workspace query. Added reusable `ResourceSearchInput.vue`
+  for DS-07 to adopt; DS-08 owns the component.
+- Changed: `ResourcePage.vue`, new `components/ResourceSearchInput.vue`,
+  `ResourcePage.workbook-cards.test.ts`, `e2e/workbook-cards.spec.ts`, and this
+  record. Unit coverage includes URL sync, CJK matching, clear/no-match,
+  recency and workspace navigation. E2E covers open-to-top recency, CJK search,
+  no-match/clear, refresh/back restoration, keyboard order, and 390 px layout.
+- DS-07 integrated the four `dashboard.ds08.*` keys in both locales and adopted
+  the shared `ResourceSearchInput.vue`. The dashboard query remains transient
+  while the workspace-page query is URL-backed (D-235).
+- Verification: focused Vitest passed (2 files, 39 tests). ESLint passed for
+  the component, page, tests and E2E spec after the locale handoff; `typecheck`
+  and i18n checks pass. E2E and consolidated/phase gates remain with DS-10.

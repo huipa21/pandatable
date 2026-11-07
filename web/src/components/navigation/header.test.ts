@@ -50,27 +50,48 @@ it('builds header breadcrumbs from the route and adds the view only when named',
   const { router, global } = await setup('/t/t')
   const wrapper = mount(AppBreadcrumbs, { global })
   try {
-    expect(crumbs(wrapper)).toEqual(['Workspace', 'Book', 'Table'])
+    expect(crumbs(wrapper)).toEqual([
+      'Workspaces',
+      'Workspace',
+      'Book',
+      'Table',
+    ])
+    expect(wrapper.get('.breadcrumb-root').attributes('href')).toBe('/home')
+    expect(wrapper.find('.breadcrumb-separator-root').exists()).toBe(true)
     expect(
       wrapper.findAll('.breadcrumbs a').at(-1)!.attributes('aria-current'),
     ).toBe('page')
     expect(wrapper.get('.breadcrumb-workspace').text()).toBe('Workspace')
+    await wrapper.get('.breadcrumbs a').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/home')
+    await router.push('/t/t')
     await router.push('/t/t/v/v')
-    expect(crumbs(wrapper)).toEqual(['Workspace', 'Book', 'Table', 'Grid'])
+    expect(crumbs(wrapper)).toEqual([
+      'Workspaces',
+      'Workspace',
+      'Book',
+      'Table',
+      'Grid',
+    ])
     expect(wrapper.get('.breadcrumb-separator-current').text()).toBe(
       i18n.global.t('nav.separator'),
     )
     await router.push('/w/w/b/b')
-    expect(crumbs(wrapper)).toEqual(['Workspace', 'Book'])
+    expect(crumbs(wrapper)).toEqual(['Workspaces', 'Workspace', 'Book'])
     await router.push('/w/w')
-    expect(crumbs(wrapper)).toEqual(['Workspace'])
+    expect(crumbs(wrapper)).toEqual(['Workspaces', 'Workspace'])
     useNavStore().tree!.workspaces[0]!.name = 'Renamed workspace'
     await flushPromises()
     expect(wrapper.get('.breadcrumb-workspace').text()).toBe(
       'Renamed workspace',
     )
+    useNavStore().lastWorkspaceId = 'w'
     await router.push('/home')
-    expect(wrapper.find('.breadcrumbs').exists()).toBe(false)
+    expect(crumbs(wrapper)).toEqual(['Workspaces'])
+    expect(wrapper.get('.breadcrumbs a').attributes('aria-current')).toBe(
+      'page',
+    )
   } finally {
     wrapper.unmount()
   }

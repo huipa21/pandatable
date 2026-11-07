@@ -46,25 +46,23 @@ async function createBook(
   return ((await response.json()) as { book: Book }).book
 }
 
-async function verifyFlatSidebar(page: Page, mobile: boolean) {
+async function verifyContextualSidebar(
+  page: Page,
+  mobile: boolean,
+  workspaceId: string,
+) {
   if (mobile)
     await page.getByRole('button', { name: en.nav.open, exact: true }).click()
   const sidebar = page.locator(
     mobile ? '.nav-drawer .nav-tree' : '.sidebar-desktop .nav-tree',
   )
-  const response = await page.request.get('/api/v1/nav')
-  expect(response.status()).toBe(200)
-  const serverTree = (await response.json()) as Navigation
-  await expect(sidebar.locator('.workspace-root > li')).toHaveCount(
-    serverTree.workspaces.length,
-  )
-  expect(
-    await sidebar
-      .locator('.workspace-root > li')
-      .evaluateAll((nodes) =>
-        nodes.map((node) => node.getAttribute('data-nav-id')),
-      ),
-  ).toEqual(serverTree.workspaces.map((workspace) => workspace.id))
+  await expect(sidebar.locator('.workspace-root > li')).toHaveCount(2)
+  await expect(
+    sidebar.locator('.workspace-root [data-kind="dashboard"] .workspace-link'),
+  ).toHaveAttribute('href', '/home')
+  await expect(
+    sidebar.locator('.workspace-root > li[data-kind="workspace"]'),
+  ).toHaveAttribute('data-nav-id', workspaceId)
   await expect(
     sidebar.locator(
       '.workspace-toggle, .workspace-section, .workspace-root [data-kind="book"], .workspace-root [data-kind="table"]',
@@ -80,13 +78,23 @@ async function selectWorkspace(page: Page, id: string) {
   const mobile = await page.evaluate(
     () => window.matchMedia('(max-width: 767px)').matches,
   )
-  if (mobile)
-    await page.getByRole('button', { name: en.nav.open, exact: true }).click()
-  const sidebar = page.locator(mobile ? '.nav-drawer' : '.sidebar-desktop')
-  await sidebar.locator(`[data-nav-id="${id}"] > .workspace-box a`).click()
+  if (new URL(page.url()).pathname !== '/home') {
+    if (mobile && !(await page.locator('.nav-drawer').isVisible()))
+      await page.getByRole('button', { name: en.nav.open, exact: true }).click()
+    const sidebar = page.locator(mobile ? '.nav-drawer' : '.sidebar-desktop')
+    await sidebar
+      .locator('.workspace-root [data-kind="dashboard"] .workspace-link')
+      .click()
+    await expect(page).toHaveURL(/\/home$/)
+    if (mobile) await expect(page.locator('.nav-drawer')).not.toBeVisible()
+  }
+  await page
+    .locator(
+      `.workspace-dashboard [data-nav-id="${id}"] > .workspace-dashboard-link`,
+    )
+    .click()
   await expect(page).toHaveURL(new RegExp(`/w/${id}$`))
-  if (mobile) await expect(page.locator('.nav-drawer')).not.toBeVisible()
-  await verifyFlatSidebar(page, mobile)
+  await verifyContextualSidebar(page, mobile, id)
 }
 
 async function verifyStaleRetry(page: Page, expectedCards: number) {
@@ -126,6 +134,11 @@ async function verifyLayout(page: Page, width: number) {
   await page.setViewportSize({ width, height: 900 })
   const cards = page.locator('main .workbook-card')
   await expect(cards).toHaveCount(3)
+  const search = page.locator('main .resource-search')
+  const searchBox = await search.boundingBox()
+  if (!searchBox) throw new Error('Workbook search input is missing')
+  expect(searchBox.x).toBeGreaterThanOrEqual(0)
+  expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(width)
   const boxes = await cards.evaluateAll((elements) =>
     elements.map((element) => {
       const card = element.getBoundingClientRect()
@@ -168,6 +181,9 @@ async function verifyLayout(page: Page, width: number) {
   }
   if (width === 390) expect(boxes[1]!.top).toBeGreaterThan(boxes[0]!.top)
   else expect(boxes[1]!.top).toBe(boxes[0]!.top)
+  await search.locator('input').focus()
+  await page.keyboard.press('Tab')
+  await expect(cards.first()).toBeFocused()
 }
 
 test('UX-04: workbook cards respect icons, access, navigation and responsive states', async ({
@@ -199,12 +215,12 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
       chineseName,
       'star',
     )
-    await createBook(page, otherWorkspace, 'Planner')
+    const recentBook = await createBook(page, otherWorkspace, 'Planner')
 
     await page.goto(`/w/${firstWorkspace}`)
     await setLocale(page, 'en')
     await setTheme(page, 'light')
-    await verifyFlatSidebar(page, isMobile)
+    await verifyContextualSidebar(page, isMobile, firstWorkspace)
     const main = page.locator('main')
     await expect(
       main.getByText(en.nav.emptyBooks, { exact: true }),
@@ -233,6 +249,7 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
       .getByRole('button', { name: en.sharing.close, exact: true })
       .click()
     await closeMobileNavigation(page, en)
+    await selectWorkspace(page, firstWorkspace)
 
     await main
       .getByRole('button', { name: en.nav.create.book, exact: true })
@@ -300,6 +317,56 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
       'href',
       `/w/${otherWorkspace}/b/${customBook.id}`,
     )
+    const search = main.getByRole('searchbox')
+    await search.fill(chineseName)
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('q'))
+      .toBe(chineseName)
+    await expect(cards).toHaveCount(1)
+    await expect(customCard).toBeVisible()
+    await page.reload()
+    await expect(main.getByRole('searchbox')).toHaveValue(chineseName)
+    await expect(cards).toHaveCount(1)
+
+    await main.getByRole('searchbox').fill('no matching workbook')
+    await expect(main.locator('.workbook-no-matches')).toBeVisible()
+    await expect(cards).toHaveCount(0)
+    await main.locator('.resource-search-clear').click()
+    await expect(cards).toHaveCount(3)
+    await expect(page).not.toHaveURL(/(?:\?|&)q=/)
+
+    const recordOpen = page.waitForResponse((response) => {
+      const request = response.request()
+      return (
+        request.method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/v1/recent' &&
+        !!request.postData()?.includes(recentBook.id)
+      )
+    })
+    await main.getByRole('link', { name: 'Planner', exact: true }).click()
+    expect((await recordOpen).status()).toBe(204)
+    await expect(page).toHaveURL(
+      new RegExp(`/w/${otherWorkspace}/b/${recentBook.id}$`),
+    )
+    await page.goBack()
+    await expect(page).toHaveURL(new RegExp(`/w/${otherWorkspace}$`))
+    await expect(cards.first()).toHaveAttribute(
+      'href',
+      `/w/${otherWorkspace}/b/${recentBook.id}`,
+    )
+
+    await main.getByRole('searchbox').fill(chineseName)
+    await expect
+      .poll(() => new URL(page.url()).searchParams.get('q'))
+      .toBe(chineseName)
+    await page.goto(`/w/${firstWorkspace}`)
+    await expect(main.getByRole('searchbox')).toHaveValue('')
+    await expect(page).not.toHaveURL(/(?:\?|&)q=/)
+    await page.goBack()
+    await expect(main.getByRole('searchbox')).toHaveValue(chineseName)
+    await main.locator('.resource-search-clear').click()
+    await expect(cards).toHaveCount(3)
+
     const fallbackMarkup = await fallbackCard.locator('svg').innerHTML()
     expect(fallbackMarkup).toContain('<path')
     await expect(customCard.locator('svg path').first()).toHaveAttribute(
@@ -431,6 +498,7 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
       await shareAction(reader, 'workspace', otherWorkspace),
     ).toHaveCount(0)
     await closeMobileNavigation(reader)
+    await selectWorkspace(reader, otherWorkspace)
     await expect(
       readerMain.getByRole('button', { name: en.nav.create.book, exact: true }),
     ).toHaveCount(0)
@@ -476,7 +544,17 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     await expect(
       readerMain.getByRole('link', { name: 'Shared table' }),
     ).toBeVisible()
+    const deniedRecent = reader.waitForResponse((response) => {
+      const request = response.request()
+      return (
+        request.method() === 'POST' &&
+        new URL(response.url()).pathname === '/api/v1/recent' &&
+        !!request.postData()?.includes(hiddenBook.id)
+      )
+    })
+    expectHTTPFailure(reader, 'POST', '/api/v1/recent', 404)
     await reader.goto(`/w/${firstWorkspace}/b/${hiddenBook.id}`)
+    expect((await deniedRecent).status()).toBe(404)
     await expect(readerMain.getByRole('heading', { level: 1 })).toHaveText(
       zh.nav.removedTitle,
     )

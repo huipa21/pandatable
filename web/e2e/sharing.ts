@@ -47,6 +47,19 @@ export async function shareAction(
   id: string,
   locale = en,
 ): Promise<Locator> {
+  if (kind === 'workspace') {
+    if (new URL(page.url()).pathname !== '/home') await page.goto('/home')
+    await expect(page.locator('.workspace-dashboard-list')).toBeVisible()
+    const actions = page.locator(
+      `.workspace-dashboard [data-nav-id="${id}"][data-kind="workspace"] > .node-actions`,
+    )
+    if ((await actions.count()) > 0) await openNodeActions(actions)
+    return actions.getByRole('button', {
+      name: locale.sharing.open,
+      exact: true,
+    })
+  }
+
   const mobile = page.viewportSize()!.width < 768
   const sidebar = page.locator(mobile ? '.nav-drawer' : '.sidebar-desktop')
   if (mobile) {

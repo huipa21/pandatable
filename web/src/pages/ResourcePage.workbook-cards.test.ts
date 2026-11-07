@@ -120,6 +120,76 @@ it('renders ordered workbook links with effective icons and switches workspaces 
   }
 })
 
+it('orders workbooks by recency and filters them with a URL-backed search', async () => {
+  const { wrapper, router, nav } = await setup('/w/w?q=Book')
+  try {
+    const workspace = nav.tree.workspaces[0]!
+    const book = workspace.books[0]!
+    workspace.books.push(
+      {
+        ...book,
+        id: 'planner',
+        name: 'Planner',
+        lastOpenedAt: '2026-11-06T12:00:00Z',
+        tables: [],
+      },
+      {
+        ...book,
+        id: 'cjk',
+        name: '项目工作簿',
+        lastOpenedAt: '2026-11-07T12:00:00Z',
+        tables: [],
+      },
+    )
+    nav.tree.workspaces.push({
+      ...workspace,
+      id: 'other',
+      name: 'Other workspace',
+      books: [{ ...book, id: 'other-book', name: 'Other book', tables: [] }],
+    })
+    await flushPromises()
+
+    const search = wrapper.get('input[type="search"]')
+    expect((search.element as HTMLInputElement).value).toBe('Book')
+    expect(
+      wrapper.findAll('.workbook-card').map((card) => card.text()),
+    ).toEqual(['Book'])
+    expect(router.currentRoute.value.query.q).toBe('Book')
+
+    await search.setValue('项目')
+    await flushPromises()
+    expect(
+      wrapper.findAll('.workbook-card').map((card) => card.text()),
+    ).toEqual(['项目工作簿'])
+    expect(router.currentRoute.value.query.q).toBe('项目')
+
+    await search.setValue('no matching book')
+    await flushPromises()
+    expect(wrapper.findAll('.workbook-card')).toHaveLength(0)
+    expect(wrapper.find('.workbook-no-matches').exists()).toBe(true)
+    await wrapper.get('.resource-search-clear').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.q).toBeUndefined()
+    expect(
+      wrapper.findAll('.workbook-card').map((card) => card.text()),
+    ).toEqual(['项目工作簿', 'Planner', 'Book'])
+
+    await search.setValue('Planner')
+    await flushPromises()
+    await router.push('/w/other')
+    await flushPromises()
+    expect((search.element as HTMLInputElement).value).toBe('')
+    expect(router.currentRoute.value.query.q).toBeUndefined()
+
+    await router.back()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/w/w?q=Planner')
+    expect((search.element as HTMLInputElement).value).toBe('Planner')
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('keeps first-book creation available only to workspace owners', async () => {
   const { wrapper, nav } = await setup()
   try {

@@ -55,15 +55,24 @@ test('UX-01: default workspaces persist, respect access and recover once', async
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
+  await expect(
+    page.locator('main').getByRole('heading', {
+      name: en.workspaceGrid.ux02.workspaces,
+      exact: true,
+    }),
+  ).toBeVisible()
 
   const adminUser = (await (
     await page.request.get('/api/v1/auth/me')
   ).json()) as AuthUser
+  await expect
+    .poll(async () => (await readPreference(page.request)).workspaceId)
+    .toBeTruthy()
   const adminPreference = await readPreference(page.request)
   expect(adminPreference.workspaceId).toBeTruthy()
   const adminPreferred = adminPreference.workspaceId!
-  expect(new URL(page.url()).pathname).toBe(`/w/${adminPreferred}`)
+  expect(new URL(page.url()).pathname).toBe('/home')
   const adminNav = (await (
     await page.request.get('/api/v1/nav')
   ).json()) as Navigation
@@ -119,9 +128,17 @@ test('UX-01: default workspaces persist, respect access and recover once', async
     const starterPage = await userContext.newPage()
     const starterDiagnostics = await observeBrowser(starterPage)
     await starterPage.goto('/home')
-    await expect(starterPage).toHaveURL(new RegExp(`/w/${userStarter}$`))
+    await expect(starterPage).toHaveURL(/\/home$/)
     await expect(
-      starterPage.locator('main').getByRole('heading', { name: 'Default' }),
+      starterPage.locator('main').getByRole('heading', {
+        name: en.workspaceGrid.ux02.workspaces,
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(
+      starterPage.locator(
+        `.workspace-dashboard [data-nav-id="${userStarter}"]`,
+      ),
     ).toBeVisible()
     await expect(starterPage.locator('main')).not.toContainText(
       en.auth.homeTitle,

@@ -62,3 +62,34 @@ Record the changed files, counts and the AT-214/215 revision text. Leave it
 **implemented, awaiting DS-10 gates**.
 
 ## Record
+
+- Implemented `/home` as a no-redirect dashboard using authorized navigation
+  rows, DS-02 recency/search ordering, the DS-06 create/edit dialog and
+  permission-gated `NavActions`. Path-only rows omit descriptions and actions.
+  Preference resolution still provisions/repairs the default, with visible
+  loading, stale, retry and resolver-error states.
+- Reused DS-08's `ResourceSearchInput`; integrated its four locale keys in both
+  locales. Dashboard search is transient/local while workspace search remains
+  URL-backed (D-235).
+- Changed `HomePage.vue`/test, `dashboard.spec.ts`, `default-workspace.spec.ts`,
+  the workspace branch of `sharing.ts`, both locale files, frontend/acceptance
+  docs, and task/progress/decision records. AT-214 DS-10 revision text: “A new account owns a workspace
+  named `Default`; renaming it does not recreate a starter. Signing in lands on
+  `/home`, the workspace dashboard; visiting `/home` resolves/provisions or
+  repairs the preferred workspace without navigating away. Explicit resource
+  links win. A reader can change the preferred workspace from an accessible
+  dashboard row action. A lost preference repairs once without changing other
+  users.” AT-208 path-only ancestors remain visible as rows without
+  descriptions/actions.
+- AT-215 DS-09 revision text: “The sidebar always provides a Workspaces link to
+  `/home`; on workspace and deeper routes it shows only the current workspace
+  link with its custom or fallback icon. Workbook/table/view/row routes also
+  show a separate tree for only the authorized active workbook. No other
+  workspace names or workspace actions appear in the sidebar. Breadcrumbs start
+  with a Workspaces link to `/home`; selecting the current workspace returns to
+  its workbook cards.”
+- DS-09's frontend/AT-215 documentation and progress handoff is integrated.
+- Verification: HomePage Vitest 7/7; workbook-page Vitest 39/39; touched-file
+  ESLint, typecheck and `i18n:check` pass (1,311 keys). Playwright discovered
+  desktop/mobile dashboard cases; execution and consolidated gates remain with
+  DS-10.

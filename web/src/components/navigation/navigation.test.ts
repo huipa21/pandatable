@@ -70,7 +70,7 @@ async function setup(path = '/w/w') {
   return { global: { plugins: [pinia, i18n, router] }, router }
 }
 
-it('keeps workspaces flat and renders only the active workbook tree with its controls', async () => {
+it('keeps workspace context singular and preserves the active workbook tree controls', async () => {
   const { global, router } = await setup()
   const nav = useNavStore()
   const tree = navigation()
@@ -81,22 +81,24 @@ it('keeps workspaces flat and renders only the active workbook tree with its con
   const reorder = vi.spyOn(nav, 'reorder').mockResolvedValue()
   const wrapper = mount(NavContents, { global })
   try {
-    const box = wrapper.get('[data-nav-id="w"] > .workspace-box a')
+    const box = wrapper.get('.workspace-root li[data-kind="workspace"] a')
     expect(box.attributes('href')).toBe('/w/w')
+    expect(box.attributes('aria-current')).toBe('page')
+    expect(box.find('.app-icon').exists()).toBe(true)
     await box.trigger('click')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
-    expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(true)
     expect(wrapper.findAll('.workspace-root > li')).toHaveLength(2)
-    expect(wrapper.find('.workspace-root [data-kind="book"]').exists()).toBe(
-      false,
-    )
+    expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(false)
     expect(wrapper.find('.workbook-root').exists()).toBe(false)
-    expect(wrapper.get('.workspace-heading h2').text()).toBe('Workspaces')
-    await wrapper.get('.workspace-heading button').trigger('click')
-    expect(nav.editor).toEqual({ operation: 'create', kind: 'workspace' })
-    nav.editor = null
+    expect(wrapper.find('.workspace-heading').exists()).toBe(false)
+    expect(wrapper.find('.node-actions').exists()).toBe(false)
     await router.push('/w/w/b/b')
     await nextTick()
+    expect(
+      wrapper
+        .get('.workspace-root [data-nav-id="w"] .workspace-link')
+        .attributes('aria-current'),
+    ).toBe('location')
     expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
       'b',
     )
@@ -280,22 +282,33 @@ it('resolves contextual trees only from fresh authorized route ancestry', async 
     useAuthStore().setUser({ ...navUser, id: 'bob' })
     await nextTick()
     expect(wrapper.find('.workbook-root').exists()).toBe(false)
-    expect(wrapper.find('.workspace-root').exists()).toBe(false)
+    expect(
+      wrapper.findAll('.workspace-root > li[data-kind="workspace"]'),
+    ).toHaveLength(0)
+    expect(
+      wrapper.find('.workspace-root li[data-kind="dashboard"] a').exists(),
+    ).toBe(true)
   } finally {
     wrapper.unmount()
   }
 })
 
-it('distinguishes the default from the selected deep-link workspace and excludes path-only actions', async () => {
+it('shows only path-only workspace ancestry for a table-only grantee', async () => {
   const { global, router } = await setup('/t/t/v/v/r/42')
   const nav = useNavStore()
   const tree = navigation()
+  tree.workspaces[0]!.level = 'none'
+  tree.workspaces[0]!.pathOnly = true
+  tree.workspaces[0]!.books[0]!.level = 'none'
+  tree.workspaces[0]!.books[0]!.pathOnly = true
+  tree.workspaces[0]!.books[0]!.tables[0]!.level = 'read'
   tree.workspaces.push(
     {
       ...tree.workspaces[0]!,
       id: 'w2',
       name: 'Shared workspace',
       level: 'read',
+      pathOnly: false,
       books: [],
     },
     {
@@ -310,15 +323,9 @@ it('distinguishes the default from the selected deep-link workspace and excludes
   nav.tree = tree
   nav.preferenceLoaded = true
   nav.preferredWorkspaceId = 'w'
-  const setDefault = vi
-    .spyOn(nav, 'setPreferredWorkspace')
-    .mockImplementation(async (id) => {
-      nav.preferredWorkspaceId = id
-      return id
-    })
   const wrapper = mount(NavContents, { global, attachTo: document.body })
   try {
-    expect(wrapper.findAll('.workspace-root > li')).toHaveLength(3)
+    expect(wrapper.findAll('.workspace-root > li')).toHaveLength(2)
     expect(
       wrapper.get('[data-nav-id="w"] > .workspace-box').classes(),
     ).toContain('current')
@@ -327,53 +334,28 @@ it('distinguishes the default from the selected deep-link workspace and excludes
         .get('[data-nav-id="w"] .workspace-link')
         .attributes('aria-current'),
     ).toBe('location')
-    expect(
-      wrapper
-        .get('[data-nav-id="w"] .workspace-default')
-        .attributes('aria-label'),
-    ).toBe('Default workspace: Workspace')
-    expect(
-      wrapper.get('[data-nav-id="w"] .workspace-default').attributes('role'),
-    ).toBe('img')
+    expect(wrapper.get('[data-nav-id="w"] .path-only').text()).toBe('Path only')
+    expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
+      'b',
+    )
+    expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(false)
     expect(wrapper.find('[data-nav-id="w3"] > .node-actions').exists()).toBe(
       false,
     )
-    const sharedActions = wrapper.get('[data-nav-id="w2"] > .node-actions')
-    expect(sharedActions.text()).toContain('Set as default')
-    expect(sharedActions.text()).not.toContain('Rename')
-    expect(sharedActions.text()).not.toContain('Move to Trash')
-    await wrapper.get('[data-nav-id="w2"] .workspace-link').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/w/w2')
-    expect(nav.preferredWorkspaceId).toBe('w')
-    expect(setDefault).not.toHaveBeenCalled()
-    expect(
-      wrapper.get('[data-nav-id="w2"] > .workspace-box').classes(),
-    ).toContain('current')
     i18n.global.locale.value = 'zh-CN'
     await nextTick()
-    expect(wrapper.get('.workspace-heading h2').text()).toBe('工作区')
-    expect(sharedActions.text()).toContain('设为默认工作区')
-    await sharedActions.get('button').trigger('click')
-    await flushPromises()
-    expect(setDefault).toHaveBeenCalledWith('w2')
-    expect(document.activeElement).toBe(sharedActions.get('summary').element)
-    expect(sharedActions.get('button').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-nav-id="w2"] .workspace-default').text()).toBe(
-      '默认',
-    )
-    expect(wrapper.find('[data-nav-id="w"] .workspace-default').exists()).toBe(
-      false,
-    )
-    await router.push('/t/t/v/v/r/42')
-    expect(nav.preferredWorkspaceId).toBe('w2')
     expect(
-      wrapper.get('[data-nav-id="w"] > .workspace-box').classes(),
-    ).toContain('current')
+      wrapper.get('.workspace-root li[data-kind="dashboard"] a').text(),
+    ).toBe('工作区')
+    expect(wrapper.get('[data-nav-id="w"] .path-only').text()).toBe('仅路径')
+    await router.push('/t/t/v/v/r/42')
     nav.lastWorkspaceId = 'w'
     await router.push('/t/missing')
-    expect(wrapper.find('.workspace-box.current').exists()).toBe(false)
-    expect(nav.preferredWorkspaceId).toBe('w2')
+    await nextTick()
+    expect(
+      wrapper.find('.workspace-root [data-kind="workspace"]').exists(),
+    ).toBe(false)
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
   } finally {
     wrapper.unmount()
     i18n.global.locale.value = 'en'

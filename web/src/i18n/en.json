@@ -134,8 +134,8 @@
   "workspaceGrid": {
     "ux02": {
       "workspaces": "Workspaces",
-      "resolving": "Opening your default workspace",
-      "resolveError": "Unable to open your default workspace",
+      "resolving": "Preparing your workspace dashboard",
+      "resolveError": "Unable to prepare your workspace dashboard",
       "preferenceError": "Unable to load or update your default workspace.",
       "default": "Default",
       "defaultMarker": "Default workspace: {name}",
@@ -976,6 +976,20 @@
       "descriptionCounter": "{count}/500 characters",
       "descriptionTooLong": "Description must be 500 characters or fewer.",
       "workspaceValidationError": "Check the workspace name, icon, and description."
+    },
+    "ds07": {
+      "searchLabel": "Search workspaces",
+      "searchPlaceholder": "Search by workspace name or description",
+      "noMatches": "No workspaces match your search.",
+      "clearSearch": "Clear search",
+      "resolving": "Preparing your workspace dashboard",
+      "resolveError": "Unable to prepare your workspace dashboard"
+    },
+    "ds08": {
+      "searchLabel": "Search workbooks",
+      "searchPlaceholder": "Search workbook names",
+      "clearSearch": "Clear search",
+      "noMatches": "No workbooks match this search."
     }
   },
   "setup": {

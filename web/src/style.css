@@ -1847,8 +1847,14 @@ select {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .breadcrumbs a:not(.breadcrumb-workspace):not([aria-current='page']),
-  .breadcrumbs .breadcrumb-separator:not(.breadcrumb-separator-current),
+  .breadcrumbs
+    a:not(.breadcrumb-root):not(.breadcrumb-workspace):not(
+      [aria-current='page']
+    ),
+  .breadcrumbs
+    .breadcrumb-separator:not(.breadcrumb-separator-root):not(
+      .breadcrumb-separator-current
+    ),
   .breadcrumbs .breadcrumb-path-only:not(.breadcrumb-path-visible) {
     display: none;
   }

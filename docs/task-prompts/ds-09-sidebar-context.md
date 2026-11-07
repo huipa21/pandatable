@@ -52,3 +52,32 @@ Record the changed files, counts, the AT-215 revision text and locale handoffs.
 Leave it **implemented, awaiting DS-10 gates**.
 
 ## Record
+
+- Implemented, awaiting DS-10 gates. The sidebar now always links to the
+  Workspaces dashboard and shows only the route's current workspace, including
+  its custom/fallback icon; the active-workbook tree and NavActions remain
+  scoped to workbook/table nodes. Breadcrumbs begin with the dashboard link,
+  kept visible on mobile alongside the current crumb.
+- Changed (8 files including this record): `NavContents.vue`,
+  `AppBreadcrumbs.vue`, `style.css`, `flatWorkspaces.test.ts`,
+  `navigation.test.ts`, `header.test.ts`, and `workspace-navigation.spec.ts`.
+  Replaced flat-list tests with dashboard, workspace-context, breadcrumb and
+  table-only ancestry coverage.
+- AT-215 revision handoff: **AT-215 — Contextual workspace sidebar** · UX ·
+  The sidebar always provides a **Workspaces** link to `/home`; on workspace
+  and deeper routes it shows only the current workspace link with its custom or
+  fallback icon. Workbook/table/view/row routes also show a separate tree for
+  only the authorized active workbook. No other workspace names or workspace
+  actions appear in the sidebar. Breadcrumbs start with a **Workspaces** link
+  to `/home`; selecting the current workspace returns to its workbook cards.
+  Executable: `workspace-navigation.spec.ts`; AT-208 covers table-only
+  ancestry.
+- Documentation handoff integrated by DS-07: `docs/12-frontend.md` now
+  describes the dashboard link, current-workspace context and root breadcrumb;
+  AT-215 is revised and its gate is pending DS-10. No locale keys were needed:
+  reuse `workspaceGrid.ux02.workspaces` from both catalogs.
+- Verification: focused Vitest passed (3 files, 16 tests); typecheck and ESLint
+  passed for the six TS/Vue files; Prettier passed for all seven code/style
+  files; i18n check passed (1,311 matching keys). Playwright discovered the
+  desktop and mobile DS-09 cases; browser E2E and consolidated task gates remain
+  with DS-10.

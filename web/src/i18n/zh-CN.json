@@ -134,8 +134,8 @@
   "workspaceGrid": {
     "ux02": {
       "workspaces": "工作区",
-      "resolving": "正在打开你的默认工作区",
-      "resolveError": "无法打开你的默认工作区",
+      "resolving": "正在准备工作区面板",
+      "resolveError": "无法准备工作区面板",
       "preferenceError": "无法加载或更新你的默认工作区。",
       "default": "默认",
       "defaultMarker": "默认工作区：{name}",
@@ -976,6 +976,20 @@
       "descriptionCounter": "{count}/500 个字符",
       "descriptionTooLong": "描述不能超过 500 个字符。",
       "workspaceValidationError": "请检查工作区名称、图标和描述。"
+    },
+    "ds07": {
+      "searchLabel": "搜索工作区",
+      "searchPlaceholder": "按工作区名称或描述搜索",
+      "noMatches": "没有符合搜索条件的工作区。",
+      "clearSearch": "清除搜索",
+      "resolving": "正在准备工作区面板",
+      "resolveError": "无法准备工作区面板"
+    },
+    "ds08": {
+      "searchLabel": "搜索工作簿",
+      "searchPlaceholder": "搜索工作簿名称",
+      "clearSearch": "清除搜索",
+      "noMatches": "没有匹配的工作簿。"
     }
   },
   "setup": {

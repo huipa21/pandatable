@@ -23,14 +23,13 @@ afterEach(() => {
   disposePinia(pinia)
 })
 
-it('lists workspaces flat in server order and keeps selection, default, and owner actions distinct', async () => {
+it('shows only the dashboard link and current workspace context', async () => {
   const nav = useNavStore()
   const tree = navigation()
-  const first = tree.workspaces[0]!
   tree.workspaces.push(
-    { ...first, id: 'w2', name: 'Current workspace' },
+    { ...tree.workspaces[0]!, id: 'w2', name: 'Sibling workspace' },
     {
-      ...first,
+      ...tree.workspaces[0]!,
       id: 'w3',
       name: 'Path context',
       level: 'none',
@@ -39,74 +38,69 @@ it('lists workspaces flat in server order and keeps selection, default, and owne
   )
   nav.tree = tree
   nav.loaded = true
-  nav.preferenceLoaded = true
-  nav.preferredWorkspaceId = first.id
 
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/w/:workspaceId', component: { template: '<div />' } }],
+    routes: [
+      { path: '/home', component: { template: '<div />' } },
+      { path: '/w/:workspaceId', component: { template: '<div />' } },
+      { path: '/w/:wid/b/:bookId', component: { template: '<div />' } },
+      { path: '/t/:tableId', component: { template: '<div />' } },
+      { path: '/t/:tableId/v/:viewId', component: { template: '<div />' } },
+    ],
   })
-  await router.push('/w/w2')
+  await router.push('/home')
   const wrapper = mount(NavContents, {
     global: { plugins: [pinia, i18n, router] },
   })
 
   try {
-    const entries = wrapper.findAll('.workspace-root > li')
-    expect(entries.map((entry) => entry.attributes('data-nav-id'))).toEqual([
-      'w',
-      'w2',
-      'w3',
-    ])
+    const home = wrapper.get('.workspace-root li[data-kind="dashboard"] a')
+    expect(home.text()).toBe('Workspaces')
+    expect(home.attributes('href')).toBe('/home')
+    expect(home.attributes('aria-current')).toBe('page')
+    expect(wrapper.find('.workspace-heading').exists()).toBe(false)
     expect(
-      wrapper.findAll('[data-kind="book"], [data-kind="table"]'),
-    ).toHaveLength(0)
-    expect(wrapper.find('.workspace-toggle').exists()).toBe(false)
-    expect(wrapper.find('.workspace-section').exists()).toBe(false)
-    expect(wrapper.find('.view-list').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain(i18n.global.t('nav.emptyBooks'))
+      wrapper.find('.workspace-root li[data-kind="workspace"]').exists(),
+    ).toBe(false)
+    expect(wrapper.text()).not.toContain('Sibling workspace')
+    expect(wrapper.find('.node-actions').exists()).toBe(false)
 
-    expect(
-      wrapper.get('[data-nav-id="w2"] > .workspace-box').classes(),
-    ).toContain('current')
-    expect(
-      wrapper
-        .get('[data-nav-id="w2"] .workspace-link')
-        .attributes('aria-current'),
-    ).toBe('page')
-    expect(
-      wrapper
-        .get('[data-nav-id="w"] .workspace-default')
-        .attributes('aria-label'),
-    ).toBe('Default workspace: Workspace')
-    expect(wrapper.find('[data-nav-id="w2"] .workspace-default').exists()).toBe(
-      false,
-    )
-
-    const actions = wrapper.get('[data-nav-id="w2"] > .node-actions')
-    expect(actions.text()).toContain('Share')
-    expect(actions.text()).toContain('New book')
-    const createBook = actions
-      .findAll('button')
-      .find((button) => button.text() === 'New book')
-    expect(createBook).toBeDefined()
-    await createBook!.trigger('click')
-    expect(nav.editor).toEqual({
-      operation: 'create',
-      kind: 'book',
-      parentId: 'w2',
-    })
-
-    expect(wrapper.find('[data-nav-id="w3"] > .node-actions').exists()).toBe(
-      false,
-    )
-    expect(wrapper.get('[data-nav-id="w3"] .path-only').text()).toBe(
-      'Path only',
-    )
-
-    await wrapper.get('[data-nav-id="w"] .workspace-link').trigger('click')
+    await router.push('/w/w')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/w/w')
+    const entries = wrapper.findAll('.workspace-root > li')
+    expect(entries).toHaveLength(2)
+    expect(entries[0]!.text()).toBe('Workspaces')
+    expect(entries[1]!.attributes('data-nav-id')).toBe('w')
+    expect(entries[1]!.get('.workspace-link').text()).toContain('Workspace')
+    expect(entries[1]!.find('.workspace-link .app-icon').exists()).toBe(true)
+    expect(entries[1]!.get('.workspace-link').attributes('aria-current')).toBe(
+      'page',
+    )
+    expect(wrapper.text()).not.toContain('Sibling workspace')
+    expect(wrapper.text()).not.toContain('Path context')
+    expect(wrapper.find('.workbook-root').exists()).toBe(false)
+
+    await router.push('/w/w/b/b')
+    await flushPromises()
+    expect(wrapper.findAll('.workspace-root > li')).toHaveLength(2)
+    expect(
+      wrapper
+        .get('.workspace-root [data-nav-id="w"] .workspace-link')
+        .attributes('aria-current'),
+    ).toBe('location')
+    expect(wrapper.get('.workbook-root').attributes('data-context-book')).toBe(
+      'b',
+    )
+    expect(wrapper.find('.workspace-root [data-kind="book"]').exists()).toBe(
+      false,
+    )
+
+    await wrapper
+      .get('.workspace-root li[data-kind="dashboard"] a')
+      .trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/home')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
   } finally {
     wrapper.unmount()
