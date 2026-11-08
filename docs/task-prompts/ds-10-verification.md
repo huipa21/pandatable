@@ -48,3 +48,34 @@ Append a Record of about 2 KB max: outcome, commands with pass/fail counts,
 open risks.
 
 ## Record
+
+**Outcome (2026-11-08):** Done. DS-01..DS-09 integrated, AT-544..569 mapped, D-236 (workspace metadata API) and D-237 recorded. This production phase gate also serves WG-09's outstanding authorized rerun.
+
+**Stabilization:**
+- Updated E2E for the DS behaviour:
+  - login lands on `/home` (22 specs/helpers);
+  - workspaces are created and edited from the dashboard;
+  - the sidebar shows only the current workspace;
+  - collapsed workbooks expand on demand;
+  - the header Language menu disambiguates profile labels;
+  - share helpers wait for `/nav`, which fixed a cascade that left the locale at zh-CN.
+- Fixed order-dependent test races:
+  - account menu click retried;
+  - row-expand Space retried;
+  - grid tail re-scroll;
+  - fields-batch2 column reveal;
+  - mobile-rows waits for its create dialog and allows the revocation 404s.
+- D-237 raises the Playwright global bound from 600 s to 5,400 s (supersedes D-155), because a full run takes about 45 min.
+
+**Gates:**
+- `ptdev check`: PASS (final pre-commit run).
+- `ptdev e2e --fast`: required DS specs green.
+  - Diagnostic full fast run: 126 passed / 8 failed. All 8 were fixed, and each affected spec was rerun green (repeat-each 2–3 for flaky ones).
+- Production `ptdev e2e`:
+  - attempt 1: 20 failed + global timeout;
+  - attempt 2: 44 failed (locale cascade);
+  - attempt 3: 132 passed / 2 failed;
+  - attempt 4: 132 passed / 2 failed (different tests);
+  - **attempt 5: 134 passed / 38 skipped / 0 failed (44.3 min).**
+
+**Open risks:** the suite is close to 45 min on the dev laptop; the 2-vCPU/4-GB target host is still uncertified (unchanged).

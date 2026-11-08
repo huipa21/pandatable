@@ -68,14 +68,26 @@ export async function shareAction(
         .getByRole('button', { name: locale.nav.open, exact: true })
         .click()
     await expect(sidebar).toBeVisible()
-  } else if (!(await sidebar.locator('.nav-tree').isVisible())) {
-    await page
-      .getByRole('button', { name: locale.nav.expandSidebar, exact: true })
-      .click()
+  } else {
+    const expand = page.getByRole('button', {
+      name: locale.nav.expandSidebar,
+      exact: true,
+    })
+    const collapse = page.getByRole('button', {
+      name: locale.nav.collapseSidebar,
+      exact: true,
+    })
+    await expect(expand.or(collapse)).toBeVisible()
+    if (await expand.isVisible()) await expand.click()
+    await expect(sidebar.locator('.nav-tree')).toBeVisible()
   }
   const actions = sidebar.locator(
     `[data-nav-id="${id}"][data-kind="${kind}"] > .node-actions`,
   )
+  // The tree renders after /nav loads; absence is valid for unshared readers.
+  await expect(actions)
+    .not.toHaveCount(0)
+    .catch(() => undefined)
   if ((await actions.count()) === 0)
     return actions.getByRole('button', {
       name: locale.sharing.open,
@@ -94,8 +106,7 @@ export async function openShare(
   locale = en,
 ) {
   const action = await shareAction(page, kind, id, locale)
-  if (page.viewportSize()!.width < 768) await action.tap()
-  else await action.click()
+  await action.click()
 }
 export async function closeMobileNavigation(page: Page, locale = en) {
   const drawer = page.locator('.nav-drawer')
@@ -246,8 +257,7 @@ export async function verifySharing(
     await setLocale(alice, 'en')
     // Native dialog stacks above the mobile drawer and returns keyboard focus.
     const trigger = await shareAction(alice, 'workspace', wid)
-    if (alice.viewportSize()!.width < 768) await trigger.tap()
-    else await trigger.click()
+    await trigger.click()
     await expect(dialog(alice)).toBeVisible()
     await alice.keyboard.press('Tab')
     await alice.keyboard.press('Shift+Tab')

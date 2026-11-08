@@ -61,16 +61,9 @@ export async function create(
   locale = en,
 ) {
   if (kind === 'workspace') {
-    if (
-      page.viewportSize()!.width >= 768 &&
-      !(await page.locator('.sidebar-desktop .nav-tree').isVisible())
-    )
-      await page
-        .getByRole('button', { name: locale.nav.expandSidebar, exact: true })
-        .click()
-    const nav = await tree(page, locale)
-    await nav
-      .locator('.workspace-heading')
+    if (new URL(page.url()).pathname !== '/home') await page.goto('/home')
+    await page
+      .locator('main .dashboard-heading')
       .getByRole('button', { name: locale.nav.create.workspace, exact: true })
       .click()
   } else {
@@ -106,11 +99,24 @@ export async function create(
 
 async function startRename(page: Page, id: string, name: string, locale = en) {
   const nav = await tree(page, locale)
+  // Workbooks start collapsed on their own page.
+  const bookToggle = nav.locator('.workbook-root .book-toggle')
+  await expect(bookToggle).toBeVisible()
+  if ((await bookToggle.getAttribute('aria-expanded')) !== 'true')
+    await bookToggle.click()
   const actions = nav.locator(`[data-nav-id="${id}"] > .node-actions`)
+  return renameFrom(page, actions, name, locale)
+}
+
+async function renameFrom(
+  page: Page,
+  actions: ReturnType<Page['locator']>,
+  name: string,
+  locale = en,
+  action = locale.nav.rename,
+) {
   await openNodeActions(actions)
-  await actions
-    .getByRole('button', { name: locale.nav.rename, exact: true })
-    .click()
+  await actions.getByRole('button', { name: action, exact: true }).click()
   const dialog = page.getByRole('dialog', {
     name: locale.nav.dialogTitle,
     exact: true,
@@ -128,6 +134,22 @@ async function rename(page: Page, id: string, name: string, locale = en) {
     .click()
   await expect(dialog).not.toBeVisible()
   await closeDrawer(page, locale)
+}
+
+// Workspace actions live on dashboard rows; the sidebar only shows context.
+async function renameWorkspace(page: Page, id: string, name: string) {
+  await page.goto('/home')
+  const dialog = await renameFrom(
+    page,
+    page.locator(`main [data-nav-id="${id}"] > .node-actions`),
+    name,
+    en,
+    en.dashboard.ds06.editWorkspace,
+  )
+  await dialog
+    .getByRole('button', { name: en.admin.confirm, exact: true })
+    .click()
+  await expect(dialog).not.toBeVisible()
 }
 
 async function noOverflow(page: Page) {
@@ -663,8 +685,10 @@ export async function verifyNavigation(
     await alice.request.get('/api/v1/auth/workspace-preference')
   ).json()) as WorkspacePreference
   expect(starter.workspaceId).toBeTruthy()
-  await expect(alice).toHaveURL(new RegExp(`/w/${starter.workspaceId}$`))
-  await expect(alice.locator('main h1')).toHaveText('Default')
+  await expect(alice).toHaveURL(/\/home$/)
+  await expect(
+    alice.locator(`main [data-nav-id="${starter.workspaceId}"]`),
+  ).toContainText('Default')
   await create(alice, 'workspace', 'Workspace W')
   const wid = new URL(alice.url()).pathname.split('/')[2]!
   try {
@@ -703,10 +727,10 @@ export async function verifyNavigation(
     const checkQueryConflicts = observeViewQuerySchemaConflicts(alice, viewId)
     const fieldFixture = await verifyFields(alice, tid)
     const nav = await tree(alice)
-    await expect(nav.locator('[data-nav-id]')).toHaveCount(4)
+    await expect(nav.locator('[data-nav-id]')).toHaveCount(3)
     await expect(
       nav.locator(`[data-nav-id="${starter.workspaceId}"]`),
-    ).toHaveCount(1)
+    ).toHaveCount(0)
     await expect(
       nav.locator(
         `.workbook-root [data-nav-id="${bid}"] [data-nav-id="${tid}"]`,
@@ -787,7 +811,8 @@ export async function verifyNavigation(
       })
       .toEqual([tid, siblingTable])
     await closeDrawer(alice)
-    await rename(alice, wid, '工作区 W')
+    await renameWorkspace(alice, wid, '工作区 W')
+    await alice.goto(`/t/${tid}/v/${viewId}`)
     await rename(alice, bid, '工作簿 B')
     await setLocale(alice, 'zh-CN')
     await rename(alice, tid, '数据表 T', zh)
@@ -806,7 +831,7 @@ export async function verifyNavigation(
     await setTheme(alice, 'light')
 
     await admin.goto('/home')
-    await expect(admin).toHaveURL(/\/w\/[^/]+$/)
+    await expect(admin).toHaveURL(/\/home$/)
     const adminTree = await tree(admin)
     await expect(adminTree.locator(`[data-nav-id="${wid}"]`)).toHaveCount(0)
     await closeDrawer(admin)
@@ -908,8 +933,8 @@ export async function verifyNavigation(
             .filter({ hasNotText: en.workspaceGrid.ux02.setDefault }),
         ).toHaveCount(0)
         if (index === 1) {
-          // The admin-created participant also owns a starter workspace.
-          await expect(visibleTree.locator('[data-nav-id]')).toHaveCount(4)
+          // Only the current workspace context is listed in the sidebar.
+          await expect(visibleTree.locator('[data-nav-id]')).toHaveCount(3)
           await expect(
             visibleTree.locator('.path-only', { hasText: en.nav.pathOnly }),
           ).toHaveCount(2)
@@ -924,7 +949,7 @@ export async function verifyNavigation(
           await expect(page.locator('main')).toContainText(en.nav.pathNotice)
           await expect(page.locator('main button')).toHaveCount(0)
           await page.goto('/home')
-          await expect(page).toHaveURL(/\/w\/[^/]+$/)
+          await expect(page).toHaveURL(/\/home$/)
           await create(page, 'workspace', 'Carol W2')
           const carolWid = new URL(page.url()).pathname.split('/')[2]!
           const carolNav = (await (
@@ -970,6 +995,7 @@ export async function verifyNavigation(
       for (const context of contexts) await context.close()
     }
 
+    await alice.goto(`/t/${tid}/v/${viewId}`)
     ownerTree = await tree(alice, zh)
     const actions = ownerTree.locator(`[data-nav-id="${tid}"] > .node-actions`)
     await openNodeActions(actions)

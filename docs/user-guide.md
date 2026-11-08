@@ -13,7 +13,9 @@ in the header when the sidebar is hidden) for **Profile**, **Change password**,
 **Trash**, notifications, the admin pages (administrators only) and **Sign
 out**. Use **Profile** to change your display name, language,
 theme, or timezone and save your changes; use **Change password** to update your
-password. The language and theme toggles in the header also change the display.
+password. Use the translate icon in the header to choose **English** or
+**简体中文**; the menu shows each language's native and localized name. The
+theme control is next to it.
 If SMTP is configured, **Forgot password?** sends a reset link to the email
 address on your account. The link expires after 30 minutes and can be used
 once; changing the password signs out all sessions. In **Profile**, optionally
@@ -23,32 +25,35 @@ enable mention emails; in-app notifications remain available.
 
 PandaTable organizes data as workspaces (a company or program), books (a project
 whose tables can relate to each other), tables, and views (filtered or sorted
-tables). Signing in opens your default workspace. New accounts start with a
-workspace named **Default**, which its owner can rename. The **Workspaces**
-sidebar lists every workspace available to you as a flat list in server order.
-Select a name to open its workbook cards; workbooks, tables, and views do not
-expand beneath workspace entries. Use the heading's **New workspace** button
-to create another workspace. In an accessible workspace's **⋯** menu, choose
-**Set as default** to make it your startup workspace; simply visiting another
+tables). Signing in opens the **Workspaces** dashboard. New accounts start with
+a workspace named **Default**, which its owner can rename. The dashboard lists
+every workspace available to you, with a search field and each workspace's
+icon, name and optional description. Recent workspaces appear first; searching
+matches names and descriptions. Use **New workspace** to create a workspace
+with an optional icon and description. In a workspace row's **⋯** menu, choose
+**Set as default** to change your preferred workspace; visiting another
 workspace does not change that preference.
 
 Open a workspace and choose **New book**, then open the book and choose **New
-table**. A workspace shows its visible books as cards in a grid; each book keeps
-the same icon for everyone who can see it. A new table has a default grid and a
+table**. A workspace shows its visible books as searchable cards; recently
+opened books appear first when the search is empty. Each book keeps the same
+icon for everyone who can see it. A new table has a default grid and a
 display field named Name or 名称 according to the creator's profile language.
 Select a book to show its tables, select a table name to open its default view,
-or activate the table icon to list its views. On workbook, table, view, or row
-pages, the sidebar separately shows only the current workbook, its tables, and
-their views; use the workspace list or workbook cards to switch context. A
+or activate the table icon to list its views. On workspace pages the sidebar
+links to **Workspaces** and shows the current workspace. On workbook, table,
+view, or row pages, it also shows only the current workbook, its tables, and
+their views; workbook trees start collapsed except for the active route. Use
+**Workspaces** or the workbook cards to switch context. A
 path-only workspace is context for shared descendants, not an eligible default
 or an invitation to manage its structure. The header shows
 where you are and its search button (Ctrl+K) jumps to any workspace, book,
 table, or view by name. The arrow next to the logo hides the sidebar; on a
 narrow screen it opens the navigation drawer.
 
-An owner can use **Share** on a workspace, book, or table to find a user or
-group, choose **Read**, **Write**, or **Owner** access, and review and confirm
-the change.
+An owner can use **Share** in a workspace row's or resource's **⋯** action
+menu to find a user or group, choose **Read**, **Write**, or **Owner** access,
+and review and confirm the change.
 Readers can view data; writers can edit rows; owners can manage fields and
 sharing. Access inherited from a parent cannot be reduced on a child.
 Administrators do not automatically have access to workspace data. If a
@@ -195,7 +200,8 @@ guide.
 修改密码。系统不提供自助注册。侧边栏底部的头像菜单（侧边栏隐藏时位于页眉）中
 包含**个人资料**、**修改密码**、**回收站**、通知、管理页面（仅管理员）和**退出登录**。
 在**个人资料**中修改显示名称、语言、主题或时区并
-保存；使用**修改密码**更新密码。页眉中的语言和主题切换按钮也可以切换显示。
+保存；使用**修改密码**更新密码。点击页眉中的翻译图标可选择**English**或**简体中文**；
+菜单会显示语言的本地名称和当前界面语言名称。主题控件位于旁边。
 如果已配置 SMTP，可通过**忘记密码？**向账号邮箱申请重置链接。链接 30 分钟内
 有效且只能使用一次；修改密码后所有会话都会退出。在**个人资料**中可选择启用
 提及邮件，应用内通知仍然可用。
@@ -203,24 +209,26 @@ guide.
 ### 2. 导航和共享
 
 PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其中的数据表可以相互
-关联）、数据表和视图（经过筛选或排序的数据表）组织数据。登录后会打开你的默认
-工作区。新账户最初有一个名为 **Default** 的工作区，所有者可将其重命名。侧边栏的
-**工作区**按服务器顺序平铺列出你可访问的所有工作区；选择名称可打开工作簿卡片。
-工作簿、数据表和视图不会嵌套显示在工作区条目下。
-使用标题右侧的**新建工作区**按钮可创建其他工作区。在可访问工作区的 **⋯** 菜单中
-选择**设为默认工作区**可更改启动时打开的工作区；仅访问其他工作区不会更改此设置。
+关联）、数据表和视图（经过筛选或排序的数据表）组织数据。登录后会打开**工作区**
+仪表板。新账户最初有一个名为 **Default** 的工作区，所有者可将其重命名。仪表板列出
+你可访问的所有工作区，并提供搜索框；每行显示图标、名称和可选描述。最近打开的工作区
+排在前面，搜索可匹配名称和描述。选择**新建工作区**可创建工作区，并可选填图标和描述。
+在工作区行的 **⋯** 菜单中选择**设为默认工作区**可更改首选工作区；仅访问其他工作区
+不会更改此设置。
 
-打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。工作区以卡片网格
-显示其工作簿；每个工作簿对所有可见用户显示相同的图标。新表默认包含
+打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。工作区以可搜索的卡片
+显示其工作簿；搜索为空时，最近打开的工作簿排在前面。每个工作簿对所有可见用户显示相同
+的图标。新表默认包含
 一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或名称。选择工作簿
-可查看其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。在工作簿、
-数据表、视图或行页面，侧边栏会单独显示当前工作簿及其数据表和视图；切换工作区请使用
-工作区列表或工作簿卡片。仅路径工作区只为共享的下级资源提供上下文，不能设为默认工作区，
+可查看其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。在工作区页面，
+侧边栏链接到**工作区**并显示当前工作区。在工作簿、数据表、视图或行页面，侧边栏还会显示
+当前工作簿及其数据表和视图；除当前路由所需的上级节点外，工作簿树默认折叠。切换工作区请使用
+**工作区**链接或工作簿卡片。仅路径工作区只为共享的下级资源提供上下文，不能设为默认工作区，
 也不能管理其结构。页眉
 显示当前位置，搜索按钮（Ctrl+K）可按名称跳转到任意工作区、工作簿、数据表或视图。
 徽标旁的箭头可隐藏侧边栏；在窄屏上它会打开导航抽屉。
 
-所有者可在工作区、工作簿或数据表上使用**共享**，查找用户或用户组，选择**只读**、
+所有者可在工作区行或资源的 **⋯** 操作菜单中选择**共享**，查找用户或用户组，选择**只读**、
 **读写**或**所有者**权限，并在审核后确认更改。读取者可以查看数据；写入者可以编辑行；
 所有者可以管理字段和共享。从上级继承的权限不能在下级降低。管理员不会自动获得
 工作区数据的访问权限。如果看不到某个控件或资源，请联系其所有者。

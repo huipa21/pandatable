@@ -209,7 +209,8 @@ func TestSeedPostgreSQL(t *testing.T) {
 	for _, test := range []struct {
 		name, mutation string
 	}{
-		{"icon", "UPDATE meta.workspaces SET icon='x' WHERE id=$1"},
+		{"icon", "UPDATE meta.workspaces SET icon='star' WHERE id=$1"},
+		{"description", "UPDATE meta.workspaces SET description='Changed' WHERE id=$1"},
 		{"color", "UPDATE meta.workspaces SET color='#123456' WHERE id=$1"},
 		{"trashed", "UPDATE meta.workspaces SET deleted_at=now() WHERE id=$1"},
 		{"other workspace", "INSERT INTO meta.workspaces (name,created_by) SELECT 'Existing',created_by FROM meta.workspaces WHERE id=$1"},

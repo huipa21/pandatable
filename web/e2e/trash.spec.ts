@@ -489,7 +489,12 @@ test('AT-203, AT-325 and AT-610 restore deleted resources and retained data', as
     'original value',
   )
 
+  // The sidebar tree only lists the current workspace context.
+  await page.goto(`/w/${wid}/b/${bid}`)
   const nav = await navigation(page, isMobile)
+  const bookToggle = nav.locator(`[data-nav-id="${bid}"] .book-toggle`)
+  if ((await bookToggle.getAttribute('aria-expanded')) !== 'true')
+    await bookToggle.click()
   const tableNode = nav.locator(`[data-nav-id="${tid}"]`)
   await expect(tableNode).toBeVisible()
   const actions = tableNode.locator(':scope > .node-actions')
@@ -508,6 +513,7 @@ test('AT-203, AT-325 and AT-610 restore deleted resources and retained data', as
   expect(
     (await page.request.get(`/api/v1/tables/${tid}/schema`)).status(),
   ).toBe(404)
+  await openTrash(page)
   await page.getByRole('button', { name: en.trash.refresh }).click()
   await restore(page, tid, isMobile)
   const tableRow = await page.request.get(

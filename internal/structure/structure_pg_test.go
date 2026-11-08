@@ -28,12 +28,12 @@ func TestAnyActiveUserCreatesWorkspaceWithAtomicDirectOwnerGrant(t *testing.T) {
 		user := f.user(role, "active", "en")
 		before := f.resolver.Stats().Epoch
 		workspace, err := f.service.CreateWorkspace(f.ctx, user, WorkspaceInput{Name: "  Team Space  ",
-			Icon: ptr("🐼"), Color: ptr("#AaBbCc")})
+			Icon: ptr("star"), Color: ptr("#AaBbCc")})
 		if err != nil {
 			t.Fatal(err)
 		}
 		f.spaces = append(f.spaces, workspace.ID)
-		if workspace.Name != "Team Space" || *workspace.Icon != "🐼" || *workspace.Color != "#aabbcc" {
+		if workspace.Name != "Team Space" || *workspace.Icon != "star" || *workspace.Color != "#aabbcc" {
 			t.Fatalf("workspace was not normalized: %+v", workspace)
 		}
 		if f.resolver.Stats().Epoch == before {
@@ -315,7 +315,7 @@ func TestRenamesAreMetadataOnlyAndPreserveData(t *testing.T) {
 	}
 
 	// Icon and color are independently settable and clearable.
-	icon, color := "★", "#102030"
+	icon, color := "star", "#102030"
 	updated, err := f.service.UpdateWorkspace(f.ctx, alice, workspace.ID, WorkspacePatch{
 		Icon: OptionalText{Set: true, Value: &icon}, Color: OptionalText{Set: true, Value: &color}})
 	if err != nil || updated.Icon == nil || *updated.Color != "#102030" {

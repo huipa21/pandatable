@@ -80,7 +80,7 @@ test('rapid Enter after a scalar click preserves the next edit', async ({
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 
   const { workspace } = await create<{ workspace: { id: string } }>(
     page,
@@ -164,7 +164,7 @@ test('scalar grid editing commits on leave and retains rejected drafts', async (
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 
   const suffix = Date.now()
   const { workspace } = await create<{ workspace: { id: string } }>(
@@ -641,7 +641,7 @@ test('choice cells toggle and pick with one click and commit once', async ({
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 
   const suffix = Date.now()
   const { workspace } = await create<{ workspace: { id: string } }>(

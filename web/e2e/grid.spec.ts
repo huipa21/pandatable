@@ -21,7 +21,7 @@ test('T1.16/T1.17 production grid persists rows, clipboard edits, and mobile fal
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 
   const suffix = Date.now()
   await createResource(page, 'workspace', `Grid workspace ${suffix}`)

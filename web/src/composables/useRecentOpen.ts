@@ -52,7 +52,8 @@ export function useRecentOpen() {
       const identity = `${userId}:${resolved.identity}`
       if (identity === lastIdentity.value) return
       lastIdentity.value = identity
-      if (resolved.workspaceId) nav.recordOpen('workspace', resolved.workspaceId)
+      if (resolved.workspaceId)
+        nav.recordOpen('workspace', resolved.workspaceId)
       if (resolved.bookId) nav.recordOpen('book', resolved.bookId)
     },
     { immediate: true, flush: 'sync' },

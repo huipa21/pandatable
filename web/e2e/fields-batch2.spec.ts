@@ -28,7 +28,7 @@ async function login(page: Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 }
 
 async function createTable(page: Page, suffix: string) {
@@ -329,10 +329,13 @@ test('AT-320 batch-2 fields create through Field UI, grid persistence, active us
   await expect(page.getByRole('region', { name: en.grid.title })).toBeVisible()
   result = await queryRows(page, viewId)
   expect(result.rows[0]?.fields).toMatchObject(row.fields)
-  await revealFieldColumn(page, fields.User!.id)
-  await expect(
-    page.getByText('Active Picker', { exact: true }).first(),
-  ).toBeVisible()
+  // Horizontal virtualization can resolve before the target cells render.
+  await expect(async () => {
+    await revealFieldColumn(page, fields.User!.id)
+    await expect(
+      page.getByText('Active Picker', { exact: true }).first(),
+    ).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
   await expect(page.getByText(/Disabled Picker/)).toHaveCount(0)
 
   await page.getByRole('button', { name: en.grid.addRow, exact: true }).click()

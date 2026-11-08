@@ -39,7 +39,7 @@ test('AT-305/AT-311 production keyboard and shared/local column configuration', 
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
   const h = headers()
   const suffix = Date.now()
   const workspace = await page.request.post('/api/v1/workspaces', {

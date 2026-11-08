@@ -27,7 +27,9 @@ Shell per D-209 (supersedes the earlier sketch):
 - Header: logo → `/home`; ⇤ hides/shows the sidebar (remembered) or opens the
   mobile drawer; breadcrumbs start with Workspaces and include the current
   workspace/resource; 🔍 quick-jump palette (Ctrl/Cmd+K, client-side over the
-  nav tree); language and light↔dark toggles. The workspace remains visible
+  nav tree); a borderless translate-icon language menu and light↔dark toggle.
+  The menu lists supported locales by native and current-language names, marks
+  the active locale, and is available signed out. The workspace remains visible
   beside the sidebar toggle on narrow screens, with the current resource
   retained as space permits. When the sidebar is hidden the avatar moves to the
   header.
@@ -42,25 +44,31 @@ Shell per D-209 (supersedes the earlier sketch):
   of the visibly marked per-user default. Path-only ancestors remain context
   without owner controls. In the contextual tree, books toggle their tables;
   hovering/focusing a table's icon turns it into the views dropdown; the table
-  name opens `/t/:tableId` (default view, no redirect). Table "⋯" menus include
-  view creation, and each view has a context menu for its permitted actions
-  alongside the sharing and structure menus.
+  name opens `/t/:tableId` (default view, no redirect). Workbook nodes and
+  tables start collapsed; only active-route ancestry auto-expands, and manual
+  expansion is retained while navigating in the same workbook. A workbook
+  chevron toggles its tree while its icon/name link opens the workbook page.
+  Table "⋯" menus include view creation, and each view has a context menu for
+  its permitted actions alongside the sharing and structure menus.
 - Avatar menu (unread badge): notifications, Profile, Change password, Trash,
   Admin submenu (admins), Sign out. No footer.
 - `/home`: a full-width search and one row per accessible workspace, showing
   its custom/fallback icon, name, optional description, default marker and
-  path-only context badge. Rows use recent-open ordering, then the preferred
-  workspace and server order; search ranks name/description matches locally.
-  Row menus expose only permitted actions. Entering the page resolves or repairs
-  the preference (including first-run provisioning) without redirecting;
-  loading, stale, retry and resolver-error states stay visible. The query is
-  transient and is not stored in the URL (D-235). Direct resource links do not
-  invoke this resolver.
-- `/w/:workspaceId`: accessible workbooks appear in server order as responsive
-  links with their custom icon or persisted fallback, ordered by recent opens
-  when not searching. Search filters workbook names and keeps its query in the
-  URL. Path-only books are labeled as context; long names wrap within their
-  cards. Workspace owners retain sharing and first-book creation. A failed
+  path-only context badge. Without a query, rows sort by caller recency, then
+  the preferred workspace, then server order; search ranks normalized
+  name-prefix, name-contains and description-contains matches. Row menus expose
+  only permitted actions. Workspace create/edit includes an optional icon and
+  a 500-code-point plain-text description. Entering the page resolves or
+  repairs the preference (including first-run provisioning) without
+  redirecting; loading, stale, retry and resolver-error states stay visible.
+  The query is transient and is not stored in the URL (D-235). Direct resource
+  links do not invoke this resolver.
+- `/w/:workspaceId`: accessible workbooks appear as responsive links with their
+  custom icon or persisted fallback, ordered by recent opens and then server
+  order when not searching. Search filters workbook names, ranking normalized
+  prefix/contains matches, and keeps its query in the URL. Path-only books are
+  labeled as context; long names wrap within their cards. Workspace owners
+  retain sharing and first-book creation. A failed
   navigation refresh is marked stale with retry, including while a retry is
   pending; a stale empty list is not presented as a confirmed empty workspace.
 
@@ -95,6 +103,11 @@ Routes:
   mutations and resource 403/404. Ordinary reads coalesce; forced refresh aborts
   an older read. Requests have ten-second client deadlines. Failed reads keep
   previous data explicitly stale with retry; there is no realtime subsystem.
+- `useRecentOpen` records each resolved workspace/book route identity once via
+  `POST /recent`, including the workspace and book ancestry of table/view/row
+  routes. `/nav` supplies only the caller's `lastOpenedAt`; stale recording
+  failures are retried on a later route and do not alter permissions or nav
+  refresh behavior.
 - The sidebar links to the Workspaces dashboard; resource routes show only the
   current workspace and, for workbook/table/view/row routes, a separate
   active-workbook-only tree. `/home` resolves the per-user default and renders
@@ -786,6 +799,12 @@ Locale/theme changes use static matching en/zh-CN keys and existing tokens.
 - Locale order: user pref (server) → localStorage → browser language → `en`.
 - Naive UI locale + dateLocale switched accordingly; dayjs locale too.
 - Key parity check (both files identical key sets) runs in `ptdev lint`.
+- The header's borderless translate icon opens a menu built from the supported
+  locale list. Each item shows its native and localized names plus an active
+  check; selection persists through the existing preference store. Arrow keys
+  move among items, while Escape and outside click close the menu and restore
+  focus. The menu is available on signed-out pages and stays within narrow
+  viewports.
 
 T0.5 precompiles locale JSON using `@intlify/unplugin-vue-i18n` and uses the
 runtime-only vue-i18n build: no runtime code generation or CSP relaxation.
@@ -800,7 +819,7 @@ from T1.2, but this unauthenticated shell does not read or write them yet.
 
 - Naive UI `darkTheme` + custom theme overrides; `light | dark | system`.
 - Highlight and select-choice colors defined as token pairs (light/dark) so data colors remain readable in both themes; AT-505 checks the active rule colors in both modes.
-- Toggle in header next to the language toggle; persisted like locale.
+- Toggle in the header next to the language menu; persisted like locale.
 
 System mode listens to `prefers-color-scheme` changes; explicit light/dark
 overrides them. Store disposal removes the listener. All three choices persist

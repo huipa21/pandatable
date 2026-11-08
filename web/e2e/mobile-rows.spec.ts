@@ -63,7 +63,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
   const h = headers()
   const suffix = Date.now()
   const workspace = await page.request.post('/api/v1/workspaces', {
@@ -560,6 +560,12 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     await reader
       .getByRole('button', { name: en.grid.addRow, exact: true })
       .click()
+    await expect(
+      readerDialog.getByRole('button', {
+        name: en.mobileRows.create,
+        exact: true,
+      }),
+    ).toBeVisible()
     expect(
       (
         await page.request.put('/api/v1/grants', {
@@ -579,6 +585,9 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     await readerDialog.getByRole('button', { name: en.rowExpand.close }).click()
     await expect(reader.locator('.mobile-card')).toHaveCount(100)
     await expect.poll(() => pendingQueries.size).toBe(0)
+    // Realtime revocation can refetch the open table before navigation.
+    allowHTTPFailure(reader, 'GET', '/api/v1/tables/*/schema', 404)
+    allowHTTPFailure(reader, 'POST', '/api/v1/views/*/query', 404)
     expect(
       (
         await page.request.delete(

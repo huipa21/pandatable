@@ -17,7 +17,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 30_000,
-  globalTimeout: 600_000,
+  globalTimeout: 5_400_000,
   expect: { timeout: 5_000 },
   forbidOnly: true,
   // Compact console output (failures in full); per-test durations go to report.json.

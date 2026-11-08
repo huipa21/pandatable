@@ -777,9 +777,9 @@ failed AT-305/311 and AT-705, and the phase gate remains open.
 
 | Test | Status | Evidence / remaining boundary |
 |---|---|---|
-| AT-214 | Pending DS-10 | Dashboard landing, preference provisioning/repair, explicit links and workspace row actions are covered by `default-workspace.spec.ts`, `dashboard.spec.ts` and PG18 preference tests; revised acceptance text and final gate remain with DS-10. |
-| AT-215 | Pending DS-10 | Revised sidebar-context, dashboard-link, breadcrumb and active-workbook-tree assertions in `workspace-navigation.spec.ts`/`shell.spec.ts`; final gate is consolidated by DS-10. |
-| AT-216 | Pass (existing workbook scenarios) | `workbook-cards` desktop/mobile (custom override, clear-to-fallback, access pruning); `workbook-icons` desktop (API metadata); PG18 `TestBookIcon*`. DS-06 adds workspace icon-picker create/edit/clear coverage to `workspace-navigation.spec.ts`; updated browser assertions await DS-10. |
+| AT-214 | Pass (DS-10 gates 2026-11-08) | Dashboard landing, preference provisioning/repair, explicit links and workspace row actions are covered by `default-workspace.spec.ts`, `dashboard.spec.ts` and PG18 preference tests; revised acceptance text and final gate remain with DS-10. |
+| AT-215 | Pass (DS-10 gates 2026-11-08) | Revised sidebar-context, dashboard-link, breadcrumb and active-workbook-tree assertions in `workspace-navigation.spec.ts`/`shell.spec.ts`; final gate is consolidated by DS-10. |
+| AT-216 | Pass (existing workbook scenarios) | `workbook-cards` desktop/mobile (custom override, clear-to-fallback, access pruning); `workbook-icons` desktop (API metadata); PG18 `TestBookIcon*`. DS-06 adds workspace icon-picker create/edit/clear coverage to `workspace-navigation.spec.ts`; updated browser assertions pass in the DS-10 gates (2026-11-08). |
 | AT-217 | Pass (desktop) | `trash` UX-05 scenario: deleted table's views and deep links are unavailable; restore brings them back. |
 | AT-327 | Pending WG-09 | `table-header`, `export`, `visibility-menu`, `workbook-cards`; verifies one transfer trigger, no toolbar metadata summary, and preserved compact header in both locales. New WG-06/08 assertions are AT-534..536 and AT-541..543. |
 | AT-328 | Pass (desktop) | `grid-inline-editing` scalar scenario including reload persistence, rejected drafts, Escape and reader denial. Physical IME hardware untested. |
@@ -901,3 +901,52 @@ the latest production run 308,662,272 bytes already reached *before* the
 import. The latter peak was unchanged after import, but still exceeded the
 300,000,000-byte limit. Isolated runs passed (258-276 MB); the backend import
 path and threshold were not altered.
+
+## DS-10 dashboard/sidebar integration evidence (2026-11-08)
+
+The current criteria below supersede the corresponding landing, sidebar,
+search/order and language-toggle wording in earlier evidence; historical
+results above are retained. The final status is set by the DS-10 task and
+phase gates.
+
+| Test | Revised criterion | Status / executable coverage |
+|---|---|---|
+| AT-003 | The header's borderless language icon opens a supported-locale menu with native/localized names, `lang` attributes and a current-locale check; selection persists while signed in and works signed out. Keyboard dismissal and narrow layout remain supported. | Pass (DS-10 gates 2026-11-08); `shell.spec.ts`, `LanguageMenu.test.ts`, `App.test.ts`. |
+| AT-214 | A new account owns a workspace named `Default`; renaming it does not recreate a starter. Signing in lands on `/home`, the workspace dashboard; visiting `/home` resolves/provisions or repairs the preferred workspace without navigating away. Explicit resource links win. A reader can change the preferred workspace from an accessible dashboard row action. A lost preference repairs once without changing other users. | Pass (DS-10 gates 2026-11-08); `default-workspace.spec.ts`, `dashboard.spec.ts`, PostgreSQL workspace-preference tests. |
+| AT-215 | The sidebar always provides a Workspaces link to `/home`; on workspace and deeper routes it shows only the current workspace link with its custom or fallback icon. Workbook/table/view/row routes also show a separate tree for only the authorized active workbook. No other workspace names or workspace actions appear in the sidebar. Breadcrumbs start with a Workspaces link to `/home`; selecting the current workspace returns to its workbook cards. | Pass (DS-10 gates 2026-11-08); `workspace-navigation.spec.ts`, `shell.spec.ts`. |
+| AT-216 | Existing workbook cards and access labels remain. Without a query, visible workbooks sort by caller recency then server order. Search uses normalized name-prefix, then name-contains ranking, preserves the URL query, and supports no-match/clear and workspace switching. | Pass (DS-10 gates 2026-11-08); `workbook-cards.spec.ts`, `ResourcePage.workbook-cards.test.ts`, `useResourceSearch.test.ts`. |
+
+### Numbered dashboard/sidebar scenarios
+
+These IDs map every numbered DS-01..DS-09 case to executable coverage. A
+mapping is not itself a pass; the task and phase gate results below govern
+completion. DS-10 gates passed on 2026-11-08 (production: 134 passed/0 failed), so AT-544..AT-569 pass.
+
+| Scenario | ID | Criterion and executable coverage |
+|---|---|---|
+| DS-01.1 | AT-544 | Workspace creation with/without icon and description persists a shared stable fallback; custom icon overrides and clearing restores it: `TestWorkspaceIconAndDescriptionLifecycle`, `TestWorkspaceDetailsAPI`. |
+| DS-01.2 | AT-545 | Invalid icon/description, non-owner mutation and path-only description masking follow the API contract: `TestWorkspaceDetailsAPI`, `TestWorkspaceCreationRejectsInvalidInputAndInactiveUsers`, `TestNavReturnsOnlyPermittedLivePathsWithoutSiblingLeakage`. |
+| DS-01.3 | AT-546 | Migration Up/Down backfills legacy workspaces with valid stable fallbacks: `TestWorkspaceDetailsMigrationUpDownPostgreSQL`. |
+| DS-02.1 | AT-547 | Recent-open upsert/order, caller isolation, authorized path-only access and `/nav` timestamps: `TestRecentResourcesUpsertIsolationAndNavigation`, `TestRecentResourcesAPIAndCallerScopedNavTimestamps`. |
+| DS-02.2 | AT-548 | Search/order covers recency, pinned preference, normalization, case folding, CJK/accented names and descriptions: `useResourceSearch.test.ts`. |
+| DS-02.3 | AT-549 | Resolved workspace/book/deep routes record once, and stale 404s do not disrupt navigation: `useRecentOpen.test.ts`, `AppLayout.vue`, `dashboard.spec.ts`, `workbook-cards.spec.ts`. |
+| DS-03.1 | AT-550 | The header language control is borderless and lists each supported locale with native/localized names, `lang` and active check: `LanguageMenu.test.ts`, `shell.spec.ts`. |
+| DS-03.2 | AT-551 | Locale switching persists while signed in, works signed out, and keyboard arrows/Enter/Escape/outside click restore focus: `LanguageMenu.test.ts`, `App.test.ts`, `shell.spec.ts`. |
+| DS-03.3 | AT-552 | The language menu stays visible without header overflow at 390 px: `shell.spec.ts`. |
+| DS-04.1 | AT-553 | Workbook chevron alone toggles the collapsed tree; workbook icon/name navigates without toggling: `navigation.test.ts`, `workspace-navigation.spec.ts`. |
+| DS-04.2 | AT-554 | Direct table/view routes expand only active ancestry and retain active highlighting after refresh: `viewNavigation.test.ts`, `workspace-navigation.spec.ts`, `views.spec.ts`. |
+| DS-04.3 | AT-555 | Manual expansion survives same-workbook navigation, another workbook starts collapsed, and keyboard activation works: `navigation.test.ts`, `viewNavigation.test.ts`, `workspace-navigation.spec.ts`. |
+| DS-05.1 | AT-556 | Workspace/workbook pages have no content-area Share action; heading, create and import controls remain: `ResourcePage.test.ts`, `ResourcePage.workbook-cards.test.ts`, `workbook-cards.spec.ts`. |
+| DS-05.2 | AT-557 | Owners can still share workspaces/books/tables through resource menus and readers cannot: `sharing.ts`, `hardening.spec.ts`, `workbook-cards.spec.ts`. |
+| DS-06.1 | AT-558 | Name-only workspace creation uses the fallback and empty description; custom icon/description persist: `workspace-navigation.spec.ts`, `TestWorkspaceDetailsAPI`. |
+| DS-06.2 | AT-559 | Owners can edit/clear metadata, non-owners have no Edit action, and description validation is inline: `workspace-navigation.spec.ts`, `navigation.test.ts`. |
+| DS-06.3 | AT-560 | Icon picker is keyboard-operable and announced with selection state; the create/edit dialog fits 390 px: `navigation.test.ts`, `workspace-navigation.spec.ts`. |
+| DS-07.1 | AT-561 | Dashboard rows show workspace icon/name/description and order recent, default, then server resources: `HomePage.test.ts`, `dashboard.spec.ts`. |
+| DS-07.2 | AT-562 | Dashboard search matches normalized name/description, supports CJK, clear/no-match/empty states, and never shows hidden workspaces: `HomePage.test.ts`, `dashboard.spec.ts`. |
+| DS-07.3 | AT-563 | Dashboard row actions obey permissions; workspace creation, keyboard flow and 390 px layout work: `dashboard.spec.ts`, `default-workspace.spec.ts`. |
+| DS-08.1 | AT-564 | Empty-query workbook cards sort by recency and opening a book moves it to the top: `ResourcePage.workbook-cards.test.ts`, `workbook-cards.spec.ts`. |
+| DS-08.2 | AT-565 | Workbook search supports CJK, clear/no-match, workspace reset and URL refresh/back restoration: `ResourcePage.workbook-cards.test.ts`, `workbook-cards.spec.ts`. |
+| DS-08.3 | AT-566 | Keyboard order reaches search then cards; the workspace page fits 390 px: `workbook-cards.spec.ts`. |
+| DS-09.1 | AT-567 | Dashboard, workspace and workbook routes show the correct Workspaces link/current workspace/tree combination: `navigation.test.ts`, `workspace-navigation.spec.ts`. |
+| DS-09.2 | AT-568 | No unrelated workspace appears in the sidebar and the root breadcrumb returns to `/home`: `navigation.test.ts`, `workspace-navigation.spec.ts`. |
+| DS-09.3 | AT-569 | Path-only/table-only deep links, refresh and mobile drawer preserve only authorized ancestry: `workspace-navigation.spec.ts`, `shell.spec.ts`. |

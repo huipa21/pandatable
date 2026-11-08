@@ -226,7 +226,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
   })
   expect(unauthenticated.status()).toBe(401)
   await signIn(page, 'first-admin', 'Setup-password-123')
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
   await (await adminLink(page, en.admin.users)).click()
   await expect(page).toHaveURL(/\/admin\/users$/)
   await verifyDashboard(page)
@@ -340,7 +340,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
       en.auth.passwordChanged,
     )
     await signIn(userPage, username, changed)
-    await expect(userPage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(userPage).toHaveURL(/\/home$/)
     await userPage.reload()
     await expect(userPage.locator('.brand')).toContainText(branding.appName)
     await expect(userPage).toHaveTitle(branding.appName)
@@ -364,9 +364,9 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
       userPage.getByRole('link', { name: /sign.?up|register/i }),
     ).toHaveCount(0)
     await userPage.goto('/admin/users')
-    await expect(userPage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(userPage).toHaveURL(/\/home$/)
     await userPage.goto('/admin/future')
-    await expect(userPage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(userPage).toHaveURL(/\/home$/)
     for (const path of [
       '/admin/dashboard',
       '/admin/settings',
@@ -376,7 +376,7 @@ test('AT-104..110/112/201/208/213 and scoped AT-111: admin and real navigation',
       '/admin/users/missing',
     ]) {
       await userPage.goto(path)
-      await expect(userPage).toHaveURL(/\/w\/[^/]+$/)
+      await expect(userPage).toHaveURL(/\/home$/)
     }
     expect(
       (await userContext.request.get('/api/v1/admin/groups')).status(),

@@ -37,10 +37,18 @@ var metadataColumns = map[string][]columnSpec{
 		{"created_at", "timestamp with time zone", false, "now()"},
 		{"deleted_at", "timestamp with time zone", true, ""},
 		{"deleted_by", "uuid", true, ""},
+		{"description", "text", false, "''::text"},
+		{"fallback_icon", "text", false, "(ARRAY['book'::text, 'table'::text, 'view'::text, 'fields'::text, 'calendar'::text, 'star'::text, 'group'::text, 'link'::text])[((floor((random() * (8)::double precision)))::integer + 1)]"},
 	},
 	"user_workspace_preferences": {
 		{"user_id", "uuid", false, ""},
 		{"workspace_id", "uuid", true, ""},
+	},
+	"recent_resources": {
+		{"user_id", "uuid", false, ""},
+		{"workspace_id", "uuid", true, ""},
+		{"book_id", "uuid", true, ""},
+		{"opened_at", "timestamp with time zone", false, "now()"},
 	},
 	"books": {
 		{"id", "uuid", false, "uuidv7()"},
@@ -270,6 +278,8 @@ func TestMetadataCatalogPostgreSQL(t *testing.T) {
 	indexes := map[string]string{
 		"group_members_user_id_idx":                "CREATE INDEX group_members_user_id_idx ON meta.group_members USING btree (user_id)",
 		"user_workspace_preferences_workspace_idx": "CREATE INDEX user_workspace_preferences_workspace_idx ON meta.user_workspace_preferences USING btree (workspace_id) WHERE (workspace_id IS NOT NULL)",
+		"recent_resources_user_workspace_key":      "CREATE UNIQUE INDEX recent_resources_user_workspace_key ON meta.recent_resources USING btree (user_id, workspace_id) WHERE (workspace_id IS NOT NULL)",
+		"recent_resources_user_book_key":           "CREATE UNIQUE INDEX recent_resources_user_book_key ON meta.recent_resources USING btree (user_id, book_id) WHERE (book_id IS NOT NULL)",
 		"books_workspace_id_idx":                   "CREATE INDEX books_workspace_id_idx ON meta.books USING btree (workspace_id)",
 		"tables_book_id_pg_name_key":               "CREATE UNIQUE INDEX tables_book_id_pg_name_key ON meta.tables USING btree (book_id, pg_name)",
 		"tables_book_id_id_key":                    "CREATE UNIQUE INDEX tables_book_id_id_key ON meta.tables USING btree (book_id, id)",

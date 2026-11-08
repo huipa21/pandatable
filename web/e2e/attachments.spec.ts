@@ -26,7 +26,7 @@ async function login(page: import('@playwright/test').Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 }
 
 async function addAttachmentField(
@@ -163,7 +163,7 @@ async function signInAs(
     .getByLabel(en.auth.password, { exact: true })
     .fill('Temporary-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/(?:w\/[^/]+|change-password)$/)
+  await expect(page).toHaveURL(/\/(?:home|change-password)$/)
   if (new URL(page.url()).pathname === '/change-password') {
     const changedPassword = 'Attachment-password-123'
     await page
@@ -187,7 +187,7 @@ async function signInAs(
       .getByRole('button', { name: en.auth.signIn, exact: true })
       .click()
   }
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 }
 
 test('AT-321/322 attachment field upload, serving, row persistence, and configured size rejection', async ({

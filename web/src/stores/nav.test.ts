@@ -61,21 +61,32 @@ it('maps workspace metadata and sends optional icon/description on create and up
     bookIcon: 'star',
   })
 
-  await nav.submit(
-    { operation: 'create', kind: 'workspace' },
-    'Created',
-    { icon: 'calendar', description: 'New workspace' },
-  )
+  await nav.submit({ operation: 'create', kind: 'workspace' }, 'Created', {
+    icon: 'calendar',
+    description: 'New workspace',
+  })
   await nav.submit(
     { operation: 'rename', kind: 'workspace', id: 'w' },
     'Updated',
     { icon: null, description: '' },
   )
 
-  const writes = fetch.mock.calls.filter(([, options]) => options.method !== 'GET')
-  expect(writes.map(([path, options]) => [path, options.method, options.body])).toEqual([
-    ['/api/v1/workspaces', 'POST', '{"name":"Created","icon":"calendar","description":"New workspace"}'],
-    ['/api/v1/workspaces/w', 'PATCH', '{"name":"Updated","icon":null,"description":""}'],
+  const writes = fetch.mock.calls.filter(
+    ([, options]) => options.method !== 'GET',
+  )
+  expect(
+    writes.map(([path, options]) => [path, options.method, options.body]),
+  ).toEqual([
+    [
+      '/api/v1/workspaces',
+      'POST',
+      '{"name":"Created","icon":"calendar","description":"New workspace"}',
+    ],
+    [
+      '/api/v1/workspaces/w',
+      'PATCH',
+      '{"name":"Updated","icon":null,"description":""}',
+    ],
   ])
 })
 

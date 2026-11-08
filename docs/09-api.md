@@ -554,9 +554,10 @@ identity fields are exposed.
 ### Structure
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/nav` | full sidebar tree the user may see (workspaces → books → tables → views) with effective levels |
-| POST | `/workspaces` | `{ name, icon?, color? }` → 201 `{ workspace, eventId }`; creator becomes direct owner |
-| PATCH/DELETE | `/workspaces/{id}` | PATCH `{ name?, icon?, color? }` (null clears icon/color); delete → trash |
+| GET | `/nav` | full sidebar tree the user may see (workspaces → books → tables → views) with effective levels and caller-only recent-open timestamps |
+| POST | `/recent` | `{ kind, id }` → 204; `kind` is `workspace` or `book`; records an authorized live resource open for the caller |
+| POST | `/workspaces` | `{ name, icon?, color?, description? }` → 201 `{ workspace, eventId }`; creator becomes direct owner |
+| PATCH/DELETE | `/workspaces/{id}` | PATCH `{ name?, icon?, color?, description? }` (`null` clears icon/color; `description: ''` clears description); delete → trash |
 | POST | `/workspaces/{id}/books` | `{ name, icon? }` → 201 `{ book, eventId }` |
 | PATCH/DELETE | `/books/{id}` | PATCH `{ name?, index?, icon? }` (null clears icon); delete → trash |
 | POST | `/books/{id}/tables` | `{ name }` → 201 table schema + `eventId` |
@@ -621,6 +622,22 @@ purge is a retention job, not an immediate-purge API.
   `user`, `percent` or `currency`. Unknown names return validation 400. Rename,
   reorder and sharing preserve both values; the existing parent-owner check
   applies to changes.
+- **Workspace metadata (D-236):** workspace responses and `/nav` items include
+  `description` and `fallbackIcon`. Description is trimmed plain text, at most
+  500 Unicode code points; LF and CR are allowed, and other Unicode control
+  characters are rejected. `description: ''` is valid and clears it. A
+  non-null custom workspace icon uses the same `BookIconName` vocabulary as a
+  book; an omitted icon preserves the override, while `icon: null` clears it.
+  The persisted fallback is selected once from the same eight-name palette as
+  books and is stable for every reader. Path-only workspaces expose
+  `description: ''` in `/nav`.
+- **Recent resources:** `POST /recent` accepts `kind: 'workspace' | 'book'`
+  and a resource `id`; it returns 204 and upserts `opened_at` for the caller.
+  The target must be live and reachable by effective read access or path-only
+  ancestry. Missing, hidden, trashed and unreachable targets return the same
+  404. Each user's history is pruned to the newest 200 rows in the upsert
+  transaction. Deleting a user or resource cascades its rows. Recents are
+  caller-scoped, do not change permissions, and emit no navigation event.
 - **Responses** carry an opaque `eventId` (D-103). `POST /books/{id}/tables`
   returns the full table schema: `table`, `fields` (Name + five system fields,
   no physical names), `relations: []`, `views` (default Grid), `schemaVersion`
@@ -635,10 +652,12 @@ purge is a retention job, not an immediate-purge API.
   `ERR_DDL_CONFLICT`; a lock wait over three seconds 409 `ERR_DDL_LOCK_TIMEOUT`.
   Unexpected database/driver/cancellation errors are redacted 500s with the
   standard correlated log.
-- **`GET /nav`** → `{ workspaces: [{ id, name, icon, color, createdAt, level,
-  pathOnly, books: [{ id, name, icon, fallbackIcon, position, level, pathOnly,
-  tables: [{ id, name, position, schemaVersion, level, views: [{ id, name, type,
-  scope }] }] }] }] }`.
+- **`GET /nav`** → `{ workspaces: [{ id, name, icon, color, description,
+  fallbackIcon, createdAt, lastOpenedAt, level, pathOnly, books: [{ id, name,
+  icon, fallbackIcon, position, lastOpenedAt, level, pathOnly, tables: [{ id,
+  name, position, schemaVersion, level, views: [{ id, name, type, scope }] }] }]
+  }] }`. `lastOpenedAt` is the caller's ISO timestamp or `null`; it never exposes
+  another user's history.
   `level` is `none|read|write|owner` (max grant on the path, flat groups,
   active users); `none`/`pathOnly` workspaces and books hold only visible
   descendants. Order: workspaces by creation, books/tables by position then id.

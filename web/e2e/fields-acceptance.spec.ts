@@ -27,7 +27,7 @@ async function login(
   await page.getByLabel(en.auth.login, { exact: true }).fill(username)
   await page.getByLabel(en.auth.password, { exact: true }).fill(password)
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 }
 
 async function schemaOf(page: Page, tid: string) {
@@ -141,7 +141,7 @@ test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, vali
   if (isMobile) {
     await page.goto('/login')
     await login(page)
-    await expect(page).toHaveURL(/\/w\/[^/]+$/)
+    await expect(page).toHaveURL(/\/home$/)
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -732,7 +732,7 @@ test('AT-303: required and unique constraints enforcement and defaults on new ro
   if (isMobile) {
     await page.goto('/login')
     await login(page)
-    await expect(page).toHaveURL(/\/w\/[^/]+$/)
+    await expect(page).toHaveURL(/\/home$/)
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -946,7 +946,7 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
   if (isMobile) {
     await page.goto('/login')
     await login(page)
-    await expect(page).toHaveURL(/\/w\/[^/]+$/)
+    await expect(page).toHaveURL(/\/home$/)
     return
   }
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -1105,7 +1105,7 @@ test('AT-304: system fields hidden by default, revealed via Fields control, auth
     await bobPage
       .getByRole('button', { name: en.auth.signIn, exact: true })
       .click()
-    await expect(bobPage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(bobPage).toHaveURL(/\/home$/)
 
     await bobPage.goto(`/t/${tableId}/v/${viewId}`)
     await expect(

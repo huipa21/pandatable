@@ -58,7 +58,7 @@ async function login(page: Page) {
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 }
 
 test('row workspace controls, overlays and unsaved duplication persist only on confirmation', async ({
@@ -420,8 +420,12 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   })
   await expect(inlineEditor).toBeVisible()
   await inlineEditor.press('Escape')
-  await page.keyboard.press('Space')
-  await expect(dialog).toBeVisible()
+  await expect(inlineEditor).toBeHidden()
+  // Grid keyboard focus settles asynchronously after the editor closes.
+  await expect(async () => {
+    if (!(await dialog.isVisible())) await page.keyboard.press('Space')
+    await expect(dialog).toBeVisible({ timeout: 1_500 })
+  }).toPass({ timeout: 10_000 })
   const nameField = schema.fields.find((field) => field.uiType === 'text')!
   const edit = async (fieldId: string) => {
     const section = dialog.locator(`[data-field-id="${fieldId}"]`)

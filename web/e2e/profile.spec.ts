@@ -260,7 +260,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
   test.setTimeout(150_000)
   await page.setViewportSize({ width: 1440, height: 900 })
   await signIn(page, 'first-admin', 'Setup-password-123')
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
+  await expect(page).toHaveURL(/\/home$/)
 
   const settingsResponse = await page.request.get('/api/v1/admin/settings')
   expect(settingsResponse.status()).toBe(200)
@@ -288,7 +288,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
       'Alice-password-123',
     )
     await signIn(alicePage, `${aliceName}@example.test`, 'Alice-password-123')
-    await expect(alicePage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(alicePage).toHaveURL(/\/home$/)
     expect(
       (await (await alicePage.request.get('/api/v1/auth/me')).json())
         .effectiveTimezone,
@@ -316,17 +316,18 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
         .filter({ hasText: en.errors.ERR_INVALID_CREDENTIALS }),
     ).toContainText(en.errors.ERR_INVALID_CREDENTIALS)
     await signIn(alicePage, aliceName, 'Alice-password-123')
-    await expect(alicePage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(alicePage).toHaveURL(/\/home$/)
     await openProfile(alicePage)
 
-    await alicePage.getByLabel(en.profile.displayName).fill('Alice Profile')
-    await alicePage
+    const profileForm = alicePage.locator('main')
+    await profileForm.getByLabel(en.profile.displayName).fill('Alice Profile')
+    await profileForm
       .getByLabel(en.profile.language, { exact: true })
       .selectOption('zh-CN')
-    await alicePage
+    await profileForm
       .getByLabel(en.profile.theme, { exact: true })
       .selectOption('dark')
-    await alicePage
+    await profileForm
       .getByLabel(en.profile.timezone)
       .selectOption('Asia/Shanghai')
     await alicePage.getByRole('button', { name: en.profile.save }).click()
@@ -374,7 +375,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
         .filter({ hasText: en.errors.ERR_INVALID_CREDENTIALS }),
     ).toContainText(en.errors.ERR_INVALID_CREDENTIALS)
     await signIn(alicePage, aliceName, 'Alice-new-password-456')
-    await expect(alicePage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(alicePage).toHaveURL(/\/home$/)
     await openProfile(alicePage)
     await expect(alicePage.getByLabel(en.profile.displayName)).toHaveValue(
       'Alice Profile',
@@ -383,7 +384,7 @@ test('AT-102/116/117 M1: self profile, auth browser behavior, and per-user datet
     await signIn(bobPage, bobName, 'Temporary-password-123')
     await setNewPassword(bobPage, 'Temporary-password-123', 'Bob-password-123')
     await signIn(bobPage, `${bobName}@example.test`, 'Bob-password-123')
-    await expect(bobPage).toHaveURL(/\/w\/[^/]+$/)
+    await expect(bobPage).toHaveURL(/\/home$/)
     const bobBeforeDefaultChange = (await (
       await bobPage.request.get('/api/v1/auth/me')
     ).json()) as AuthUser

@@ -20,7 +20,7 @@ import type {
   ViewMutation,
 } from '../src/api/types'
 import { openAccountMenu, setLocale } from './app-shell'
-import { openCreateView } from './table-controls'
+import { openCreateView, openExportMenu } from './table-controls'
 import { closeMobileNavigation, openShare } from './sharing'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
@@ -310,10 +310,16 @@ async function inspectImport(
   locale: typeof en,
   mode: 'newTable' | 'append',
 ) {
-  await page
-    .locator('main')
-    .getByRole('button', { name: locale.import[mode], exact: true })
-    .click()
+  const action =
+    mode === 'append'
+      ? (await openExportMenu(page)).getByRole('button', {
+          name: locale.import[mode],
+          exact: true,
+        })
+      : page
+          .locator('main')
+          .getByRole('button', { name: locale.import[mode], exact: true })
+  await action.click()
   const importing = page.getByRole('dialog', {
     name: locale.import.title,
     exact: true,
@@ -392,7 +398,11 @@ test('AT-806 main pages remain usable at 390px in both languages', async ({
   )
   expect(preference.status()).toBe(200)
   const routes = [
-    { path: '/home', en: data.workspaceName, zh: data.workspaceName },
+    {
+      path: '/home',
+      en: en.workspaceGrid.ux02.workspaces,
+      zh: zh.workspaceGrid.ux02.workspaces,
+    },
     { path: '/setup', en: en.setup.title, zh: zh.setup.title },
     {
       path: `/w/${data.workspaceId}`,
@@ -450,8 +460,6 @@ test('AT-806 main pages remain usable at 390px in both languages', async ({
       if (locale === 'zh') await setLocale(page, 'zh-CN')
       for (const route of routes) {
         await page.goto(route.path)
-        if (route.path === '/home')
-          await expect(page).toHaveURL(new RegExp(`/w/${data.workspaceId}$`))
         await expect(page.locator('main h1')).toHaveText(route[locale])
         await page.waitForLoadState('networkidle')
         await noPageOverflow(page, route.path)
@@ -490,15 +498,8 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
         { path: `/w/${data.workspaceId}/b/${data.bookId}`, kind: 'table' },
       ] as const) {
         await page.goto(target.path)
-        if (target.path === '/home') await expect(page).toHaveURL(/\/w\/[^/]+$/)
-        let scope = page.locator('main')
-        if (target.kind === 'workspace') {
-          await page
-            .getByRole('button', { name: locale.nav.open, exact: true })
-            .click()
-          scope = page.locator('.nav-drawer .workspace-heading')
-        }
-        await scope
+        await page
+          .locator('main')
           .getByRole('button', {
             name: locale.nav.create[target.kind],
             exact: true,
@@ -516,10 +517,6 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
           .getByRole('button', { name: locale.admin.cancel, exact: true })
           .click()
         await expect(dialog).not.toBeVisible()
-        if (target.kind === 'workspace')
-          await page
-            .getByRole('button', { name: locale.nav.close, exact: true })
-            .click()
         if (target.kind === 'book')
           await inspectSharing(
             page,
@@ -543,12 +540,12 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
         exact: true,
       })
       await usableDialog(page, drawer, 'navigation drawer')
-      const actions = drawer.locator(
-        `[data-nav-id="${data.workspaceId}"] > .node-actions`,
+      const workspace = drawer.locator(
+        `[data-nav-id="${data.workspaceId}"][data-kind="workspace"]`,
       )
-      await actions.locator('summary').click()
-      await reachableControls(page, 'workspace action menu', actions)
-      await noPageOverflow(page, 'workspace action menu')
+      await expect(workspace).toBeVisible()
+      await expect(workspace.locator('.node-actions')).toHaveCount(0)
+      await noPageOverflow(page, 'workspace context')
       await drawer
         .getByRole('button', { name: locale.nav.close, exact: true })
         .click()
@@ -816,7 +813,6 @@ test('AT-806 notification panel stays within the viewport in both languages', as
   await english(page)
   await login(page)
   await page.goto('/home')
-  await expect(page).toHaveURL(/\/w\/[^/]+$/)
   const problems: {
     locale: string
     width: number

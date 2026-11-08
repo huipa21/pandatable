@@ -40,7 +40,7 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
     .getByLabel(en.auth.password, { exact: true })
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
-  await expect(page).toHaveURL(/\/(?:w\/[^/]+|change-password)$/)
+  await expect(page).toHaveURL(/\/(?:home|change-password)$/)
 
   const stamp = Date.now()
   const create = async (path: string, data: unknown) => {

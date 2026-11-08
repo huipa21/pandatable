@@ -56,10 +56,13 @@ export async function setTheme(page: Page, theme: 'light' | 'dark') {
 export async function openAccountMenu(page: Page) {
   const button = page.locator('.avatar-button')
   await expect(button).toBeVisible()
-  if ((await button.getAttribute('aria-expanded')) !== 'true')
-    await button.click()
   const panel = page.locator('.user-menu-panel')
-  await expect(panel).toBeVisible()
+  // A click can land while a closing modal still owns pointer events.
+  await expect(async () => {
+    if ((await button.getAttribute('aria-expanded')) !== 'true')
+      await button.click()
+    await expect(panel).toBeVisible({ timeout: 1_000 })
+  }).toPass({ timeout: 10_000 })
   return panel
 }
 

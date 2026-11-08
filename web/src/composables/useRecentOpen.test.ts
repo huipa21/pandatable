@@ -2,11 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import {
-  createMemoryHistory,
-  createRouter,
-  RouterView,
-} from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useRecentOpen } from './useRecentOpen'
 import { useAuthStore } from '../stores/auth'
 import { useNavStore } from '../stores/nav'
@@ -53,14 +49,9 @@ afterEach(() => {
 })
 
 it('records each resolved workspace/workbook route once, including table/view/row routes', async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(new Response(null, { status: 204 }))
+  const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
   vi.stubGlobal('fetch', fetch)
-  wrapper = mount(
-    shell,
-    { global: { plugins: [pinia, router] } },
-  )
+  wrapper = mount(shell, { global: { plugins: [pinia, router] } })
 
   await router.push('/w/w')
   await router.push('/w/w/b/b')
@@ -68,7 +59,9 @@ it('records each resolved workspace/workbook route once, including table/view/ro
   await router.push('/t/t/v/v')
   await router.push('/t/t/v/v/r/1')
 
-  expect(fetch.mock.calls.map(([path, options]) => [path, options?.body])).toEqual([
+  expect(
+    fetch.mock.calls.map(([path, options]) => [path, options?.body]),
+  ).toEqual([
     ['/api/v1/recent', '{"kind":"workspace","id":"w"}'],
     ['/api/v1/recent', '{"kind":"workspace","id":"w"}'],
     ['/api/v1/recent', '{"kind":"book","id":"b"}'],
@@ -82,14 +75,9 @@ it('records each resolved workspace/workbook route once, including table/view/ro
 })
 
 it('does not post again when the same resolved route recomputes', async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(new Response(null, { status: 204 }))
+  const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
   vi.stubGlobal('fetch', fetch)
-  wrapper = mount(
-    shell,
-    { global: { plugins: [pinia, router] } },
-  )
+  wrapper = mount(shell, { global: { plugins: [pinia, router] } })
 
   await router.push('/t/t/v/v')
   const count = fetch.mock.calls.length
@@ -98,9 +86,7 @@ it('does not post again when the same resolved route recomputes', async () => {
 })
 
 it('records the current route for a newly authenticated user', async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValue(new Response(null, { status: 204 }))
+  const fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
   vi.stubGlobal('fetch', fetch)
   wrapper = mount(shell, { global: { plugins: [pinia, router] } })
 

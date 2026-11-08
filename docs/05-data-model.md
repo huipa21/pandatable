@@ -36,8 +36,9 @@ are never renamed and trashed physical-name reservations are never reused.
 
 The SQL below describes the core schema; the executable source is
 [`0001_initial.sql`](../migrations/0001_initial.sql) and the forward-only
-migrations through [`0008_book_icons.sql`](../migrations/0008_book_icons.sql). Never edit an applied
-migration. See D-069..D-071 for the T1.1 integrity clarifications.
+migrations through [`0010_recent_resources.sql`](../migrations/0010_recent_resources.sql).
+Never edit an applied migration. See D-069..D-071 for the T1.1 integrity
+clarifications.
 
 ```sql
 CREATE SCHEMA meta;
@@ -91,12 +92,14 @@ CREATE INDEX ON meta.group_members(user_id);
 CREATE TABLE meta.workspaces (
   id          uuid PRIMARY KEY DEFAULT uuidv7(),
   name        text NOT NULL,
+  description text NOT NULL DEFAULT '',
   icon        text,
   color       text,
   created_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   deleted_at  timestamptz,                -- trash
-  deleted_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL
+  deleted_by  uuid REFERENCES meta.users(id) ON DELETE SET NULL,
+  fallback_icon text NOT NULL              -- stable random icon from the book fallback palette
 );
 
 -- A missing row means this existing user has not been bootstrapped yet.
@@ -123,6 +126,20 @@ CREATE TABLE meta.books (
       [floor(random() * 8)::integer + 1]
   )
 );
+
+CREATE TABLE meta.recent_resources (
+  user_id      uuid NOT NULL REFERENCES meta.users(id) ON DELETE CASCADE,
+  workspace_id uuid REFERENCES meta.workspaces(id) ON DELETE CASCADE,
+  book_id      uuid REFERENCES meta.books(id) ON DELETE CASCADE,
+  opened_at    timestamptz NOT NULL DEFAULT now(),
+  CHECK ((workspace_id IS NOT NULL) <> (book_id IS NOT NULL))
+);
+CREATE UNIQUE INDEX recent_resources_user_workspace_key
+  ON meta.recent_resources (user_id, workspace_id)
+  WHERE workspace_id IS NOT NULL;
+CREATE UNIQUE INDEX recent_resources_user_book_key
+  ON meta.recent_resources (user_id, book_id)
+  WHERE book_id IS NOT NULL;
 
 CREATE TABLE meta.tables (
   id                uuid PRIMARY KEY DEFAULT uuidv7(),
@@ -305,6 +322,15 @@ CREATE TABLE meta.backups (
   finished_at timestamptz
 );
 ```
+
+Workspace descriptions (D-236) are trimmed plain text, at most 500 Unicode code
+points. LF and CR are allowed; other Unicode control characters are rejected.
+Workspace icons use the book `BookIconName` vocabulary; `fallback_icon` is
+persisted once from the same eight-name palette so clearing a custom icon does
+not change the displayed fallback. The `meta.recent_resources` table has
+exactly one workspace or book target per row, uses partial unique indexes per
+user/target, and cascades on user/resource deletion. The API prunes each user's
+history to the newest 200 entries.
 
 ### T5.2 mail metadata (D-205..D-207)
 

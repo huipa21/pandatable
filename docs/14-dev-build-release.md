@@ -458,7 +458,7 @@ reported as startup failure, not hidden by connecting to another app.
 
 adjacent controls, no page overflow, and no console/page/CSP errors. API fixtures
 The real embedded shell is checked on desktop and mobile Chromium (one worker,
-zero retries, 600 s global bound per D-155): health/JS/history/404/HEAD/method boundaries,
+zero retries, 5,400 s global bound per D-237): health/JS/history/404/HEAD/method boundaries,
 English/Chinese and light/dark/system persistence, actual Naive UI styles,
 adjacent controls, no page overflow, and no console/page/CSP errors. AT-101 now
 uses the production image and the logged token from the unique owned app

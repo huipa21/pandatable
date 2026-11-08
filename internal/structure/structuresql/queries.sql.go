@@ -930,7 +930,7 @@ SELECT EXISTS (
   JOIN meta.workspaces w ON w.id = p.workspace_id
   WHERE p.user_id = $1::uuid
     AND w.created_by = p.user_id AND w.name = 'Default'
-    AND w.icon IS NULL AND w.color IS NULL AND w.deleted_at IS NULL
+    AND w.icon IS NULL AND w.color IS NULL AND w.description = '' AND w.deleted_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM meta.workspaces other WHERE other.id <> w.id)
     AND NOT EXISTS (SELECT 1 FROM meta.books b WHERE b.workspace_id = w.id)
     AND NOT EXISTS (SELECT 1 FROM meta.user_workspace_preferences other

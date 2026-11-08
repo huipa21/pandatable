@@ -112,7 +112,7 @@ test('AT-706/708: admin backup lifecycle, ZIP download and localized disk guard'
     await page
       .getByRole('button', { name: en.auth.signIn, exact: true })
       .click()
-    await expect(page).toHaveURL(/\/w\/[^/]+$/)
+    await expect(page).toHaveURL(/\/home$/)
     app.write(attachment, 'browser backup fixture')
     await page.goto('/admin/backups')
     await expect(

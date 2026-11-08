@@ -329,7 +329,11 @@ export const useNavStore = defineStore('nav', () => {
     }
   }
 
-  async function submit(action: StructureAction, name: string, workspace?: WorkspaceDetails) {
+  async function submit(
+    action: StructureAction,
+    name: string,
+    workspace?: WorkspaceDetails,
+  ) {
     const plural = `${action.kind}s`
     if (action.operation === 'create') {
       if (action.kind === 'table') {

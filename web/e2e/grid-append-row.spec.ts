@@ -506,9 +506,15 @@ test('an expanded multi-page group reveals its newly appended tail row', async (
       }),
     )
     .toBe(true)
-  await grid.evaluate(async (element) => {
-    await (element as HTMLElement & Components.RevoGrid).scrollToRow(250)
-  })
+  // The tail page loads after scrollToRow resolves; re-scroll until rendered.
+  await expect(async () => {
+    await grid.evaluate(async (element) => {
+      await (element as HTMLElement & Components.RevoGrid).scrollToRow(250)
+    })
+    await expect(
+      page.getByRole('button', { name: en.grid.addRow, exact: true }),
+    ).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 20_000 })
   await expectPlusAtEnd(page, 251)
   const created = rowCreateResponse(page, table.tableId)
   await page.getByRole('button', { name: en.grid.addRow, exact: true }).focus()
