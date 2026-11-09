@@ -249,8 +249,9 @@ type movableInput struct {
 
 func (api *authHTTP) createBook(w http.ResponseWriter, r *http.Request, user auth.User) {
 	var input struct {
-		Name string          `json:"name"`
-		Icon json.RawMessage `json:"icon"`
+		Name        string          `json:"name"`
+		Icon        json.RawMessage `json:"icon"`
+		Description json.RawMessage `json:"description"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		api.fail(w, r, err)
@@ -261,7 +262,17 @@ func (api *authHTTP) createBook(w http.ResponseWriter, r *http.Request, user aut
 		api.fail(w, r, err)
 		return
 	}
-	book, err := api.structure.CreateBookWithIcon(r.Context(), actorOf(user), chi.URLParam(r, "id"), input.Name, icon.Value)
+	description, err := patchString(input.Description, false)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
+	descriptionText := ""
+	if description != nil {
+		descriptionText = *description
+	}
+	book, err := api.structure.CreateBookWithDetails(r.Context(), actorOf(user), chi.URLParam(r, "id"),
+		structure.BookInput{Name: input.Name, Icon: icon.Value, Description: descriptionText})
 	if err != nil {
 		api.fail(w, r, err)
 		return
@@ -274,9 +285,10 @@ func (api *authHTTP) createBook(w http.ResponseWriter, r *http.Request, user aut
 
 func (api *authHTTP) updateBook(w http.ResponseWriter, r *http.Request, user auth.User) {
 	var input struct {
-		Name  *string         `json:"name"`
-		Index *int            `json:"index"`
-		Icon  json.RawMessage `json:"icon"`
+		Name        *string         `json:"name"`
+		Index       *int            `json:"index"`
+		Icon        json.RawMessage `json:"icon"`
+		Description json.RawMessage `json:"description"`
 	}
 	if err := decodeJSON(w, r, &input); err != nil {
 		api.fail(w, r, err)
@@ -287,8 +299,13 @@ func (api *authHTTP) updateBook(w http.ResponseWriter, r *http.Request, user aut
 		api.fail(w, r, err)
 		return
 	}
+	description, err := patchString(input.Description, false)
+	if err != nil {
+		api.fail(w, r, err)
+		return
+	}
 	book, err := api.structure.UpdateBook(r.Context(), actorOf(user), chi.URLParam(r, "id"),
-		structure.BookPatch{Name: input.Name, Index: input.Index, Icon: icon})
+		structure.BookPatch{Name: input.Name, Index: input.Index, Icon: icon, Description: description})
 	if err != nil {
 		api.fail(w, r, err)
 		return

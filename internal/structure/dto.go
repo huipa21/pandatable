@@ -26,6 +26,7 @@ type Book struct {
 	ID           string    `json:"id"`
 	WorkspaceID  string    `json:"workspaceId"`
 	Name         string    `json:"name"`
+	Description  string    `json:"description"`
 	Icon         *string   `json:"icon"`
 	FallbackIcon string    `json:"fallbackIcon"`
 	Position     float64   `json:"position"`
@@ -116,8 +117,8 @@ func tableDTO(id, book, display pgtype.UUID, name string, position float64, vers
 		Position: position, SchemaVersion: version, CreatedAt: timeOf(created)}
 }
 
-func bookDTO(id, workspace pgtype.UUID, name string, icon pgtype.Text, fallbackIcon string,
+func bookDTO(id, workspace pgtype.UUID, name, description string, icon pgtype.Text, fallbackIcon string,
 	position float64, created pgtype.Timestamptz) Book {
-	return Book{ID: id.String(), WorkspaceID: workspace.String(), Name: name, Icon: textPointer(icon),
+	return Book{ID: id.String(), WorkspaceID: workspace.String(), Name: name, Description: description, Icon: textPointer(icon),
 		FallbackIcon: fallbackIcon, Position: position, CreatedAt: timeOf(created)}
 }

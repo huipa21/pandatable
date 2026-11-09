@@ -132,13 +132,13 @@ async function verifyStaleRetry(page: Page, expectedCards: number) {
 
 async function verifyLayout(page: Page, width: number) {
   await page.setViewportSize({ width, height: 900 })
+  const main = page.locator('main')
+  await expect(main.getByRole('searchbox')).toHaveCount(0)
+  await expect(
+    main.getByRole('button', { name: en.nav.create.book, exact: true }),
+  ).toHaveCount(0)
   const cards = page.locator('main .workbook-card')
   await expect(cards).toHaveCount(3)
-  const search = page.locator('main .resource-search')
-  const searchBox = await search.boundingBox()
-  if (!searchBox) throw new Error('Workbook search input is missing')
-  expect(searchBox.x).toBeGreaterThanOrEqual(0)
-  expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(width)
   const boxes = await cards.evaluateAll((elements) =>
     elements.map((element) => {
       const card = element.getBoundingClientRect()
@@ -181,9 +181,6 @@ async function verifyLayout(page: Page, width: number) {
   }
   if (width === 390) expect(boxes[1]!.top).toBeGreaterThan(boxes[0]!.top)
   else expect(boxes[1]!.top).toBe(boxes[0]!.top)
-  await search.locator('input').focus()
-  await page.keyboard.press('Tab')
-  await expect(cards.first()).toBeFocused()
 }
 
 test('UX-04: workbook cards respect icons, access, navigation and responsive states', async ({
@@ -202,7 +199,8 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
   const workspaceIds: string[] = []
   let readerContext: BrowserContext | undefined
   try {
-    const firstWorkspace = await createWorkspace(page, `UX04 first ${suffix}`)
+    const firstWorkspaceName = `UX04 first ${suffix}`
+    const firstWorkspace = await createWorkspace(page, firstWorkspaceName)
     workspaceIds.push(firstWorkspace)
     const otherWorkspace = await createWorkspace(page, `UX04 other ${suffix}`)
     workspaceIds.push(otherWorkspace)
@@ -225,7 +223,14 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     await expect(
       main.getByText(en.nav.emptyBooks, { exact: true }),
     ).toBeVisible()
+    await expect(
+      main.getByText(en.wmb.emptyBooksHint, { exact: true }),
+    ).toBeVisible()
     await expect(main.locator('.workbook-card')).toHaveCount(0)
+    await expect(main.getByRole('searchbox')).toHaveCount(0)
+    await expect(
+      main.getByRole('button', { name: en.nav.create.book, exact: true }),
+    ).toHaveCount(0)
     await expect(
       main.getByRole('button', { name: en.nav.create.workspace, exact: true }),
     ).toHaveCount(0)
@@ -251,7 +256,15 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     await closeMobileNavigation(page, en)
     await selectWorkspace(page, firstWorkspace)
 
-    await main
+    if (isMobile)
+      await page.getByRole('button', { name: en.nav.open, exact: true }).click()
+    await page
+      .getByRole('button', {
+        name: en.wmb.workspaceActions.replace('{name}', firstWorkspaceName),
+        exact: true,
+      })
+      .click()
+    await page
       .getByRole('button', { name: en.nav.create.book, exact: true })
       .click()
     const structure = page.getByRole('dialog', {
@@ -317,23 +330,6 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
       'href',
       `/w/${otherWorkspace}/b/${customBook.id}`,
     )
-    const search = main.getByRole('searchbox')
-    await search.fill(chineseName)
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get('q'))
-      .toBe(chineseName)
-    await expect(cards).toHaveCount(1)
-    await expect(customCard).toBeVisible()
-    await page.reload()
-    await expect(main.getByRole('searchbox')).toHaveValue(chineseName)
-    await expect(cards).toHaveCount(1)
-
-    await main.getByRole('searchbox').fill('no matching workbook')
-    await expect(main.locator('.workbook-no-matches')).toBeVisible()
-    await expect(cards).toHaveCount(0)
-    await main.locator('.resource-search-clear').click()
-    await expect(cards).toHaveCount(3)
-    await expect(page).not.toHaveURL(/(?:\?|&)q=/)
 
     const recordOpen = page.waitForResponse((response) => {
       const request = response.request()
@@ -354,18 +350,6 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
       'href',
       `/w/${otherWorkspace}/b/${recentBook.id}`,
     )
-
-    await main.getByRole('searchbox').fill(chineseName)
-    await expect
-      .poll(() => new URL(page.url()).searchParams.get('q'))
-      .toBe(chineseName)
-    await page.goto(`/w/${firstWorkspace}`)
-    await expect(main.getByRole('searchbox')).toHaveValue('')
-    await expect(page).not.toHaveURL(/(?:\?|&)q=/)
-    await page.goBack()
-    await expect(main.getByRole('searchbox')).toHaveValue(chineseName)
-    await main.locator('.resource-search-clear').click()
-    await expect(cards).toHaveCount(3)
 
     const fallbackMarkup = await fallbackCard.locator('svg').innerHTML()
     expect(fallbackMarkup).toContain('<path')

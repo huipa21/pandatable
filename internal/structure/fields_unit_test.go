@@ -22,9 +22,9 @@ func TestCleanDescriptionBounds(t *testing.T) {
 		{"bad\u0085line", "", false},
 		{string([]byte{0xff}), "", false},
 	} {
-		got, err := cleanDescription(tc.input)
+		got, err := cleanFieldDescription(tc.input)
 		if (err == nil) != tc.ok || got != tc.want {
-			t.Fatalf("cleanDescription(%q) = %q, %v", tc.input, got, err)
+			t.Fatalf("cleanFieldDescription(%q) = %q, %v", tc.input, got, err)
 		}
 	}
 }

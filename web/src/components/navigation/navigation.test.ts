@@ -84,14 +84,14 @@ it('keeps workspace context singular and preserves the active workbook tree cont
     const box = wrapper.get('.workspace-root li[data-kind="workspace"] a')
     expect(box.attributes('href')).toBe('/w/w')
     expect(box.attributes('aria-current')).toBe('page')
-    expect(box.find('.app-icon').exists()).toBe(true)
+    expect(box.find('.app-icon').exists()).toBe(false)
     await box.trigger('click')
     expect(wrapper.emitted('navigate')).toHaveLength(1)
     expect(wrapper.findAll('.workspace-root > li')).toHaveLength(2)
     expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(false)
     expect(wrapper.find('.workbook-root').exists()).toBe(false)
     expect(wrapper.find('.workspace-heading').exists()).toBe(false)
-    expect(wrapper.find('.node-actions').exists()).toBe(false)
+    expect(wrapper.find('.workspace-nav-menu').exists()).toBe(true)
     await router.push('/w/w/b/b')
     await nextTick()
     expect(
@@ -171,7 +171,7 @@ it('keeps workspace context singular and preserves the active workbook tree cont
     })
     nav.tree = structuredClone(tree)
     await nextTick()
-    expect(wrapper.find('[data-nav-id="w"] > .node-actions').exists()).toBe(
+    expect(wrapper.find('[data-nav-id="w"] .workspace-nav-menu').exists()).toBe(
       false,
     )
     expect(wrapper.find('[data-nav-id="b"] > .node-actions').exists()).toBe(
@@ -339,9 +339,9 @@ it('shows only path-only workspace ancestry for a table-only grantee', async () 
       'b',
     )
     expect(wrapper.find('[data-nav-id="w2"]').exists()).toBe(false)
-    expect(wrapper.find('[data-nav-id="w3"] > .node-actions').exists()).toBe(
-      false,
-    )
+    expect(
+      wrapper.find('[data-nav-id="w3"] .workspace-nav-menu').exists(),
+    ).toBe(false)
     i18n.global.locale.value = 'zh-CN'
     await nextTick()
     expect(

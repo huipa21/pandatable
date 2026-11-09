@@ -80,7 +80,7 @@ func (s *Service) CreateWorkspace(ctx context.Context, actor Actor, input Worksp
 	if err != nil {
 		return Workspace{}, err
 	}
-	description, err := cleanWorkspaceDescription(input.Description)
+	description, err := cleanDescription(input.Description)
 	if err != nil {
 		return Workspace{}, err
 	}
@@ -138,7 +138,7 @@ func (s *Service) UpdateWorkspace(ctx context.Context, actor Actor, id string, p
 	}
 	var description string
 	if patch.Description != nil {
-		if description, err = cleanWorkspaceDescription(*patch.Description); err != nil {
+		if description, err = cleanDescription(*patch.Description); err != nil {
 			return Workspace{}, err
 		}
 	}

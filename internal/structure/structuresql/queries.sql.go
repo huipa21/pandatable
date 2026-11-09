@@ -251,7 +251,7 @@ func (q *Queries) FindRowComment(ctx context.Context, id pgtype.UUID) (FindRowCo
 }
 
 const getBook = `-- name: GetBook :one
-SELECT id, workspace_id, name, icon, fallback_icon, pg_schema, position, created_at
+SELECT id, workspace_id, name, description, icon, fallback_icon, pg_schema, position, created_at
 FROM meta.books
 WHERE id = $1 AND deleted_at IS NULL
 `
@@ -260,6 +260,7 @@ type GetBookRow struct {
 	ID           pgtype.UUID
 	WorkspaceID  pgtype.UUID
 	Name         string
+	Description  string
 	Icon         pgtype.Text
 	FallbackIcon string
 	PgSchema     string
@@ -274,6 +275,7 @@ func (q *Queries) GetBook(ctx context.Context, id pgtype.UUID) (GetBookRow, erro
 		&i.ID,
 		&i.WorkspaceID,
 		&i.Name,
+		&i.Description,
 		&i.Icon,
 		&i.FallbackIcon,
 		&i.PgSchema,
@@ -494,14 +496,15 @@ func (q *Queries) GetWorkspace(ctx context.Context, id pgtype.UUID) (GetWorkspac
 }
 
 const insertBook = `-- name: InsertBook :one
-INSERT INTO meta.books (workspace_id, name, icon, pg_schema, position, created_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, workspace_id, name, icon, fallback_icon, position, created_at
+INSERT INTO meta.books (workspace_id, name, description, icon, pg_schema, position, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, workspace_id, name, description, icon, fallback_icon, position, created_at
 `
 
 type InsertBookParams struct {
 	WorkspaceID pgtype.UUID
 	Name        string
+	Description string
 	Icon        pgtype.Text
 	PgSchema    string
 	Position    float64
@@ -512,6 +515,7 @@ type InsertBookRow struct {
 	ID           pgtype.UUID
 	WorkspaceID  pgtype.UUID
 	Name         string
+	Description  string
 	Icon         pgtype.Text
 	FallbackIcon string
 	Position     float64
@@ -522,6 +526,7 @@ func (q *Queries) InsertBook(ctx context.Context, arg InsertBookParams) (InsertB
 	row := q.db.QueryRow(ctx, insertBook,
 		arg.WorkspaceID,
 		arg.Name,
+		arg.Description,
 		arg.Icon,
 		arg.PgSchema,
 		arg.Position,
@@ -532,6 +537,7 @@ func (q *Queries) InsertBook(ctx context.Context, arg InsertBookParams) (InsertB
 		&i.ID,
 		&i.WorkspaceID,
 		&i.Name,
+		&i.Description,
 		&i.Icon,
 		&i.FallbackIcon,
 		&i.Position,
@@ -1891,7 +1897,7 @@ func (q *Queries) MoveManagedView(ctx context.Context, arg MoveManagedViewParams
 }
 
 const navBooks = `-- name: NavBooks :many
-SELECT b.id, b.workspace_id, b.name, b.icon, b.fallback_icon, b.position,
+SELECT b.id, b.workspace_id, b.name, b.description, b.icon, b.fallback_icon, b.position,
        recent.opened_at AS last_opened_at
 FROM meta.books b
 LEFT JOIN meta.recent_resources recent
@@ -1908,6 +1914,7 @@ type NavBooksRow struct {
 	ID           pgtype.UUID
 	WorkspaceID  pgtype.UUID
 	Name         string
+	Description  string
 	Icon         pgtype.Text
 	FallbackIcon string
 	Position     float64
@@ -1927,6 +1934,7 @@ func (q *Queries) NavBooks(ctx context.Context, arg NavBooksParams) ([]NavBooksR
 			&i.ID,
 			&i.WorkspaceID,
 			&i.Name,
+			&i.Description,
 			&i.Icon,
 			&i.FallbackIcon,
 			&i.Position,
@@ -2417,6 +2425,24 @@ type SaveViewConfigForTypeChangeParams struct {
 func (q *Queries) SaveViewConfigForTypeChange(ctx context.Context, arg SaveViewConfigForTypeChangeParams) error {
 	_, err := q.db.Exec(ctx, saveViewConfigForTypeChange, arg.Config, arg.ID)
 	return err
+}
+
+const setBookDescription = `-- name: SetBookDescription :one
+UPDATE meta.books SET description = $2
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id
+`
+
+type SetBookDescriptionParams struct {
+	ID          pgtype.UUID
+	Description string
+}
+
+func (q *Queries) SetBookDescription(ctx context.Context, arg SetBookDescriptionParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, setBookDescription, arg.ID, arg.Description)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
 }
 
 const setBookIcon = `-- name: SetBookIcon :one

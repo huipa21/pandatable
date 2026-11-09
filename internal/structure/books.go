@@ -8,13 +8,22 @@ import (
 
 	"pandatable/internal/acl"
 	"pandatable/internal/ddl"
+	"pandatable/internal/events"
 	"pandatable/internal/structure/structuresql"
 )
 
+// BookInput holds the name and optional metadata for a new book.
+type BookInput struct {
+	Name        string
+	Icon        *string
+	Description string
+}
+
 type BookPatch struct {
-	Name  *string
-	Index *int
-	Icon  OptionalText
+	Name        *string
+	Index       *int
+	Icon        OptionalText
+	Description *string
 }
 
 func parentWorkspace(path acl.Path) acl.Resource {
@@ -47,15 +56,24 @@ func (s *Service) CreateBook(ctx context.Context, actor Actor, workspaceID, name
 
 // CreateBookWithIcon creates a book with an optional user-selected icon.
 func (s *Service) CreateBookWithIcon(ctx context.Context, actor Actor, workspaceID, name string, icon *string) (Book, error) {
+	return s.CreateBookWithDetails(ctx, actor, workspaceID, BookInput{Name: name, Icon: icon})
+}
+
+// CreateBookWithDetails creates a book with optional metadata.
+func (s *Service) CreateBookWithDetails(ctx context.Context, actor Actor, workspaceID string, input BookInput) (Book, error) {
 	target, err := resourceOf(acl.Workspace, workspaceID)
 	if err != nil {
 		return Book{}, err
 	}
-	cleaned, err := cleanName(name)
+	cleaned, err := cleanName(input.Name)
 	if err != nil {
 		return Book{}, err
 	}
-	customIcon, err := cleanOptional(icon, cleanBookIcon)
+	customIcon, err := cleanOptional(input.Icon, cleanBookIcon)
+	if err != nil {
+		return Book{}, err
+	}
+	description, err := cleanBookDescription(input.Description)
 	if err != nil {
 		return Book{}, err
 	}
@@ -74,12 +92,13 @@ func (s *Service) CreateBookWithIcon(ctx context.Context, actor Actor, workspace
 				return err
 			}
 			row, err := c.q.InsertBook(ctx, structuresql.InsertBookParams{WorkspaceID: target.ID, Name: cleaned,
-				Icon: textValue(customIcon), PgSchema: schema, Position: last + positionStep, CreatedBy: c.user})
+				Description: description, Icon: textValue(customIcon), PgSchema: schema,
+				Position: last + positionStep, CreatedBy: c.user})
 			if err != nil {
 				return fmt.Errorf("insert book: %w", err)
 			}
-			created = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Icon, row.FallbackIcon, row.Position, row.CreatedAt)
-			return nil
+			created = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Description, row.Icon, row.FallbackIcon, row.Position, row.CreatedAt)
+			return emitBookChanged(ctx, c, actor, created)
 		})
 	})
 	if err != nil {
@@ -95,7 +114,7 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 	if err != nil {
 		return Book{}, err
 	}
-	if patch.Name == nil && patch.Index == nil && !patch.Icon.Set {
+	if patch.Name == nil && patch.Index == nil && !patch.Icon.Set && patch.Description == nil {
 		return Book{}, validation("At least one book field is required")
 	}
 	var name string
@@ -107,6 +126,12 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 	icon, err := cleanOptional(patch.Icon.Value, cleanBookIcon)
 	if err != nil {
 		return Book{}, err
+	}
+	var description string
+	if patch.Description != nil {
+		if description, err = cleanBookDescription(*patch.Description); err != nil {
+			return Book{}, err
+		}
 	}
 	if patch.Index != nil && *patch.Index < 0 {
 		return Book{}, validation("Index is outside the sibling range")
@@ -121,6 +146,11 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 		if patch.Icon.Set {
 			if _, err := c.q.SetBookIcon(ctx, structuresql.SetBookIconParams{ID: target.ID, Icon: textValue(icon)}); err != nil {
 				return notFoundIfNoRows(err, "update book icon")
+			}
+		}
+		if patch.Description != nil {
+			if _, err := c.q.SetBookDescription(ctx, structuresql.SetBookDescriptionParams{ID: target.ID, Description: description}); err != nil {
+				return notFoundIfNoRows(err, "update book description")
 			}
 		}
 		if patch.Index != nil {
@@ -145,10 +175,16 @@ func (s *Service) UpdateBook(ctx context.Context, actor Actor, id string, patch 
 		if err != nil {
 			return notFoundIfNoRows(err, "read book")
 		}
-		updated = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Icon, row.FallbackIcon, row.Position, row.CreatedAt)
-		return nil
+		updated = bookDTO(row.ID, row.WorkspaceID, row.Name, row.Description, row.Icon, row.FallbackIcon, row.Position, row.CreatedAt)
+		return emitBookChanged(ctx, c, actor, updated)
 	})
 	return updated, err
+}
+
+func emitBookChanged(ctx context.Context, c *txn, actor Actor, book Book) error {
+	return events.Emit(ctx, c.tx, events.Event{
+		Type: "book.changed", BookID: book.ID, Description: &book.Description, By: actor.ID,
+	})
 }
 
 // DeleteBook soft-deletes a book. Its schema, tables, data and grants are

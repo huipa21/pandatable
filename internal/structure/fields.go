@@ -21,7 +21,7 @@ import (
 	"pandatable/internal/structure/structuresql"
 )
 
-const maxDescriptionRunes = 1000
+const maxFieldDescriptionRunes = 1000
 
 // FieldInput creates a user field (D-123). Default nil means absent; JSON null
 // means no default.
@@ -71,9 +71,9 @@ func systemFieldError() error {
 	return reasonError(400, "ERR_VALIDATION", "System fields allow only name and description changes", "system_field")
 }
 
-func cleanDescription(value string) (string, error) {
+func cleanFieldDescription(value string) (string, error) {
 	text := strings.TrimSpace(value)
-	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > maxDescriptionRunes ||
+	if !utf8.ValidString(text) || utf8.RuneCountInString(text) > maxFieldDescriptionRunes ||
 		strings.ContainsFunc(text, func(r rune) bool { return unicode.IsControl(r) && r != '\n' && r != '\t' }) {
 		return "", validation("Description must be at most 1000 characters without control characters")
 	}
@@ -299,7 +299,7 @@ func (s *Service) CreateField(ctx context.Context, actor Actor, tableID string, 
 	if err != nil {
 		return FieldResult{}, err
 	}
-	description, err := cleanDescription(input.Description)
+	description, err := cleanFieldDescription(input.Description)
 	if err != nil {
 		return FieldResult{}, err
 	}
@@ -394,7 +394,7 @@ func (s *Service) createComputedField(ctx context.Context, actor Actor, tableID 
 	if err != nil {
 		return FieldResult{}, err
 	}
-	description, err := cleanDescription(input.Description)
+	description, err := cleanFieldDescription(input.Description)
 	if err != nil {
 		return FieldResult{}, err
 	}
@@ -476,7 +476,7 @@ func (s *Service) createFormulaField(ctx context.Context, actor Actor, tableID s
 	if err != nil {
 		return FieldResult{}, err
 	}
-	description, err := cleanDescription(input.Description)
+	description, err := cleanFieldDescription(input.Description)
 	if err != nil {
 		return FieldResult{}, err
 	}
@@ -643,7 +643,7 @@ func (s *Service) UpdateField(ctx context.Context, actor Actor, id string, patch
 		}
 	}
 	if patch.Description != nil {
-		if description, err = cleanDescription(*patch.Description); err != nil {
+		if description, err = cleanFieldDescription(*patch.Description); err != nil {
 			return FieldResult{}, err
 		}
 	}

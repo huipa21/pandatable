@@ -34,7 +34,7 @@ func TestEmbeddedMigrationOrdering(t *testing.T) {
 			names = append(names, entry.Name())
 		}
 	}
-	if want := []string{"0001_initial.sql", "0002_metadata.sql", "0003_restore_system.sql", "0004_trash.sql", "0005_user_lifecycle.sql", "0006_mail.sql", "0007_workspace_preferences.sql", "0008_book_icons.sql", "0009_workspace_details.sql", "0010_recent_resources.sql"}; !reflect.DeepEqual(names, want) {
+	if want := []string{"0001_initial.sql", "0002_metadata.sql", "0003_restore_system.sql", "0004_trash.sql", "0005_user_lifecycle.sql", "0006_mail.sql", "0007_workspace_preferences.sql", "0008_book_icons.sql", "0009_workspace_details.sql", "0010_recent_resources.sql", "0011_book_description.sql"}; !reflect.DeepEqual(names, want) {
 		t.Fatalf("embedded migration files = %v, want %v", names, want)
 	}
 }

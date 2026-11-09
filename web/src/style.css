@@ -364,7 +364,7 @@ a {
   align-items: center;
   gap: 4px;
   min-height: 36px;
-  padding: 4px 34px 4px 2px;
+  padding: 4px 2px;
   border-radius: 6px;
   font-weight: 600;
 }
@@ -511,6 +511,14 @@ a {
 .nav-tree [data-kind='workspace'] > .node-actions {
   top: 7px;
   right: 6px;
+}
+
+.nav-tree .workspace-nav-menu {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: 0 0 auto;
+  opacity: 1;
 }
 
 .nav-tree li:hover:not(:has(li:hover)) > .node-actions,
@@ -1559,7 +1567,7 @@ dialog::backdrop {
 
   .nav-drawer .workspace-box {
     min-height: 44px;
-    padding-right: 48px;
+    padding-right: 2px;
   }
 
   .nav-drawer .workspace-toggle {
@@ -1582,6 +1590,11 @@ dialog::backdrop {
   .nav-drawer .nav-tree .node-actions {
     top: 0;
     right: 0;
+  }
+
+  .nav-drawer .nav-tree .workspace-nav-menu {
+    top: auto;
+    right: auto;
   }
 
   .nav-drawer .nav-tree .node-actions summary {

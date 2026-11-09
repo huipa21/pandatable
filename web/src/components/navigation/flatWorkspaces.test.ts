@@ -73,10 +73,11 @@ it('shows only the dashboard link and current workspace context', async () => {
     expect(entries[0]!.text()).toBe('Workspaces')
     expect(entries[1]!.attributes('data-nav-id')).toBe('w')
     expect(entries[1]!.get('.workspace-link').text()).toContain('Workspace')
-    expect(entries[1]!.find('.workspace-link .app-icon').exists()).toBe(true)
+    expect(entries[1]!.find('.workspace-link .app-icon').exists()).toBe(false)
     expect(entries[1]!.get('.workspace-link').attributes('aria-current')).toBe(
       'page',
     )
+    expect(entries[1]!.find('.workspace-nav-menu').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('Sibling workspace')
     expect(wrapper.text()).not.toContain('Path context')
     expect(wrapper.find('.workbook-root').exists()).toBe(false)

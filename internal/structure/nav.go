@@ -32,6 +32,7 @@ type NavTable struct {
 type NavBook struct {
 	ID           string     `json:"id"`
 	Name         string     `json:"name"`
+	Description  string     `json:"description"`
 	Icon         *string    `json:"icon"`
 	FallbackIcon string     `json:"fallbackIcon"`
 	LastOpenedAt *time.Time `json:"lastOpenedAt"`
@@ -162,8 +163,12 @@ func (s *Service) Nav(ctx context.Context, actor Actor) (Nav, error) {
 		if visible == nil {
 			visible = []NavTable{}
 		}
+		description := row.Description
+		if level == 0 {
+			description = ""
+		}
 		booksByWorkspace[row.WorkspaceID] = append(booksByWorkspace[row.WorkspaceID], NavBook{ID: row.ID.String(),
-			Name: row.Name, Icon: textPointer(row.Icon), FallbackIcon: row.FallbackIcon,
+			Name: row.Name, Description: description, Icon: textPointer(row.Icon), FallbackIcon: row.FallbackIcon,
 			LastOpenedAt: timePointer(row.LastOpenedAt), Position: row.Position,
 			Level: levelName(level), PathOnly: level == 0, Tables: visible})
 	}

@@ -85,3 +85,26 @@ func TestEmitPropagatesErrors(t *testing.T) {
 		t.Fatal("oversized event succeeded")
 	}
 }
+
+func TestBookChangedEventRequiresAndPreservesDescription(t *testing.T) {
+	empty := ""
+	payload, err := encode(Event{Type: "book.changed", BookID: "book", Description: &empty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if string(wire["description"]) != `""` || string(wire["bookId"]) != `"book"` {
+		t.Fatalf("book change payload = %s", payload)
+	}
+	for _, event := range []Event{
+		{Type: "book.changed", BookID: "book"},
+		{Type: "book.changed", Description: &empty},
+	} {
+		if _, err := encode(event); err == nil {
+			t.Fatalf("invalid book event accepted: %+v", event)
+		}
+	}
+}

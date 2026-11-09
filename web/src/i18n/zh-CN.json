@@ -992,6 +992,11 @@
       "noMatches": "没有匹配的工作簿。"
     }
   },
+  "wmb": {
+    "emptyBooksHint": "请使用侧边栏工作区名称旁的 ⋮ 菜单创建工作簿。",
+    "editWorkspace": "编辑",
+    "workspaceActions": "{name} 的工作区操作"
+  },
   "setup": {
     "eyebrow": "首次设置",
     "title": "创建管理员账号",

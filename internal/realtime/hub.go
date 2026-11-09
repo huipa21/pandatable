@@ -191,7 +191,15 @@ func (h *Hub) Close() {
 
 func (h *Hub) deliver(event events.Event) {
 	if event.Type == "nav.changed" {
+		event.BookID = ""
+		event.Description = nil
 		h.acl.Invalidate()
+	}
+	if event.Type == "book.changed" {
+		if _, valid := acl.ParseUUID(event.BookID); !valid || event.Description == nil {
+			h.logger.Error("invalid realtime book notification")
+			return
+		}
 	}
 	for _, c := range h.snapshot() {
 		if event.Recipient != "" && event.Recipient != c.user.ID {
@@ -206,6 +214,12 @@ func (h *Hub) deliver(event events.Event) {
 			c.recheckSubscriptions()
 			continue
 		}
+		if event.Type == "book.changed" {
+			if h.canReceiveResource(c, acl.Book, event.BookID) {
+				c.send(event, false)
+			}
+			continue
+		}
 		if event.Type == "notification.changed" {
 			if event.Recipient != "" {
 				c.send(event, false)
@@ -213,7 +227,7 @@ func (h *Hub) deliver(event events.Event) {
 			continue
 		}
 		if event.Type == "notification" {
-			if event.Recipient == "" || event.TableID == "" || !h.canReceiveNotification(c, event.TableID) {
+			if event.Recipient == "" || event.TableID == "" || !h.canReceiveResource(c, acl.Table, event.TableID) {
 				continue
 			}
 			c.send(event, false)
@@ -233,8 +247,8 @@ func (h *Hub) deliver(event events.Event) {
 	}
 }
 
-func (h *Hub) canReceiveNotification(c *client, tableID string) bool {
-	resource, err := acl.NewResource("table", tableID)
+func (h *Hub) canReceiveResource(c *client, kind acl.ResourceType, id string) bool {
+	resource, err := acl.NewResource(string(kind), id)
 	user, valid := acl.ParseUUID(c.user.ID)
 	if err != nil || !valid {
 		return false
@@ -244,7 +258,7 @@ func (h *Hub) canReceiveNotification(c *client, tableID string) bool {
 	access, err := acl.AccessUncached(ctx, h.pool, user, resource)
 	if err != nil {
 		if c.ctx.Err() == nil {
-			h.logger.Error("notification ACL check failed", "user_id", c.user.ID, "error", err)
+			h.logger.Error("realtime resource ACL check failed", "user_id", c.user.ID, "error", err)
 			c.cancel()
 		}
 		return false

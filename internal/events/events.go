@@ -21,6 +21,8 @@ const (
 type Event struct {
 	Type          string              `json:"t"`
 	TableID       string              `json:"tableId,omitempty"`
+	BookID        string              `json:"bookId,omitempty"`
+	Description   *string             `json:"description,omitempty"`
 	IDs           []string            `json:"ids,omitempty"`
 	Fields        []string            `json:"fields,omitempty"`
 	Changes       map[string][]string `json:"changes,omitempty"`
@@ -61,6 +63,9 @@ type executor interface {
 func encode(event Event) ([]byte, error) {
 	if event.Type == "" {
 		return nil, errors.New("event type is required")
+	}
+	if event.Type == "book.changed" && (event.BookID == "" || event.Description == nil) {
+		return nil, errors.New("book change requires a book ID and description")
 	}
 	if len(event.IDs) > MaxRowIDs {
 		event.Type, event.IDs, event.Fields, event.Changes = "row.bulk", nil, nil, nil

@@ -25,9 +25,9 @@ func TestBookIconAPIAndNavigation(t *testing.T) {
 	}
 	assertBookIconWire(t, createdWire.Book, nil, book.FallbackIcon)
 
-	customCreation := f.api(owner, "POST", "/workspaces/"+workspace.ID+"/books", `{"name":"Custom","icon":"calendar"}`)
+	customCreation := f.api(owner, "POST", "/workspaces/"+workspace.ID+"/books", `{"name":"Custom","icon":"link"}`)
 	created := decode[bookBody](f, customCreation, 201).Book
-	if created.Icon == nil || *created.Icon != "calendar" || !isFallbackBookIcon(created.FallbackIcon) {
+	if created.Icon == nil || *created.Icon != "link" || !isFallbackBookIcon(created.FallbackIcon) {
 		t.Fatalf("custom book creation = %+v", created)
 	}
 	f.expectStatus(f.api(owner, "POST", "/workspaces/"+workspace.ID+"/books", `{"name":"Invalid","icon":"not-an-icon"}`), 400, "ERR_VALIDATION")
@@ -116,7 +116,7 @@ func assertBookIconWire(t *testing.T, fields map[string]json.RawMessage, wantIco
 
 func isFallbackBookIcon(icon string) bool {
 	switch icon {
-	case "book", "table", "view", "fields", "calendar", "star", "group", "link":
+	case "book", "table", "view", "fields", "calendar", "star", "group":
 		return true
 	default:
 		return false

@@ -27,6 +27,7 @@ const paths = {
   chevronRight: ['M9 6l6 6-6 6'],
   plus: ['M12 5v14M5 12h14'],
   more: ['M5 12h.01M12 12h.01M19 12h.01'],
+  moreVertical: ['M12 5h.01M12 12h.01M12 19h.01'],
   fields: ['M4 6h.01M4 12h.01M4 18h.01', 'M8 6h12M8 12h12M8 18h12'],
   filter: ['M3 5h18l-7 8v6l-4-2v-4z'],
   group: ['M4 5h16v4H4z', 'M5 9v10h14V9M10 13h4'],

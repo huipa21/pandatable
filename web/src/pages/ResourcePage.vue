@@ -35,7 +35,6 @@ import {
   useViewManagementStore,
 } from '../stores/viewManagement'
 import AppIcon from '../components/AppIcon.vue'
-import ResourceSearchInput from '../components/ResourceSearchInput.vue'
 import TableHistoryControls from '../components/navigation/TableHistoryControls.vue'
 import TableToolbarActions from '../components/navigation/TableToolbarActions.vue'
 import VisibilityMenu from '../components/sharing/VisibilityMenu.vue'
@@ -338,35 +337,19 @@ const node = computed(() => {
       (kind.value !== 'book' || item.parentId === route.params.wid),
   )
 })
-const workbookQuery = ref('')
 const searchableWorkbooks = computed(() =>
   kind.value === 'workspace'
     ? (node.value?.children ?? []).map((book, index) => ({ ...book, index }))
     : [],
 )
-const searchedWorkbooks = useResourceSearch(searchableWorkbooks, workbookQuery)
-const hasWorkbookQuery = computed(() => workbookQuery.value.trim().length > 0)
-const noMatchingWorkbooks = computed(
+const orderedWorkbooks = useResourceSearch(searchableWorkbooks, ref(''))
+const showEmptyBooksHint = computed(
   () =>
     kind.value === 'workspace' &&
-    hasWorkbookQuery.value &&
-    searchedWorkbooks.value.length === 0,
+    node.value?.children.length === 0 &&
+    !nav.error &&
+    node.value?.canCreate === true,
 )
-watch(
-  [() => route.params.workspaceId, () => route.query.q],
-  ([, query]) => {
-    workbookQuery.value = typeof query === 'string' ? query : ''
-  },
-  { immediate: true },
-)
-watch(workbookQuery, (query) => {
-  if (kind.value !== 'workspace') return
-  const currentQuery = typeof route.query.q === 'string' ? route.query.q : ''
-  if (currentQuery === query) return
-  void router.replace({
-    query: { ...route.query, q: query || undefined },
-  })
-})
 const defaultViewId = computed(() => {
   const views = schema.value?.views ?? []
   return (views.find((item) => item.type === 'grid') ?? views[0])?.id
@@ -976,13 +959,6 @@ onBeforeUnmount(() => {
       </header>
       <p v-if="node.pathOnly">{{ t('nav.pathNotice') }}</p>
       <template v-if="kind !== 'table'">
-        <ResourceSearchInput
-          v-if="kind === 'workspace'"
-          v-model="workbookQuery"
-          :label="t('dashboard.ds08.searchLabel')"
-          :placeholder="t('dashboard.ds08.searchPlaceholder')"
-          :clear-label="t('dashboard.ds08.clearSearch')"
-        />
         <p
           v-if="
             node.children.length === 0 && (kind !== 'workspace' || !nav.error)
@@ -992,14 +968,14 @@ onBeforeUnmount(() => {
             kind === 'workspace' ? t('nav.emptyBooks') : t('nav.emptyTables')
           }}
         </p>
-        <p v-else-if="noMatchingWorkbooks" class="workbook-no-matches">
-          {{ t('dashboard.ds08.noMatches') }}
+        <p v-if="showEmptyBooksHint">
+          {{ t('wmb.emptyBooksHint') }}
         </p>
         <ul
-          v-if="kind === 'workspace' && searchedWorkbooks.length"
+          v-if="kind === 'workspace' && orderedWorkbooks.length"
           class="workbook-grid"
         >
-          <li v-for="child in searchedWorkbooks" :key="child.id">
+          <li v-for="child in orderedWorkbooks" :key="child.id">
             <RouterLink :to="child.path" class="workbook-card">
               <span class="workbook-card-icon">
                 <AppIcon
@@ -1024,7 +1000,7 @@ onBeforeUnmount(() => {
           </li>
         </ul>
         <button
-          v-if="node.canCreate && node.childKind"
+          v-if="kind !== 'workspace' && node.canCreate && node.childKind"
           :disabled="nav.busy"
           @click="
             nav.editor = {

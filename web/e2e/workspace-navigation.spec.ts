@@ -185,6 +185,7 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
   await expect(
     sidebar.locator('.workspace-heading, .workspace-toggle'),
   ).toHaveCount(0)
+  await expect(page.locator('.breadcrumbs a')).toHaveCount(0)
   await expect(sidebar).not.toContainText(`Current workspace ${suffix}`)
   await expect(sidebar).not.toContainText(`Hidden workspace ${suffix}`)
 
@@ -201,10 +202,17 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
   await expect(dashboardLink).not.toHaveAttribute('aria-current', 'page')
   await expect(sidebar.locator('.workspace-root > li')).toHaveCount(2)
   await expect(workspaceLink).toContainText(`Current workspace ${suffix}`)
-  await expect(workspaceLink.locator('.app-icon')).toHaveCount(1)
+  await expect(workspaceLink.locator('.app-icon')).toHaveCount(0)
   await expect(workspaceLink).toHaveAttribute('aria-current', 'page')
   await expect(sidebar).not.toContainText(`Hidden workspace ${suffix}`)
-  await expect(sidebar.locator('.node-actions')).toHaveCount(0)
+  const workspaceActions = sidebar.locator(
+    `[data-nav-id="${workspace}"] .workspace-nav-menu`,
+  )
+  await expect(workspaceActions).toHaveCount(1)
+  await expect(workspaceActions.locator('summary')).toHaveAttribute(
+    'aria-label',
+    en.wmb.workspaceActions.replace('{name}', `Current workspace ${suffix}`),
+  )
 
   await page.goto(bookPath)
   sidebar = await tree(page, isMobile)
@@ -224,17 +232,21 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
     'Hidden sibling book',
   )
   await expect(page.locator('.breadcrumbs a').first()).toHaveText(
-    en.workspaceGrid.ux02.workspaces,
+    `Current workspace ${suffix}`,
+  )
+  await expect(page.locator('.breadcrumbs a').first()).toHaveAttribute(
+    'href',
+    `/w/${workspace}`,
   )
 
   await page.goto(rowPath)
   await expect(page.locator('dialog.row-expand')).toBeVisible()
   await expect(page.locator('.breadcrumbs a').first()).toHaveText(
-    en.workspaceGrid.ux02.workspaces,
+    `Current workspace ${suffix}`,
   )
   await expect(page.locator('.breadcrumbs a').first()).toHaveAttribute(
     'href',
-    '/home',
+    `/w/${workspace}`,
   )
   await expect(page.locator('.breadcrumb-workspace')).toHaveText(
     `Current workspace ${suffix}`,
@@ -249,6 +261,14 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
   await expect(sidebar.locator('.workbook-root')).not.toContainText(
     'Hidden sibling book',
   )
+  await page.locator('.breadcrumbs a').first().click()
+  await expect(page).toHaveURL(new RegExp(`/w/${workspace}$`))
+  if (isMobile) await expect(page.locator('.nav-drawer')).not.toBeVisible()
+
+  await page.goto(rowPath)
+  await expect(page.locator('dialog.row-expand')).toBeVisible()
+  await closeRow(page)
+  sidebar = await tree(page, isMobile)
   await sidebar
     .locator(`.workspace-root [data-nav-id="${workspace}"] .workspace-link`)
     .click()
@@ -263,7 +283,7 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
   await expect(page.locator('dialog.row-expand')).toBeVisible()
   await closeRow(page)
   await page.locator('.breadcrumbs a').first().click()
-  await expect(page).toHaveURL(/\/home$/)
+  await expect(page).toHaveURL(new RegExp(`/w/${workspace}$`))
   await page.goto(rowPath)
   await expect(page.locator('dialog.row-expand')).toBeVisible()
   await page.reload()
@@ -368,8 +388,8 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
     await expect(
       context.locator(':scope > .workspace-box .path-only'),
     ).toHaveText(en.nav.pathOnly)
-    await expect(context.locator('.workspace-link .app-icon')).toHaveCount(1)
-    await expect(context.locator(':scope > .node-actions')).toHaveCount(0)
+    await expect(context.locator('.workspace-link .app-icon')).toHaveCount(0)
+    await expect(context.locator('.workspace-nav-menu')).toHaveCount(0)
     const userBookTree = userTree.locator('.workbook-root')
     await expect(userBookTree).toHaveAttribute('data-context-book', book)
     await expect(userBookTree.locator(`[data-nav-id="${book}"]`)).toBeVisible()
@@ -382,7 +402,7 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
     await expect(userBookTree.locator(`[data-nav-id="${table}"]`)).toBeVisible()
     await expect(userPage.locator('.breadcrumbs a').first()).toHaveAttribute(
       'href',
-      '/home',
+      `/w/${workspace}`,
     )
     expect(
       (

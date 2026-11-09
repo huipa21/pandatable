@@ -99,7 +99,7 @@ func TestWorkspaceDetailsMigrationUpDownPostgreSQL(t *testing.T) {
 
 func isWorkspaceFallbackIcon(icon string) bool {
 	switch icon {
-	case "book", "table", "view", "fields", "calendar", "star", "group", "link":
+	case "book", "table", "view", "fields", "calendar", "star", "group":
 		return true
 	default:
 		return false

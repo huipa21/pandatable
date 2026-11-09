@@ -123,7 +123,7 @@ func TestBookIconMigrationBackfillsStableFallbacksPostgreSQL(t *testing.T) {
 	}
 	var invalidFallbacks int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM meta.books
-		WHERE workspace_id=$1 AND fallback_icon NOT IN ('book','table','view','fields','calendar','star','group','link')`,
+		WHERE workspace_id=$1 AND fallback_icon NOT IN ('book','table','view','fields','calendar','star','group')`,
 		workspaceID).Scan(&invalidFallbacks); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestBookIconMigrationBackfillsStableFallbacksPostgreSQL(t *testing.T) {
 
 func isFallbackIcon(icon string) bool {
 	switch icon {
-	case "book", "table", "view", "fields", "calendar", "star", "group", "link":
+	case "book", "table", "view", "fields", "calendar", "star", "group":
 		return true
 	default:
 		return false

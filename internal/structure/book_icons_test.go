@@ -6,7 +6,7 @@ import (
 	"pandatable/internal/acl"
 )
 
-var fallbackBookIcons = [...]string{"book", "table", "view", "fields", "calendar", "star", "group", "link"}
+var fallbackBookIcons = [...]string{"book", "table", "view", "fields", "calendar", "star", "group"}
 
 func TestBookIconValidationAndFallbackPalette(t *testing.T) {
 	for icon := range bookIconNames {
@@ -62,7 +62,7 @@ func TestBookIconLifecycleAndSharedNavigation(t *testing.T) {
 	assertVisible(owner, nil)
 	assertVisible(reader, nil)
 
-	custom := "calendar"
+	custom := "link"
 	book, err = f.service.UpdateBook(f.ctx, owner, book.ID, BookPatch{
 		Icon: OptionalText{Set: true, Value: &custom},
 	})
@@ -176,7 +176,7 @@ func TestCreateBookWithCustomIcon(t *testing.T) {
 	f := newFixture(t)
 	owner := f.user("user", "active", "en")
 	workspace := f.workspace(owner)
-	icon := "book"
+	icon := "link"
 	book, err := f.service.CreateBookWithIcon(f.ctx, owner, workspace.ID, "Custom", &icon)
 	if err != nil {
 		t.Fatal(err)

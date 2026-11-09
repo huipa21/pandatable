@@ -78,17 +78,22 @@ WHERE workspace_id = $1 AND deleted_at IS NULL
 ORDER BY position, id;
 
 -- name: InsertBook :one
-INSERT INTO meta.books (workspace_id, name, icon, pg_schema, position, created_by)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, workspace_id, name, icon, fallback_icon, position, created_at;
+INSERT INTO meta.books (workspace_id, name, description, icon, pg_schema, position, created_by)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, workspace_id, name, description, icon, fallback_icon, position, created_at;
 
 -- name: GetBook :one
-SELECT id, workspace_id, name, icon, fallback_icon, pg_schema, position, created_at
+SELECT id, workspace_id, name, description, icon, fallback_icon, pg_schema, position, created_at
 FROM meta.books
 WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: SetBookIcon :one
 UPDATE meta.books SET icon = $2
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id;
+
+-- name: SetBookDescription :one
+UPDATE meta.books SET description = $2
 WHERE id = $1 AND deleted_at IS NULL
 RETURNING id;
 
@@ -547,7 +552,7 @@ LEFT JOIN meta.recent_resources recent
 WHERE w.id = ANY(sqlc.arg(ids)::uuid[]) AND w.deleted_at IS NULL;
 
 -- name: NavBooks :many
-SELECT b.id, b.workspace_id, b.name, b.icon, b.fallback_icon, b.position,
+SELECT b.id, b.workspace_id, b.name, b.description, b.icon, b.fallback_icon, b.position,
        recent.opened_at AS last_opened_at
 FROM meta.books b
 LEFT JOIN meta.recent_resources recent

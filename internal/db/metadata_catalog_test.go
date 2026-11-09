@@ -38,7 +38,7 @@ var metadataColumns = map[string][]columnSpec{
 		{"deleted_at", "timestamp with time zone", true, ""},
 		{"deleted_by", "uuid", true, ""},
 		{"description", "text", false, "''::text"},
-		{"fallback_icon", "text", false, "(ARRAY['book'::text, 'table'::text, 'view'::text, 'fields'::text, 'calendar'::text, 'star'::text, 'group'::text, 'link'::text])[((floor((random() * (8)::double precision)))::integer + 1)]"},
+		{"fallback_icon", "text", false, "(ARRAY['book'::text, 'table'::text, 'view'::text, 'fields'::text, 'calendar'::text, 'star'::text, 'group'::text])[((floor((random() * (7)::double precision)))::integer + 1)]"},
 	},
 	"user_workspace_preferences": {
 		{"user_id", "uuid", false, ""},
@@ -61,7 +61,8 @@ var metadataColumns = map[string][]columnSpec{
 		{"deleted_at", "timestamp with time zone", true, ""},
 		{"deleted_by", "uuid", true, ""},
 		{"icon", "text", true, ""},
-		{"fallback_icon", "text", false, "(ARRAY['book'::text, 'table'::text, 'view'::text, 'fields'::text, 'calendar'::text, 'star'::text, 'group'::text, 'link'::text])[((floor((random() * (8)::double precision)))::integer + 1)]"},
+		{"fallback_icon", "text", false, "(ARRAY['book'::text, 'table'::text, 'view'::text, 'fields'::text, 'calendar'::text, 'star'::text, 'group'::text])[((floor((random() * (7)::double precision)))::integer + 1)]"},
+		{"description", "text", false, "''::text"},
 	},
 	"tables": {
 		{"id", "uuid", false, "uuidv7()"},

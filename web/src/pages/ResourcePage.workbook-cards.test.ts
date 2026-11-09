@@ -120,7 +120,7 @@ it('renders ordered workbook links with effective icons and switches workspaces 
   }
 })
 
-it('orders workbooks by recency and filters them with a URL-backed search', async () => {
+it('orders workbooks by recency and ignores a legacy URL query', async () => {
   const { wrapper, router, nav } = await setup('/w/w?q=Book')
   try {
     const workspace = nav.tree.workspaces[0]!
@@ -149,72 +149,44 @@ it('orders workbooks by recency and filters them with a URL-backed search', asyn
     })
     await flushPromises()
 
-    const search = wrapper.get('input[type="search"]')
-    expect((search.element as HTMLInputElement).value).toBe('Book')
-    expect(
-      wrapper.findAll('.workbook-card').map((card) => card.text()),
-    ).toEqual(['Book'])
-    expect(router.currentRoute.value.query.q).toBe('Book')
-
-    await search.setValue('项目')
-    await flushPromises()
-    expect(
-      wrapper.findAll('.workbook-card').map((card) => card.text()),
-    ).toEqual(['项目工作簿'])
-    expect(router.currentRoute.value.query.q).toBe('项目')
-
-    await search.setValue('no matching book')
-    await flushPromises()
-    expect(wrapper.findAll('.workbook-card')).toHaveLength(0)
-    expect(wrapper.find('.workbook-no-matches').exists()).toBe(true)
-    await wrapper.get('.resource-search-clear').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.query.q).toBeUndefined()
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
     expect(
       wrapper.findAll('.workbook-card').map((card) => card.text()),
     ).toEqual(['项目工作簿', 'Planner', 'Book'])
+    expect(router.currentRoute.value.query.q).toBe('Book')
 
-    await search.setValue('Planner')
+    await router.push('/w/other?q=Planner')
     await flushPromises()
-    await router.push('/w/other')
-    await flushPromises()
-    expect((search.element as HTMLInputElement).value).toBe('')
-    expect(router.currentRoute.value.query.q).toBeUndefined()
-
-    await router.back()
-    await flushPromises()
-    expect(router.currentRoute.value.fullPath).toBe('/w/w?q=Planner')
-    expect((search.element as HTMLInputElement).value).toBe('Planner')
+    expect(router.currentRoute.value.query.q).toBe('Planner')
+    expect(
+      wrapper.findAll('.workbook-card').map((card) => card.text()),
+    ).toEqual(['Other book'])
   } finally {
     wrapper.unmount()
   }
 })
 
-it('keeps first-book creation available only to workspace owners', async () => {
+it('shows the empty-workspace creation hint only to creators', async () => {
   const { wrapper, nav } = await setup()
   try {
     const workspace = nav.tree.workspaces[0]!
     workspace.books = []
     await flushPromises()
     expect(wrapper.text()).toContain('This workspace has no visible books.')
+    expect(wrapper.text()).toContain(i18n.global.t('wmb.emptyBooksHint'))
     expect(wrapper.find('.workbook-grid').exists()).toBe(false)
-    const buttons = wrapper.findAll('button')
-    expect(buttons.map((button) => button.text())).toEqual(['New book'])
-
-    await buttons[0]!.trigger('click')
-    expect(nav.editor).toEqual({
-      operation: 'create',
-      kind: 'book',
-      parentId: 'w',
-    })
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
+    expect(wrapper.findAll('button')).toHaveLength(0)
 
     workspace.level = 'read'
     await flushPromises()
+    expect(wrapper.text()).not.toContain(i18n.global.t('wmb.emptyBooksHint'))
     expect(wrapper.findAll('button')).toHaveLength(0)
     workspace.level = 'none'
     workspace.pathOnly = true
     await flushPromises()
     expect(wrapper.text()).toContain('Only accessible descendants')
+    expect(wrapper.text()).not.toContain(i18n.global.t('wmb.emptyBooksHint'))
     expect(wrapper.findAll('button')).toHaveLength(0)
   } finally {
     wrapper.unmount()
@@ -230,9 +202,9 @@ it('omits page-level sharing while retaining workspace and workbook controls', a
     expect(
       wrapper.findAll('button').map((button) => button.text()),
     ).not.toContain('Share')
-    expect(wrapper.findAll('button').map((button) => button.text())).toContain(
-      'New book',
-    )
+    expect(
+      wrapper.findAll('button').map((button) => button.text()),
+    ).not.toContain('New book')
 
     await router.push(`/w/${workspace.id}/b/${book.id}`)
     await flushPromises()

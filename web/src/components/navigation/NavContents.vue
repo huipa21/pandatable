@@ -3,8 +3,8 @@ import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { type NavigationItem, useNavStore } from '../../stores/nav'
 import { useNavLocation } from '../../composables/useNavLocation'
-import AppIcon from '../AppIcon.vue'
 import NavNode from './NavNode.vue'
+import WorkspaceNavMenu from './WorkspaceNavMenu.vue'
 
 const emit = defineEmits<{ navigate: [] }>()
 const { t } = useI18n()
@@ -66,16 +66,12 @@ function drop(item: NavigationItem) {
             :aria-current="$route.path === workspace.path ? 'page' : 'location'"
             @click="emit('navigate')"
           >
-            <AppIcon
-              v-if="workspace.bookIcon"
-              :name="workspace.bookIcon"
-              :size="16"
-            />
             {{ workspace.name }}
           </RouterLink>
           <span v-if="workspace.pathOnly" class="path-only">
             {{ t('nav.pathOnly') }}
           </span>
+          <WorkspaceNavMenu v-if="workspace" :workspace="workspace" />
         </div>
       </li>
     </ul>
