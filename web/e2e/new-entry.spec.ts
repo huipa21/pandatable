@@ -142,12 +142,7 @@ function fieldSection(dialog: Locator, field: TableField) {
 
 async function editField(dialog: Locator, field: TableField) {
   const section = fieldSection(dialog, field)
-  await section
-    .getByRole('button', {
-      name: en.rowExpand.edit.replace('{name}', field.name),
-      exact: true,
-    })
-    .click()
+  await expect(section.locator('.field-editor')).toBeVisible()
   return section
 }
 
@@ -156,10 +151,6 @@ async function applyText(dialog: Locator, field: TableField, value: string) {
   await section
     .locator('.field-editor input, .field-editor textarea')
     .fill(value)
-  await section
-    .getByRole('button', { name: en.field.editor.apply, exact: true })
-    .click()
-  await expect(section.locator('.field-editor')).toHaveCount(0)
 }
 
 test('desktop New Entry and the grid plus use distinct creation paths', async ({
@@ -249,6 +240,66 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await action.press('Enter')
   const dialog = page.locator('dialog.row-expand')
   await expect(dialog).toBeVisible()
+  await expect(dialog.locator('header h2')).toHaveText(en.mobileRows.newRow)
+  await expect(
+    dialog.getByRole('button', { name: en.rowExpand.previous }),
+  ).toHaveCount(0)
+  await expect(
+    dialog.getByRole('button', { name: en.rowExpand.next }),
+  ).toHaveCount(0)
+  await expect(dialog.locator('.row-field-value[role="button"]')).toHaveCount(0)
+  const nameSection = fieldSection(dialog, table.name)
+  const label = nameSection.locator('h3')
+  const input = nameSection.locator('.field-editor input')
+  const [desktopSection, desktopLabel] = await Promise.all([
+    nameSection.boundingBox(),
+    label.boundingBox(),
+  ])
+  expect(desktopSection).not.toBeNull()
+  expect(desktopLabel).not.toBeNull()
+  expect(desktopLabel!.width).toBeGreaterThanOrEqual(128)
+  expect(desktopLabel!.width / (desktopSection!.width - 16)).toBeCloseTo(0.3, 1)
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await page.setViewportSize({ width: 480, height: 844 })
+  await page.getByRole('button', { name: en.grid.addRow, exact: true }).click()
+  await expect(dialog).toBeVisible()
+  const [wideLabel, wideInput] = await Promise.all([
+    label.boundingBox(),
+    input.boundingBox(),
+  ])
+  expect(wideLabel).not.toBeNull()
+  expect(wideInput).not.toBeNull()
+  expect(wideInput!.x).toBeGreaterThanOrEqual(wideLabel!.x + wideLabel!.width)
+  await page.setViewportSize({ width: 479, height: 844 })
+  const [narrowLabel, narrowInput] = await Promise.all([
+    label.boundingBox(),
+    input.boundingBox(),
+  ])
+  expect(narrowLabel).not.toBeNull()
+  expect(narrowInput).not.toBeNull()
+  expect(narrowInput!.y).toBeGreaterThanOrEqual(
+    narrowLabel!.y + narrowLabel!.height,
+  )
+  expect(Math.abs(narrowInput!.x - narrowLabel!.x)).toBeLessThanOrEqual(1)
+  await page.keyboard.press('Escape')
+  await expect(dialog).not.toBeVisible()
+  await page.setViewportSize({ width: 1600, height: 900 })
+  await expect(action).toBeVisible()
+  await action.focus()
+  await action.press('Enter')
+  await expect(dialog).toBeVisible()
+  const search = dialog.getByRole('searchbox', {
+    name: en.rowExpand.search,
+    exact: true,
+  })
+  await search.fill('seed-code')
+  await expect(dialog.locator('.row-field:visible')).toHaveCount(0)
+  await expect(dialog.getByText(en.rowExpand.noFields)).toBeVisible()
+  await search.fill('req')
+  await expect(dialog.locator('.row-field:visible')).toHaveCount(1)
+  await search.fill('')
+  await expect(search).toBeFocused()
   expect(posts).toHaveLength(1)
   await applyText(dialog, table.name, 'Discarded draft')
   await page.keyboard.press('Escape')
@@ -263,10 +314,11 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await expect(fieldSection(dialog, table.name)).not.toContainText(
     'Discarded draft',
   )
+  await applyText(dialog, code, 'temporary')
   await applyText(dialog, code, '')
   expectHTTPFailure(page, 'POST', rowsPath, 400)
   const submit = dialog.getByRole('button', {
-    name: en.mobileRows.create,
+    name: en.gridPolish.gp05.save,
     exact: true,
   })
   await submit.click()
@@ -284,15 +336,10 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await applyText(dialog, table.name, 'Created from form')
   const checkSection = await editField(dialog, check)
   await checkSection.locator('input').click()
-  await expect(checkSection.locator('.field-editor')).toHaveCount(0)
   const stageSection = await editField(dialog, stage)
   await stageSection.locator('select').selectOption('Beta')
-  await expect(stageSection.locator('.field-editor')).toHaveCount(0)
   const tagsSection = await editField(dialog, tags)
   await tagsSection.locator('select').selectOption(['Beta', 'Alpha'])
-  await tagsSection
-    .getByRole('button', { name: en.field.editor.apply, exact: true })
-    .click()
   await applyText(dialog, labels, 'alpha, beta')
   expect(posts).toHaveLength(3)
 
@@ -318,11 +365,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   }, rowsPath)
   await submit.click()
   await expect(dialog.getByRole('alert')).toHaveText(en.errors.ERR_INTERNAL)
-  await expect(
-    fieldSection(dialog, code).getByRole('button', {
-      name: en.rowExpand.edit.replace('{name}', code.name),
-    }),
-  ).toBeEnabled()
+  await expect(fieldSection(dialog, code).locator('input')).toBeEnabled()
   expect(posts).toHaveLength(3)
 
   let release!: () => void
@@ -339,8 +382,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
     button.click()
   })
   await expect.poll(() => posts.length).toBe(4)
-  await expect(dialog.locator('.create-row')).toBeDisabled()
-  await expect(dialog.locator('.create-row')).toHaveText(en.grid.saving)
+  await expect(submit).toBeDisabled()
   release()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   await page.unroute(routePattern)
@@ -443,7 +485,7 @@ test('creation refreshes filtered, sorted and grouped views without inventing vi
   await applyText(dialog, table.name, 'Hidden')
   await applyText(dialog, status, 'Closed')
   await applyText(dialog, amount, '9')
-  await dialog.getByRole('button', { name: en.mobileRows.create }).click()
+  await dialog.getByRole('button', { name: en.gridPolish.gp05.save }).click()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await expect
@@ -458,7 +500,7 @@ test('creation refreshes filtered, sorted and grouped views without inventing vi
   await applyText(dialog, table.name, 'Z')
   await applyText(dialog, status, 'Open')
   await applyText(dialog, amount, '9')
-  await dialog.getByRole('button', { name: en.mobileRows.create }).click()
+  await dialog.getByRole('button', { name: en.gridPolish.gp05.save }).click()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await expect
@@ -562,7 +604,7 @@ test('readers cannot open New Entry, while writers can create through it', async
     await action.click()
     const dialog = reader.locator('dialog.row-expand')
     await applyText(dialog, table.name, 'Writer entry')
-    await dialog.getByRole('button', { name: en.mobileRows.create }).click()
+    await dialog.getByRole('button', { name: en.gridPolish.gp05.save }).click()
     await expect(reader).toHaveURL(/\/r\/[1-9]\d*$/)
     await expect(fieldSection(dialog, table.name)).toContainText('Writer entry')
     await dialog.getByRole('button', { name: en.rowExpand.close }).click()
@@ -625,7 +667,7 @@ test('390px mobile keeps one add action and its existing creation form', async (
     'Discard mobile',
   )
   await applyText(dialog, table.name, 'Mobile entry')
-  await dialog.getByRole('button', { name: en.mobileRows.create }).click()
+  await dialog.getByRole('button', { name: en.gridPolish.gp05.save }).click()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   expect(posts).toBe(1)
   await expect(fieldSection(dialog, table.name)).toContainText('Mobile entry')

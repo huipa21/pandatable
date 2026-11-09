@@ -82,8 +82,8 @@ func TestImportAPIJobsPermissionsAndReport(t *testing.T) {
 		t.Fatalf("report content type = %q", got)
 	}
 	records, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(report.Body.String(), "\ufeff"))).ReadAll()
-	if err != nil || len(records) != 2 || records[1][0] != "3" ||
-		records[1][1] != "Amount" || records[1][2] != "bad" {
+	if err != nil || len(records) != 2 || records[0][3] != "Issue" || records[1][0] != "3" ||
+		records[1][1] != "Amount" || records[1][2] != "bad" || records[1][3] != "Invalid value" {
 		t.Fatalf("report = %q, %v", report.Body.String(), err)
 	}
 	f.expectStatus(f.api(owner, "DELETE", jobPath, ""), 200, "")

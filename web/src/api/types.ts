@@ -629,6 +629,7 @@ export interface ImportColumn {
 
 export interface ImportAnalysis {
   format: 'csv' | 'xlsx' | 'package'
+  metaVersion?: 'v2' | 'v1' | ''
   encoding?: string
   delimiter?: string
   hasHeader: boolean

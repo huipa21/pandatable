@@ -15,14 +15,14 @@ import type {
 } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
-import { CHOICE_COLORS } from '../../fields/choice'
+import { isChoiceColor, nextChoiceColor } from '../../fields/choice'
 import { fieldKindLabel } from '../../fields/messages'
 import { isKind, kindConstraints } from '../../fields/registry'
 import type { FieldEnv, Kind } from '../../fields/types'
 import AppIcon from '../AppIcon.vue'
+import ChoiceColorPicker from './ChoiceColorPicker.vue'
 import FieldTypePicker from './FieldTypePicker.vue'
 import {
-  colorLabel,
   createBody,
   dateFormatLabel,
   displayEligible,
@@ -120,6 +120,13 @@ let menuDetails: HTMLDetailsElement | null = null
 const pressedFieldId = ref<string | null>(null)
 const draggedFieldId = ref<string | null>(null)
 const dropTarget = ref<{ id: string; edge: 'before' | 'after' } | null>(null)
+const draggedChoiceId = ref<string | null>(null)
+const choiceDropTarget = ref<{ id: string; edge: 'before' | 'after' } | null>(
+  null,
+)
+const choiceMoveStatus = ref('')
+const openChoiceMoveId = ref<string | null>(null)
+let choiceMoveAnchor: HTMLButtonElement | null = null
 let pressedPointerId: number | null = null
 
 const editor = ref<HTMLDialogElement>()
@@ -574,6 +581,9 @@ async function mutate<T>(
 }
 
 async function openEditor(field: TableField | null) {
+  clearChoiceDrag()
+  closeChoiceMoveMenu()
+  choiceMoveStatus.value = ''
   error.value = null
   status.value = ''
   conflict.value = false
@@ -676,6 +686,8 @@ async function saveTypeChange() {
 
 function closeEditor() {
   if (busy.value) return
+  clearChoiceDrag()
+  closeChoiceMoveMenu()
   editor.value?.close()
   editing.value = null
   creating.value = false
@@ -1148,6 +1160,9 @@ watch(
     }
     if (!editing.value) return
     const latest = stable(editing.value)
+    clearChoiceDrag()
+    closeChoiceMoveMenu()
+    choiceMoveStatus.value = ''
     if (!latest) {
       editor.value?.close()
       editing.value = null
@@ -1182,6 +1197,7 @@ async function save() {
       )
   if (!result) return
   emit('update', result.schema)
+  closeChoiceMoveMenu()
   editor.value?.close()
   editing.value = null
   creating.value = false
@@ -1484,6 +1500,18 @@ function dismissFieldMenu(event: PointerEvent) {
 
 function fieldKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape') return
+  if (draggedChoiceId.value) {
+    clearChoiceDrag()
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+  if (openChoiceMoveId.value) {
+    closeChoiceMoveMenu(true)
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
   if (draggedFieldId.value || pressedFieldId.value) clearDrag()
   if (!openMenuId.value || dialogOpen.value) return
   event.preventDefault()
@@ -1493,20 +1521,187 @@ function fieldKeydown(event: KeyboardEvent) {
 
 function fieldWindowBlur() {
   clearDrag()
+  clearChoiceDrag()
+  closeChoiceMoveMenu()
   closeFieldMenu()
 }
 
 function addChoice() {
-  if (draft.value.choices.length < MAX_CHOICES)
-    draft.value.choices.push(newChoice())
+  if (draft.value.choices.length >= MAX_CHOICES) return
+  const choice = newChoice()
+  choice.color = nextChoiceColor(
+    draft.value.choices.map((item) => item.color).filter(isChoiceColor),
+  )
+  draft.value.choices.push(choice)
+  choiceMoveStatus.value = ''
+  void nextTick(() => {
+    editor.value
+      ?.querySelector<HTMLInputElement>(`[data-choice-id="${choice.id}"] input`)
+      ?.focus()
+  })
 }
 
 function removeChoice(index: number) {
+  clearChoiceDrag()
+  closeChoiceMoveMenu()
+  choiceMoveStatus.value = ''
   const [removed] = draft.value.choices.splice(index, 1)
   if (removed)
     draft.value.defaultChoices = draft.value.defaultChoices.filter(
       (id) => id !== removed.id,
     )
+}
+
+function clearChoiceDrag() {
+  draggedChoiceId.value = null
+  choiceDropTarget.value = null
+}
+
+function closeChoiceMoveMenu(restoreFocus = false) {
+  const anchor = choiceMoveAnchor
+  choiceMoveAnchor = null
+  openChoiceMoveId.value = null
+  if (restoreFocus && anchor)
+    void nextTick(() => {
+      if (anchor.isConnected) anchor.focus()
+    })
+}
+
+function toggleChoiceMoveMenu(id: string, event: MouseEvent) {
+  if (openChoiceMoveId.value === id) {
+    closeChoiceMoveMenu()
+    return
+  }
+  const anchor = event.currentTarget
+  if (!(anchor instanceof HTMLButtonElement)) return
+  choiceMoveAnchor = anchor
+  openChoiceMoveId.value = id
+  void nextTick(() => {
+    if (openChoiceMoveId.value === id)
+      anchor.parentElement
+        ?.querySelector<HTMLButtonElement>(
+          '.choice-move-controls button:not(:disabled)',
+        )
+        ?.focus()
+  })
+}
+
+function dismissChoiceMoveMenu(event: PointerEvent) {
+  if (
+    choiceMoveAnchor &&
+    (!(event.target instanceof Node) ||
+      !choiceMoveAnchor.parentElement?.contains(event.target))
+  )
+    closeChoiceMoveMenu()
+}
+
+function choiceMoveFocusOut(event: FocusEvent) {
+  if (
+    choiceMoveAnchor &&
+    (!(event.relatedTarget instanceof Node) ||
+      !choiceMoveAnchor.parentElement?.contains(event.relatedTarget))
+  )
+    closeChoiceMoveMenu()
+}
+
+function choiceDropIndex(
+  sourceId: string,
+  targetId: string,
+  edge: 'before' | 'after',
+) {
+  const choices = draft.value.choices
+  const source = choices.findIndex((choice) => choice.id === sourceId)
+  const target = choices.findIndex((choice) => choice.id === targetId)
+  if (source < 0 || target < 0 || source === target) return null
+  const boundary = target + (edge === 'after' ? 1 : 0)
+  const index = boundary - (source < boundary ? 1 : 0)
+  return index === source ? null : index
+}
+
+function moveChoice(id: string, index: number) {
+  const choices = draft.value.choices
+  const current = choices.findIndex((choice) => choice.id === id)
+  if (current < 0 || index < 0 || index >= choices.length || current === index)
+    return
+  const [choice] = choices.splice(current, 1)
+  if (!choice) return
+  choices.splice(index, 0, choice)
+  choiceMoveStatus.value = t('gridPolish.gp09.moved', {
+    n: index + 1,
+    total: choices.length,
+  })
+}
+
+function choiceKeydown(id: string, event: KeyboardEvent) {
+  if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
+  event.preventDefault()
+  event.stopPropagation()
+  if (busy.value) return
+  const index = draft.value.choices.findIndex((choice) => choice.id === id)
+  if (index < 0) return
+  const handle = event.currentTarget
+  closeChoiceMoveMenu()
+  moveChoice(id, index + (event.key === 'ArrowUp' ? -1 : 1))
+  if (handle instanceof HTMLButtonElement) void nextTick(() => handle.focus())
+}
+
+function stepChoice(id: string, direction: -1 | 1) {
+  const index = draft.value.choices.findIndex((choice) => choice.id === id)
+  if (!busy.value && index >= 0) moveChoice(id, index + direction)
+  closeChoiceMoveMenu(true)
+}
+
+function startChoiceDrag(id: string, event: DragEvent) {
+  if (busy.value || !event.dataTransfer) {
+    event.preventDefault()
+    clearChoiceDrag()
+    return
+  }
+  closeChoiceMoveMenu()
+  draggedChoiceId.value = id
+  choiceDropTarget.value = null
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', id)
+  const row = (event.currentTarget as HTMLElement).closest('.field-choice')
+  if (row) event.dataTransfer.setDragImage(row, 16, 16)
+}
+
+function overChoice(id: string, event: DragEvent) {
+  const source = draggedChoiceId.value
+  if (!source || busy.value) return
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect()
+  const edge =
+    event.clientY < bounds.top + bounds.height / 2 ? 'before' : 'after'
+  if (choiceDropIndex(source, id, edge) === null) {
+    choiceDropTarget.value = null
+    return
+  }
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
+  choiceDropTarget.value = { id, edge }
+}
+
+function leaveChoice(event: DragEvent) {
+  const current = event.currentTarget as HTMLElement
+  if (
+    event.relatedTarget instanceof Node &&
+    current.contains(event.relatedTarget)
+  )
+    return
+  choiceDropTarget.value = null
+}
+
+function dropChoice(id: string, event: DragEvent) {
+  const source = draggedChoiceId.value
+  const target = choiceDropTarget.value
+  if (source && target?.id === id && !busy.value) {
+    const index = choiceDropIndex(source, id, target.edge)
+    if (index !== null) {
+      event.preventDefault()
+      moveChoice(source, index)
+    }
+  }
+  clearChoiceDrag()
 }
 
 function toggleDefaultChoice(id: string, checked: boolean) {
@@ -1515,6 +1710,8 @@ function toggleDefaultChoice(id: string, checked: boolean) {
 }
 
 function changeKind() {
+  clearChoiceDrag()
+  closeChoiceMoveMenu()
   const kind = draft.value.kind
   const name = draft.value.name
   const description = draft.value.description
@@ -1607,6 +1804,7 @@ watch(displayedFields, (visible) => {
 
 onMounted(() => {
   document.addEventListener('pointerdown', dismissFieldMenu, true)
+  document.addEventListener('pointerdown', dismissChoiceMoveMenu, true)
   document.addEventListener('keydown', fieldKeydown, true)
   document.addEventListener('scroll', positionFieldMenu, true)
   window.addEventListener('resize', positionFieldMenu)
@@ -1614,11 +1812,14 @@ onMounted(() => {
   window.addEventListener('pointercancel', clearPress)
   window.addEventListener('dragend', clearDrag)
   window.addEventListener('drop', clearDrag)
+  window.addEventListener('dragend', clearChoiceDrag)
+  window.addEventListener('drop', clearChoiceDrag)
   window.addEventListener('blur', fieldWindowBlur)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', dismissFieldMenu, true)
+  document.removeEventListener('pointerdown', dismissChoiceMoveMenu, true)
   document.removeEventListener('keydown', fieldKeydown, true)
   document.removeEventListener('scroll', positionFieldMenu, true)
   window.removeEventListener('resize', positionFieldMenu)
@@ -1626,6 +1827,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointercancel', clearPress)
   window.removeEventListener('dragend', clearDrag)
   window.removeEventListener('drop', clearDrag)
+  window.removeEventListener('dragend', clearChoiceDrag)
+  window.removeEventListener('drop', clearChoiceDrag)
   window.removeEventListener('blur', fieldWindowBlur)
   relationController?.abort()
   computedController?.abort()
@@ -2076,35 +2279,91 @@ defineExpose({ openCreate: () => openEditor(null) })
               v-for="(choice, index) in draft.choices"
               :key="choice.id"
               class="field-choice"
+              :data-choice-id="choice.id"
+              :class="{
+                'choice-dragging': draggedChoiceId === choice.id,
+                'choice-drop-before':
+                  choiceDropTarget?.id === choice.id &&
+                  choiceDropTarget.edge === 'before',
+                'choice-drop-after':
+                  choiceDropTarget?.id === choice.id &&
+                  choiceDropTarget.edge === 'after',
+              }"
+              @dragover="overChoice(choice.id, $event)"
+              @dragleave="leaveChoice"
+              @drop="dropChoice(choice.id, $event)"
             >
+              <div class="choice-reorder" @focusout="choiceMoveFocusOut">
+                <button
+                  type="button"
+                  class="choice-drag-handle"
+                  :aria-label="
+                    t('gridPolish.gp09.reorderChoice', { n: index + 1 })
+                  "
+                  :title="t('gridPolish.gp09.reorderChoice', { n: index + 1 })"
+                  :aria-expanded="openChoiceMoveId === choice.id"
+                  :disabled="busy"
+                  :draggable="!busy"
+                  @click="toggleChoiceMoveMenu(choice.id, $event)"
+                  @keydown="choiceKeydown(choice.id, $event)"
+                  @dragstart="startChoiceDrag(choice.id, $event)"
+                  @dragend="clearChoiceDrag"
+                >
+                  <AppIcon name="grip" :size="18" />
+                </button>
+                <div
+                  v-if="openChoiceMoveId === choice.id"
+                  class="choice-move-controls"
+                  role="group"
+                  :aria-label="
+                    t('gridPolish.gp09.reorderChoice', { n: index + 1 })
+                  "
+                >
+                  <button
+                    type="button"
+                    :aria-label="t('gridPolish.gp09.moveUp', { n: index + 1 })"
+                    :disabled="busy || index === 0"
+                    @click="stepChoice(choice.id, -1)"
+                  >
+                    {{ t('field.panel.moveUp') }}
+                  </button>
+                  <button
+                    type="button"
+                    :aria-label="
+                      t('gridPolish.gp09.moveDown', { n: index + 1 })
+                    "
+                    :disabled="busy || index === draft.choices.length - 1"
+                    @click="stepChoice(choice.id, 1)"
+                  >
+                    {{ t('field.panel.moveDown') }}
+                  </button>
+                </div>
+              </div>
+              <ChoiceColorPicker
+                v-model="choice.color"
+                :option-number="index + 1"
+                :disabled="busy"
+              />
               <input
                 v-model="choice.label"
                 maxlength="400"
                 :aria-label="t('field.panel.choiceLabel', { n: index + 1 })"
                 :disabled="busy"
               />
-              <select
-                v-model="choice.color"
-                :aria-label="t('field.panel.choiceColor', { n: index + 1 })"
-                :disabled="busy"
-              >
-                <option
-                  v-for="color in CHOICE_COLORS"
-                  :key="color"
-                  :value="color"
-                >
-                  {{ colorLabel(color) }}
-                </option>
-              </select>
               <button
                 type="button"
+                class="choice-remove"
                 :aria-label="t('field.panel.removeChoice', { n: index + 1 })"
+                :title="t('field.panel.removeChoice', { n: index + 1 })"
                 :disabled="busy"
                 @click="removeChoice(index)"
               >
-                {{ t('field.panel.remove') }}
+                <AppIcon name="close" :size="16" />
               </button>
             </div>
+            <span class="visually-hidden" role="status" aria-live="polite">
+              {{ choiceMoveStatus }}
+            </span>
             <button
               type="button"
               :disabled="busy || draft.choices.length >= MAX_CHOICES"
@@ -2814,3 +3073,67 @@ defineExpose({ openCreate: () => openEditor(null) })
     </dialog>
   </section>
 </template>
+
+<style scoped>
+.field-choice {
+  position: relative;
+}
+.choice-reorder {
+  position: relative;
+  flex: 0 0 auto;
+}
+.choice-move-controls {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  display: grid;
+  min-width: 120px;
+  gap: 4px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
+.choice-move-controls button {
+  text-align: start;
+  white-space: nowrap;
+}
+.choice-drag-handle,
+.choice-remove {
+  flex: 0 0 auto;
+  padding: 5px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+}
+.choice-drag-handle {
+  cursor: grab;
+}
+.choice-drag-handle:active {
+  cursor: grabbing;
+}
+.choice-dragging {
+  outline: 1px dashed var(--accent);
+  opacity: 0.5;
+}
+.choice-drop-before::before,
+.choice-drop-after::after {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  content: '';
+  pointer-events: none;
+}
+.choice-drop-before::before {
+  top: -5px;
+}
+.choice-drop-after::after {
+  bottom: -5px;
+}
+</style>

@@ -259,7 +259,6 @@
     "title": "Export",
     "csv": "CSV (current view)",
     "package": "PandaTable XLSX package",
-    "packageNotice": "The package includes the entire table and shared views; attachments contain file names only. View locks are not included.",
     "preparing": "Preparing download",
     "failed": "Export could not be started. {message}"
   },
@@ -270,16 +269,14 @@
     "title": "Import",
     "newTable": "Import as a new table",
     "append": "Import into this table",
-    "file": "CSV or XLSX file",
+    "file": "Excel (.xlsx) file",
     "limits": "The administrator's upload limit applies (at most 100 MB); files may contain up to 500,000 rows.",
     "analyze": "Analyze file",
     "analyzing": "Uploading and analyzing file",
-    "formatCsv": "CSV",
     "formatXlsx": "XLSX",
     "formatPackage": "PandaTable package",
     "analyzed": "{format} detected; {count} rows sampled.",
     "encoding": "Encoding: {encoding}",
-    "packageNotice": "Fields and shared views will be restored. Restored shared views are unlocked.",
     "packageAppendNotice": "Rows are appended; package fields and shared views are not restored.",
     "packageDataWarning": "Attachment file names mapped to attachment fields cannot be restored and are reported as invalid; Excel timestamps may lose precision.",
     "tableName": "New table name",
@@ -618,8 +615,7 @@
     "page": "Page {page} of {pages} · {total} rows",
     "untitled": "Untitled row {id}",
     "plus": "+",
-    "newRow": "New row",
-    "defaults": "Apply each edited value to this draft, then create the row. Untouched fields use their database defaults. Closing discards the draft.",
+    "newRow": "New entry",
     "create": "Create row",
     "createLimit": "The draft exceeds the 5,000-cell or 512 KiB create-request limit. Nothing was sent.",
     "uncertain": "Creation has not been confirmed. After a connection failure, check the row list before retrying to avoid a duplicate."
@@ -1069,11 +1065,9 @@
     "firstRow": "This is the first row.",
     "lastRow": "This is the last row.",
     "navigationUnavailable": "This row is not in the loaded view. Close the row and open it from the table to navigate.",
-    "compact": "Toggle compact view",
     "fullscreen": "Toggle table fullscreen",
     "duplicate": "Duplicate row",
     "duplicateDraft": "Unsaved duplicate. Editable values are copied; system, calculated and linked fields are not copied. Review unique fields before saving.",
-    "saveDuplicate": "Save duplicate",
     "delete": "Delete row",
     "confirmDelete": "Delete “{title}”? You can undo this action.",
     "returnToFields": "Return to row fields",
@@ -1491,12 +1485,32 @@
     "gp01": {},
     "gp02": {},
     "gp03": {},
-    "gp04": {},
-    "gp05": {},
-    "gp06": {},
+    "gp04": {
+      "summary": "Summary"
+    },
+    "gp05": {
+      "save": "Save",
+      "invalid": "Correct the invalid field values before saving the entry.",
+      "applyPending": "Finish or correct pending field edits before saving the entry."
+    },
+    "gp06": {
+      "trigger": "Import/Export",
+      "import": "Import",
+      "export": "Export",
+      "onlyExcel": "Only Excel (.xlsx) files are supported",
+      "workbookTypes": "Field types from workbook"
+    },
     "gp07": {},
-    "gp08": {},
-    "gp09": {},
+    "gp08": {
+      "browserGap": "The device's time zone cannot represent this wall time. The picker may show a different time; check the field value or type it directly."
+    },
+    "gp09": {
+      "colorButton": "Option {n} color: {color}",
+      "reorderChoice": "Reorder option {n}: drag, click for controls, or press Alt+Up/Down",
+      "moveUp": "Move option {n} up",
+      "moveDown": "Move option {n} down",
+      "moved": "Option moved to position {n} of {total}."
+    },
     "gp10": {},
     "gp11": {},
     "gp12": {}

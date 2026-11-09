@@ -37,6 +37,7 @@ const analysis = ref<ImportAnalysis | null>(null)
 const mappings = ref<ImportMapping[]>([])
 const choiceText = ref<Record<number, string>>({})
 const name = ref('')
+const invalidFile = ref(false)
 const hasHeader = ref(true)
 const jobId = ref('')
 const job = ref<ImportJob | null>(null)
@@ -49,6 +50,9 @@ let disposed = false
 let completed = false
 
 const packageFile = computed(() => analysis.value?.format === 'package')
+const workbookTypesFromFile = computed(
+  () => props.targetKind === 'book' && analysis.value?.metaVersion === 'v2',
+)
 const hasUnlinkedPackageFields = computed(
   () =>
     props.targetKind === 'book' &&
@@ -64,8 +68,6 @@ const kinds = USER_KINDS.filter(
 )
 const formatLabel = computed(() => {
   switch (analysis.value?.format) {
-    case 'csv':
-      return t('import.formatCsv')
     case 'xlsx':
       return t('import.formatXlsx')
     case 'package':
@@ -106,7 +108,10 @@ onBeforeUnmount(() => {
 
 function chooseFile(event: Event) {
   const input = event.target as HTMLInputElement
-  selected.value = input.files?.[0] ?? null
+  const file = input.files?.[0] ?? null
+  error.value = null
+  invalidFile.value = !!file && !file.name.toLowerCase().endsWith('.xlsx')
+  selected.value = invalidFile.value ? null : file
 }
 
 function label(kind: string) {
@@ -158,6 +163,11 @@ function choices(options: Record<string, unknown> | null): string {
 
 async function analyze() {
   if (!selected.value || busy.value) return
+  if (!selected.value.name.toLowerCase().endsWith('.xlsx')) {
+    invalidFile.value = true
+    return
+  }
+  invalidFile.value = false
   error.value = null
   busy.value = true
   const own = new AbortController()
@@ -171,6 +181,11 @@ async function analyze() {
     )
     if (disposed || own.signal.aborted) return
     jobId.value = result.id
+    if (result.analysis.format === 'csv') {
+      invalidFile.value = true
+      selected.value = null
+      return
+    }
     analysis.value = result.analysis
     hasHeader.value = result.analysis.hasHeader
     name.value =
@@ -353,12 +368,15 @@ async function close() {
         <span>{{ t('import.file') }}</span>
         <input
           type="file"
-          accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          accept=".xlsx"
           :disabled="busy"
           @change="chooseFile"
         />
       </label>
       <p>{{ t('import.limits') }}</p>
+      <p v-if="invalidFile" role="alert">
+        {{ t('gridPolish.gp06.onlyExcel') }}
+      </p>
       <button type="button" :disabled="!selected || busy" @click="analyze">
         {{ t('import.analyze') }}
       </button>
@@ -377,12 +395,8 @@ async function close() {
         {{ t('import.encoding', { encoding: analysis.encoding }) }}
       </p>
       <template v-if="packageFile">
-        <p>
-          {{
-            targetKind === 'book'
-              ? t('import.packageNotice')
-              : t('import.packageAppendNotice')
-          }}
+        <p v-if="targetKind === 'table'">
+          {{ t('import.packageAppendNotice') }}
         </p>
         <p>{{ t('import.packageDataWarning') }}</p>
       </template>
@@ -395,6 +409,9 @@ async function close() {
         {{ t('import.header') }}
       </label>
       <h3>{{ t('import.mapping') }}</h3>
+      <p v-if="workbookTypesFromFile">
+        {{ t('gridPolish.gp06.workbookTypes') }}
+      </p>
       <p v-if="hasUnlinkedPackageFields">
         {{ t('import.linkDependencyWarning') }}
       </p>
@@ -442,7 +459,7 @@ async function close() {
                 <span>{{ t('import.columnName', { name: column.name }) }}</span>
                 <input v-model="mappings[position]!.name" maxlength="100" />
               </label>
-              <label class="import-field">
+              <label v-if="!workbookTypesFromFile" class="import-field">
                 <span>{{ t('import.columnType', { name: column.name }) }}</span>
                 <select
                   v-model="mappings[position]!.uiType"

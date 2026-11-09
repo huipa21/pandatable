@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { columnFooterCells } from './columnFooters'
+import { columnFooterCells, columnFooterScrollLeft } from './columnFooters'
 
 it('keeps summary cells in visible column order and uses the rendered widths', () => {
   expect(
@@ -33,4 +33,18 @@ it('uses the grid default for columns without an explicit size', () => {
   expect(columnFooterCells([{ prop: 'name' }])).toEqual([
     { key: 'name', fieldId: 'name', width: 180 },
   ])
+})
+
+it('clamps footer scroll coordinates to the rendered column span', () => {
+  const cells = columnFooterCells([
+    { prop: '__selected', size: 104, pin: 'colPinStart' },
+    { prop: 'name', size: 180, pin: 'colPinStart' },
+    { prop: 'amount', size: 400 },
+    { prop: 'total', size: 320 },
+  ])
+  expect(columnFooterScrollLeft(900, 600, cells)).toBe(404)
+  expect(columnFooterScrollLeft(150, 600, cells)).toBe(150)
+  expect(columnFooterScrollLeft(-20, 600, cells)).toBe(0)
+  expect(columnFooterScrollLeft(100, 1200, cells)).toBe(0)
+  expect(columnFooterScrollLeft(150, 0, cells)).toBe(150)
 })

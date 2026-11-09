@@ -8,6 +8,7 @@ import {
   onMounted,
   ref,
   shallowRef,
+  useId,
   watch,
   type PropType,
 } from 'vue'
@@ -90,7 +91,11 @@ import {
   parseColumnWidthInput,
 } from './viewColumns'
 import { appendRowLayoutWidth } from './appendRowLayout'
-import { columnFooterCells, type ColumnFooterCell } from './columnFooters'
+import {
+  columnFooterCells,
+  columnFooterScrollLeft,
+  type ColumnFooterCell,
+} from './columnFooters'
 
 const props = defineProps<{
   schema: TableSchema
@@ -132,6 +137,14 @@ const realtime = useRealtimeStore()
 const undo = useUndoStore()
 const host = ref<{ $el: HTMLElement & Components.RevoGrid }>()
 const toolbar = ref<HTMLElement>()
+const gridSurface = ref<HTMLElement>()
+const summaryViewport = ref<HTMLElement>()
+const summaryMenu = ref<HTMLElement>()
+const summaryTrigger = shallowRef<HTMLButtonElement | null>(null)
+const summaryFieldId = ref<string | null>(null)
+const summaryActiveIndex = ref(0)
+const summaryMenuLeft = ref(0)
+const summaryListId = `grid-summary-${useId()}`
 const ready = ref(false)
 const disposed = ref(false)
 const loading = ref(false)
@@ -235,8 +248,8 @@ const media = window.matchMedia('(min-width: 768px)')
 const resized = (event: MediaQueryListEvent) => {
   desktop.value = event.matches
   if (!event.matches) {
-    detachFooterViewport()
     footerScrollLeft.value = 0
+    closeSummaryPicker()
   }
 }
 const fieldEnvironment = computed<FieldEnv>(() => ({
@@ -881,6 +894,30 @@ const footerSummaryCells = computed(() =>
     }
   }),
 )
+const footerSummaryTracks = computed(() => [
+  {
+    key: 'pinned',
+    cells: footerSummaryCells.value.filter(
+      (cell) => cell.stickyLeft !== undefined,
+    ),
+  },
+  {
+    key: 'scrollable',
+    cells: footerSummaryCells.value.filter(
+      (cell) => cell.stickyLeft === undefined,
+    ),
+  },
+])
+const summaryOptions = computed(() => {
+  const cell = footerSummaryCells.value.find(
+    (candidate) => candidate.fieldId === summaryFieldId.value,
+  )
+  return cell?.item ? ['none', ...cell.aggregates] : []
+})
+const summaryField = computed(() =>
+  summaryFieldId.value ? fieldById.value.get(summaryFieldId.value) : undefined,
+)
+
 function footerAggregateValue(fieldId: string) {
   const aggregate = selectedFooterAggregate(fieldId)
   return footerAggregates.value.find(
@@ -897,14 +934,162 @@ function footerCellStyle(cell: ColumnFooterCell) {
     flex: `0 0 ${cell.width}px`,
     width: `${cell.width}px`,
     ...(cell.stickyLeft === undefined
-      ? { transform: `translateX(-${footerScrollLeft.value}px)` }
-      : {
-          position: 'sticky' as const,
-          left: `${cell.stickyLeft}px`,
-          zIndex: 2,
-        }),
+      ? {}
+      : { position: 'sticky' as const, left: `${cell.stickyLeft}px` }),
   }
 }
+
+function summaryOutputId(fieldId: string) {
+  return `${summaryListId}-value-${fieldId}`
+}
+
+function summaryOptionId(index: number) {
+  return `${summaryListId}-option-${index}`
+}
+
+function positionSummaryPicker() {
+  const anchor = summaryTrigger.value?.getBoundingClientRect()
+  const surface = gridSurface.value?.getBoundingClientRect()
+  if (!anchor || !surface) return
+  const width = Math.min(220, surface.width)
+  summaryMenuLeft.value = Math.max(
+    0,
+    Math.min(anchor.left - surface.left, surface.width - width),
+  )
+}
+
+function scrollSummaryOptionIntoView() {
+  void nextTick(() => {
+    const option = summaryMenu.value?.children[summaryActiveIndex.value]
+    if (option instanceof HTMLElement)
+      option.scrollIntoView?.({ block: 'nearest' })
+  })
+}
+
+function closeSummaryPicker(restoreFocus = false) {
+  const trigger = summaryTrigger.value
+  summaryFieldId.value = null
+  summaryTrigger.value = null
+  if (restoreFocus && trigger?.isConnected)
+    trigger.focus({ preventScroll: true })
+}
+
+function toggleSummaryPicker(fieldId: string, event: MouseEvent) {
+  const trigger = event.currentTarget
+  if (!(trigger instanceof HTMLButtonElement)) return
+  if (summaryFieldId.value === fieldId) {
+    closeSummaryPicker()
+    return
+  }
+  summaryTrigger.value = trigger
+  summaryFieldId.value = fieldId
+  summaryActiveIndex.value = Math.max(
+    0,
+    summaryOptions.value.indexOf(selectedFooterAggregate(fieldId)),
+  )
+  positionSummaryPicker()
+  void nextTick(() => {
+    summaryMenu.value?.focus({ preventScroll: true })
+    scrollSummaryOptionIntoView()
+  })
+}
+
+function selectSummaryOption(aggregate: string) {
+  const fieldId = summaryFieldId.value
+  if (!fieldId) return
+  changeFooterAggregate(fieldId, aggregate)
+  closeSummaryPicker(true)
+}
+
+function summaryPickerKeydown(event: KeyboardEvent) {
+  if (event.isComposing) return
+  if (event.key === 'Tab') {
+    closeSummaryPicker(true)
+    return
+  }
+  const last = summaryOptions.value.length - 1
+  switch (event.key) {
+    case 'ArrowDown':
+      summaryActiveIndex.value = Math.min(last, summaryActiveIndex.value + 1)
+      break
+    case 'ArrowUp':
+      summaryActiveIndex.value = Math.max(0, summaryActiveIndex.value - 1)
+      break
+    case 'Home':
+      summaryActiveIndex.value = 0
+      break
+    case 'End':
+      summaryActiveIndex.value = last
+      break
+    case 'Enter':
+    case ' ': {
+      const aggregate = summaryOptions.value[summaryActiveIndex.value]
+      if (aggregate) selectSummaryOption(aggregate)
+      break
+    }
+    case 'Escape':
+      closeSummaryPicker(true)
+      break
+    default:
+      return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  if (summaryFieldId.value) scrollSummaryOptionIntoView()
+}
+
+function summaryPickerFocusOut(event: FocusEvent) {
+  const next = event.relatedTarget
+  if (
+    next instanceof Node &&
+    (summaryMenu.value?.contains(next) || summaryTrigger.value === next)
+  )
+    return
+  closeSummaryPicker()
+}
+
+function dismissSummaryPicker(event: PointerEvent) {
+  const target = event.target
+  if (
+    !summaryFieldId.value ||
+    (target instanceof Node &&
+      (summaryMenu.value?.contains(target) ||
+        summaryTrigger.value?.contains(target)))
+  )
+    return
+  closeSummaryPicker()
+}
+
+function revealSummaryCell(fieldId: string, event: FocusEvent) {
+  const cell = footerSummaryCells.value.find(
+    (candidate) => candidate.fieldId === fieldId,
+  )
+  const trigger = event.currentTarget
+  const viewport = summaryViewport.value?.getBoundingClientRect()
+  const grid = host.value?.$el
+  if (
+    !cell ||
+    cell.stickyLeft !== undefined ||
+    !(trigger instanceof HTMLElement) ||
+    !viewport?.width ||
+    !grid
+  )
+    return
+  const pinnedWidth = footerSummaryTracks.value[0]!.cells.reduce(
+    (width, pinned) => width + pinned.width,
+    0,
+  )
+  const bounds = trigger.getBoundingClientRect()
+  if (
+    bounds.left >= viewport.left + pinnedWidth - 1 &&
+    bounds.right <= viewport.right + 1
+  )
+    return
+  void grid.scrollToColumnProp(fieldId).catch((cause) => {
+    if (!disposed.value) error.value = cause
+  })
+}
+
 const columnFields = computed(() =>
   columnState.config.value.fields.flatMap((column) => {
     const field = props.schema.fields.find((field) => field.id === column.id)
@@ -2206,7 +2391,7 @@ async function keydown(event: KeyboardEvent) {
     event.isComposing ||
     (event.target instanceof Element &&
       event.target.closest(
-        'input, textarea, select, button, summary, [contenteditable="true"], .grid-choice-editor',
+        'input, textarea, select, button, summary, [contenteditable="true"], .grid-choice-editor, .grid-summary-menu',
       ))
   )
     return
@@ -2509,40 +2694,11 @@ function created() {
 let appendLayoutFrame: number | undefined
 let appendResizeObserver: ResizeObserver | undefined
 let appendObservedGrid: HTMLElement | undefined
-let footerViewport: HTMLElement | undefined
 let pendingAppendReveal: { id: string; origin: EditOrigin } | undefined
-
-function syncFooterScroll() {
-  if (!disposed.value && desktop.value && footerViewport)
-    footerScrollLeft.value = footerViewport.scrollLeft
-}
-
-function detachFooterViewport() {
-  footerViewport?.removeEventListener('scroll', syncFooterScroll)
-  footerViewport = undefined
-}
-
-function observeFooterViewport(grid: HTMLElement) {
-  const viewport = grid.querySelector<HTMLElement>(
-    'revogr-viewport-scroll.rgCol',
-  )
-  if (!viewport) {
-    detachFooterViewport()
-    return false
-  }
-  if (viewport !== footerViewport) {
-    detachFooterViewport()
-    footerViewport = viewport
-    viewport.addEventListener('scroll', syncFooterScroll, { passive: true })
-  }
-  syncFooterScroll()
-  return true
-}
 
 function observeAppendLayout() {
   const grid = host.value?.$el
   if (!grid || disposed.value) return
-  if (desktop.value) observeFooterViewport(grid)
   if (grid !== appendObservedGrid) {
     appendResizeObserver?.disconnect()
     appendObservedGrid = grid
@@ -2560,11 +2716,16 @@ function scheduleAppendLayout() {
     appendLayoutFrame = undefined
     const grid = host.value?.$el
     if (!grid) return
-    if (desktop.value) observeFooterViewport(grid)
     appendWidth.value = appendRowLayoutWidth(
       grid.clientWidth,
       columns.value.map((column) => column.size ?? 180),
     )
+    footerScrollLeft.value = columnFooterScrollLeft(
+      footerScrollLeft.value,
+      summaryViewport.value?.clientWidth ?? 0,
+      footerSummaryCells.value,
+    )
+    if (summaryFieldId.value) positionSummaryPicker()
     const viewport =
       grid?.querySelector<HTMLElement>(
         'revogr-viewport-scroll.rgCol .vertical-inner',
@@ -2625,7 +2786,16 @@ function scheduleAppendLayout() {
   })
 }
 
-watch(columns, scheduleAppendLayout)
+watch(columns, () => {
+  scheduleAppendLayout()
+  if (
+    summaryFieldId.value &&
+    !footerSummaryCells.value.some(
+      (cell) => cell.fieldId === summaryFieldId.value,
+    )
+  )
+    closeSummaryPicker()
+})
 
 interface CellPointerActivation {
   rowId: string
@@ -2811,10 +2981,13 @@ function focusLeft(event: FocusEvent) {
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
   if (event.detail.dimension === 'rgCol') {
-    const grid = host.value?.$el
-    if (disposed.value || !desktop.value || !grid) return
-    if (!observeFooterViewport(grid))
-      throw new Error('RevoGrid column viewport is unavailable')
+    if (disposed.value || !desktop.value) return
+    footerScrollLeft.value = columnFooterScrollLeft(
+      event.detail.coordinate,
+      summaryViewport.value?.clientWidth ?? 0,
+      footerSummaryCells.value,
+    )
+    if (summaryFieldId.value) void nextTick(positionSummaryPicker)
     return
   }
   if (event.detail.dimension !== 'rgRow') return
@@ -3547,6 +3720,7 @@ onMounted(() => {
   document.addEventListener('mousemove', trackCellPointer)
   document.addEventListener('mouseup', finishCellPointer)
   document.addEventListener('pointerdown', dismissToolbarMenus)
+  document.addEventListener('pointerdown', dismissSummaryPicker)
 })
 
 defineExpose({
@@ -3580,7 +3754,6 @@ defineExpose({
 onBeforeUnmount(() => {
   disposed.value = true
   if (appendLayoutFrame !== undefined) cancelAnimationFrame(appendLayoutFrame)
-  detachFooterViewport()
   appendResizeObserver?.disconnect()
   editorBoundary?.editor.captureBeforeUnmount()
   editorBoundary = null
@@ -3598,6 +3771,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousemove', trackCellPointer)
   document.removeEventListener('mouseup', finishCellPointer)
   document.removeEventListener('pointerdown', dismissToolbarMenus)
+  document.removeEventListener('pointerdown', dismissSummaryPicker)
   for (const controller of cellControllers) controller.abort()
   cellControllers.clear()
   for (const controller of mutationControllers) controller.abort()
@@ -4196,6 +4370,7 @@ onBeforeUnmount(() => {
       {{ t('grid.mobileNotice') }}
     </p>
     <div
+      ref="gridSurface"
       class="grid-surface"
       :class="{
         'grid-is-empty': rows.total === 0 && !loading && !error,
@@ -4255,69 +4430,129 @@ onBeforeUnmount(() => {
         >
           <AppIcon name="plus" />
         </button>
-        <div
-          slot="footer"
-          class="grid-summary-strip"
-          :style="{ width: `${appendWidth}px`, flex: '0 0 auto' }"
-          role="group"
-          :aria-label="t('grid.footerAggregates')"
-          aria-live="polite"
-        >
-          <div
-            v-for="cell in footerSummaryCells"
-            :key="cell.key"
-            class="grid-summary-cell"
-            :data-field-id="cell.fieldId ?? undefined"
-            :style="footerCellStyle(cell)"
-          >
-            <template v-if="cell.item && cell.fieldId">
-              <select
-                :aria-label="
-                  t('grid.aggregateForField', { field: cell.item.field.name })
-                "
-                :value="selectedFooterAggregate(cell.fieldId)"
-                @change="
-                  changeFooterAggregate(
-                    cell.fieldId,
-                    ($event.target as HTMLSelectElement).value,
-                  )
-                "
-              >
-                <option value="none">
-                  {{ t('grid.aggregateLabels.none') }}
-                </option>
-                <option
-                  v-for="aggregate in cell.aggregates"
-                  :key="aggregate"
-                  :value="aggregate"
-                >
-                  {{ groupAggregateLabel(aggregate) }}
-                </option>
-              </select>
-              <output v-if="hasFooterAggregate(cell.fieldId)">
-                <span>{{
-                  groupAggregateLabel(selectedFooterAggregate(cell.fieldId))
-                }}</span>
-                <span v-if="footerAggregateValue(cell.fieldId)">
-                  {{
-                    formatFooterAggregateValue(
-                      footerAggregateValue(cell.fieldId)?.value,
-                      selectedFooterAggregate(cell.fieldId),
-                      cell.item.bound,
-                    )
-                  }}
-                </span>
-                <span v-else-if="footerAggregateLoading" role="status">{{
-                  t('grid.footerAggregatesLoading')
-                }}</span>
-                <span v-else>{{ t('grid.aggregateNoValue') }}</span>
-              </output>
-            </template>
-            <span v-else aria-hidden="true"></span>
-          </div>
-        </div>
         <!-- eslint-enable vue/no-deprecated-slot-attribute -->
       </RevoGrid>
+      <div
+        v-if="desktop"
+        class="grid-summary-bar"
+        role="group"
+        :aria-label="t('grid.footerAggregates')"
+        aria-live="polite"
+      >
+        <div ref="summaryViewport" class="grid-summary-viewport">
+          <div
+            class="grid-summary-strip"
+            :style="{ width: `${appendWidth}px` }"
+          >
+            <div
+              v-for="track in footerSummaryTracks"
+              :key="track.key"
+              class="grid-summary-track"
+              :class="`grid-summary-track-${track.key}`"
+              :style="
+                track.key === 'scrollable'
+                  ? { transform: `translateX(-${footerScrollLeft}px)` }
+                  : undefined
+              "
+            >
+              <div
+                v-for="cell in track.cells"
+                :key="cell.key"
+                class="grid-summary-cell"
+                :class="{
+                  'is-open':
+                    cell.fieldId !== null && summaryFieldId === cell.fieldId,
+                }"
+                :data-field-id="cell.fieldId ?? undefined"
+                :style="footerCellStyle(cell)"
+              >
+                <button
+                  v-if="cell.item && cell.fieldId"
+                  type="button"
+                  class="grid-summary-trigger"
+                  :aria-label="
+                    t('grid.aggregateForField', { field: cell.item.field.name })
+                  "
+                  :aria-describedby="
+                    hasFooterAggregate(cell.fieldId)
+                      ? summaryOutputId(cell.fieldId)
+                      : undefined
+                  "
+                  aria-haspopup="listbox"
+                  :aria-expanded="summaryFieldId === cell.fieldId"
+                  :aria-controls="
+                    summaryFieldId === cell.fieldId ? summaryListId : undefined
+                  "
+                  @focus="revealSummaryCell(cell.fieldId, $event)"
+                  @click="toggleSummaryPicker(cell.fieldId, $event)"
+                >
+                  <output
+                    v-if="hasFooterAggregate(cell.fieldId)"
+                    :id="summaryOutputId(cell.fieldId)"
+                  >
+                    <span>{{
+                      groupAggregateLabel(selectedFooterAggregate(cell.fieldId))
+                    }}</span>
+                    <span v-if="footerAggregateValue(cell.fieldId)">
+                      {{
+                        formatFooterAggregateValue(
+                          footerAggregateValue(cell.fieldId)?.value,
+                          selectedFooterAggregate(cell.fieldId),
+                          cell.item.bound,
+                        )
+                      }}
+                    </span>
+                    <span v-else-if="footerAggregateLoading" role="status">{{
+                      t('grid.footerAggregatesLoading')
+                    }}</span>
+                    <span v-else>{{ t('grid.aggregateNoValue') }}</span>
+                  </output>
+                  <span class="grid-summary-hint" aria-hidden="true">
+                    <span>{{ t('gridPolish.gp04.summary') }}</span>
+                    <AppIcon name="chevronDown" :size="14" />
+                  </span>
+                </button>
+                <span v-else aria-hidden="true"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div
+        v-if="desktop && summaryField && summaryFieldId"
+        :id="summaryListId"
+        ref="summaryMenu"
+        class="grid-summary-menu"
+        :style="{ left: `${summaryMenuLeft}px` }"
+        role="listbox"
+        tabindex="-1"
+        :aria-label="
+          t('grid.aggregateForField', { field: summaryField.field.name })
+        "
+        :aria-activedescendant="summaryOptionId(summaryActiveIndex)"
+        @keydown="summaryPickerKeydown"
+        @focusout="summaryPickerFocusOut"
+      >
+        <div
+          v-for="(aggregate, index) in summaryOptions"
+          :id="summaryOptionId(index)"
+          :key="aggregate"
+          class="grid-summary-option"
+          :class="{ active: index === summaryActiveIndex }"
+          :data-aggregate="aggregate"
+          role="option"
+          :aria-selected="selectedFooterAggregate(summaryFieldId) === aggregate"
+          @mousemove="summaryActiveIndex = index"
+          @mousedown.prevent
+          @click="selectSummaryOption(aggregate)"
+        >
+          {{
+            aggregate === 'none'
+              ? t('grid.aggregateLabels.none')
+              : groupAggregateLabel(aggregate)
+          }}
+        </div>
+      </div>
       <button
         v-if="desktop && canCreateField"
         type="button"
@@ -4469,14 +4704,17 @@ onBeforeUnmount(() => {
 }
 .grid-surface {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  height: min(65vh, 680px);
   min-height: min(65vh, 680px);
   background: var(--grid-canvas);
 }
 .data-grid .grid-surface > revo-grid {
   position: relative;
   z-index: 0;
-  height: auto;
-  max-height: min(65vh, 680px);
+  flex: 1 1 0;
+  height: 0;
   min-height: 0;
   width: 100%;
 }
@@ -4716,60 +4954,151 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 4px;
 }
-.grid-summary-strip {
-  display: flex;
-  order: 1;
+.grid-summary-bar {
+  box-sizing: border-box;
+  flex: 0 0 32px;
+  height: 32px;
   min-width: 0;
-  min-height: 52px;
-  flex: 0 0 auto;
   background: var(--panel-surface);
   border-top: 1px solid var(--border);
   color: var(--text);
 }
+.grid-summary-viewport {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overflow: clip;
+}
+.grid-has-field-action .grid-summary-viewport {
+  width: calc(100% - 52px);
+}
+.grid-summary-strip,
+.grid-summary-track {
+  display: flex;
+  height: 100%;
+  min-width: 0;
+}
+.grid-summary-track {
+  flex: 0 0 auto;
+}
+.grid-summary-track-pinned {
+  position: sticky;
+  z-index: 2;
+  left: 0;
+  background: var(--panel-surface);
+}
 .grid-summary-cell {
   display: flex;
   flex: 0 0 auto;
-  flex-direction: column;
-  justify-content: center;
-  gap: 2px;
   box-sizing: border-box;
   min-width: 0;
-  min-height: 52px;
-  padding: 3px 6px;
+  height: 100%;
   overflow: hidden;
   background: var(--panel-surface);
   border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
   color: var(--text);
 }
-.grid-summary-cell select {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  padding: 2px 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.grid-summary-cell output {
+.data-grid .grid-summary-trigger {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.grid-summary-trigger output {
+  display: flex;
+  flex: 1 1 auto;
   gap: 4px;
   min-width: 0;
   overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
+  color: var(--text);
   white-space: nowrap;
 }
-.grid-summary-cell output > span {
+.grid-summary-trigger output > span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.grid-summary-cell output > span:last-child {
+.grid-summary-trigger output > span:last-child {
   font-variant-numeric: tabular-nums;
 }
-.grid-summary-cell select:focus-visible {
+.grid-summary-hint {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition:
+    opacity 0.12s,
+    max-width 0.12s;
+}
+.grid-summary-hint > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid-summary-hint .app-icon {
+  flex: 0 0 auto;
+}
+.grid-summary-cell:hover .grid-summary-hint,
+.grid-summary-cell:focus-within .grid-summary-hint,
+.grid-summary-cell.is-open .grid-summary-hint {
+  max-width: 90px;
+  opacity: 1;
+}
+@media (hover: none) {
+  .grid-summary-hint {
+    max-width: 90px;
+    opacity: 1;
+  }
+}
+.data-grid .grid-summary-trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+.grid-summary-menu {
+  position: absolute;
+  z-index: 4;
+  bottom: 36px;
+  box-sizing: border-box;
+  width: min(220px, 100%);
+  max-height: min(320px, calc(100% - 40px));
+  padding: 4px;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--panel-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 14%);
+}
+.grid-summary-menu:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.grid-summary-option {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.grid-summary-option.active {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-surface));
+}
+.grid-summary-option[aria-selected='true'] {
+  font-weight: 600;
 }
 .grid-footer-error {
   display: flex;

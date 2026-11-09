@@ -26,6 +26,7 @@ const props = defineProps({
   identity: { type: String, required: true },
   changedBy: { type: String, default: '' },
   initialDraft: { type: String, default: undefined },
+  required: { type: Boolean, default: false },
   canCommit: { type: Function as PropType<() => boolean>, required: true },
   unavailableMessage: {
     type: Function as PropType<() => string>,
@@ -202,8 +203,9 @@ function choiceConfirmed() {
   if (choiceEditor.value) commitChoice(choiceEditor.value.selection(), 'enter')
 }
 
-function invalidDraft(text: string, reason: Reason) {
-  if (leaving) props.saveDraft(text, false, fieldErrorMessage(reason))
+function invalidDraft(text: string, reason: Reason, message?: string) {
+  if (leaving)
+    props.saveDraft(text, false, message ?? fieldErrorMessage(reason))
 }
 
 function leave() {
@@ -238,12 +240,15 @@ function leave() {
 }
 
 function focusLeft(event: FocusEvent) {
-  if (
-    event.relatedTarget instanceof Node &&
-    root.value?.contains(event.relatedTarget)
-  )
-    return
+  if (contains(event.relatedTarget) || editor.value?.isPointerInPanel()) return
   leave()
+}
+
+function contains(target: EventTarget | null) {
+  return (
+    (target instanceof Node && Boolean(root.value?.contains(target))) ||
+    (editor.value?.contains(target) ?? false)
+  )
 }
 
 function compositionFinished() {
@@ -282,8 +287,7 @@ function captureBeforeUnmount() {
 
 defineExpose({
   leave,
-  contains: (target: EventTarget | null) =>
-    target instanceof Node && Boolean(root.value?.contains(target)),
+  contains,
   isComposing: () => editor.value?.isComposing() ?? false,
   captureBeforeUnmount,
 })
@@ -320,10 +324,13 @@ defineExpose({
       :resolve-user="resolveUser"
       :grid-commit-on-leave="scalar"
       :initial-draft="scalar ? initialText : undefined"
+      :required="required"
       @commit="commit"
       @invalid-draft="invalidDraft"
       @composition-finished="compositionFinished"
       @cancel="cancel"
+      @focusout="focusLeft"
+      @draft-changed="draftChanged"
     />
   </div>
 </template>

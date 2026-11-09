@@ -23,9 +23,7 @@ afterEach(() => {
 })
 
 const plain: ImportAnalysis = {
-  format: 'csv',
-  encoding: 'gbk',
-  delimiter: ',',
+  format: 'xlsx',
   hasHeader: true,
   sampledRows: 1000,
   columns: [
@@ -67,7 +65,11 @@ async function upload(wrapper: ReturnType<typeof mount>) {
   const input = wrapper.get<HTMLInputElement>('input[type=file]')
   Object.defineProperty(input.element, 'files', {
     configurable: true,
-    value: [new File(['data'], 'sample.csv', { type: 'text/csv' })],
+    value: [
+      new File(['data'], 'sample.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    ],
   })
   await input.trigger('change')
   await wrapper.get('button').trigger('click')
@@ -83,8 +85,7 @@ it('analyzes a file, lets the user adjust and skip fields, and downloads the rep
   })
   try {
     await upload(wrapper)
-    expect(wrapper.text()).toContain('CSV detected; 1000 rows sampled.')
-    expect(wrapper.text()).toContain('Encoding: gbk')
+    expect(wrapper.text()).toContain('XLSX detected; 1000 rows sampled.')
     const columns = wrapper.findAll('.import-column')
     await columns[0]!.get('select').setValue('single_select')
     await columns[0]!.get('textarea').setValue('甲\n乙')
@@ -115,6 +116,7 @@ it('analyzes a file, lets the user adjust and skip fields, and downloads the rep
         { index: 1, skip: true },
       ],
     })
+
     expect(wrapper.text()).toContain('Import complete: 3 rows.')
     expect(wrapper.get('a[download]').attributes('href')).toBe(
       '/api/v1/imports/job-1/issues',
@@ -131,6 +133,51 @@ it('analyzes a file, lets the user adjust and skip fields, and downloads the rep
     expect(wrapper.emitted('close')).toHaveLength(1)
     expect(
       fetcher.mock.calls.some(([, init]) => init?.method === 'DELETE'),
+    ).toBe(true)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('rejects CSV files before uploading', async () => {
+  const fetcher = vi.fn()
+  vi.stubGlobal('fetch', fetcher)
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'book', targetId: 'book-1' },
+    global: { plugins: [i18n] },
+  })
+  try {
+    const input = wrapper.get<HTMLInputElement>('input[type=file]')
+    expect(input.attributes('accept')).toBe('.xlsx')
+    Object.defineProperty(input.element, 'files', {
+      configurable: true,
+      value: [new File(['data'], 'sample.csv', { type: 'text/csv' })],
+    })
+    await input.trigger('change')
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'Only Excel (.xlsx) files are supported',
+    )
+    expect(wrapper.get('button:disabled').text()).toBe('Analyze file')
+    expect(fetcher).not.toHaveBeenCalled()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('shows v2 workbook types as read-only and keeps column naming editable', async () => {
+  const analysis: ImportAnalysis = { ...plain, metaVersion: 'v2' }
+  vi.stubGlobal('fetch', fetchImport(analysis, done))
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'book', targetId: 'book-1' },
+    global: { plugins: [i18n] },
+  })
+  try {
+    await upload(wrapper)
+    expect(wrapper.text()).toContain('Field types from workbook')
+    expect(wrapper.text()).not.toContain('Type for Name')
+    expect(wrapper.text()).toContain('Name for Name')
+    expect(
+      wrapper.find('.import-column input:not([type="checkbox"])').exists(),
     ).toBe(true)
   } finally {
     wrapper.unmount()
@@ -294,13 +341,13 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
     expect(wrapper.text()).toContain(
       'Attachment file names mapped to attachment fields cannot be restored and are reported as invalid; Excel timestamps may lose precision.',
     )
-    expect(wrapper.text()).toContain('Restored shared views are unlocked.')
+    expect(wrapper.text()).not.toContain('Restored shared views are unlocked.')
     expect(wrapper.text()).toContain(
       'Links imported as text cause dependent lookup, rollup, and formula fields to show errors until repaired.',
     )
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
-    expect(wrapper.text()).toContain('还原后的共享视图处于未锁定状态。')
+    expect(wrapper.text()).not.toContain('还原后的共享视图处于未锁定状态。')
     expect(wrapper.text()).toContain(
       '关联字段转为文本后，依赖它们的查找、汇总和公式字段会显示错误，直到修复。',
     )

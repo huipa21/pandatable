@@ -1026,3 +1026,78 @@ test('first-click editing survives direct, sidebar and New Entry navigation', as
   await clickEditableTextAndCheckbox(1, createdRowId)
   expectBrowserClean(page, diagnostics)
 })
+
+test('date calendar selection survives a grid reload', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Inline grid editing is a desktop interaction.')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await paceLogin(page)
+  await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await setLocale(page, 'en')
+  await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
+  await page
+    .getByLabel(en.auth.password, { exact: true })
+    .fill('Setup-password-123')
+  await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
+  await expect(page).toHaveURL(/\/home$/)
+
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    page,
+    '/api/v1/workspaces',
+    { name: `Date picker ${Date.now()}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    page,
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: 'Date picker book' },
+  )
+  const schema = await create<TableSchema>(
+    page,
+    `/api/v1/books/${book.id}/tables`,
+    { name: 'Date picker table' },
+  )
+  const { field } = await create<FieldMutation>(
+    page,
+    `/api/v1/tables/${schema.table.id}/fields`,
+    { name: 'Date', uiType: 'date' },
+  )
+  const view = schema.views[0]
+  if (!field || !view)
+    throw new Error('The date field or view was not returned')
+  const { rows } = await create<{ rows: DataRow[] }>(
+    page,
+    `/api/v1/tables/${schema.table.id}/rows`,
+    { rows: [{ fields: { [field.id]: '2026-03-01' } }] },
+  )
+  const row = rows[0]
+  if (!row) throw new Error('The row was not returned')
+
+  await page.goto(`/t/${schema.table.id}/v/${view.id}`)
+  const cell = await gridCell(page, field.id, 0)
+  await cell.click()
+  const editor = page.getByRole('textbox', {
+    name: en.field.editor.value,
+    exact: true,
+  })
+  await expect(editor).toBeFocused()
+  const calendar = page.locator('.temporal-picker-portal .n-date-panel--date')
+  await expect(calendar).toBeVisible()
+  await calendar
+    .locator('.n-date-panel-date:not(.n-date-panel-date--excluded)')
+    .filter({ hasText: /^15$/ })
+    .click()
+  await expect
+    .poll(async () => {
+      const response = await page.request.get(
+        `/api/v1/tables/${schema.table.id}/rows/${row.id}`,
+      )
+      expect(response.status()).toBe(200)
+      return ((await response.json()) as DataRow).fields[field.id]
+    })
+    .toBe('2026-03-15')
+  await page.reload()
+  await expect(await gridCell(page, field.id, 0)).toContainText('2026-03-15')
+})

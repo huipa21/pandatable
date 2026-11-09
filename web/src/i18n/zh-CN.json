@@ -259,7 +259,6 @@
     "title": "导出",
     "csv": "CSV（当前视图）",
     "package": "PandaTable XLSX 数据包",
-    "packageNotice": "数据包包含整个数据表和共享视图；附件仅包含文件名，不包含视图锁定状态。",
     "preparing": "正在准备下载",
     "failed": "无法开始导出。{message}"
   },
@@ -270,16 +269,14 @@
     "title": "导入",
     "newTable": "导入为新表",
     "append": "导入到此表",
-    "file": "CSV 或 XLSX 文件",
+    "file": "Excel（.xlsx）文件",
     "limits": "适用管理员设置的上传限制（最多 100 MB）；文件最多包含 500,000 行。",
     "analyze": "分析文件",
     "analyzing": "正在上传并分析文件",
-    "formatCsv": "CSV",
     "formatXlsx": "XLSX",
     "formatPackage": "PandaTable 数据包",
     "analyzed": "检测到{format}；已采样 {count} 行。",
     "encoding": "编码：{encoding}",
-    "packageNotice": "将还原字段和共享视图。还原后的共享视图处于未锁定状态。",
     "packageAppendNotice": "将追加数据行；不会还原数据包中的字段和共享视图。",
     "packageDataWarning": "映射到附件字段的文件名无法恢复，将报告为无效；Excel 时间戳可能损失精度。",
     "tableName": "新表名称",
@@ -618,8 +615,7 @@
     "page": "第 {page} 页，共 {pages} 页 · {total} 行",
     "untitled": "未命名行 {id}",
     "plus": "+",
-    "newRow": "新建行",
-    "defaults": "逐个应用编辑值到草稿后再创建行。未编辑的字段使用数据库默认值。关闭将丢弃草稿。",
+    "newRow": "新建记录",
     "create": "创建行",
     "createLimit": "草稿超过 5,000 个单元格或 512 KiB 的创建请求限制，未发送任何内容。",
     "uncertain": "尚未确认创建成功。连接失败后，请先检查行列表再重试，以免重复创建。"
@@ -1069,11 +1065,9 @@
     "firstRow": "这是第一行。",
     "lastRow": "这是最后一行。",
     "navigationUnavailable": "此行不在已加载的视图中。请关闭此行并从数据表打开后再导航。",
-    "compact": "切换紧凑视图",
     "fullscreen": "切换数据表全屏",
     "duplicate": "复制行",
     "duplicateDraft": "尚未保存的副本。可编辑值已复制；系统、计算和关联字段不会复制。保存前请检查唯一字段。",
-    "saveDuplicate": "保存副本",
     "delete": "删除行",
     "confirmDelete": "删除“{title}”？可以撤销此操作。",
     "returnToFields": "返回行字段",
@@ -1491,12 +1485,32 @@
     "gp01": {},
     "gp02": {},
     "gp03": {},
-    "gp04": {},
-    "gp05": {},
-    "gp06": {},
+    "gp04": {
+      "summary": "汇总"
+    },
+    "gp05": {
+      "save": "保存",
+      "invalid": "请先修正无效的字段值，再保存记录。",
+      "applyPending": "请先完成或修正待处理的字段，再保存记录。"
+    },
+    "gp06": {
+      "trigger": "导入/导出",
+      "import": "导入",
+      "export": "导出",
+      "onlyExcel": "仅支持 Excel（.xlsx）文件",
+      "workbookTypes": "字段类型来自工作簿"
+    },
     "gp07": {},
-    "gp08": {},
-    "gp09": {},
+    "gp08": {
+      "browserGap": "设备时区无法表示此本地时间，选择器中显示的时间可能不同；请核对字段值或直接输入。"
+    },
+    "gp09": {
+      "colorButton": "选项 {n} 颜色：{color}",
+      "reorderChoice": "调整选项 {n} 顺序：拖动、点击显示控件，或按 Alt+上/下方向键",
+      "moveUp": "将选项 {n} 上移",
+      "moveDown": "将选项 {n} 下移",
+      "moved": "选项已移至第 {n} 位，共 {total} 项。"
+    },
     "gp10": {},
     "gp11": {},
     "gp12": {}

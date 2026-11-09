@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { i18n, loadLocale } from '../../i18n'
+import { bindField } from '../../fields/registry'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore } from '../../stores/realtime'
@@ -108,7 +109,7 @@ const textCases = [
 it('reports field focus in the row dialog and clears it on blur', async () => {
   const { wrapper } = await setup()
   const setFocus = vi.spyOn(useRealtimeStore(), 'setFocus')
-  const button = wrapper.get('.row-field button')
+  const button = wrapper.get('.row-field-value[role="button"]')
   await button.trigger('focusin')
   expect(setFocus).toHaveBeenLastCalledWith('t', { rowId: id, fieldId: 'name' })
   await button.trigger('focusout', { relatedTarget: document.body })
@@ -130,17 +131,418 @@ it('uses column one as the title and searches every field by name and displayed 
   expect(
     wrapper
       .findAll('.row-field')
+      .filter((field) => field.isVisible())
       .map((field) => field.attributes('data-field-id')),
   ).toEqual(['notes'])
   await wrapper.get('.row-search input').setValue('name')
-  expect(wrapper.findAll('.row-field')).toHaveLength(1)
+  expect(
+    wrapper.findAll('.row-field').filter((field) => field.isVisible()),
+  ).toHaveLength(1)
   await wrapper.get('.row-search input').setValue('missing')
   expect(wrapper.text()).toContain('No matching fields.')
 })
 
+it('keeps focus in the create search when an edited field becomes visible again', async () => {
+  const schema = tableSchema()
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'quantity',
+    name: 'Quantity',
+    position: 2048,
+  })
+  const { wrapper } = await setup(schema, vi.fn<typeof fetch>(), null)
+  await wrapper.get('[data-field-id="name"] input').setValue('Draft')
+  const search = wrapper.get('.row-search input')
+  ;(search.element as HTMLInputElement).focus()
+  await search.setValue('qua')
+  await search.setValue('')
+  expect(document.activeElement).toBe(search.element)
+  expect(
+    (wrapper.get('[data-field-id="name"] input').element as HTMLInputElement)
+      .value,
+  ).toBe('Draft')
+})
+
+it('matches create search against field names rather than default values', async () => {
+  const schema = tableSchema()
+  schema.fields[0]!.default = 'Quality default'
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'quantity',
+    name: 'Quantity',
+    default: null,
+    position: 2048,
+  })
+  const { wrapper } = await setup(schema, vi.fn<typeof fetch>(), null)
+  await wrapper.get('.row-search input').setValue('qua')
+  expect(
+    wrapper
+      .findAll('.row-field')
+      .filter((field) => field.isVisible())
+      .map((field) => field.attributes('data-field-id')),
+  ).toEqual(['quantity'])
+})
+
+it('shows a fixed new-entry title, inline editors and no system or navigation controls', async () => {
+  const schema = schemaWith('checkbox')
+  schema.fields[0]!.default = true
+  schema.fields.push(
+    {
+      ...schema.fields[0]!,
+      id: 'quantity',
+      name: 'Quantity',
+      uiType: 'integer',
+      default: 7,
+      position: 2048,
+    },
+    ...['id', 'created_at', 'created_by', 'updated_at', 'updated_by'].map(
+      (kind, index) => ({
+        ...schema.fields[0]!,
+        id: kind,
+        name: kind,
+        uiType: kind,
+        default: null,
+        isSystem: true,
+        position: 3000 + index,
+      }),
+    ),
+  )
+  const { wrapper } = await setup(schema, vi.fn<typeof fetch>(), null)
+  expect(wrapper.get('header h2').text()).toBe('New entry')
+  expect(
+    (wrapper.get('[data-field-id="name"] input').element as HTMLInputElement)
+      .checked,
+  ).toBe(true)
+  expect(wrapper.findAll('.row-field')).toHaveLength(2)
+  expect(wrapper.find('[aria-label="Previous row"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Next row"]').exists()).toBe(false)
+  expect(wrapper.find('[aria-label="Toggle compact view"]').exists()).toBe(
+    false,
+  )
+  expect(wrapper.find('.row-field-value[role="button"]').exists()).toBe(false)
+  expect(wrapper.text()).not.toContain('Apply each edited value')
+  expect(wrapper.get('[aria-label="Save"]').attributes('title')).toBe('Save')
+  await wrapper.get('.row-search input').setValue('qUa')
+  expect(
+    wrapper
+      .findAll('.row-field')
+      .filter((field) => field.isVisible())
+      .map((field) => field.attributes('data-field-id')),
+  ).toEqual(['quantity'])
+  await wrapper.get('.row-search input').setValue('missing')
+  expect(wrapper.text()).toContain('No matching fields.')
+})
+
+it.each(['button', 'Control', 'Meta'])(
+  'saves only touched create fields with %s',
+  async (method) => {
+    const schema = tableSchema()
+    schema.fields[0]!.default = 'Default name'
+    schema.fields.push({
+      ...schema.fields[0]!,
+      id: 'quantity',
+      name: 'Quantity',
+      uiType: 'integer',
+      default: 7,
+      position: 2048,
+    })
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ rows: [{ id, fields: { name: 'Edited' } }] }),
+    )
+    const { wrapper } = await setup(schema, fetcher, null)
+    const input = wrapper.get('[data-field-id="name"] input')
+    expect(input.attributes('placeholder')).toBe('Default name')
+    expect((input.element as HTMLInputElement).value).toBe('')
+    await input.setValue('Edited')
+    await input.trigger('keydown', {
+      key: 'Enter',
+      ctrlKey: true,
+      isComposing: true,
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+    if (method === 'button')
+      await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+    else
+      await input.trigger('keydown', {
+        key: 'Enter',
+        ctrlKey: method === 'Control',
+        metaKey: method === 'Meta',
+      })
+    await flushPromises()
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      rows: [{ fields: { name: 'Edited' } }],
+    })
+    expect(wrapper.emitted('created')).toEqual([[id]])
+  },
+)
+
+it('keeps invalid inline drafts and blocks submission until they are corrected', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({ rows: [{ id, fields: { name: 9 } }] }),
+  )
+  const { wrapper } = await setup(schemaWith('integer'), fetcher, null)
+  const input = wrapper.get('.field-editor input')
+  await input.setValue('invalid')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  expect(fetcher).not.toHaveBeenCalled()
+  expect(wrapper.get('dialog.row-expand > [role="alert"]').text()).toContain(
+    'Correct the invalid field values',
+  )
+  await wrapper.get('.row-search input').setValue('missing')
+  await wrapper.get('.row-search input').setValue('')
+  expect((input.element as HTMLInputElement).value).toBe('invalid')
+  await input.setValue('9')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  await flushPromises()
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+    rows: [{ fields: { name: 9 } }],
+  })
+})
+
+it.each([
+  ['date', '2026-10-27'],
+  ['time', '13:45:00'],
+  ['datetime', '2026-10-27T07:00:00Z'],
+])('shows an untouched %s default as a placeholder', async (kind, value) => {
+  const schema = schemaWith(kind)
+  schema.fields[0]!.default = value
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({ rows: [{ id, fields: {} }] }),
+  )
+  const { wrapper } = await setup(schema, fetcher, null)
+  const input = wrapper.get('.field-editor input')
+  const field = bindField(kind, {})
+  if (!field.ok) throw new Error(`Could not bind ${kind}`)
+  expect(input.attributes('placeholder')).toBe(
+    field.value.formatCopy(value, {
+      locale: 'en',
+      timeZone: navUser.effectiveTimezone,
+    }),
+  )
+  expect((input.element as HTMLInputElement).value).toBe('')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  await flushPromises()
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+    rows: [{ fields: {} }],
+  })
+})
+
+it('waits for attachment uploads, commits them from Save, and preserves them after creation', async () => {
+  const attachment = {
+    id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+    name: 'note.txt',
+    mime: 'text/plain',
+    size: 4,
+    thumb: null,
+  }
+  let release!: (response: Response) => void
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    const path = String(url)
+    if (path.endsWith('/attachments'))
+      return new Promise<Response>((resolve) => {
+        release = resolve
+      })
+    if (path.endsWith('/rows') && init?.method === 'POST')
+      return Response.json({ rows: [{ id, fields: { name: [attachment] } }] })
+    if (init?.method === 'GET') return Response.json(stored)
+    return new Response(null, { status: 204 })
+  })
+  const { wrapper } = await setup(schemaWith('attachment'), fetcher, null)
+  const upload = wrapper.get('.attachment-file-input')
+  Object.defineProperty(upload.element, 'files', {
+    configurable: true,
+    value: [new File(['test'], attachment.name, { type: attachment.mime })],
+  })
+  await upload.trigger('change')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith('/rows')),
+  ).toBe(false)
+  expect(wrapper.get('[role="alert"]').text()).toContain('Finish or correct')
+  release(Response.json(attachment))
+  await flushPromises()
+  await wrapper.get('.row-search input').setValue('missing')
+  await wrapper.get('.row-search input').setValue('')
+  expect(wrapper.get('.field-attachment-list').text()).toContain('note.txt')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  await flushPromises()
+  const post = fetcher.mock.calls.find(
+    ([url, init]) => String(url).endsWith('/rows') && init?.method === 'POST',
+  )
+  expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+    rows: [{ fields: { name: [attachment] } }],
+  })
+  await wrapper.setProps({ rowId: id })
+  await flushPromises()
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith('/discard')),
+  ).toBe(false)
+})
+
+it('discards applied temporary attachments when a new-entry draft is closed', async () => {
+  const attachment = {
+    id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+    name: 'note.txt',
+    mime: 'text/plain',
+    size: 4,
+    thumb: null,
+  }
+  const fetcher = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith('/attachments')) return Response.json(attachment)
+    if (String(url).endsWith('/discard'))
+      return new Response(null, { status: 204 })
+    throw new Error(`Unexpected request: ${String(url)}`)
+  })
+  const { wrapper } = await setup(schemaWith('attachment'), fetcher, null)
+  const upload = wrapper.get('.attachment-file-input')
+  Object.defineProperty(upload.element, 'files', {
+    configurable: true,
+    value: [new File(['test'], attachment.name, { type: attachment.mime })],
+  })
+  await upload.trigger('change')
+  await flushPromises()
+  await wrapper.get('.field-editor > button').trigger('click')
+  await wrapper.get('[aria-label="Close row"]').trigger('click')
+  await flushPromises()
+  expect(
+    fetcher.mock.calls.filter(([url]) => String(url).endsWith('/discard')),
+  ).toHaveLength(1)
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith('/rows')),
+  ).toBe(false)
+})
+
+it('does not silently create a row after an attachment upload fails', async () => {
+  const fetcher = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith('/attachments'))
+      return Response.json(
+        { error: { code: 'ERR_VALIDATION' } },
+        { status: 400 },
+      )
+    throw new Error(`Unexpected request: ${String(url)}`)
+  })
+  const { wrapper } = await setup(schemaWith('attachment'), fetcher, null)
+  const upload = wrapper.get('.attachment-file-input')
+  Object.defineProperty(upload.element, 'files', {
+    configurable: true,
+    value: [new File(['test'], 'note.txt', { type: 'text/plain' })],
+  })
+  await upload.trigger('change')
+  await flushPromises()
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  expect(wrapper.get('dialog.row-expand > [role="alert"]').text()).toContain(
+    'Finish or correct',
+  )
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith('/rows')),
+  ).toBe(false)
+})
+
+it.each([false, true])(
+  'saves pending multi-user selections and supports clearing the last user: %s',
+  async (clear) => {
+    const user = {
+      id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+      name: 'Alice',
+      username: 'alice',
+    }
+    const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+      const path = String(url)
+      if (path.includes('/directory/users?'))
+        return Response.json({ items: [user], hasMore: false })
+      if (path.endsWith('/directory/user-labels'))
+        return Response.json({ items: [user] })
+      if (path.endsWith('/rows') && init?.method === 'POST')
+        return Response.json({ rows: [{ id, fields: {} }] })
+      throw new Error(`Unexpected request: ${path}`)
+    })
+    const { wrapper } = await setup(schemaWith('multi_user'), fetcher, null)
+    await wrapper.get('.field-user-editor input').setValue('ali')
+    await flushPromises()
+    await wrapper.get('.field-user-results button').trigger('click')
+    if (clear) {
+      await wrapper.get('.field-user-editor > button').trigger('click')
+      await wrapper.get('.field-user-selected button').trigger('click')
+    }
+    await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+    await flushPromises()
+    const post = fetcher.mock.calls.find(
+      ([url, init]) => String(url).endsWith('/rows') && init?.method === 'POST',
+    )
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      rows: [{ fields: { name: clear ? null : [user.id] } }],
+    })
+  },
+)
+
+it('keeps the selected single user visible in the inline draft', async () => {
+  const user = {
+    id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+    name: 'Alice',
+    username: 'alice',
+  }
+  const fetcher = vi.fn<typeof fetch>(async (url, init) => {
+    const path = String(url)
+    if (path.includes('/directory/users?'))
+      return Response.json({ items: [user], hasMore: false })
+    if (path.endsWith('/directory/user-labels'))
+      return Response.json({ items: [user] })
+    if (path.endsWith('/rows') && init?.method === 'POST')
+      return Response.json({ rows: [{ id, fields: { name: user.id } }] })
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  const { wrapper } = await setup(schemaWith('user'), fetcher, null)
+  await wrapper.get('.field-user-editor input').setValue('ali')
+  await flushPromises()
+  await wrapper.get('.field-user-results button').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('.field-user-selected').text()).toContain('Alice')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+  await flushPromises()
+  const post = fetcher.mock.calls.find(
+    ([url, init]) => String(url).endsWith('/rows') && init?.method === 'POST',
+  )
+  expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+    rows: [{ fields: { name: user.id } }],
+  })
+})
+
+it('opens an existing value by click and patches it on commit without a pencil', async () => {
+  const { wrapper, fetcher } = await setup()
+  const value = wrapper.get('.row-field-value[role="button"]')
+  expect(value.attributes('aria-label')).toBe('Edit Name')
+  expect(wrapper.find('.row-field button').exists()).toBe(false)
+  await value.trigger('click')
+  const input = wrapper.get('.field-editor input')
+  await input.setValue('Updated')
+  await input.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({
+    fields: { name: 'Updated' },
+  })
+  expect(wrapper.emitted('saved')).toHaveLength(1)
+})
+
+it('opens the relation picker by clicking the linked value', async () => {
+  const schema = tableSchema()
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'linked',
+    name: 'Linked',
+    uiType: 'link',
+    position: 2048,
+  })
+  stored.fields.linked = [{ id: '2', label: 'Related row' }]
+  const { wrapper } = await setup(schema)
+  const section = wrapper.get('[data-field-id="linked"]')
+  expect(section.find('.relation-edit').exists()).toBe(false)
+  await section.get('.relation-chip').trigger('click')
+  expect(wrapper.get('.relation-picker').attributes('open')).toBeDefined()
+})
+
 it('overlays comments and history, returns to fields, and preserves the active draft', async () => {
   const { wrapper } = await setup()
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue('Unsaved')
   await wrapper.get('[id^="row-comments-tab"]').trigger('click')
   expect(wrapper.get('.row-form').isVisible()).toBe(false)
@@ -165,16 +567,15 @@ it('opens notification deep links directly in the comments overlay', async () =>
   expect(wrapper.get('.row-form').isVisible()).toBe(false)
 })
 
-it('toggles compact presentation and fullscreen only inside the table workspace', async () => {
+it('omits compact presentation and toggles fullscreen only inside the table workspace', async () => {
   const { wrapper } = await setup()
   const workspace = document.createElement('div')
   vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
     new DOMRect(220, 120, 900, 500),
   )
   await wrapper.setProps({ workspace })
-  await wrapper.get('[aria-label="Toggle compact view"]').trigger('click')
-  expect(wrapper.get('dialog.row-expand').classes()).toContain(
-    'row-expand-compact',
+  expect(wrapper.find('[aria-label="Toggle compact view"]').exists()).toBe(
+    false,
   )
   await wrapper.get('[aria-label="Toggle table fullscreen"]').trigger('click')
   const dialog = wrapper.get('dialog.row-expand').element as HTMLDialogElement
@@ -204,14 +605,12 @@ it('keeps duplication entirely local until Save duplicate and generates a new id
   await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
   expect(fetcher).not.toHaveBeenCalled()
   expect(wrapper.text()).toContain('Unsaved duplicate')
-  await wrapper.get('.row-field button').trigger('click')
   await wrapper.get('.field-editor input').setValue('Copied name')
-  await wrapper.get('.field-editor button').trigger('click')
   expect(fetcher).not.toHaveBeenCalled()
   fetcher.mockResolvedValueOnce(
     Response.json({ rows: [{ id: '2', fields: { name: 'Copied name' } }] }),
   )
-  await wrapper.get('.create-row').trigger('click')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
   await flushPromises()
   expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
     rows: [{ fields: { name: 'Copied name' } }],
@@ -226,6 +625,269 @@ it('closing a duplicate never inserts a row', async () => {
   await wrapper.get('[aria-label="Close row"]').trigger('click')
   expect(fetcher).not.toHaveBeenCalled()
   expect(wrapper.emitted('close')).toHaveLength(1)
+})
+
+it.each([
+  ['datetime', 'button', false],
+  ['datetime', 'button', true],
+  ['datetime', 'shortcut', false],
+  ['time', 'button', false],
+  ['time', 'shortcut', false],
+] as const)(
+  'saves an unconfirmed %s picker selection using the %s (outside month: %s)',
+  async (kind, method, outsideMonth) => {
+    const schema = schemaWith(
+      kind,
+      kind === 'datetime'
+        ? { timezone: 'fixed', fixedTz: 'America/New_York' }
+        : {},
+    )
+    stored.fields.name =
+      kind === 'datetime' ? '2026-03-01T14:15:12.123456Z' : '09:15:12.123456'
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      if (init?.method === 'GET') return Response.json(stored)
+      return Response.json({ rows: [{ id: '2', fields: {} }] })
+    })
+    const { wrapper } = await setup(schema, fetcher)
+    await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
+    const input = wrapper.get('.temporal-editor input')
+    ;(input.element as HTMLInputElement).focus()
+    await input.trigger('click')
+    await flushPromises()
+    const portal = wrapper
+      .get('dialog.row-expand')
+      .element.querySelector<HTMLElement>('.temporal-picker-portal')
+    if (!portal) throw new Error('Temporal picker portal was not mounted')
+    const selector =
+      kind === 'datetime'
+        ? outsideMonth
+          ? '.n-date-panel-date--excluded:not(.n-date-panel-date--disabled)'
+          : '.n-date-panel-date:not(.n-date-panel-date--excluded)'
+        : '.n-time-picker-col:nth-child(2) .n-time-picker-col__item'
+    const selected = Array.from(
+      portal.querySelectorAll<HTMLElement>(selector),
+    ).find(
+      (element) =>
+        element.textContent?.trim() ===
+        (kind === 'time' ? '35' : outsideMonth ? '1' : '15'),
+    )
+    if (!selected) throw new Error(`${kind} picker option was not found`)
+    selected.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    selected.click()
+    await flushPromises()
+
+    if (method === 'button')
+      await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+    else
+      portal.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      )
+    await flushPromises()
+    const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({
+      rows: [
+        {
+          fields: {
+            name:
+              kind === 'datetime'
+                ? outsideMonth
+                  ? '2026-04-01T13:15:12.123456Z'
+                  : '2026-03-15T13:15:12.123456Z'
+                : '09:35:12.123456',
+          },
+        },
+      ],
+    })
+  },
+)
+
+it.each([
+  ['date', '2026-03-01'],
+  ['datetime', '2026-03-01T14:15:12Z'],
+  ['time', '09:15:12'],
+] as const)(
+  'keeps the %s default untouched when its picker is opened without a selection',
+  async (kind, defaultValue) => {
+    const schema = schemaWith(kind)
+    schema.fields[0]!.default = defaultValue
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ rows: [{ id: '2', fields: {} }] }),
+    )
+    const { wrapper } = await setup(schema, fetcher, null)
+    const input = wrapper.get('.temporal-editor input')
+    ;(input.element as HTMLInputElement).focus()
+    await input.trigger('click')
+    await flushPromises()
+    const save = wrapper.get('.row-actions [aria-label="Save"]')
+    await save.trigger('pointerdown')
+    await save.trigger('click')
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      rows: [{ fields: {} }],
+    })
+  },
+)
+
+it('saves a selected datetime instead of omitting an untouched database default', async () => {
+  const schema = schemaWith('datetime', { timezone: 'fixed', fixedTz: 'UTC' })
+  schema.fields[0]!.default = '2026-03-01T14:15:12Z'
+  const fetcher = vi.fn<typeof fetch>(async () =>
+    Response.json({ rows: [{ id: '2', fields: {} }] }),
+  )
+  const { wrapper } = await setup(schema, fetcher, null)
+  const input = wrapper.get('.temporal-editor input')
+  ;(input.element as HTMLInputElement).focus()
+  await input.trigger('click')
+  await flushPromises()
+  const portal = wrapper
+    .get('dialog.row-expand')
+    .element.querySelector<HTMLElement>('.temporal-picker-portal')
+  const day = Array.from(
+    portal?.querySelectorAll<HTMLElement>(
+      '.n-date-panel-date:not(.n-date-panel-date--excluded)',
+    ) ?? [],
+  ).find((element) => element.textContent?.trim() === '15')
+  if (!day) throw new Error('Datetime picker day was not found')
+  day.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+  day.click()
+  await flushPromises()
+  const save = wrapper.get('.row-actions [aria-label="Save"]')
+  await save.trigger('pointerdown')
+  await save.trigger('click')
+  await flushPromises()
+  const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as {
+    rows: { fields: { name?: string } }[]
+  }
+  expect(body.rows[0]?.fields.name).toMatch(
+    /^\d{4}-\d{2}-15T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/,
+  )
+})
+
+it.each(['keyboard', 'pointer'])(
+  'retains a pending datetime selection when another field receives %s focus',
+  async (method) => {
+    const schema = schemaWith('datetime', {
+      timezone: 'fixed',
+      fixedTz: 'America/New_York',
+    })
+    schema.fields.push({
+      ...tableSchema().fields[0]!,
+      id: 'notes',
+      name: 'Notes',
+      position: 2048,
+    })
+    stored.fields.name = '2026-03-01T14:15:12.123456Z'
+    stored.fields.notes = null
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      if (init?.method === 'GET') return Response.json(stored)
+      return Response.json({ rows: [{ id: '2', fields: {} }] })
+    })
+    const { wrapper } = await setup(schema, fetcher)
+    await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
+    const input = wrapper.get('[data-field-id="name"] .temporal-editor input')
+    ;(input.element as HTMLInputElement).focus()
+    await input.trigger('click')
+    await flushPromises()
+    const portal = wrapper
+      .get('dialog.row-expand')
+      .element.querySelector<HTMLElement>('.temporal-picker-portal')
+    const day = Array.from(
+      portal?.querySelectorAll<HTMLElement>(
+        '.n-date-panel-date:not(.n-date-panel-date--excluded)',
+      ) ?? [],
+    ).find((element) => element.textContent?.trim() === '15')
+    if (!day) throw new Error('Datetime picker day was not found')
+    day.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    day.click()
+    await flushPromises()
+    const notes = wrapper.get('[data-field-id="notes"] input')
+    if (method === 'pointer') await notes.trigger('pointerdown')
+    ;(notes.element as HTMLInputElement).focus()
+    await notes.trigger('click')
+    await flushPromises()
+    const save = wrapper.get('.row-actions [aria-label="Save"]')
+    await save.trigger('pointerdown')
+    await save.trigger('click')
+    await flushPromises()
+    const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST')
+    const body = JSON.parse(String(post?.[1]?.body)) as {
+      rows: { fields: { name?: string } }[]
+    }
+    expect(body.rows[0]?.fields.name).toBe('2026-03-15T13:15:12.123456Z')
+  },
+)
+
+it('blocks creation for invalid pending picker input and saves it after correction', async () => {
+  const schema = schemaWith('datetime', {
+    timezone: 'fixed',
+    fixedTz: 'America/New_York',
+  })
+  stored.fields.name = '2026-03-01T14:15:12.123456Z'
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (init?.method === 'GET') return Response.json(stored)
+    return Response.json({ rows: [{ id: '2', fields: {} }] })
+  })
+  const { wrapper } = await setup(schema, fetcher)
+  await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
+  const input = wrapper.get('.temporal-editor input')
+  ;(input.element as HTMLInputElement).focus()
+  await input.trigger('click')
+  await flushPromises()
+  const portal = wrapper
+    .get('dialog.row-expand')
+    .element.querySelector<HTMLElement>('.temporal-picker-portal')
+  const day = Array.from(
+    portal?.querySelectorAll<HTMLElement>(
+      '.n-date-panel-date:not(.n-date-panel-date--excluded)',
+    ) ?? [],
+  ).find((element) => element.textContent?.trim() === '15')
+  const time = portal?.querySelector<HTMLInputElement>(
+    '.n-date-panel-header .n-time-picker input',
+  )
+  if (!day || !time) throw new Error('Datetime picker controls were not found')
+  day.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+  day.click()
+  await flushPromises()
+  time.value = '25:00'
+  time.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+  const save = wrapper.get('.row-actions [aria-label="Save"]')
+  await save.trigger('click')
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(
+    false,
+  )
+  expect(wrapper.get('dialog.row-expand > [role="alert"]').text()).not.toBe('')
+  ;(input.element as HTMLInputElement).focus()
+  await input.trigger('click')
+  await flushPromises()
+  const correctedDay = Array.from(
+    portal?.querySelectorAll<HTMLElement>(
+      '.n-date-panel-date:not(.n-date-panel-date--excluded)',
+    ) ?? [],
+  ).find((element) => element.textContent?.trim() === '15')
+  const correctedTime = portal?.querySelector<HTMLInputElement>(
+    '.n-date-panel-header .n-time-picker input',
+  )
+  if (!correctedDay || !correctedTime)
+    throw new Error('Datetime picker controls were not reopened')
+  correctedDay.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+  correctedDay.click()
+  await flushPromises()
+  correctedTime.value = '09:35'
+  correctedTime.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+  await save.trigger('click')
+  await flushPromises()
+  const post = fetcher.mock.calls.find(([, init]) => init?.method === 'POST')
+  const body = JSON.parse(String(post?.[1]?.body)) as {
+    rows: { fields: { name?: string } }[]
+  }
+  expect(body.rows[0]?.fields.name).toBe('2026-03-15T13:35:12.123456Z')
 })
 
 it('deletes only after confirmation and surfaces deletion failure without closing the row', async () => {
@@ -270,7 +932,7 @@ it('navigates by row identity, reports boundaries and disables navigation during
   await wrapper.get('[aria-label="Previous row"]').trigger('click')
   await flushPromises()
   expect(wrapper.text()).toContain('This is the first row.')
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   expect(
     wrapper.get('[aria-label="Next row"]').attributes('disabled'),
   ).toBeDefined()
@@ -358,7 +1020,7 @@ it('preserves active edits, identifies remote changes, and refreshes after cance
   await flushPromises()
   fetcher.mockClear()
 
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   const editor = wrapper.get('.field-editor input')
   await editor.setValue('Local draft')
   stored.fields.name = 'Bob saved'
@@ -378,7 +1040,7 @@ it('preserves active edits, identifies remote changes, and refreshes after cance
   await flushPromises()
   expect(wrapper.text()).toContain('Bob saved')
 
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue('Local wins')
   stored.fields.name = 'Bob again'
   socket.message({
@@ -402,7 +1064,7 @@ it.each(textCases)(
     const schema = schemaWith(kind, options)
     stored.fields.name = null
     const { wrapper, fetcher } = await setup(schema)
-    await wrapper.get('.row-field button').trigger('click')
+    await wrapper.get('.row-field-value[role="button"]').trigger('click')
     await wrapper
       .get('.field-editor input, .field-editor textarea')
       .setValue(input)
@@ -429,7 +1091,7 @@ it.each(textCases)(
     await wrapper.setProps({ rowId: '9007199254740994' })
     await wrapper.setProps({ rowId: id })
     await flushPromises()
-    await wrapper.get('.row-field button').trigger('click')
+    await wrapper.get('.row-field-value[role="button"]').trigger('click')
     expect(
       (
         wrapper.get('.field-editor input, .field-editor textarea')
@@ -450,13 +1112,11 @@ it.each(textCases)(
     )
     const { wrapper } = await setup(schemaWith(kind, options), fetcher, null)
     expect(fetcher).not.toHaveBeenCalled()
-    await wrapper.get('.row-field button').trigger('click')
     await wrapper
       .get('.field-editor input, .field-editor textarea')
       .setValue(input)
-    await wrapper.get('.field-editor button').trigger('click')
     expect(fetcher).not.toHaveBeenCalled()
-    await wrapper.get('.create-row').trigger('click')
+    await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
     await flushPromises()
     expect(fetcher).toHaveBeenCalledWith(
       '/api/v1/tables/t/rows',
@@ -491,13 +1151,11 @@ it.each([524288, 524289])(
     const overhead = new TextEncoder().encode(JSON.stringify(body)).length
     for (const [index, field] of schema.fields.entries()) {
       const section = wrapper.get(`[data-field-id="${field.id}"]`)
-      await section.get('button').trigger('click')
       await section
         .get('textarea')
         .setValue('x'.repeat(index < 5 ? 100000 : bytes - overhead - 500000))
-      await section.get('.field-editor button').trigger('click')
     }
-    await wrapper.get('.create-row').trigger('click')
+    await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
     await flushPromises()
     expect(fetcher).toHaveBeenCalledTimes(bytes === 524288 ? 1 : 0)
     if (bytes === 524288)
@@ -522,11 +1180,11 @@ it('omits untouched defaults, permits explicit null, and preserves drafts after 
     Response.json({ error: { code: 'ERR_REQUIRED_FIELD' } }, { status: 400 }),
   )
   const { wrapper } = await setup(schema, fetcher, null)
-  expect(wrapper.text()).toContain('Default name')
-  await wrapper.get('.row-field button').trigger('click')
-  await wrapper.get('.field-editor input').setValue('')
-  await wrapper.get('.field-editor button').trigger('click')
-  await wrapper.get('.create-row').trigger('click')
+  const input = wrapper.get('[data-field-id="name"] input')
+  expect(input.attributes('placeholder')).toBe('Default name')
+  await input.setValue('Changed')
+  await input.setValue('')
+  await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
   await flushPromises()
   expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
     rows: [{ fields: { name: null } }],
@@ -534,10 +1192,7 @@ it('omits untouched defaults, permits explicit null, and preserves drafts after 
   expect(wrapper.emitted('created')).toBeUndefined()
   expect(wrapper.get('[role="alert"]').text()).toContain('required field')
   expect(wrapper.text()).toContain('Creation has not been confirmed')
-  await wrapper.get('.row-field button').trigger('click')
-  expect(
-    (wrapper.get('.field-editor input').element as HTMLInputElement).value,
-  ).toBe('')
+  expect((input.element as HTMLInputElement).value).toBe('')
 })
 
 it('prevents duplicate creation and retains editable drafts after unique and network errors', async () => {
@@ -556,13 +1211,10 @@ it('prevents duplicate creation and retains editable drafts after unique and net
     )
   const { wrapper } = await setup(tableSchema(), fetcher, null)
   const field = wrapper.get('.row-field')
-  await field.get('button').trigger('click')
   await field.get('input').setValue('Draft')
   await field.get('input').trigger('blur')
   expect(fetcher).not.toHaveBeenCalled()
-  expect(wrapper.get('.create-row').attributes('disabled')).toBeDefined()
-  await field.get('.field-editor button').trigger('click')
-  const create = wrapper.get('.create-row')
+  const create = wrapper.get('.row-actions [aria-label="Save"]')
   await create.trigger('click')
   create.element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   expect(fetcher).toHaveBeenCalledTimes(1)
@@ -573,16 +1225,12 @@ it('prevents duplicate creation and retains editable drafts after unique and net
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).toContain('unique field')
   expect(wrapper.emitted('created')).toBeUndefined()
-  await field.get('button').trigger('click')
   expect((field.get('input').element as HTMLInputElement).value).toBe('Draft')
-  await field.get('.field-editor button').trigger('click')
   await create.trigger('click')
   await flushPromises()
   expect(wrapper.get('[role="alert"]').text()).not.toBe('')
   expect(wrapper.emitted('created')).toBeUndefined()
-  await field.get('button').trigger('click')
   expect((field.get('input').element as HTMLInputElement).value).toBe('Draft')
-  await field.get('.field-editor button').trigger('click')
   await create.trigger('click')
   await flushPromises()
   expect(fetcher).toHaveBeenCalledTimes(3)
@@ -604,7 +1252,7 @@ it.each(['view', 'schema', 'identity', 'permission', 'close'])(
         }),
     )
     const { wrapper } = await setup(tableSchema(), fetcher, null)
-    await wrapper.get('.create-row').trigger('click')
+    await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
     if (change === 'view') await wrapper.setProps({ viewId: 'other' })
     else if (change === 'schema')
       await wrapper.setProps({
@@ -622,6 +1270,118 @@ it.each(['view', 'schema', 'identity', 'permission', 'close'])(
     expect(wrapper.emitted('created')).toBeUndefined()
   },
 )
+
+it.each(['table', 'view', 'schema', 'permission', 'identity'])(
+  'clears create editors and invalid drafts after %s changes',
+  async (change) => {
+    const schema = schemaWith('integer', { size: 'big' })
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ rows: [{ id, fields: {} }] }),
+    )
+    const { wrapper } = await setup(schema, fetcher, null)
+    const input = wrapper.get('.field-editor input')
+    await input.setValue('17')
+    await input.setValue('invalid')
+
+    if (change === 'table')
+      await wrapper.setProps({
+        schema: { ...schema, table: { ...schema.table, id: 'other' } },
+      })
+    else if (change === 'view') await wrapper.setProps({ viewId: 'other' })
+    else if (change === 'schema')
+      await wrapper.setProps({ schema: { ...schema, schemaVersion: 2 } })
+    else if (change === 'permission')
+      await wrapper.setProps({ schema: { ...schema, myLevel: 'write' } })
+    else {
+      useAuthStore().setUser({ ...navUser, id: 'other' })
+      await flushPromises()
+      useAuthStore().setUser(navUser)
+    }
+    await flushPromises()
+
+    expect(
+      (wrapper.get('.field-editor input').element as HTMLInputElement).value,
+    ).toBe('')
+    await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      rows: [{ fields: {} }],
+    })
+  },
+)
+
+it.each(['table', 'view', 'schema', 'permission', 'identity'])(
+  'discards applied draft attachments from the original context after %s changes',
+  async (change) => {
+    const attachment = {
+      id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+      name: 'note.txt',
+      mime: 'text/plain',
+      size: 4,
+      thumb: null,
+    }
+    const fetcher = vi.fn<typeof fetch>(async (url) => {
+      if (String(url).endsWith('/attachments')) return Response.json(attachment)
+      if (String(url).endsWith('/discard'))
+        return new Response(null, { status: 204 })
+      throw new Error(`Unexpected request: ${String(url)}`)
+    })
+    const schema = schemaWith('attachment')
+    const { wrapper } = await setup(schema, fetcher, null)
+    const upload = wrapper.get('.attachment-file-input')
+    Object.defineProperty(upload.element, 'files', {
+      configurable: true,
+      value: [new File(['test'], attachment.name, { type: attachment.mime })],
+    })
+    await upload.trigger('change')
+    await flushPromises()
+    await wrapper.get('.field-editor > button').trigger('click')
+    if (change === 'table')
+      await wrapper.setProps({
+        schema: { ...schema, table: { ...schema.table, id: 'other' } },
+      })
+    else if (change === 'view') await wrapper.setProps({ viewId: 'other' })
+    else if (change === 'schema')
+      await wrapper.setProps({
+        schema: { ...schema, schemaVersion: 2, fields: [] },
+      })
+    else if (change === 'permission')
+      await wrapper.setProps({ schema: { ...schema, myLevel: 'read' } })
+    else useAuthStore().setUser({ ...navUser, id: 'other' })
+    await flushPromises()
+    const discards = fetcher.mock.calls.filter(([url]) =>
+      String(url).endsWith('/discard'),
+    )
+    expect(discards).toHaveLength(1)
+    expect(String(discards[0]?.[0])).toContain(
+      `/tables/t/fields/name/attachments/${attachment.id}/discard`,
+    )
+  },
+)
+
+it('does not discard copied attachments when a duplicate draft is closed', async () => {
+  const attachment = {
+    id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+    name: 'note.txt',
+    mime: 'text/plain',
+    size: 4,
+    thumb: null,
+  }
+  stored.fields.name = [attachment]
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (init?.method === 'GET') return Response.json(stored)
+    throw new Error('Unexpected mutation')
+  })
+  const { wrapper } = await setup(schemaWith('attachment'), fetcher)
+  await wrapper.get('[aria-label="Duplicate row"]').trigger('click')
+  await wrapper.get('[aria-label="Close row"]').trigger('click')
+  await flushPromises()
+  expect(
+    fetcher.mock.calls.some(([url]) => String(url).endsWith('/discard')),
+  ).toBe(false)
+})
+
 it.each(['checkbox', 'single_select', 'multi_select'])(
   'uses the native %s editor',
   async (kind) => {
@@ -638,7 +1398,7 @@ it.each(['checkbox', 'single_select', 'multi_select'])(
     )
     stored.fields.name = kind === 'checkbox' ? false : null
     const { wrapper } = await setup(schema)
-    await wrapper.get('.row-field button').trigger('click')
+    await wrapper.get('.row-field-value[role="button"]').trigger('click')
     if (kind === 'checkbox')
       await wrapper.get('.field-editor input').setValue(true)
     else
@@ -701,7 +1461,7 @@ it('shows live fields in metadata order and resolves system user labels through 
     'updated_at',
     'updated_by',
   ])
-  expect(wrapper.findAll('.row-field button')).toHaveLength(2)
+  expect(wrapper.findAll('.row-field-value[role="button"]')).toHaveLength(2)
   expect(wrapper.get('.chip-unknown').text()).toBe('Removed')
   expect(fetcher).toHaveBeenCalledWith(
     '/api/v1/tables/t/directory/user-labels',
@@ -723,7 +1483,7 @@ it.each([
 ])('does not persist codec-invalid %s', async (kind, input) => {
   stored.fields.name = null
   const { wrapper, fetcher } = await setup(schemaWith(kind))
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue(input)
   await wrapper.get('.field-editor button').trigger('click')
   await flushPromises()
@@ -735,7 +1495,7 @@ it.each([
 it('rejects UTF-8 oversized single-row bodies without truncation or a request', async () => {
   stored.fields.name = null
   const { wrapper, fetcher } = await setup(schemaWith('long_text'))
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('textarea').setValue('中'.repeat(22000))
   await wrapper.get('.field-editor button').trigger('click')
   await flushPromises()
@@ -751,7 +1511,7 @@ it.each([65536, 65537])(
     const overhead = new TextEncoder().encode(
       JSON.stringify({ fields: { name: '' } }),
     ).length
-    await wrapper.get('.row-field button').trigger('click')
+    await wrapper.get('.row-field-value[role="button"]').trigger('click')
     await wrapper.get('textarea').setValue('x'.repeat(bytes - overhead))
     await wrapper.get('.field-editor button').trigger('click')
     await flushPromises()
@@ -775,7 +1535,7 @@ it('keeps failed writes explicit, preserves the editor, and never reports succes
       : Response.json(stored),
   )
   const { wrapper } = await setup(tableSchema(), fetcher)
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue('Conflict')
   await wrapper.get('.field-editor button').trigger('click')
   await flushPromises()
@@ -789,7 +1549,7 @@ it('reader and identity mismatch never expose write controls', async () => {
   const schema = tableSchema()
   schema.myLevel = 'read'
   const { wrapper, fetcher } = await setup(schema)
-  expect(wrapper.findAll('.row-field button')).toHaveLength(0)
+  expect(wrapper.findAll('.row-field-value[role="button"]')).toHaveLength(0)
   useAuthStore().setUser({ ...navUser, id: 'someone-else' })
   await flushPromises()
   expect(wrapper.findAll('.row-field')).toHaveLength(0)
@@ -800,15 +1560,15 @@ it('does not re-fetch on identical schema refreshes, but updates permission cont
   const { wrapper, fetcher } = await setup()
   await wrapper.setProps({ schema: { ...tableSchema(), myLevel: 'read' } })
   expect(fetcher).toHaveBeenCalledTimes(1)
-  expect(wrapper.findAll('.row-field button')).toHaveLength(0)
+  expect(wrapper.findAll('.row-field-value[role="button"]')).toHaveLength(0)
   await wrapper.setProps({ schema: tableSchema() })
-  expect(wrapper.findAll('.row-field button')).toHaveLength(1)
+  expect(wrapper.findAll('.row-field-value[role="button"]')).toHaveLength(1)
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
 
 it('reports lost write permission when a realtime ACL refresh interrupts an edit', async () => {
   const { wrapper, fetcher } = await setup()
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue('Unsaved draft')
   await wrapper.setProps({ schema: { ...tableSchema(), myLevel: 'read' } })
   expect(wrapper.get('[role="alert"]').text()).toContain(
@@ -835,7 +1595,7 @@ it('restarts an in-flight read on a permission change without leaving perpetual 
   expect(wrapper.text()).toContain('Original')
   expect(wrapper.text()).not.toContain('Late private value')
   expect(wrapper.find('[role="status"]').exists()).toBe(false)
-  expect(wrapper.findAll('.row-field button')).toHaveLength(0)
+  expect(wrapper.findAll('.row-field-value[role="button"]')).toHaveLength(0)
 })
 
 it.each([
@@ -855,7 +1615,7 @@ it('reports unsupported DTO shapes rather than inventing empty values', async ()
   stored.fields.name = { nested: 'unsupported' }
   const { wrapper } = await setup()
   expect(wrapper.get('[role="alert"]').text()).not.toBe('')
-  expect(wrapper.findAll('.row-field button')).toHaveLength(0)
+  expect(wrapper.findAll('.row-field-value[role="button"]')).toHaveLength(0)
 })
 
 it.each([400, 403, 404])(
@@ -912,7 +1672,7 @@ it('ignores a late successful PATCH on row and identity changes', async () => {
     return Response.json(stored)
   })
   const { wrapper } = await setup(tableSchema(), fetcher)
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue('Late secret')
   await wrapper.get('.field-editor button').trigger('click')
   await wrapper.setProps({ rowId: '2' })
@@ -925,7 +1685,7 @@ it('ignores a late successful PATCH on row and identity changes', async () => {
 
 it('cancels the current draft and closes with native Escape cancellation', async () => {
   const { wrapper, fetcher } = await setup()
-  await wrapper.get('.row-field button').trigger('click')
+  await wrapper.get('.row-field-value[role="button"]').trigger('click')
   await wrapper.get('.field-editor input').setValue('Unsaved')
   await wrapper.get('.field-editor input').trigger('keydown', { key: 'Escape' })
   expect(wrapper.find('.field-editor').exists()).toBe(false)
@@ -946,7 +1706,7 @@ it.each(['table', 'view', 'schema', 'permission', 'identity', 'unmount'])(
       return Response.json(stored)
     })
     const { wrapper } = await setup(tableSchema(), fetcher)
-    await wrapper.get('.row-field button').trigger('click')
+    await wrapper.get('.row-field-value[role="button"]').trigger('click')
     await wrapper.get('.field-editor input').setValue('Late secret')
     await wrapper.get('.field-editor button').trigger('click')
     if (change === 'table')

@@ -32,3 +32,13 @@ export function columnFooterCells(
     return cell
   })
 }
+
+export function columnFooterScrollLeft(
+  coordinate: number,
+  viewportWidth: number,
+  cells: readonly ColumnFooterCell[],
+): number {
+  if (viewportWidth <= 0) return Math.max(0, coordinate)
+  const contentWidth = cells.reduce((total, cell) => total + cell.width, 0)
+  return Math.max(0, Math.min(coordinate, contentWidth - viewportWidth))
+}

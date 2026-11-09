@@ -37,6 +37,24 @@ export const CHOICE_COLORS = [
   'pink',
 ] as const
 
+export type ChoiceColor = (typeof CHOICE_COLORS)[number]
+
+export function isChoiceColor(value: string): value is ChoiceColor {
+  return CHOICE_COLORS.some((color) => color === value)
+}
+
+export function nextChoiceColor(used: readonly ChoiceColor[]): ChoiceColor {
+  const taken = new Set(used)
+  const unused = CHOICE_COLORS.find(
+    (color) => color !== 'gray' && !taken.has(color),
+  )
+  if (unused) return unused
+  if (!taken.has('gray')) return 'gray'
+  // Gray is the fallback after the other colors, including in later cycles.
+  const cycle = [...CHOICE_COLORS.slice(1), 'gray'] as const
+  return cycle[used.length % cycle.length]!
+}
+
 export interface ChoiceOptions {
   choices: Choice[]
 }
@@ -73,7 +91,7 @@ function parseChoice(raw: unknown): Result<Choice> {
   if (
     !CHOICE_ID.test(choice.id) ||
     !validLabel(choice.label) ||
-    !(CHOICE_COLORS as readonly string[]).includes(choice.color)
+    !isChoiceColor(choice.color)
   )
     return fail('invalid_options', 'choices')
   return ok(choice)

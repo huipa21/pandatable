@@ -88,9 +88,11 @@ also save the table's field order), use its checkbox to show or hide it, or
 open its **⋯** menu to edit, move or delete it. **Edit** uses the same layout
 as **Add field**, including the display-field option under advanced settings;
 owners can change a field's type there when a safe conversion
-exists. Attachment
-fields support file selection and drag-and-drop; the administrator's upload
-limit applies.
+exists. For single-select and multi-select fields, new options receive
+different preset colors automatically. Choose a swatch to change a color, and
+drag an option's handle, press Alt+Up/Down on it, or use its move controls to
+reorder the options. Attachment fields support file selection and
+drag-and-drop; the administrator's upload limit applies.
 
 In the desktop grid, click a text, number or date cell once to edit it (double-click,
 Enter or F2 also work). Leaving the cell saves a valid value; an invalid value

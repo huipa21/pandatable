@@ -1,11 +1,13 @@
 package attachments
 
 import (
+	"context"
 	"errors"
 	"image"
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"pandatable/internal/apperr"
@@ -86,5 +88,65 @@ func TestSniffWebPAndBoundedThumbnail(t *testing.T) {
 	var appError *apperr.Error
 	if !errors.As(err, &appError) || appError.Code != "ERR_IMAGE_TOO_LARGE" {
 		t.Fatalf("oversized image error = %v", err)
+	}
+}
+
+func TestCloneStoredFileSharesDataAndRemovesIndependently(t *testing.T) {
+	root := t.TempDir()
+	service := &Service{root: root}
+	sourceID := "01900000-0000-7000-8000-000000000001"
+	newID := "01900000-0000-7000-8000-000000000002"
+	directory := filepath.Join(root, "2025", "01")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, sourceID), []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, sourceID+".thumb.png"), []byte("thumb"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stored := "files/2025/01/" + sourceID
+	for _, bad := range []struct{ source, path, target string }{
+		{sourceID, stored, sourceID},
+		{sourceID, "files/2025/01/../" + sourceID, newID},
+		{sourceID, "files/2025/01/" + newID, newID},
+		{"not-a-uuid", stored, newID},
+	} {
+		if _, err := service.CloneStoredFile(context.Background(), bad.source, bad.path, false, bad.target); err == nil {
+			t.Errorf("CloneStoredFile(%+v) succeeded", bad)
+		}
+	}
+	missing := "01900000-0000-7000-8000-000000000003"
+	if _, err := service.CloneStoredFile(context.Background(), missing, "files/2025/01/"+missing, false,
+		newID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing clone source error = %v", err)
+	}
+	path, err := service.CloneStoredFile(context.Background(), sourceID, stored, true, newID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) != 4 || parts[0] != "files" || parts[3] != newID {
+		t.Fatalf("clone path = %q", path)
+	}
+	clone := filepath.Join(root, parts[1], parts[2], newID)
+	if _, err := service.CloneStoredFile(context.Background(), sourceID, stored, true, newID); err == nil {
+		t.Fatal("clone overwrote an existing target")
+	}
+	if err := service.RemovePurgedFile(context.Background(), sourceID, stored, true); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{clone: "payload", clone + ".thumb.png": "thumb"} {
+		data, err := os.ReadFile(name)
+		if err != nil || string(data) != want {
+			t.Fatalf("clone %s = %q, %v", name, data, err)
+		}
+	}
+	if err := service.RemovePurgedFile(context.Background(), newID, path, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(clone); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("removed clone still exists: %v", err)
 	}
 }

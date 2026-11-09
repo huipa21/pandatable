@@ -17,6 +17,7 @@ import {
 } from '../../fields/userDirectory'
 import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, Reason, Result, WireValue } from '../../fields/types'
+import TemporalEditor from './TemporalEditor.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -56,13 +57,19 @@ const emit = defineEmits<{
   commit: [value: WireValue]
   preview: [value: WireValue]
   invalidValue: []
-  invalidDraft: [text: string, reason: Reason]
+  invalidDraft: [text: string, reason: Reason, message?: string]
   compositionFinished: []
   cancel: []
+  focusout: [event: FocusEvent]
+  draftChanged: []
 }>()
 const { t } = useI18n()
 
 const input = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
+const temporalEditor = ref<InstanceType<typeof TemporalEditor>>()
+const temporal = computed(() =>
+  ['date', 'datetime', 'time'].includes(props.field.kind),
+)
 const attachmentInput = ref<HTMLInputElement>()
 const reason = ref<Reason | null>(null)
 const draft = ref(
@@ -185,6 +192,8 @@ function finish(result: Result<WireValue>) {
 }
 
 function currentDraft() {
+  if (temporal.value && temporalEditor.value)
+    return temporalEditor.value.currentDraft()
   const element = input.value
   return element instanceof HTMLInputElement ||
     element instanceof HTMLTextAreaElement
@@ -198,6 +207,8 @@ function compositionEnded() {
 }
 
 function commitText() {
+  if (temporal.value && temporalEditor.value)
+    return temporalEditor.value.commitDraft()
   draft.value = currentDraft()
   return finish(props.field.parsePaste(draft.value, props.env))
 }
@@ -205,7 +216,10 @@ function commitText() {
 defineExpose({
   commitDraft: commitText,
   currentDraft,
-  isComposing: () => composing.value,
+  isComposing: () => temporalEditor.value?.isComposing() ?? composing.value,
+  contains: (target: EventTarget | null) =>
+    temporalEditor.value?.contains(target) ?? false,
+  isPointerInPanel: () => temporalEditor.value?.isPointerInPanel() ?? false,
 })
 
 function previewText() {
@@ -363,6 +377,7 @@ async function searchUsers() {
 }
 
 function keydown(event: KeyboardEvent) {
+  if (temporal.value) return
   if (event.isComposing || composing.value) {
     if (props.gridCommitOnLeave) event.stopPropagation()
     return
@@ -395,6 +410,28 @@ function keydown(event: KeyboardEvent) {
       :aria-label="label ?? t('field.editor.value')"
       :required="required"
       @change="commitCheckbox"
+    />
+    <TemporalEditor
+      v-else-if="temporal"
+      ref="temporalEditor"
+      :field="field"
+      :value="value"
+      :env="env"
+      :label="label ?? t('field.editor.value')"
+      :required="required"
+      :auto-focus="autoFocus"
+      :live="live"
+      :initial-draft="initialDraft"
+      @commit="emit('commit', $event)"
+      @preview="emit('preview', $event)"
+      @invalid-value="emit('invalidValue')"
+      @invalid-draft="
+        (text, why, message) => emit('invalidDraft', text, why, message)
+      "
+      @composition-finished="emit('compositionFinished')"
+      @cancel="emit('cancel')"
+      @focusout="emit('focusout', $event)"
+      @draft-changed="emit('draftChanged')"
     />
     <select
       v-else-if="field.presentation === 'select' && multiple"

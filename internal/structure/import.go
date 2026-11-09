@@ -49,10 +49,20 @@ type ImportRequest struct {
 	Columns   []ImportMapping `json:"columns"`
 }
 
+// Import issue reasons. An empty reason is an invalid cell value. Notes use
+// row 0 and are informational: they do not count as invalid cells.
+const (
+	ImportReasonMetaEdited      = "meta_edited"
+	ImportReasonMetaInvalid     = "meta_invalid"
+	ImportReasonFileUnavailable = "file_unavailable"
+	ImportReasonLinkUnmatched   = "link_unmatched"
+)
+
 type ImportIssue struct {
 	Row    int    `json:"row"`
 	Column string `json:"column"`
 	Value  string `json:"value"`
+	Reason string `json:"reason,omitempty"`
 }
 
 type ImportResult struct {
@@ -64,11 +74,34 @@ type ImportResult struct {
 	UnavailableViews []string      `json:"unavailableViews,omitempty"`
 	Issues           []ImportIssue `json:"-"`
 	issueColumns     []int
+	files            []importClonedFile
+}
+
+// prependNotes adds analysis notes before cell issues without counting them as
+// invalid cells.
+func (result *ImportResult) prependNotes(notes []ImportIssue) {
+	if len(notes) == 0 {
+		return
+	}
+	issues := append(append(make([]ImportIssue, 0, len(notes)+len(result.Issues)), notes...), result.Issues...)
+	columns := make([]int, len(notes), len(issues))
+	for index := range columns {
+		columns[index] = -1
+	}
+	columns = append(columns, result.issueColumns...)
+	if len(issues) > maxImportIssues {
+		issues, columns = issues[:maxImportIssues], columns[:maxImportIssues]
+	}
+	result.Issues, result.issueColumns = issues, columns
 }
 
 func (result *ImportResult) issue(row, columnIndex int, column, value string) {
+	result.issueReason(row, columnIndex, column, value, "")
+}
+
+func (result *ImportResult) issueReason(row, columnIndex int, column, value, reason string) {
 	result.InvalidCells++
-	issue := ImportIssue{Row: row, Column: column, Value: value}
+	issue := ImportIssue{Row: row, Column: column, Value: value, Reason: reason}
 	count := len(result.Issues)
 	if count == 0 || result.Issues[count-1].Row < row ||
 		result.Issues[count-1].Row == row && result.issueColumns[count-1] <= columnIndex {
@@ -159,6 +192,8 @@ type importColumnPlan struct {
 	name   string
 	field  rowField
 	source ImportColumn
+	// zone is the package wall-clock timezone for spreadsheet date serials.
+	zone *time.Location
 }
 
 type importRecord struct {
@@ -255,6 +290,15 @@ func (s *Service) RunImport(ctx context.Context, actor Actor, target ImportTarge
 	if file == nil {
 		return ImportResult{}, validation("Import analysis is missing")
 	}
+	result, err := s.runImport(ctx, actor, target, file, request, progress)
+	result.files = nil
+	result.prependNotes(file.notes)
+	return result, err
+}
+
+func (s *Service) runImport(ctx context.Context, actor Actor, target ImportTarget, file *ImportFile,
+	request ImportRequest, progress func(ImportResult),
+) (ImportResult, error) {
 	if err := s.CheckImportAccess(ctx, actor, target); err != nil {
 		return ImportResult{}, err
 	}
@@ -355,7 +399,7 @@ func (s *Service) runNewPlainImport(ctx context.Context, actor Actor, bookID str
 				if len(batch) == 0 {
 					break
 				}
-				if err := s.copyImportBatch(ctx, c.tx, actor, table, columns, nil, batch, false, false, &result); err != nil {
+				if err := s.copyImportBatch(ctx, c.tx, actor, file, table, columns, nil, batch, false, false, &result); err != nil {
 					return err
 				}
 				result.Rows += len(batch)
@@ -390,12 +434,13 @@ func (s *Service) runAppendImport(ctx context.Context, actor Actor, tableID stri
 		if len(batch) == 0 {
 			return result, nil
 		}
+		before := len(result.files)
 		err = s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
 			columns, links, err := appendImportColumns(file, mappings, table)
 			if err != nil {
 				return err
 			}
-			if err := s.copyImportBatch(ctx, tx, actor, table, columns, links, batch, file.manifest != nil, false, &result); err != nil {
+			if err := s.copyImportBatch(ctx, tx, actor, file, table, columns, links, batch, file.manifest != nil, false, &result); err != nil {
 				return err
 			}
 			if err := events.Emit(ctx, tx, events.Event{Type: "row.bulk", TableID: tableID, By: actor.ID, ByName: actor.Name}); err != nil {
@@ -404,8 +449,11 @@ func (s *Service) runAppendImport(ctx context.Context, actor Actor, tableID stri
 			return emitRelatedRowInvalidations(ctx, tx, table.id)
 		})
 		if err != nil {
+			file.removeClonedFiles(result.files[before:])
+			result.files = result.files[:before]
 			return result, err
 		}
+		result.files = result.files[:0]
 		result.Rows += len(batch)
 		if progress != nil {
 			progress(result)
@@ -437,7 +485,8 @@ func appendImportColumns(file *ImportFile, mappings map[int]ImportMapping, table
 		if field.codec == nil || field.codec.ReadOnly() {
 			return nil, nil, validation("Append mappings must name distinct writable fields")
 		}
-		columns = append(columns, importColumnPlan{index: column.Index, name: column.Name, field: field, source: column})
+		columns = append(columns, importColumnPlan{index: column.Index, name: column.Name, field: field, source: column,
+			zone: file.packageLocation()})
 	}
 	if len(columns)+len(links) == 0 {
 		return nil, nil, validation("At least one import column must be mapped")
@@ -602,8 +651,9 @@ func allocateImportIDs(ctx context.Context, tx pgx.Tx, table rowTable, count int
 	return ids, nil
 }
 
-func (s *Service) copyImportBatch(ctx context.Context, tx pgx.Tx, actor Actor, table rowTable, columns []importColumnPlan,
-	links []importLinkPlan, batch []importRecord, isPackage, preserveSystem bool, result *ImportResult,
+func (s *Service) copyImportBatch(ctx context.Context, tx pgx.Tx, actor Actor, file *ImportFile, table rowTable,
+	columns []importColumnPlan, links []importLinkPlan, batch []importRecord, isPackage, preserveSystem bool,
+	result *ImportResult,
 ) error {
 	location, err := importLocation(actor.Timezone)
 	if err != nil {
@@ -630,6 +680,7 @@ func (s *Service) copyImportBatch(ctx context.Context, tx pgx.Tx, actor Actor, t
 	}
 	values := make([][]any, len(batch))
 	var userCells []importUserCell
+	var attachmentCells []importAttachmentCell
 	for index, record := range batch {
 		row := make([]any, 0, len(names))
 		row = append(row, ids[index])
@@ -645,6 +696,14 @@ func (s *Service) copyImportBatch(ctx context.Context, tx pgx.Tx, actor Actor, t
 				if text != strconv.FormatInt(ids[index], 10) {
 					return validation("The package row id does not match its system field")
 				}
+				continue
+			}
+			if isPackage && column.field.kind == codec.Attachment && column.source.UIType == string(codec.Attachment) {
+				if strings.TrimSpace(text) != "" {
+					attachmentCells = append(attachmentCells, importAttachmentCell{row: index, position: len(row),
+						number: record.number, column: column, text: text})
+				}
+				row = append(row, nil)
 				continue
 			}
 			value, parseErr := parseImportCell(column, text, isPackage, codec.Env{Location: location})
@@ -672,6 +731,9 @@ func (s *Service) copyImportBatch(ctx context.Context, tx pgx.Tx, actor Actor, t
 		values[index] = row
 	}
 	if err := validateImportUsers(ctx, tx, batch, values, userCells, result); err != nil {
+		return err
+	}
+	if err := s.relinkImportAttachments(ctx, tx, actor, file, table, values, attachmentCells, result); err != nil {
 		return err
 	}
 	copied, err := tx.CopyFrom(ctx, pgx.Identifier{table.schema, table.name}, names, pgx.CopyFromRows(values))
@@ -759,7 +821,7 @@ func validateImportUsers(ctx context.Context, tx pgx.Tx, batch []importRecord, v
 func parseImportCell(column importColumnPlan, text string, isPackage bool, env codec.Env) (any, error) {
 	if isPackage && (column.field.kind == codec.Date || column.field.kind == codec.DateTime ||
 		column.field.kind == codec.Time || column.field.kind == codec.CreatedAt || column.field.kind == codec.UpdatedAt) {
-		if value, numeric, err := parsePackageTemporal(column.field.kind, text); numeric || err != nil {
+		if value, numeric, err := parsePackageTemporalIn(column.field.kind, text, column.zone); numeric || err != nil {
 			return value, err
 		}
 	}

@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises'
+import { inflateRawSync } from 'node:zlib'
 import type { Locator } from '@playwright/test'
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
-import { openExportMenu, openGridSearch } from './table-controls'
+import { openExportMenu } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type { TableSchema } from '../src/api/types'
 
@@ -27,7 +28,37 @@ async function expectUnobscured(locator: Locator) {
     .toBe(true)
 }
 
-test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
+function zipEntry(bytes: Buffer, entryName: string) {
+  let end = bytes.length - 22
+  while (end >= 0 && bytes.readUInt32LE(end) !== 0x06054b50) end--
+  if (end < 0) throw new Error('XLSX archive directory is missing.')
+  const entries = bytes.readUInt16LE(end + 10)
+  let offset = bytes.readUInt32LE(end + 16)
+  for (let index = 0; index < entries; index++) {
+    if (bytes.readUInt32LE(offset) !== 0x02014b50)
+      throw new Error('XLSX archive entry is invalid.')
+    const method = bytes.readUInt16LE(offset + 10)
+    const compressedSize = bytes.readUInt32LE(offset + 20)
+    const nameLength = bytes.readUInt16LE(offset + 28)
+    const extraLength = bytes.readUInt16LE(offset + 30)
+    const commentLength = bytes.readUInt16LE(offset + 32)
+    const name = bytes.toString('utf8', offset + 46, offset + 46 + nameLength)
+    if (name === entryName) {
+      const localOffset = bytes.readUInt32LE(offset + 42)
+      const localNameLength = bytes.readUInt16LE(localOffset + 26)
+      const localExtraLength = bytes.readUInt16LE(localOffset + 28)
+      const dataOffset = localOffset + 30 + localNameLength + localExtraLength
+      const compressed = bytes.subarray(dataOffset, dataOffset + compressedSize)
+      if (method === 0) return compressed
+      if (method === 8) return inflateRawSync(compressed)
+      throw new Error(`Unsupported XLSX compression method: ${method}.`)
+    }
+    offset += 46 + nameLength + extraLength + commentLength
+  }
+  throw new Error(`XLSX archive entry ${entryName} is missing.`)
+}
+
+test('GP-06 XLSX-only transfer menu and the AT-702 package export artifact', async ({
   page,
 }, testInfo) => {
   test.setTimeout(150_000)
@@ -148,60 +179,17 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
   ).toHaveCount(0)
   await expect(page.locator('.transfer-menu > summary')).toHaveAttribute(
     'aria-label',
-    en.transfer.title,
+    en.gridPolish.gp06.trigger,
   )
-  const csvRequest = page.waitForRequest(
-    (request) =>
-      request.method() === 'POST' &&
-      new URL(request.url()).pathname === `/api/v1/views/${view.id}/export`,
+  await expect(page.locator('.transfer-menu > summary')).toHaveText(
+    en.gridPolish.gp06.trigger,
   )
-  const csvDownload = page.waitForEvent('download')
-  await page.getByRole('button', { name: en.export.csv, exact: true }).click()
-  const csvPayload = (await csvRequest).postDataJSON() as {
-    fieldIds: string[]
-    groupBy: string[]
-  }
-  expect(csvPayload.groupBy).toEqual([group.id])
-  expect(csvPayload.fieldIds).not.toContain(secret.id)
-  if (mobile) expect(csvPayload.fieldIds).not.toContain(status.id)
-  const csvFile = await csvDownload
-  expect(csvFile.suggestedFilename()).toBe(`任务 ${stamp}.csv`)
-  expect(await csvFile.failure()).toBeNull()
-  const csv = await readFile((await csvFile.path())!)
-  expect([...csv.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
-  const value = csv.subarray(3).toString('utf8')
-  if (mobile) {
-    expect(value).toBe(
-      `${name.name},Group\r\nOmega,A\r\nAlpha,A\r\n"中文,""引号""",B\r\n`,
-    )
-  } else {
-    expect(value).toBe(
-      `${name.name},Group,Status\r\nOmega,A,Open\r\nAlpha,A,Open\r\n"中文,""引号""",B,Open\r\n`,
-    )
-    await openGridSearch(page)
-    await page
-      .getByRole('searchbox', { name: en.grid.quickSearch, exact: true })
-      .fill('Alpha')
-    await openExportMenu(page)
-    const searchRequest = page.waitForRequest(
-      (request) =>
-        request.method() === 'POST' &&
-        new URL(request.url()).pathname === `/api/v1/views/${view.id}/export`,
-    )
-    const searchedDownload = page.waitForEvent('download')
-    await page.getByRole('button', { name: en.export.csv, exact: true }).click()
-    expect((await searchRequest).postDataJSON()).toMatchObject({
-      search: 'Alpha',
-    })
-    const searched = await searchedDownload
-    expect(await searched.failure()).toBeNull()
-    const searchedCSV = await readFile((await searched.path())!)
-    expect(searchedCSV.subarray(3).toString('utf8')).toBe(
-      `${name.name},Group,Status\r\nAlpha,A,Open\r\n`,
-    )
-  }
-  expect(value).not.toContain('secret value')
-  expect(value).not.toContain('Excluded')
+  const menuItems = page.locator('.view-export-panel button')
+  await expect(menuItems).toHaveCount(2)
+  await expect(menuItems).toHaveText([
+    en.gridPolish.gp06.import,
+    en.gridPolish.gp06.export,
+  ])
 
   const packageRequest = page.waitForRequest(
     (request) =>
@@ -210,10 +198,9 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
   )
   const packageDownload = page.waitForEvent('download')
   const packageButton = page.getByRole('button', {
-    name: en.export.package,
+    name: en.gridPolish.gp06.export,
     exact: true,
   })
-  await openExportMenu(page)
   await expectUnobscured(packageButton)
   await packageButton.click()
   expect((await packageRequest).postDataJSON()).toEqual({ format: 'xlsx' })
@@ -223,78 +210,7 @@ test('AT-701 current-view CSV and the AT-702 package export artifact', async ({
   const packageBytes = await readFile((await packageFile.path())!)
   expect([...packageBytes.subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04])
   expect(packageBytes.length).toBeGreaterThan(2_000)
-
-  const secondView = (await create(`/api/v1/tables/${tableId}/views`, {
-    name: 'Closed items',
-    type: 'grid',
-    scope: 'shared',
-  })) as { view: TableSchema['views'][number] }
-  const configuredSecond = await page.request.patch(
-    `/api/v1/views/${secondView.view.id}`,
-    {
-      headers: { ...headers(), 'If-Match': String(secondView.view.version) },
-      data: {
-        config: {
-          fields: schema.fields.map((item) => ({
-            id: item.id,
-            visible: item.id === name.id || item.id === status.id,
-          })),
-          frozen: 0,
-          filter: { field: status.id, cmp: 'is', value: 'Closed' },
-        },
-      },
-    },
-  )
-  expect(configuredSecond.status()).toBe(200)
-  await page.goto(`/t/${tableId}/v/${secondView.view.id}`)
-  await openExportMenu(page)
-  const secondRequest = page.waitForRequest(
-    (request) =>
-      request.method() === 'POST' &&
-      new URL(request.url()).pathname ===
-        `/api/v1/views/${secondView.view.id}/export`,
-  )
-  const secondDownload = page.waitForEvent('download')
-  await page.getByRole('button', { name: en.export.csv, exact: true }).click()
-  const secondPayload = (await secondRequest).postDataJSON()
-  expect(secondPayload).toMatchObject({
-    filter: { field: status.id, cmp: 'is', value: 'Closed' },
-  })
-  expect(secondPayload.fieldIds).toEqual(
-    mobile ? undefined : [name.id, status.id],
-  )
-  const secondFile = await secondDownload
-  expect(await secondFile.failure()).toBeNull()
-  expect(
-    (await readFile((await secondFile.path())!)).subarray(3).toString(),
-  ).toBe(`${name.name},Status\r\nExcluded,Closed\r\n`)
-
-  const otherTable = (await create(`/api/v1/books/${book.book.id}/tables`, {
-    name: `Other export ${stamp}`,
-  })) as TableSchema
-  await create(`/api/v1/tables/${otherTable.table.id}/rows`, {
-    rows: [{ fields: { [otherTable.table.displayFieldId!]: 'Other table' } }],
-  })
-  await page.goto(`/t/${otherTable.table.id}/v/${otherTable.views[0]!.id}`)
-  await openExportMenu(page)
-  const otherRequest = page.waitForRequest(
-    (request) =>
-      request.method() === 'POST' &&
-      new URL(request.url()).pathname ===
-        `/api/v1/views/${otherTable.views[0]!.id}/export`,
-  )
-  const otherDownload = page.waitForEvent('download')
-  await page.getByRole('button', { name: en.export.csv, exact: true }).click()
-  const otherPayload = (await otherRequest).postDataJSON()
-  expect(otherPayload.fieldIds).toEqual(
-    mobile ? undefined : [otherTable.table.displayFieldId],
-  )
-  const otherFile = await otherDownload
-  expect(await otherFile.failure()).toBeNull()
-  const displayName = otherTable.fields.find(
-    (item) => item.id === otherTable.table.displayFieldId,
-  )!.name
-  expect(
-    (await readFile((await otherFile.path())!)).subarray(3).toString(),
-  ).toBe(`${displayName}\r\nOther table\r\n`)
+  const workbook = zipEntry(packageBytes, 'xl/workbook.xml').toString('utf8')
+  expect(workbook).toMatch(/<sheet[^>]+name="Data"/)
+  expect(workbook).toMatch(/<sheet[^>]+name="_meta"/)
 })

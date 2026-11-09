@@ -29,9 +29,44 @@ func (s *Service) preparePackageLinks(ctx context.Context, actor Actor, target I
 	if !ok {
 		return acl.ErrValidation()
 	}
+	level := acl.Owner
+	if target.Kind == "table" {
+		level = acl.Write
+	}
+	allowed := func(id pgtype.UUID) (bool, error) {
+		access, err := acl.AccessUncached(ctx, s.pool, user, acl.Resource{Type: acl.Table, ID: id})
+		if err != nil {
+			return false, err
+		}
+		return access.Visible && access.Check(level) == nil, nil
+	}
 	for index := range file.Analysis.Columns {
 		column := &file.Analysis.Columns[index]
-		if column.UIType != "link" || column.LinkTarget == "" {
+		if column.UIType != "link" {
+			continue
+		}
+		// The source table id from _meta wins when it is in this book and the
+		// importer may use it; otherwise fall back to the name without
+		// revealing whether the id exists.
+		if sourceID, ok := acl.ParseUUID(file.relationTargets[column.PackageKey]); ok {
+			var name string
+			err := s.pool.QueryRow(ctx, `SELECT name FROM meta.tables
+				WHERE id=$1 AND book_id=$2 AND deleted_at IS NULL`, sourceID, book).Scan(&name)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("find package relation target by id: %w", err)
+			}
+			if err == nil {
+				ok, err := allowed(sourceID)
+				if err != nil {
+					return err
+				}
+				if ok {
+					column.RelinkTargetID, column.LinkTarget = sourceID.String(), name
+					continue
+				}
+			}
+		}
+		if column.LinkTarget == "" {
 			continue
 		}
 		rows, err := s.pool.Query(ctx, `SELECT id FROM meta.tables
@@ -56,16 +91,11 @@ func (s *Service) preparePackageLinks(ctx context.Context, actor Actor, target I
 		if len(matches) != 1 {
 			continue
 		}
-		resource := acl.Resource{Type: acl.Table, ID: matches[0]}
-		access, err := acl.AccessUncached(ctx, s.pool, user, resource)
+		ok, err := allowed(matches[0])
 		if err != nil {
 			return err
 		}
-		level := acl.Owner
-		if target.Kind == "table" {
-			level = acl.Write
-		}
-		if access.Visible && access.Check(level) == nil {
+		if ok {
 			column.RelinkTargetID = matches[0].String()
 		}
 	}
@@ -116,7 +146,7 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 	result := ImportResult{}
 	err = retryCollisions(func() error {
 		result = ImportResult{}
-		return s.run(ctx, actor, scope{target: target, affectsACL: true}, func(c *txn) error {
+		err := s.run(ctx, actor, scope{target: target, affectsACL: true}, func(c *txn) error {
 			tableID, physical, systemIDs, err := s.createImportTable(ctx, c, target.ID, name, systemNames)
 			if err != nil {
 				return err
@@ -189,7 +219,7 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 				if len(batch) == 0 {
 					break
 				}
-				if err := s.copyImportBatch(ctx, c.tx, actor, table, columns, links, batch, true, true, &result); err != nil {
+				if err := s.copyImportBatch(ctx, c.tx, actor, file, table, columns, links, batch, true, true, &result); err != nil {
 					return err
 				}
 				result.Rows += len(batch)
@@ -231,9 +261,20 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 			if err != nil {
 				return err
 			}
+			if viewID == "" && len(file.manifest.Views) == 0 {
+				viewID, err = createPackageDefaultView(ctx, c, table, file.manifest, keys, systemIDs)
+				if err != nil {
+					return err
+				}
+			}
 			result.ViewID = viewID
 			return nil
 		})
+		if err != nil {
+			file.removeClonedFiles(result.files)
+			result.files = nil
+		}
+		return err
 	})
 	if err != nil {
 		result.TableID, result.ViewID, result.Rows = "", "", 0
@@ -283,7 +324,8 @@ func packageImportColumns(file *ImportFile, table rowTable, keys map[string]stri
 		if field.relation != nil {
 			links = append(links, importLinkPlan{index: column.Index, name: column.Name, field: field, source: column})
 		} else {
-			columns = append(columns, importColumnPlan{index: column.Index, name: column.Name, field: field, source: column})
+			columns = append(columns, importColumnPlan{index: column.Index, name: column.Name, field: field, source: column,
+				zone: file.packageLocation()})
 		}
 	}
 	return columns, links, nil
@@ -310,6 +352,15 @@ func importBatchIDs(ctx context.Context, tx pgx.Tx, table rowTable, batch []impo
 // Excelize's date reader rounds serials to whole seconds. Decode package date,
 // datetime, and time serials directly to retain fractional-second precision.
 func parsePackageTemporal(kind codec.Kind, text string) (any, bool, error) {
+	return parsePackageTemporalIn(kind, text, time.UTC)
+}
+
+// parsePackageTemporalIn reads datetime serials as wall-clock times in zone,
+// the _meta datetime_timezone of the workbook.
+func parsePackageTemporalIn(kind codec.Kind, text string, zone *time.Location) (any, bool, error) {
+	if zone == nil {
+		zone = time.UTC
+	}
 	serial, err := strconv.ParseFloat(text, 64)
 	if err != nil {
 		return nil, false, nil
@@ -338,6 +389,10 @@ func parsePackageTemporal(kind codec.Kind, text string) (any, bool, error) {
 	micros := int64(math.Round(fraction * 86400 * 1_000_000))
 	instant := time.Date(1899, 12, 31, 0, 0, 0, 0, time.UTC).AddDate(0, 0, days).
 		Add(time.Duration(micros) * time.Microsecond)
+	if zone != time.UTC {
+		instant = time.Date(instant.Year(), instant.Month(), instant.Day(), instant.Hour(), instant.Minute(),
+			instant.Second(), instant.Nanosecond(), zone)
+	}
 	bindKind, value := codec.DateTime, instant.Format(time.RFC3339Nano)
 	if kind == codec.Date {
 		bindKind, value = codec.Date, instant.Format("2006-01-02")

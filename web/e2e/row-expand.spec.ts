@@ -136,13 +136,12 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
     exact: true,
   })
   await search.fill('Name')
-  await expect(dialog.locator('.row-field')).toHaveCount(1)
+  await expect(dialog.locator('.row-field:visible')).toHaveCount(1)
   await search.fill('')
   await expect(dialog.locator('.row-field')).toHaveCount(schema.fields.length)
-  await dialog
-    .getByRole('button', { name: en.rowExpand.compact, exact: true })
-    .click()
-  await expect(dialog).toHaveClass(/row-expand-compact/)
+  await expect(
+    dialog.getByRole('button', { name: 'Toggle compact view', exact: true }),
+  ).toHaveCount(0)
   for (const label of [en.comments.title, en.history.title]) {
     await dialog.getByRole('tab', { name: label, exact: true }).click()
     await expect(dialog.locator('.row-form')).not.toBeVisible()
@@ -178,16 +177,14 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
     .click()
   expect(await queryRows()).toHaveLength(2)
   const field = dialog.locator(`[data-field-id="${name.id}"]`)
-  await field.getByRole('button').click()
   await field.locator('.field-editor input').fill('Draft copy')
-  await field
-    .getByRole('button', { name: en.field.editor.apply, exact: true })
-    .click()
   expect(await queryRows()).toHaveLength(2)
   await dialog
-    .getByRole('button', { name: en.rowExpand.saveDuplicate, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
-  await expect(dialog.locator('.create-row')).toHaveCount(0)
+  await expect(
+    dialog.getByRole('button', { name: en.gridPolish.gp05.save, exact: true }),
+  ).toHaveCount(0)
   const rows = await queryRows()
   expect(rows).toHaveLength(3)
   const copy = rows.find((row) => row.fields[name.id] === 'Draft copy')!
@@ -429,7 +426,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   const nameField = schema.fields.find((field) => field.uiType === 'text')!
   const edit = async (fieldId: string) => {
     const section = dialog.locator(`[data-field-id="${fieldId}"]`)
-    await section.getByRole('button').click()
+    await section.locator('.row-field-value').click()
     return section
   }
   let section = await edit(nameField.id)
@@ -613,7 +610,9 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     await expect(
       readerDialog.getByText(en.rowExpand.readOnly, { exact: true }),
     ).toBeVisible()
-    await expect(readerDialog.locator('.row-field button')).toHaveCount(0)
+    await expect(
+      readerDialog.locator('.row-field-value[role="button"]'),
+    ).toHaveCount(0)
     expect(
       (
         await reader.request.patch(apiRowPath, {

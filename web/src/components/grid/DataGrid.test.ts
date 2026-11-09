@@ -9,7 +9,7 @@ import type {
   Providers,
 } from '@revolist/revogrid'
 import { i18n, loadLocale } from '../../i18n'
-import type { RowQueryRequest, TableSchema } from '../../api/types'
+import type { RowQueryRequest, TableSchema, ViewColumns } from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import { useUndoStore } from '../../stores/undo'
@@ -36,6 +36,7 @@ const gridState = vi.hoisted(() => ({
   editCell: vi.fn(),
   focusCells: vi.fn(),
   scrollRow: vi.fn(),
+  scrollColumn: vi.fn(),
   editorComponent: undefined as Component | undefined,
 }))
 
@@ -54,6 +55,9 @@ vi.mock('@revolist/vue3-datagrid', async () => {
         'beforecellfocus',
         'beforeeditstart',
         'viewportscroll',
+        'aftergridrender',
+        'afterrender',
+        'contentsizechanged',
         'afterfocus',
         'beforecopyregion',
         'beforecopyapply',
@@ -94,7 +98,7 @@ vi.mock('@revolist/vue3-datagrid', async () => {
               setCellEdit: gridState.editCell,
               setCellsFocus: gridState.focusCells,
               scrollToRow: gridState.scrollRow,
-              scrollToColumnProp: vi.fn(),
+              scrollToColumnProp: gridState.scrollColumn,
               getFocused: async () => currentFocus(),
             })
           }
@@ -384,6 +388,8 @@ beforeEach(async () => {
   gridState.focusCells.mockReset()
   gridState.scrollRow.mockReset()
   gridState.scrollRow.mockResolvedValue(undefined)
+  gridState.scrollColumn.mockReset()
+  gridState.scrollColumn.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -421,6 +427,7 @@ async function mountGrid(
   schema: TableSchema,
   identity = navUser.id,
   routePath = '/',
+  attachToDocument = false,
 ) {
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
@@ -564,9 +571,25 @@ async function mountGrid(
   wrapper = mount(DataGrid, {
     props: { schema, viewId: 'v', identity },
     global: { plugins: [pinia, i18n, router] },
+    attachTo: attachToDocument ? document.body : undefined,
   })
   await flushPromises()
   return fetch
+}
+
+async function openFooterPicker(fieldId: string) {
+  await wrapper!
+    .get(`.grid-summary-cell[data-field-id="${fieldId}"] button`)
+    .trigger('click')
+  return wrapper!.get('.grid-summary-menu')
+}
+
+async function chooseFooterAggregate(fieldId: string, aggregate: string) {
+  const menu = await openFooterPicker(fieldId)
+  await menu
+    .get(`[role="option"][data-aggregate="${aggregate}"]`)
+    .trigger('click')
+  await flushPromises()
 }
 
 async function requestCellEdit() {
@@ -3112,12 +3135,7 @@ it('sends transient quick search and renders configured footer aggregates', asyn
     search: 'acme',
   })
 
-  await wrapper!
-    .get(
-      `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'amount' })}"]`,
-    )
-    .setValue('sum')
-  await flushPromises()
+  await chooseFooterAggregate('amount', 'sum')
   const request = fetch.mock.calls
     .filter(([path]) => String(path).endsWith('/aggregates'))
     .at(-1)
@@ -3136,88 +3154,237 @@ it('sends transient quick search and renders configured footer aggregates', asyn
   ).toContain('42')
 })
 
-it('tracks the rendered viewport when it scrolls after the grid scroll event', async () => {
-  await mountGrid(schemaFor('text'))
-  const frames: FrameRequestCallback[] = []
-  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-    frames.push(callback)
-    return frames.length
-  })
+it('tracks the public footer column scroll event while keeping pinned cells fixed', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'amount', 'integer')
+  schema.views[0]!.config.frozen = 1
+  await mountGrid(schema)
   const grid = wrapper!.getComponent({ name: 'RevoGrid' })
-  const viewport = wrapper!.get<HTMLElement>('revogr-viewport-scroll.rgCol')
-  const scroller = document.createElement('revogr-scroll-virtual')
-  scroller.className = 'horizontal'
-  scroller.scrollLeft = 165
-  grid.element.appendChild(scroller)
   grid.vm.$emit(
     'viewportscroll',
-    new CustomEvent('viewportscroll', { detail: { dimension: 'rgCol' } }),
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgCol', coordinate: 260 },
+    }),
   )
-  for (const frame of frames) frame(performance.now())
-  viewport.element.scrollLeft = 260
-  viewport.element.dispatchEvent(new Event('scroll'))
   await nextTick()
+  expect(
+    (wrapper!.get('.grid-summary-track-scrollable').element as HTMLElement)
+      .style.transform,
+  ).toBe('translateX(-260px)')
+  expect(
+    (wrapper!.get('.grid-summary-track-pinned').element as HTMLElement).style
+      .transform,
+  ).toBe('')
   expect(
     (
       wrapper!.get('.grid-summary-cell[data-field-id="name"]')
         .element as HTMLElement
-    ).style.transform,
-  ).toBe('translateX(-260px)')
+    ).style.left,
+  ).toBe('104px')
 })
 
-it('rebinds footer scrolling when the desktop grid is removed and restored', async () => {
+it('reclamps footer scrolling when the viewport becomes wider', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'amount', 'integer')
+  schema.views[0]!.config.fields = [
+    { id: 'name', visible: true, width: 400 },
+    { id: 'amount', visible: true, width: 400 },
+  ]
+  await mountGrid(schema)
+  let viewportWidth = 500
+  Object.defineProperty(
+    wrapper!.get('.grid-summary-viewport').element,
+    'clientWidth',
+    {
+      configurable: true,
+      get: () => viewportWidth,
+    },
+  )
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  grid.vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgCol', coordinate: 700 },
+    }),
+  )
+  await nextTick()
+  const track = wrapper!.get('.grid-summary-track-scrollable')
+    .element as HTMLElement
+  expect(track.style.transform).toBe('translateX(-404px)')
+
+  viewportWidth = 700
+  grid.vm.$emit('contentsizechanged')
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await nextTick()
+  expect(track.style.transform).toBe('translateX(-204px)')
+})
+
+it('reveals an offscreen footer trigger using the public grid scroll API', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'amount', 'integer')
+  schema.views[0]!.config.frozen = 1
+  await mountGrid(schema)
+  const viewport = wrapper!.get('.grid-summary-viewport').element
+  const trigger = wrapper!.get(
+    '.grid-summary-cell[data-field-id="amount"] button',
+  )
+  vi.spyOn(viewport, 'getBoundingClientRect').mockReturnValue(
+    new DOMRect(0, 0, 500, 32),
+  )
+  vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(
+    new DOMRect(650, 0, 180, 32),
+  )
+
+  await trigger.trigger('focus')
+  expect(gridState.scrollColumn).toHaveBeenCalledWith('amount')
+})
+
+it('resets footer scrolling when the desktop grid is removed and restored', async () => {
   await mountGrid(schemaFor('text'))
   const media = window.matchMedia('(min-width: 768px)')
   if (!(media instanceof ThemeMedia)) throw new Error('Missing media mock')
-  const oldViewport = wrapper!.get<HTMLElement>(
-    'revogr-viewport-scroll.rgCol',
-  ).element
-  oldViewport.scrollLeft = 150
-  oldViewport.dispatchEvent(new Event('scroll'))
+  wrapper!.getComponent({ name: 'RevoGrid' }).vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgCol', coordinate: 150 },
+    }),
+  )
   await nextTick()
   expect(
-    (
-      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
-        .element as HTMLElement
-    ).style.transform,
+    (wrapper!.get('.grid-summary-track-scrollable').element as HTMLElement)
+      .style.transform,
   ).toBe('translateX(-150px)')
 
   media.setDark(false)
   await nextTick()
   expect(wrapper!.find('[data-testid="fake-grid"]').exists()).toBe(false)
+  expect(wrapper!.find('.grid-summary-bar').exists()).toBe(false)
 
   media.setDark(true)
   await flushPromises()
   expect(
-    (
-      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
-        .element as HTMLElement
-    ).style.transform,
+    (wrapper!.get('.grid-summary-track-scrollable').element as HTMLElement)
+      .style.transform,
   ).toBe('translateX(-0px)')
-  const newViewport = wrapper!.get<HTMLElement>(
-    'revogr-viewport-scroll.rgCol',
-  ).element
-  newViewport.scrollLeft = 75
-  newViewport.dispatchEvent(new Event('scroll'))
-  oldViewport.scrollLeft = 300
-  oldViewport.dispatchEvent(new Event('scroll'))
+  wrapper!.getComponent({ name: 'RevoGrid' }).vm.$emit(
+    'viewportscroll',
+    new CustomEvent('viewportscroll', {
+      detail: { dimension: 'rgCol', coordinate: 75 },
+    }),
+  )
   await nextTick()
   expect(
-    (
-      wrapper!.get('.grid-summary-cell[data-field-id="name"]')
-        .element as HTMLElement
-    ).style.transform,
+    (wrapper!.get('.grid-summary-track-scrollable').element as HTMLElement)
+      .style.transform,
   ).toBe('translateX(-75px)')
 })
 
-it('offers type-aware aggregate operations, renders API values, and clears config', async () => {
+it('keeps an unconfigured footer empty and removes its config when None is selected', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'amount', 'integer', { size: 'int' })
+  const fetch = await mountGrid(schema)
+  const cell = wrapper!.get('.grid-summary-cell[data-field-id="amount"]')
+  const trigger = cell.get<HTMLButtonElement>('button')
+  expect(cell.find('output').exists()).toBe(false)
+  expect(trigger.element.tabIndex).toBe(0)
+  expect(trigger.attributes('aria-expanded')).toBe('false')
+  expect(trigger.get('.grid-summary-hint').text()).toBe('Summary')
+  expect(
+    fetch.mock.calls.filter(([path]) => String(path).endsWith('/aggregates')),
+  ).toHaveLength(0)
+
+  await chooseFooterAggregate('amount', 'sum')
+  expect(cell.get('output').text()).toContain('Sum')
+  expect(cell.get('output').text()).toContain('42')
+  expect(trigger.attributes('aria-describedby')).toBe(
+    cell.get('output').attributes('id'),
+  )
+
+  await chooseFooterAggregate('amount', 'none')
+  expect(cell.find('output').exists()).toBe(false)
+  const config = wrapper!
+    .emitted('viewConfigChanged')
+    ?.at(-1)?.[0] as ViewColumns
+  expect(config.aggregates ?? []).not.toContainEqual({
+    fieldId: 'amount',
+    aggregate: 'sum',
+  })
+})
+
+it('supports footer listbox keyboard navigation, selection, and focus return', async () => {
+  await mountGrid(schemaFor('text'), navUser.id, '/', true)
+  const trigger = wrapper!.get<HTMLButtonElement>(
+    '.grid-summary-cell[data-field-id="name"] button',
+  )
+  trigger.element.focus()
+  const menu = await openFooterPicker('name')
+  expect(document.activeElement).toBe(menu.element)
+  expect(menu.attributes('role')).toBe('listbox')
+  expect(menu.get('[data-aggregate="none"]').attributes('aria-selected')).toBe(
+    'true',
+  )
+  await menu.trigger('keydown', { key: 'ArrowDown' })
+  expect(menu.attributes('aria-activedescendant')).toBe(
+    menu.get('[data-aggregate="count"]').attributes('id'),
+  )
+  await menu.trigger('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(wrapper!.find('.grid-summary-menu').exists()).toBe(false)
+  expect(document.activeElement).toBe(trigger.element)
+  expect(
+    wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+  ).toContain('42')
+
+  const reopened = await openFooterPicker('name')
+  await reopened.trigger('keydown', { key: 'End' })
+  await reopened.trigger('keydown', { key: 'ArrowUp' })
+  expect(reopened.attributes('aria-activedescendant')).toBe(
+    reopened.get('[data-aggregate="percent_filled"]').attributes('id'),
+  )
+  await reopened.trigger('keydown', { key: 'Home' })
+  expect(reopened.attributes('aria-activedescendant')).toBe(
+    reopened.get('[data-aggregate="none"]').attributes('id'),
+  )
+  await reopened.trigger('keydown', { key: 'Escape' })
+  expect(wrapper!.find('.grid-summary-menu').exists()).toBe(false)
+  expect(document.activeElement).toBe(trigger.element)
+})
+
+it.each([
+  { label: 'reader', level: 'read', locked: false },
+  { label: 'writer of a locked view', level: 'write', locked: true },
+] as const)(
+  'keeps footer changes local for a $label',
+  async ({ level, locked }) => {
+    const schema = schemaFor('text', level)
+    schema.views[0]!.locked = locked
+    const fetch = await mountGrid(schema)
+
+    await chooseFooterAggregate('name', 'count')
+    expect(
+      wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
+    ).toContain('42')
+    await wrapper!.vm.$.exposed?.flushColumnChanges()
+    expect(
+      fetch.mock.calls.filter(
+        ([path, init]) =>
+          String(path).endsWith('/views/v') && init?.method === 'PATCH',
+      ),
+    ).toHaveLength(0)
+    expect(wrapper!.emitted('viewConfigChanged')?.at(-1)?.[1]).toBe(true)
+
+    await chooseFooterAggregate('name', 'none')
+    expect(
+      wrapper!.find('.grid-summary-cell[data-field-id="name"] output').exists(),
+    ).toBe(false)
+  },
+)
+
+it('offers type-aware footer operations, renders API values, and clears config', async () => {
   const schema = schemaFor('text')
   addField(schema, 'amount', 'integer', { size: 'int' })
   addField(schema, 'created', 'date')
   const fetch = await mountGrid(schema)
-  const namePicker = wrapper!.get(
-    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'Name' })}"]`,
-  )
 
   for (const aggregate of [
     'count',
@@ -3228,8 +3395,9 @@ it('offers type-aware aggregate operations, renders API values, and clears confi
     'percent_filled',
     'percent_unique',
   ]) {
-    expect(namePicker.find(`option[value="${aggregate}"]`).exists()).toBe(true)
-    await namePicker.setValue(aggregate)
+    const menu = await openFooterPicker('name')
+    expect(menu.find(`[data-aggregate="${aggregate}"]`).exists()).toBe(true)
+    await menu.get(`[data-aggregate="${aggregate}"]`).trigger('click')
     await flushPromises()
     const request = fetch.mock.calls
       .filter(([path]) => String(path).endsWith('/aggregates'))
@@ -3243,36 +3411,27 @@ it('offers type-aware aggregate operations, renders API values, and clears confi
     ).toContain(aggregate.startsWith('percent_') ? '25%' : '42')
   }
 
-  const amountPicker = wrapper!.get(
-    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'amount' })}"]`,
-  )
   for (const aggregate of ['sum', 'avg']) {
-    expect(amountPicker.find(`option[value="${aggregate}"]`).exists()).toBe(
-      true,
-    )
-    await amountPicker.setValue(aggregate)
+    const menu = await openFooterPicker('amount')
+    expect(menu.find(`[data-aggregate="${aggregate}"]`).exists()).toBe(true)
+    await menu.get(`[data-aggregate="${aggregate}"]`).trigger('click')
     await flushPromises()
     expect(
       wrapper!.get('.grid-summary-cell[data-field-id="amount"] output').text(),
     ).toContain('42')
   }
 
-  const createdPicker = wrapper!.get(
-    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'created' })}"]`,
-  )
   for (const aggregate of ['earliest', 'latest']) {
-    expect(createdPicker.find(`option[value="${aggregate}"]`).exists()).toBe(
-      true,
-    )
-    await createdPicker.setValue(aggregate)
+    const menu = await openFooterPicker('created')
+    expect(menu.find(`[data-aggregate="${aggregate}"]`).exists()).toBe(true)
+    await menu.get(`[data-aggregate="${aggregate}"]`).trigger('click')
     await flushPromises()
     expect(
       wrapper!.get('.grid-summary-cell[data-field-id="created"] output').text(),
     ).toContain('2026')
   }
 
-  await namePicker.setValue('none')
-  await flushPromises()
+  await chooseFooterAggregate('name', 'none')
   expect(
     wrapper!.find('.grid-summary-cell[data-field-id="name"] output').exists(),
   ).toBe(false)
@@ -3284,16 +3443,11 @@ it('offers type-aware aggregate operations, renders API values, and clears confi
   ).not.toContainEqual({ fieldId: 'name', aggregate: 'percent_unique' })
 })
 
-it('shows aggregate failures and retries the server request explicitly', async () => {
+it('shows footer aggregate failures and retries the server request explicitly', async () => {
   const schema = schemaFor('text')
   gridState.footerFailuresRemaining = 1
   const fetch = await mountGrid(schema)
-  const picker = wrapper!.get(
-    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'Name' })}"]`,
-  )
-
-  await picker.setValue('count')
-  await flushPromises()
+  await chooseFooterAggregate('name', 'count')
   expect(wrapper!.get('[role="alert"]').text()).toContain(
     'Footer aggregates could not be loaded.',
   )
@@ -3309,7 +3463,7 @@ it('shows aggregate failures and retries the server request explicitly', async (
   ).toContain('42')
 })
 
-it('ignores a stale aggregate reply after a newer function is selected', async () => {
+it('ignores a stale footer aggregate reply after a newer function is selected', async () => {
   const schema = schemaFor('text')
   const fetch = await mountGrid(schema)
   let resolveFirst!: (response: Response) => void
@@ -3317,14 +3471,8 @@ it('ignores a stale aggregate reply after a newer function is selected', async (
     resolveFirst = resolve
   })
   fetch.mockImplementationOnce(async () => firstReply)
-  const picker = wrapper!.get(
-    `select[aria-label="${i18n.global.t('grid.aggregateForField', { field: 'Name' })}"]`,
-  )
-
-  await picker.setValue('count')
-  await flushPromises()
-  await picker.setValue('unique')
-  await flushPromises()
+  await chooseFooterAggregate('name', 'count')
+  await chooseFooterAggregate('name', 'unique')
   expect(
     wrapper!.get('.grid-summary-cell[data-field-id="name"] output').text(),
   ).toContain('42')

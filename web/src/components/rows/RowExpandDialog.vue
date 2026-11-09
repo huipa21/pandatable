@@ -7,6 +7,7 @@ import {
   ref,
   toRaw,
   watch,
+  type ObjectDirective,
 } from 'vue'
 import AppIcon, { fieldIconName } from '../AppIcon.vue'
 import { useI18n } from 'vue-i18n'
@@ -70,7 +71,6 @@ const historyTab = ref<HTMLButtonElement>()
 const commentsTab = ref<HTMLButtonElement>()
 const activeTab = ref<'details' | 'comments' | 'history'>('details')
 const search = ref('')
-const compact = ref(false)
 const fullscreen = ref(false)
 const workspaceRect = ref<DOMRect>()
 const duplicating = ref(false)
@@ -95,20 +95,25 @@ const relationEditing = ref<string | null>(null)
 const saved = ref(false)
 const preserveUploads = ref(false)
 const draft = ref<Record<string, WireValue>>({})
+const invalidDraftFields = ref(new Set<string>())
+const pendingDraftFields = ref(new Set<string>())
+const editorVersions = ref<Record<string, number>>({})
+const draftVersion = ref(0)
+type DraftEditor = Pick<
+  InstanceType<typeof FieldEditor>,
+  'contains' | 'isPointerInPanel'
+>
+const draftEditors = new Map<string, DraftEditor>()
 const blocked = ref(false)
 const creating = computed(() => props.rowId === null || duplicating.value)
 const title = computed(() => {
+  if (creating.value) return t('mobileRows.newRow')
   const primary = fields.value.find((item) => !item.field.isSystem)
   const label =
     primary?.result.ok && primary.value.ok
       ? primary.result.value.formatDisplay(primary.value.value, env.value)
       : ''
-  return (
-    label ||
-    (creating.value
-      ? t('mobileRows.newRow')
-      : t('rowExpand.title', { id: props.rowId }))
-  )
+  return label || t('rowExpand.title', { id: props.rowId })
 })
 const dialogStyle = computed(() => {
   const rect = workspaceRect.value
@@ -126,6 +131,7 @@ let realtimeReloadPending = false
 let generation = 0
 let disposed = false
 let draftCleanupStarted = false
+let draftContext: { tableId: string; attachmentFieldIds: string[] } | undefined
 const env = computed<FieldEnv>(() => ({
   timeZone: auth.user?.effectiveTimezone,
   locale: locale.value,
@@ -182,13 +188,20 @@ const fields = computed(() =>
       }
     }),
 )
+type DialogField = (typeof fields.value)[number]
+const availableFields = computed(() =>
+  creating.value
+    ? fields.value.filter((item) => !item.field.isSystem)
+    : fields.value,
+)
 const filteredFields = computed(() => {
   const query = search.value.trim().toLocaleLowerCase(locale.value)
-  return fields.value.filter(
+  return availableFields.value.filter(
     (item) =>
       !query ||
       item.field.name.toLocaleLowerCase(locale.value).includes(query) ||
-      (item.result.ok &&
+      (!creating.value &&
+        item.result.ok &&
         item.value.ok &&
         item.result.value
           .formatDisplay(item.value.value, env.value)
@@ -196,6 +209,63 @@ const filteredFields = computed(() => {
           .includes(query)),
   )
 })
+const filteredFieldIds = computed(
+  () => new Set(filteredFields.value.map((item) => item.field.id)),
+)
+
+function defaultPlaceholder(item: DialogField) {
+  if (
+    !creating.value ||
+    Object.hasOwn(draft.value, item.field.id) ||
+    item.field.default === null ||
+    !item.result.ok ||
+    !item.value.ok ||
+    ['checkbox', 'select', 'user', 'attachment'].includes(
+      item.result.value.presentation,
+    )
+  )
+    return undefined
+  return item.result.value.formatCopy(item.value.value, env.value) || undefined
+}
+
+type PlaceholderState = {
+  control: HTMLInputElement | HTMLTextAreaElement
+  original: string | null
+  applied: string | undefined
+}
+const placeholderStates = new WeakMap<HTMLElement, PlaceholderState>()
+
+// FieldEditor has no placeholder prop; retain its own hint when a default is cleared.
+function syncDefaultPlaceholder(container: HTMLElement, value?: string) {
+  const control = container.querySelector<
+    HTMLInputElement | HTMLTextAreaElement
+  >('.field-editor input[type="text"], .field-editor textarea')
+  if (!control) return
+  let state = placeholderStates.get(container)
+  if (!state || state.control !== control) {
+    state = {
+      control,
+      original: control.getAttribute('placeholder'),
+      applied: undefined,
+    }
+    placeholderStates.set(container, state)
+  } else if (
+    state.applied !== undefined &&
+    control.getAttribute('placeholder') !== state.applied
+  )
+    state.original = control.getAttribute('placeholder')
+  if (value !== undefined) control.setAttribute('placeholder', value)
+  else if (state.applied !== undefined) {
+    if (state.original === null) control.removeAttribute('placeholder')
+    else control.setAttribute('placeholder', state.original)
+  }
+  state.applied = value
+}
+
+const vDefaultPlaceholder: ObjectDirective<HTMLElement, string | undefined> = {
+  mounted: (element, binding) => syncDefaultPlaceholder(element, binding.value),
+  updated: (element, binding) => syncDefaultPlaceholder(element, binding.value),
+}
 const message = computed(() =>
   typeof error.value === 'string'
     ? error.value
@@ -222,6 +292,26 @@ function begin() {
   }
 }
 
+function resetDraft() {
+  draft.value = {}
+  invalidDraftFields.value.clear()
+  pendingDraftFields.value.clear()
+  editorVersions.value = {}
+  draftEditors.clear()
+  draftVersion.value++
+  preserveUploads.value = false
+}
+
+function startDraftContext() {
+  draftContext = {
+    tableId: props.schema.table.id,
+    attachmentFieldIds: props.schema.fields
+      .filter((field) => field.uiType === 'attachment')
+      .map((field) => field.id),
+  }
+  draftCleanupStarted = false
+}
+
 function failure(cause: unknown) {
   error.value = cause
   saved.value = false
@@ -229,9 +319,11 @@ function failure(cause: unknown) {
   draftCleanupStarted = false
   if (!(cause instanceof RequestError)) return
   if (cause.code === 'ERR_PASSWORD_CHANGE_REQUIRED') {
+    void discardDraftAttachments()
+    draftContext = undefined
     blocked.value = true
     row.value = null
-    draft.value = {}
+    resetDraft()
     editing.value = null
     void router.replace('/change-password')
   } else if ([401, 403, 404].includes(cause.status)) {
@@ -255,10 +347,13 @@ function failure(cause: unknown) {
 
 async function load(schemaChanged = false) {
   const { token, signal } = begin()
+  void discardDraftAttachments()
   row.value = null
-  draft.value = {}
+  resetDraft()
   duplicating.value = false
   copiedAttachments.clear()
+  draftContext = undefined
+  if (props.rowId === null) startDraftContext()
   search.value = ''
   navigationNotice.value = ''
   blocked.value = false
@@ -303,14 +398,6 @@ async function save(value: WireValue) {
   const item = fields.value.find((item) => item.field.id === editing.value)
   if (!item?.result.ok || item.field.isSystem || item.result.value.readOnly)
     return
-  if (creating.value) {
-    draft.value = { ...draft.value, [item.field.id]: value }
-    preserveUploads.value = true
-    await nextTick()
-    editing.value = null
-    error.value = null
-    return
-  }
   if (props.rowId === null) return
   const body = { fields: { [item.field.id]: value } }
   const previous = row.value?.fields[item.field.id]
@@ -361,15 +448,189 @@ async function save(value: WireValue) {
   }
 }
 
+function draftFieldElement(fieldId: string) {
+  return [
+    ...(dialog.value?.querySelectorAll<HTMLElement>('.row-field') ?? []),
+  ].find((element) => element.dataset.fieldId === fieldId)
+}
+
+function isDraftEditor(editor: unknown): editor is DraftEditor {
+  return (
+    typeof editor === 'object' &&
+    editor !== null &&
+    'contains' in editor &&
+    typeof editor.contains === 'function' &&
+    'isPointerInPanel' in editor &&
+    typeof editor.isPointerInPanel === 'function'
+  )
+}
+
+function setDraftEditor(fieldId: string, editor: unknown) {
+  if (editor === null) draftEditors.delete(fieldId)
+  else if (isDraftEditor(editor)) draftEditors.set(fieldId, editor)
+  else throw new TypeError('Field editor does not expose its containment check')
+}
+
+function trackTemporalPicker(event: Event) {
+  if (!creating.value || !canWrite.value) return
+  const target = event.target
+  if (!(target instanceof Element)) return
+  const portal = target.closest('.temporal-picker-portal')
+  if (!portal) return
+  const changed =
+    (event.type === 'click' &&
+      target.closest(
+        '.n-date-panel-date:not(.n-date-panel-date--disabled), .n-time-picker-col__item:not(.n-time-picker-col__item--disabled)',
+      )) ||
+    (event.type === 'input' &&
+      target.closest('.n-date-panel-date-input input, .n-time-picker input'))
+  if (!changed) return
+  for (const [fieldId, editor] of draftEditors)
+    if (editor.contains(target)) {
+      pendingDraftFields.value.add(fieldId)
+      break
+    }
+}
+
+function flushTemporalDraft(fieldId: string) {
+  const editor = draftEditors.get(fieldId)
+  const portal = [
+    ...(dialog.value?.querySelectorAll<HTMLElement>(
+      '.temporal-picker-portal',
+    ) ?? []),
+  ].find((element) => editor?.contains(element))
+  portal?.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+  )
+}
+
+function flushTemporalOnPointerDown(event: PointerEvent) {
+  if (!creating.value || !canWrite.value) return
+  for (const fieldId of [...pendingDraftFields.value]) {
+    const item = fields.value.find((field) => field.field.id === fieldId)
+    if (item?.field.uiType !== 'datetime' && item?.field.uiType !== 'time')
+      continue
+    const editor = draftEditors.get(fieldId)
+    if (editor && !editor.contains(event.target)) flushTemporalDraft(fieldId)
+  }
+}
+
+function flushTemporalOnFocusOut(event: FocusEvent) {
+  if (!creating.value || !canWrite.value) return
+  for (const fieldId of [...pendingDraftFields.value]) {
+    const item = fields.value.find((field) => field.field.id === fieldId)
+    if (item?.field.uiType !== 'datetime' && item?.field.uiType !== 'time')
+      continue
+    const editor = draftEditors.get(fieldId)
+    if (
+      editor?.contains(event.target) &&
+      !editor.contains(event.relatedTarget) &&
+      !editor.isPointerInPanel()
+    )
+      flushTemporalDraft(fieldId)
+  }
+}
+
+function updateDraft(fieldId: string, value: WireValue) {
+  if (!creating.value || !canWrite.value || blocked.value || saving.value)
+    return
+  const item = fields.value.find((field) => field.field.id === fieldId)
+  if (!item?.result.ok || item.field.isSystem || item.result.value.readOnly)
+    return
+  if (
+    item.field.uiType === 'attachment' &&
+    draftFieldElement(fieldId)?.querySelector(
+      '.field-attachment-editor [role="status"]',
+    )
+  )
+    return
+  draft.value = { ...draft.value, [fieldId]: value }
+  invalidDraftFields.value.delete(fieldId)
+  pendingDraftFields.value.delete(fieldId)
+  if (item.field.uiType === 'user')
+    editorVersions.value = {
+      ...editorVersions.value,
+      [fieldId]: (editorVersions.value[fieldId] ?? 0) + 1,
+    }
+  error.value = null
+}
+
+function trackPendingDraft(fieldId: string, kind: string, event: Event) {
+  const target = event.target
+  if (!(target instanceof Element)) return
+  if (kind === 'attachment') {
+    const files =
+      event.type === 'change' &&
+      target instanceof HTMLInputElement &&
+      target.type === 'file' &&
+      !!target.files?.length
+    const dropped =
+      event.type === 'drop' &&
+      event instanceof DragEvent &&
+      !!event.dataTransfer?.files.length
+    const removed =
+      event.type === 'click' && target.closest('.field-attachment-list button')
+    if (files || dropped || removed) pendingDraftFields.value.add(fieldId)
+  } else if (
+    kind === 'multi_user' &&
+    event.type === 'click' &&
+    target.closest('.field-user-results button, .field-user-selected button')
+  ) {
+    pendingDraftFields.value.add(fieldId)
+    if (target.closest('.field-user-selected button'))
+      void nextTick(() => {
+        if (
+          creating.value &&
+          !draftFieldElement(fieldId)?.querySelector('.field-user-selected li')
+        )
+          updateDraft(fieldId, null)
+      })
+  }
+}
+
+function flushPendingDrafts() {
+  for (const fieldId of [...pendingDraftFields.value]) {
+    const item = fields.value.find((field) => field.field.id === fieldId)
+    const section = draftFieldElement(fieldId)
+    if (!item || !section) continue
+    if (item.field.uiType === 'datetime' || item.field.uiType === 'time') {
+      flushTemporalDraft(fieldId)
+      continue
+    }
+    if (
+      item.field.uiType === 'attachment' &&
+      section.querySelector(
+        '.field-attachment-editor [role="status"], .field-attachment-editor [role="alert"]',
+      )
+    )
+      continue
+    const selector =
+      item.field.uiType === 'multi_user'
+        ? '.field-user-editor > button'
+        : '.field-editor > button'
+    const button = section.querySelector<HTMLButtonElement>(selector)
+    if (button && !button.disabled) button.click()
+  }
+}
+
 async function create() {
   if (
     !creating.value ||
     !canWrite.value ||
     blocked.value ||
-    saving.value ||
-    editing.value
+    loading.value ||
+    saving.value
   )
     return
+  flushPendingDrafts()
+  if (invalidDraftFields.value.size) {
+    error.value = t('gridPolish.gp05.invalid')
+    return
+  }
+  if (pendingDraftFields.value.size) {
+    error.value = t('gridPolish.gp05.applyPending')
+    return
+  }
   const body = { rows: [{ fields: draft.value }] }
   if (
     Object.keys(draft.value).length > 5000 ||
@@ -395,13 +656,29 @@ async function create() {
     undo.record([
       { kind: 'delete', tableId: props.schema.table.id, ids: [created.id] },
     ])
+    preserveUploads.value = true
     draft.value = {}
+    draftContext = undefined
     emit('created', created.id)
   } catch (cause) {
     if (current(token)) failure(cause)
   } finally {
     if (current(token)) saving.value = false
   }
+}
+
+function saveShortcut(event: KeyboardEvent) {
+  if (
+    !creating.value ||
+    event.isComposing ||
+    event.key !== 'Enter' ||
+    !(event.ctrlKey || event.metaKey) ||
+    event.altKey
+  )
+    return
+  event.preventDefault()
+  event.stopPropagation()
+  void create()
 }
 
 function startEditing(id: string) {
@@ -411,17 +688,35 @@ function startEditing(id: string) {
   error.value = null
 }
 
-function canEditField(isSystem: boolean, readOnly: boolean) {
-  return canWrite.value && !isSystem && !readOnly
+function canEditField(item: DialogField) {
+  return (
+    canWrite.value &&
+    !item.field.isSystem &&
+    item.result.ok &&
+    !item.result.value.readOnly
+  )
+}
+
+function activateField(event: MouseEvent | KeyboardEvent, item: DialogField) {
+  if (creating.value || !canEditField(item) || saving.value) return
+  if (event.target instanceof Element && event.target.closest('a')) return
+  if (event instanceof KeyboardEvent) event.preventDefault()
+  startEditing(item.field.id)
+}
+
+function activateRelation(event: MouseEvent | KeyboardEvent, id: string) {
+  if (!canWrite.value || saving.value) return
+  if (event instanceof KeyboardEvent) event.preventDefault()
+  relationEditing.value = id
 }
 
 async function discardDraftAttachments() {
-  if (!creating.value || draftCleanupStarted) return
+  const context = draftContext
+  if (!context || draftCleanupStarted) return
   draftCleanupStarted = true
   const ids = new Map<string, Set<string>>()
-  for (const field of props.schema.fields) {
-    if (field.uiType !== 'attachment') continue
-    const value = draft.value[field.id]
+  for (const fieldId of context.attachmentFieldIds) {
+    const value = draft.value[fieldId]
     if (!Array.isArray(value)) continue
     for (const item of value) {
       if (
@@ -431,13 +726,13 @@ async function discardDraftAttachments() {
         typeof item.id === 'string' &&
         !copiedAttachments.has(item.id)
       )
-        ids.set(field.id, new Set([...(ids.get(field.id) ?? []), item.id]))
+        ids.set(fieldId, new Set([...(ids.get(fieldId) ?? []), item.id]))
     }
   }
   await Promise.all(
     [...ids].flatMap(([fieldId, attachmentIds]) =>
       [...attachmentIds].map((attachmentId) =>
-        discardAttachment(props.schema.table.id, fieldId, attachmentId).catch(
+        discardAttachment(context.tableId, fieldId, attachmentId).catch(
           () => {},
         ),
       ),
@@ -513,7 +808,12 @@ function duplicate() {
     }
   }
   duplicating.value = true
+  startDraftContext()
   draft.value = values
+  invalidDraftFields.value.clear()
+  pendingDraftFields.value.clear()
+  editorVersions.value = {}
+  preserveUploads.value = false
   activeTab.value = 'details'
   search.value = ''
   saved.value = false
@@ -714,8 +1014,10 @@ watch(
     else {
       generation++
       controller?.abort()
+      void discardDraftAttachments()
+      draftContext = undefined
       row.value = null
-      draft.value = {}
+      resetDraft()
       editing.value = null
       loading.value = false
       saving.value = false
@@ -736,7 +1038,13 @@ watch(
       (previous === 'write' || previous === 'owner') &&
       next !== 'write' &&
       next !== 'owner' &&
-      (!!editing.value || saving.value || !!relationEditing.value)
+      (!!editing.value ||
+        saving.value ||
+        !!relationEditing.value ||
+        (creating.value &&
+          (Object.keys(draft.value).length > 0 ||
+            invalidDraftFields.value.size > 0 ||
+            pendingDraftFields.value.size > 0)))
     generation++
     controller?.abort()
     if (realtimeController) {
@@ -748,7 +1056,12 @@ watch(
     editing.value = null
     saved.value = false
     if (lostWrite) error.value = new RequestError('ERR_PERMISSION_DENIED', 403)
-    if (creating.value) draft.value = {}
+    if (creating.value) {
+      void discardDraftAttachments()
+      resetDraft()
+      copiedAttachments.clear()
+      startDraftContext()
+    }
     flushRealtimeReload()
   },
 )
@@ -823,12 +1136,14 @@ function leaveField(event: FocusEvent) {
   <dialog
     ref="dialog"
     class="row-expand"
-    :class="{
-      'row-expand-fullscreen': fullscreen,
-      'row-expand-compact': compact,
-    }"
+    :class="{ 'row-expand-fullscreen': fullscreen }"
     :style="dialogStyle"
     :aria-label="creating ? title : t('rowExpand.title', { id: rowId })"
+    @click.capture="trackTemporalPicker"
+    @input.capture="trackTemporalPicker"
+    @pointerdown.capture="flushTemporalOnPointerDown"
+    @focusout.capture="flushTemporalOnFocusOut"
+    @keydown.capture="saveShortcut"
     @cancel.prevent="
       activeTab === 'details' ? close() : switchTab('details', true)
     "
@@ -837,31 +1152,24 @@ function leaveField(event: FocusEvent) {
       <h2>{{ title }}</h2>
       <div class="row-actions">
         <button
+          v-if="!creating"
           type="button"
           :aria-label="t('rowExpand.previous')"
           :title="t('rowExpand.previous')"
-          :disabled="creating || !navigateRow || actionsBlocked"
+          :disabled="!navigateRow || actionsBlocked"
           @click="navigate(-1)"
         >
           <AppIcon name="chevronUp" />
         </button>
         <button
+          v-if="!creating"
           type="button"
           :aria-label="t('rowExpand.next')"
           :title="t('rowExpand.next')"
-          :disabled="creating || !navigateRow || actionsBlocked"
+          :disabled="!navigateRow || actionsBlocked"
           @click="navigate(1)"
         >
           <AppIcon name="chevronDown" />
-        </button>
-        <button
-          type="button"
-          :aria-label="t('rowExpand.compact')"
-          :title="t('rowExpand.compact')"
-          :aria-pressed="compact"
-          @click="compact = !compact"
-        >
-          <AppIcon name="compact" />
         </button>
         <button
           v-if="canWrite && !creating"
@@ -886,6 +1194,17 @@ function leaveField(event: FocusEvent) {
           @click="deleteDialog?.showModal()"
         >
           <AppIcon name="trash" />
+        </button>
+        <button
+          v-if="creating"
+          type="button"
+          :aria-label="t('gridPolish.gp05.save')"
+          :title="t('gridPolish.gp05.save')"
+          aria-keyshortcuts="Control+Enter Meta+Enter"
+          :disabled="!canWrite || blocked || loading || saving"
+          @click="create"
+        >
+          <AppIcon name="save" />
         </button>
         <button
           type="button"
@@ -993,51 +1312,106 @@ function leaveField(event: FocusEvent) {
           :aria-labelledby="rowId ? `row-details-tab-${rowId}` : undefined"
         >
           <p v-if="!canWrite">{{ t('rowExpand.readOnly') }}</p>
-          <p>{{ creating ? t('mobileRows.defaults') : t('rowExpand.hint') }}</p>
+          <p v-if="!creating">{{ t('rowExpand.hint') }}</p>
           <p v-if="creating && error">{{ t('mobileRows.uncertain') }}</p>
           <p v-if="duplicating" role="status">
             {{ t('rowExpand.duplicateDraft') }}
           </p>
           <p v-if="!filteredFields.length">{{ t('rowExpand.noFields') }}</p>
           <section
-            v-for="item in filteredFields"
+            v-for="item in availableFields"
+            v-show="filteredFieldIds.has(item.field.id)"
             :key="item.field.id"
             class="row-field"
+            :class="{ 'row-field-create': creating }"
             :aria-label="item.field.name"
             :data-field-id="item.field.id"
             @focusin="focusField(item.field.id)"
             @focusout="leaveField"
           >
             <CellPresence
-              v-if="rowId"
+              v-if="rowId && !creating"
               :table-id="schema.table.id"
               :row-id="rowId"
               :field-id="item.field.id"
               :identity="identity"
             />
             <h3>
-              <AppIcon :name="fieldIconName(item.field.uiType)" :size="16" />{{
+              <AppIcon :name="fieldIconName(item.field.uiType)" :size="16" />
+              <span :class="{ 'row-field-label-create': creating }">{{
                 item.field.name
-              }}
+              }}</span>
             </h3>
-            <p v-if="item.field.description">{{ item.field.description }}</p>
-            <p v-if="creating && item.field.isSystem">
-              {{ t('rowExpand.system') }}
-            </p>
-            <template
-              v-else-if="
-                item.field.uiType === 'link' && item.value.ok && !creating
-              "
-            >
-              <RelationLinks
-                :links="item.value.value"
-                :editable="canWrite"
-                @edit="relationEditing = item.field.id"
-              />
-            </template>
-            <template v-else-if="item.result.ok && item.value.ok">
-              <template v-if="editing === item.field.id && canWrite">
-                <fieldset :disabled="saving">
+            <div class="row-field-content">
+              <p v-if="item.field.description">{{ item.field.description }}</p>
+              <template
+                v-if="
+                  item.field.uiType === 'link' && item.value.ok && !creating
+                "
+              >
+                <div
+                  class="row-field-value"
+                  :class="{ 'row-field-editable': canWrite }"
+                  :role="canWrite ? 'button' : undefined"
+                  :tabindex="canWrite ? 0 : undefined"
+                  :aria-label="canWrite ? t('relation.edit') : undefined"
+                  :aria-disabled="saving || undefined"
+                  @click="activateRelation($event, item.field.id)"
+                  @keydown.enter="activateRelation($event, item.field.id)"
+                  @keydown.space="activateRelation($event, item.field.id)"
+                >
+                  <RelationLinks :links="item.value.value" />
+                </div>
+              </template>
+              <template v-else-if="item.result.ok && item.value.ok">
+                <fieldset
+                  v-if="creating && canEditField(item)"
+                  v-default-placeholder="defaultPlaceholder(item)"
+                  class="row-field-editor"
+                  :data-field-type="item.field.uiType"
+                  :disabled="saving"
+                  @change.capture="
+                    trackPendingDraft(item.field.id, item.field.uiType, $event)
+                  "
+                  @click="
+                    trackPendingDraft(item.field.id, item.field.uiType, $event)
+                  "
+                  @drop.capture="
+                    trackPendingDraft(item.field.id, item.field.uiType, $event)
+                  "
+                >
+                  <legend class="row-tab-label">{{ item.field.name }}</legend>
+                  <FieldEditor
+                    :key="`${draftVersion}-${item.field.id}-${editorVersions[item.field.id] ?? 0}`"
+                    :ref="(editor) => setDraftEditor(item.field.id, editor)"
+                    :field="item.result.value"
+                    :value="
+                      defaultPlaceholder(item) === undefined
+                        ? item.value.value
+                        : null
+                    "
+                    :env="env"
+                    :label="item.field.name"
+                    :auto-focus="false"
+                    :live="true"
+                    :table-id="schema.table.id"
+                    :field-id="item.field.id"
+                    :preserve-uploads="
+                      preserveUploads || Object.hasOwn(draft, item.field.id)
+                    "
+                    :identity="identity"
+                    :resolve-user="resolveUser"
+                    @preview="updateDraft(item.field.id, $event)"
+                    @invalid-value="invalidDraftFields.add(item.field.id)"
+                    @invalid-draft="invalidDraftFields.add(item.field.id)"
+                    @commit="updateDraft(item.field.id, $event)"
+                    @cancel="close"
+                  />
+                </fieldset>
+                <fieldset
+                  v-else-if="!creating && editing === item.field.id && canWrite"
+                  :disabled="saving"
+                >
                   <legend>{{ item.field.name }}</legend>
                   <p v-if="changedBy" role="status">
                     {{ t('realtime.changedBy', { name: changedBy }) }}
@@ -1051,9 +1425,7 @@ function leaveField(event: FocusEvent) {
                     :preserve-uploads="preserveUploads"
                     :identity="identity"
                     :resolve-user="resolveUser"
-                    :submit-label="
-                      creating ? t('field.editor.apply') : t('rowExpand.save')
-                    "
+                    :submit-label="t('rowExpand.save')"
                     @commit="save"
                     @cancel="editing = null"
                   />
@@ -1061,9 +1433,24 @@ function leaveField(event: FocusEvent) {
                     {{ t('admin.cancel') }}
                   </button>
                 </fieldset>
-              </template>
-              <template v-else>
-                <div class="row-field-value">
+                <div
+                  v-else
+                  class="row-field-value"
+                  :class="{
+                    'row-field-editable': !creating && canEditField(item),
+                  }"
+                  :role="!creating && canEditField(item) ? 'button' : undefined"
+                  :tabindex="!creating && canEditField(item) ? 0 : undefined"
+                  :aria-label="
+                    !creating && canEditField(item)
+                      ? t('rowExpand.edit', { name: item.field.name })
+                      : undefined
+                  "
+                  :aria-disabled="saving || undefined"
+                  @click="activateField($event, item)"
+                  @keydown.enter="activateField($event, item)"
+                  @keydown.space="activateField($event, item)"
+                >
                   <FieldRenderer
                     :field="item.result.value"
                     :value="item.value.value"
@@ -1072,32 +1459,14 @@ function leaveField(event: FocusEvent) {
                     :identity="identity"
                     :resolve-user="resolveUser"
                   />
-                  <button
-                    v-if="
-                      canEditField(
-                        item.field.isSystem,
-                        item.result.value.readOnly,
-                      )
-                    "
-                    type="button"
-                    :disabled="saving"
-                    @click="startEditing(item.field.id)"
-                  >
-                    <AppIcon name="edit" :size="16" />
-                    <span class="row-tab-label">{{
-                      t('rowExpand.edit', { name: item.field.name })
-                    }}</span>
-                  </button>
                   <span
-                    v-else-if="
-                      item.field.isSystem || item.result.value.readOnly
-                    "
+                    v-if="item.field.isSystem || item.result.value.readOnly"
                     v-text="t('rowExpand.system')"
                   />
                 </div>
               </template>
-            </template>
-            <p v-else role="alert">{{ t('grid.unsupportedField') }}</p>
+              <p v-else role="alert">{{ t('grid.unsupportedField') }}</p>
+            </div>
           </section>
         </div>
         <div
@@ -1134,21 +1503,6 @@ function leaveField(event: FocusEvent) {
           @schema-changed="emit('schemaChanged')"
         />
       </div>
-      <button
-        v-if="creating"
-        class="create-row"
-        type="button"
-        :disabled="saving || editing !== null"
-        @click="create"
-      >
-        {{
-          saving
-            ? t('grid.saving')
-            : duplicating
-              ? t('rowExpand.saveDuplicate')
-              : t('mobileRows.create')
-        }}
-      </button>
     </template>
   </dialog>
   <dialog
@@ -1303,6 +1657,32 @@ h3 {
   font-weight: 500;
   color: var(--muted);
 }
+.row-field-create {
+  grid-template-columns: minmax(8rem, 3fr) minmax(0, 7fr);
+  align-items: start;
+  column-gap: 16px;
+}
+.row-field-create h3 {
+  padding-top: 8px;
+}
+.row-field-label-create::after {
+  content: ':';
+}
+.row-field-content {
+  min-width: 0;
+}
+.row-field-content > p {
+  margin: 0 0 8px;
+}
+.row-field-editor {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.row-field-editor[data-field-type='multi_select']
+  :deep(.field-editor > button) {
+  display: none;
+}
 .row-field-value {
   display: flex;
   align-items: flex-start;
@@ -1312,32 +1692,21 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 6px;
 }
+.row-field-editable {
+  min-height: 36px;
+  cursor: pointer;
+}
+.row-field-editable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .row-field-value :deep(.field-value) {
   flex: 1;
   min-width: 0;
 }
-.row-field-value > button {
-  flex-shrink: 0;
-  display: inline-flex;
-  padding: 2px;
-  border: 0;
-}
 .row-field-value > span {
   font-size: 11px;
   color: var(--muted);
-}
-.row-expand-compact .row-field-value {
-  border: 0;
-  padding: 4px 0;
-}
-.row-expand-compact .row-field h3 {
-  text-transform: uppercase;
-}
-.row-expand-compact .row-field h3 .app-icon {
-  display: none;
-}
-.create-row {
-  margin: 12px 24px;
 }
 .row-delete-dialog {
   max-width: min(420px, calc(100vw - 32px));
@@ -1365,6 +1734,11 @@ button:disabled {
 .row-field :deep(.field-value) {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+@media (max-width: 479px) {
+  .row-field-create {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 @media (max-width: 767px) {
   .row-expand {

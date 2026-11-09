@@ -49,6 +49,74 @@ function mountEditor(
 }
 
 describe('grid scalar editor lifecycle', () => {
+  it('keeps a temporal picker panel inside the edit boundary and cancels on Escape', async () => {
+    const { wrapper, save, close, discardDraft } = mountEditor(
+      'date',
+      '2026-03-01',
+      {},
+      undefined,
+      document.body,
+    )
+    await flushPromises()
+    const portal = Array.from(
+      document.querySelectorAll<HTMLElement>('.temporal-picker-portal'),
+    ).find((candidate) => wrapper.vm.contains(candidate))
+    if (!portal) throw new Error('Temporal picker portal was not mounted')
+    const calendar = portal.querySelector<HTMLElement>('.n-date-panel')
+    if (!calendar) throw new Error('Temporal calendar was not opened')
+
+    await wrapper.get('input').trigger('focusout', { relatedTarget: calendar })
+    expect(save).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    calendar.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await wrapper.get('input').trigger('focusout', { relatedTarget: null })
+    expect(save).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+    calendar.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    expect(save).not.toHaveBeenCalled()
+    expect(discardDraft).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
+  it('accepts a second date selection if the grid retains its temporal editor', async () => {
+    const { wrapper, save } = mountEditor(
+      'date',
+      '2026-03-01',
+      {},
+      undefined,
+      document.body,
+    )
+    await flushPromises()
+    const portal = Array.from(
+      document.querySelectorAll<HTMLElement>('.temporal-picker-portal'),
+    ).find((candidate) => wrapper.vm.contains(candidate))
+    if (!portal) throw new Error('Temporal picker portal was not mounted')
+    const selectDay = async (day: number) => {
+      const item = Array.from(
+        portal.querySelectorAll<HTMLElement>(
+          '.n-date-panel-date:not(.n-date-panel-date--excluded)',
+        ),
+      ).find((candidate) => candidate.textContent?.trim() === String(day))
+      if (!item) throw new Error(`Calendar day ${day} was not found`)
+      item.click()
+      await flushPromises()
+    }
+    await selectDay(15)
+    expect(save).toHaveBeenNthCalledWith(1, '2026-03-15', false)
+    await wrapper.get('input').trigger('click')
+    await flushPromises()
+    await selectDay(20)
+    expect(save).toHaveBeenNthCalledWith(2, '2026-03-20', false)
+    wrapper.unmount()
+  })
+
   it('commits once on leave and ignores the resulting blur', async () => {
     const { wrapper, save, close, saveDraft } = mountEditor('text', 'before')
     const input = wrapper.get('input')

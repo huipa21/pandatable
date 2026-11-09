@@ -11,6 +11,7 @@ import {
 } from './temporal'
 import { safeHref } from './text'
 import { shortestFloat32 } from './number'
+import { CHOICE_COLORS, nextChoiceColor, type ChoiceColor } from './choice'
 import type { FieldEnv, Kind, Result, WireValue } from './types'
 
 // Shared Go/TypeScript vectors (D-121); Go runs the same file in
@@ -208,6 +209,18 @@ describe('field registry', () => {
     expect(bind('created_at', {}).formatCopy('2026-03-08T07:30:00Z', {})).toBe(
       '2026-03-08 07:30:00+00:00',
     )
+  })
+})
+
+describe('choice colors', () => {
+  it('uses each unused non-gray color, then gray, and cycles the palette', () => {
+    const used: ChoiceColor[] = []
+    for (let index = 0; index < CHOICE_COLORS.length + 2; index++)
+      used.push(nextChoiceColor(used))
+
+    expect(used).toEqual([...CHOICE_COLORS.slice(1), 'gray', 'red', 'orange'])
+    expect(nextChoiceColor(['gray', 'red', 'amber', 'red'])).toBe('orange')
+    expect(nextChoiceColor(['blue', 'green'])).toBe('red')
   })
 })
 

@@ -39,6 +39,7 @@ function aggregateValue(
 
 test('AT-509/510 quick search and footer aggregates use visible filtered rows', async ({
   page,
+  browser,
 }) => {
   test.setTimeout(150_000)
   test.skip(
@@ -168,6 +169,9 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
   expect(aggregateValue(initial, counter.id, 'count')).toBe(3)
 
   const grid = page.locator('revo-grid')
+  const gridWorkspace = page.locator('.grid-workspace')
+  const surface = page.locator('.grid-surface')
+  const summaryBar = page.locator('.grid-summary-bar')
   const summaryCells = page.locator('.grid-summary-cell[data-field-id]')
   await expect(summaryCells).toHaveCount(5)
   await expect(
@@ -176,6 +180,41 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
   await expect(
     page.locator(`.grid-summary-cell[data-field-id="${amount.id}"] output`),
   ).toContainText('30')
+  await expect(grid).toHaveAttribute('aria-rowcount', '3')
+  const lastRow = grid.locator('revogr-data .rgRow[data-rgrow="2"]').first()
+  const appendRow = page.getByRole('button', {
+    name: en.grid.addRow,
+    exact: true,
+  })
+  await expect(lastRow).toBeVisible()
+  await expect(appendRow).toBeVisible()
+  await expect
+    .poll(async () => {
+      const [workspaceBox, surfaceBox, barBox, rowBox, appendBox] =
+        await Promise.all([
+          gridWorkspace.boundingBox(),
+          surface.boundingBox(),
+          summaryBar.boundingBox(),
+          lastRow.boundingBox(),
+          appendRow.boundingBox(),
+        ])
+      if (!workspaceBox || !surfaceBox || !barBox || !rowBox || !appendBox)
+        return Infinity
+      return Math.max(
+        Math.abs(barBox.y + barBox.height - (surfaceBox.y + surfaceBox.height)),
+        Math.abs(
+          barBox.y + barBox.height - (workspaceBox.y + workspaceBox.height),
+        ),
+        Math.abs(appendBox.y - (rowBox.y + rowBox.height)),
+      )
+    })
+    .toBeLessThanOrEqual(2)
+  const [barBox, appendBox] = await Promise.all([
+    summaryBar.boundingBox(),
+    appendRow.boundingBox(),
+  ])
+  if (!barBox || !appendBox) throw new Error('Footer geometry is unavailable')
+  expect(barBox.y - (appendBox.y + appendBox.height)).toBeGreaterThan(20)
 
   const expectAligned = async (fieldName: string, fieldId: string) => {
     const headerBox = await grid
@@ -188,7 +227,7 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
       throw new Error(`Missing ${fieldName} column geometry`)
     const footerTransform = await page
       .locator(`.grid-summary-cell[data-field-id="${fieldId}"]`)
-      .evaluate((element) => getComputedStyle(element).transform)
+      .evaluate((element) => getComputedStyle(element.parentElement!).transform)
     const horizontalScroll = await grid
       .locator('revogr-scroll-virtual.horizontal')
       .evaluate((element) => ({
@@ -303,7 +342,28 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     'Gamma',
   ])
 
-  const amountAggregate = page.getByRole('combobox', {
+  const amountAggregate = page.getByRole('button', {
+    name: en.grid.aggregateForField.replace('{field}', 'Amount'),
+    exact: true,
+  })
+  await amountAggregate.focus()
+  await expect
+    .poll(async () => {
+      const [gridBox, pinnedBox, amountBox] = await Promise.all([
+        grid.boundingBox(),
+        frozenSummary.boundingBox(),
+        amountAggregate.boundingBox(),
+      ])
+      if (!gridBox || !pinnedBox || !amountBox) return Infinity
+      return Math.max(
+        0,
+        pinnedBox.x + pinnedBox.width - amountBox.x,
+        amountBox.x + amountBox.width - (gridBox.x + gridBox.width),
+      )
+    })
+    .toBeLessThanOrEqual(2)
+  await expectAligned('Amount', amount.id)
+  const amountMenu = page.getByRole('listbox', {
     name: en.grid.aggregateForField.replace('{field}', 'Amount'),
   })
   const aggregateConfigSaved = page.waitForResponse((response) => {
@@ -314,12 +374,110 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     )
   })
   const changedAggregate = waitForAggregates('项目')
-  await amountAggregate.selectOption('avg')
+  await amountAggregate.click()
+  await amountMenu
+    .getByRole('option', { name: en.grid.aggregateLabels.avg, exact: true })
+    .click()
   await changedAggregate
   await aggregateConfigSaved
   await expect(
     page.locator(`.grid-summary-cell[data-field-id="${amount.id}"] output`),
   ).toContainText('Average')
+
+  const clearedConfigSaved = page.waitForResponse((response) => {
+    const request = response.request()
+    return (
+      request.method() === 'PATCH' &&
+      new URL(response.url()).pathname === `/api/v1/views/${view.id}`
+    )
+  })
+  const clearedAggregates = waitForAggregates('项目')
+  await amountAggregate.click()
+  await amountMenu
+    .getByRole('option', { name: en.grid.aggregateLabels.none, exact: true })
+    .click()
+  const clearedConfig = (await clearedConfigSaved).request().postDataJSON() as {
+    config: TableSchema['views'][number]['config']
+  }
+  await clearedAggregates
+  expect(clearedConfig.config.aggregates ?? []).not.toContainEqual(
+    expect.objectContaining({ fieldId: amount.id }),
+  )
+  await expect(
+    page.locator(`.grid-summary-cell[data-field-id="${amount.id}"] output`),
+  ).toHaveCount(0)
+  const hint = page.locator(
+    `.grid-summary-cell[data-field-id="${amount.id}"] .grid-summary-hint`,
+  )
+  await page.mouse.move(0, 0)
+  await grid.focus()
+  await expect
+    .poll(() => hint.evaluate((element) => getComputedStyle(element).opacity))
+    .toBe('0')
+  await amountAggregate.hover()
+  await expect
+    .poll(() => hint.evaluate((element) => getComputedStyle(element).opacity))
+    .toBe('1')
+  await page.mouse.move(0, 0)
+  await amountAggregate.focus()
+  await expect
+    .poll(() => hint.evaluate((element) => getComputedStyle(element).opacity))
+    .toBe('1')
+  await amountAggregate.press('Enter')
+  await expect(amountMenu).toBeFocused()
+  await amountMenu.press('ArrowDown')
+  await expect(amountMenu).toHaveAttribute(
+    'aria-activedescendant',
+    (await amountMenu
+      .getByRole('option', { name: en.grid.aggregateLabels.count, exact: true })
+      .getAttribute('id')) as string,
+  )
+  await amountMenu.press('Escape')
+  await expect(amountAggregate).toBeFocused()
+  await amountAggregate.press('Enter')
+  await amountMenu.press('Tab')
+  await expect(amountMenu).toHaveCount(0)
+  await expect(
+    page.getByRole('button', {
+      name: en.grid.aggregateForField.replace('{field}', 'Rate'),
+      exact: true,
+    }),
+  ).toBeFocused()
+
+  const touchContext = await browser.newContext({
+    baseURL: process.env.PT_E2E_BASE_URL,
+    storageState: await page.context().storageState(),
+    hasTouch: true,
+    viewport: { width: 1280, height: 900 },
+  })
+  try {
+    const touchPage = await touchContext.newPage()
+    await touchPage.goto(`/t/${tableId}/v/${view.id}`)
+    expect(
+      await touchPage.evaluate(() => matchMedia('(hover: none)').matches),
+    ).toBe(true)
+    const touchHint = touchPage.locator(
+      `.grid-summary-cell[data-field-id="${amount.id}"] .grid-summary-hint`,
+    )
+    await expect
+      .poll(() =>
+        touchHint.evaluate((element) => getComputedStyle(element).opacity),
+      )
+      .toBe('1')
+    await touchPage
+      .getByRole('button', {
+        name: en.grid.aggregateForField.replace('{field}', 'Amount'),
+        exact: true,
+      })
+      .tap()
+    await expect(
+      touchPage.getByRole('listbox', {
+        name: en.grid.aggregateForField.replace('{field}', 'Amount'),
+      }),
+    ).toBeVisible()
+  } finally {
+    await touchContext.close()
+  }
 
   const updateView = async (
     update: (config: TableSchema['views'][number]['config']) => void,
@@ -379,4 +537,57 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
   await page.reload()
   await expect(summaryCells).toHaveCount(5)
   await expect(page.locator('.grid-add-row')).toBeVisible()
+
+  const moreRows = await page.request.post(`/api/v1/tables/${tableId}/rows`, {
+    headers: headers(),
+    data: {
+      rows: Array.from({ length: 40 }, (_, index) => ({
+        fields: { [displayId]: `Extra ${index}`, [amount.id]: 10 },
+      })),
+    },
+  })
+  expect(moreRows.status()).toBe(201)
+  await updateView((config) => {
+    config.filter = null
+    config.groupBy = []
+  })
+  await page.reload()
+  await expect(grid).toHaveAttribute('aria-rowcount', '44')
+  await grid.evaluate(async (element) => {
+    await (element as HTMLElement & Components.RevoGrid).scrollToRow(35)
+  })
+  await expect
+    .poll(() =>
+      grid
+        .locator('revogr-viewport-scroll.rgCol .vertical-inner')
+        .evaluate((element) => element.scrollTop),
+    )
+    .toBeGreaterThan(0)
+  await grid.evaluate(async (element, fieldId) => {
+    await (element as HTMLElement & Components.RevoGrid).scrollToColumnProp(
+      fieldId,
+    )
+  }, counter.id)
+  await expect
+    .poll(() =>
+      grid
+        .locator('revogr-scroll-virtual.horizontal')
+        .evaluate((element) => element.scrollLeft),
+    )
+    .toBeGreaterThan(0)
+  await expectAligned('Counter', counter.id)
+  await expect
+    .poll(async () => {
+      const [currentSurface, currentBar] = await Promise.all([
+        surface.boundingBox(),
+        summaryBar.boundingBox(),
+      ])
+      if (!currentSurface || !currentBar) return Infinity
+      return Math.abs(
+        currentBar.y +
+          currentBar.height -
+          (currentSurface.y + currentSurface.height),
+      )
+    })
+    .toBeLessThanOrEqual(2)
 })

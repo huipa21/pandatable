@@ -332,7 +332,8 @@ it('creates a select field with canonical options and a label default, then appl
     const labels = dialog.findAll('.field-choice input')
     await labels[0]!.setValue('Todo')
     await labels[1]!.setValue('Doing')
-    await dialog.findAll('.field-choice select')[1]!.setValue('blue')
+    await dialog.findAll('.choice-color-trigger')[1]!.trigger('click')
+    await dialog.get('[role="option"][aria-label="Blue"]').trigger('click')
     const choices = dialog.findAll('.field-choice')
     const defaults = dialog.findAll('select').at(-1)!
     await defaults.setValue(defaults.findAll('option')[2]!.element.value)
@@ -357,7 +358,7 @@ it('creates a select field with canonical options and a label default, then appl
       {
         id: expect.stringMatching(/^[A-Za-z0-9_-]{1,64}$/),
         label: 'Todo',
-        color: 'gray',
+        color: 'red',
       },
       {
         id: expect.stringMatching(/^[A-Za-z0-9_-]{1,64}$/),
@@ -372,6 +373,265 @@ it('creates a select field with canonical options and a label default, then appl
     wrapper.unmount()
   }
 })
+
+it.each(['single_select', 'multi_select'])(
+  'automatically colors and focuses new %s choice options',
+  async (kind) => {
+    stubFetch()
+    const wrapper = await setup()
+    try {
+      await openType(wrapper, kind)
+      const dialog = wrapper.get('dialog.field-dialog')
+      for (let index = 0; index < 3; index++) {
+        await buttonByText(wrapper, 'Add option').trigger('click')
+        expect(document.activeElement).toBe(
+          dialog.findAll('.field-choice input')[index]!.element,
+        )
+      }
+      expect(
+        dialog
+          .findAll('.choice-color-trigger')
+          .map((button) => button.attributes('aria-label')),
+      ).toEqual([
+        'Option 1 color: Red',
+        'Option 2 color: Orange',
+        'Option 3 color: Amber',
+      ])
+
+      await dialog.get('[aria-label="Remove option 2"]').trigger('click')
+      await buttonByText(wrapper, 'Add option').trigger('click')
+      expect(
+        dialog
+          .findAll('.choice-color-trigger')
+          .map((button) => button.attributes('aria-label')),
+      ).toEqual([
+        'Option 1 color: Red',
+        'Option 2 color: Amber',
+        'Option 3 color: Orange',
+      ])
+      expect(document.activeElement).toBe(
+        dialog.findAll('.field-choice input')[2]!.element,
+      )
+    } finally {
+      wrapper.unmount()
+    }
+  },
+)
+
+it('navigates the choice color palette and closes it on Escape or outside click', async () => {
+  stubFetch()
+  const wrapper = await setup()
+  try {
+    await fieldAction(wrapper, 'status', 'Edit')
+    const dialog = wrapper.get('dialog.field-dialog')
+    const trigger = dialog.findAll('.choice-color-trigger')[0]!
+    expect(trigger.attributes('aria-label')).toBe('Option 1 color: Green')
+    await trigger.trigger('click')
+    const palette = dialog.get('.choice-color-palette')
+    expect(palette.attributes('role')).toBe('listbox')
+    expect(palette.findAll('[role="option"]')).toHaveLength(13)
+    const green = palette.get('[role="option"][aria-label="Green"]')
+    expect(green.attributes('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(green.element)
+
+    await green.trigger('keydown', { key: 'ArrowUp' })
+    const red = palette.get('[role="option"][aria-label="Red"]')
+    expect(document.activeElement).toBe(red.element)
+    expect(red.attributes('aria-selected')).toBe('false')
+    await red.trigger('keydown', { key: 'ArrowRight' })
+    const orange = palette.get('[role="option"][aria-label="Orange"]')
+    expect(document.activeElement).toBe(orange.element)
+    await orange.trigger('keydown', { key: 'ArrowDown' })
+    const teal = palette.get('[role="option"][aria-label="Teal"]')
+    expect(document.activeElement).toBe(teal.element)
+    await teal.trigger('keydown', { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(green.element)
+    await green.trigger('keydown', { key: 'ArrowUp' })
+    await red.trigger('keydown', { key: 'Enter' })
+    expect(dialog.find('.choice-color-palette').exists()).toBe(false)
+    expect(trigger.attributes('aria-label')).toBe('Option 1 color: Red')
+    expect(document.activeElement).toBe(trigger.element)
+
+    await trigger.trigger('click')
+    await dialog
+      .get('[role="option"][aria-label="Red"]')
+      .trigger('keydown', { key: 'Escape' })
+    expect(dialog.find('.choice-color-palette').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+
+    await trigger.trigger('click')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(dialog.find('.choice-color-palette').exists()).toBe(false)
+
+    i18n.global.locale.value = 'zh-CN'
+    await flushPromises()
+    expect(trigger.attributes('aria-label')).toBe('选项 1 颜色：红色')
+    await trigger.trigger('click')
+    expect(dialog.find('[role="option"][aria-label="红色"]').exists()).toBe(
+      true,
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('provides click-accessible choice reorder controls and restores focus', async () => {
+  stubFetch()
+  const wrapper = await setup()
+  try {
+    await fieldAction(wrapper, 'status', 'Edit')
+    const dialog = wrapper.get('dialog.field-dialog')
+    const firstHandle = dialog.findAll('.choice-drag-handle')[0]!
+    await firstHandle.trigger('click')
+    let controls = dialog.get('.choice-move-controls')
+    expect(
+      controls.get('[aria-label="Move option 1 up"]').attributes('disabled'),
+    ).toBeDefined()
+    const down = controls.get('[aria-label="Move option 1 down"]')
+    expect(document.activeElement).toBe(down.element)
+    await down.trigger('click')
+    expect(
+      dialog
+        .findAll('.field-choice')
+        .map((choice) => choice.attributes('data-choice-id')),
+    ).toEqual(['b', 'a'])
+    expect(document.activeElement).toBe(firstHandle.element)
+
+    await firstHandle.trigger('click')
+    controls = dialog.get('.choice-move-controls')
+    await controls.get('[aria-label="Move option 2 up"]').trigger('click')
+    expect(
+      dialog
+        .findAll('.field-choice')
+        .map((choice) => choice.attributes('data-choice-id')),
+    ).toEqual(['a', 'b'])
+    expect(document.activeElement).toBe(firstHandle.element)
+
+    await firstHandle.trigger('click')
+    await dialog
+      .get('[aria-label="Move option 1 down"]')
+      .trigger('keydown', { key: 'Escape' })
+    expect(dialog.find('.choice-move-controls').exists()).toBe(false)
+    expect(document.activeElement).toBe(firstHandle.element)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('drags choices before a target and ignores no-op drops', async () => {
+  stubFetch()
+  const wrapper = await setup()
+  const transfer = {
+    effectAllowed: 'none',
+    dropEffect: 'none',
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+  }
+  try {
+    await fieldAction(wrapper, 'status', 'Edit')
+    const dialog = wrapper.get('dialog.field-dialog')
+    await buttonByText(wrapper, 'Add option').trigger('click')
+    const last = dialog.findAll('.field-choice')[2]!
+    const lastId = last.attributes('data-choice-id')
+    await last.get('.choice-drag-handle').trigger('dragstart', {
+      dataTransfer: transfer,
+    })
+    const first = dialog.findAll('.field-choice')[0]!
+    await first.trigger('dragover', { dataTransfer: transfer, clientY: -1 })
+    expect(first.classes()).toContain('choice-drop-before')
+    await first.trigger('drop', { dataTransfer: transfer })
+    expect(
+      dialog
+        .findAll('.field-choice')
+        .map((choice) => choice.attributes('data-choice-id')),
+    ).toEqual([lastId, 'a', 'b'])
+
+    const middle = dialog.findAll('.field-choice')[1]!
+    await middle.get('.choice-drag-handle').trigger('dragstart', {
+      dataTransfer: transfer,
+    })
+    const end = dialog.findAll('.field-choice')[2]!
+    await end.trigger('dragover', { dataTransfer: transfer, clientY: -1 })
+    expect(end.classes()).not.toContain('choice-drop-before')
+    await end.trigger('drop', { dataTransfer: transfer })
+    expect(
+      dialog
+        .findAll('.field-choice')
+        .map((choice) => choice.attributes('data-choice-id')),
+    ).toEqual([lastId, 'a', 'b'])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it.each(['keyboard', 'drag'] as const)(
+  'saves the chosen color and stable choice IDs after %s reordering',
+  async (method) => {
+    const next = { ...schema(), schemaVersion: 2 }
+    const { calls } = stubFetch(
+      Response.json({
+        field: next.fields.find((item) => item.id === 'status'),
+        schema: next,
+        eventId: 'e',
+      }),
+    )
+    const wrapper = await setup()
+    try {
+      await fieldAction(wrapper, 'status', 'Edit')
+      const dialog = wrapper.get('dialog.field-dialog')
+      await dialog.findAll('.choice-color-trigger')[0]!.trigger('click')
+      await dialog.get('[role="option"][aria-label="Red"]').trigger('click')
+
+      const firstHandle = dialog.findAll('.choice-drag-handle')[0]!
+      if (method === 'keyboard') {
+        ;(firstHandle.element as HTMLButtonElement).focus()
+        await firstHandle.trigger('keydown', { key: 'ArrowDown', altKey: true })
+        expect(document.activeElement).toBe(firstHandle.element)
+      } else {
+        const transfer = {
+          effectAllowed: 'none',
+          dropEffect: 'none',
+          setData: vi.fn(),
+          setDragImage: vi.fn(),
+        }
+        await firstHandle.trigger('dragstart', { dataTransfer: transfer })
+        const target = dialog.findAll('.field-choice')[1]!
+        await target.trigger('dragover', { dataTransfer: transfer, clientY: 1 })
+        expect(target.classes()).toContain('choice-drop-after')
+        await target.trigger('drop', { dataTransfer: transfer })
+        expect(transfer.setDragImage).toHaveBeenCalled()
+      }
+      expect(
+        dialog
+          .findAll('.field-choice')
+          .map((choice) => choice.attributes('data-choice-id')),
+      ).toEqual(['b', 'a'])
+      expect(calls()).toHaveLength(0)
+      expect(
+        (dialog.get('.field-default select').element as HTMLSelectElement)
+          .value,
+      ).toBe('a')
+
+      await dialog.get('form').trigger('submit')
+      await flushPromises()
+      const [url, init] = calls()[0]!
+      expect(url).toBe('/api/v1/fields/status')
+      expect(init.method).toBe('PATCH')
+      expect(new Headers(init.headers).get('If-Match')).toBe('2')
+      expect(JSON.parse(String(init.body))).toEqual({
+        options: {
+          choices: [
+            { id: 'b', label: 'Done', color: 'gray' },
+            { id: 'a', label: 'Open', color: 'red' },
+          ],
+        },
+      })
+    } finally {
+      wrapper.unmount()
+    }
+  },
+)
 
 it('creates an ID-bound formula through the editor with field and function suggestions', async () => {
   const next = schema()
@@ -656,6 +916,48 @@ it('reloads on a version conflict and reseeds the open editor from the newer fie
     wrapper.unmount()
   }
 })
+
+it.each(['removed', 'reloaded'] as const)(
+  'clears choice reorder controls when a conflicting field is %s',
+  async (change) => {
+    stubFetch(failure(409, 'ERR_VERSION_CONFLICT'))
+    const wrapper = await setup()
+    try {
+      await fieldAction(wrapper, 'status', 'Edit')
+      const dialog = wrapper.get('dialog.field-dialog')
+      await dialog.findAll('.field-choice input')[0]!.setValue('Opened')
+      await dialog.get('form').trigger('submit')
+      await flushPromises()
+      expect(wrapper.emitted('reload')).toHaveLength(1)
+
+      await dialog.findAll('.choice-drag-handle')[0]!.trigger('click')
+      expect(dialog.find('.choice-move-controls').exists()).toBe(true)
+      const newer = schema()
+      if (change === 'removed')
+        newer.fields = newer.fields.filter((item) => item.id !== 'status')
+      else {
+        const status = newer.fields.find((item) => item.id === 'status')!
+        status.options = {
+          choices: [{ id: 'b', label: 'Done', color: 'gray' }],
+        }
+      }
+      await wrapper.setProps({ schema: newer })
+      expect(dialog.find('.choice-move-controls').exists()).toBe(false)
+      const escape = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      })
+      document.dispatchEvent(escape)
+      expect(escape.defaultPrevented).toBe(false)
+      expect((dialog.element as HTMLDialogElement).open).toBe(
+        change === 'reloaded',
+      )
+    } finally {
+      wrapper.unmount()
+    }
+  },
+)
 
 it('localizes preflight counts and validation reasons in both locales without server text', async () => {
   stubFetch(

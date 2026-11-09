@@ -155,7 +155,7 @@ func (s *Service) applyImportLinks(ctx context.Context, tx pgx.Tx, actor Actor, 
 				resolved[index] = append(resolved[index], idsForLabel[0])
 			}
 			if invalid[index] {
-				result.issue(batch[index].number, column.index, column.name, inputs[index])
+				result.issueReason(batch[index].number, column.index, column.name, inputs[index], ImportReasonLinkUnmatched)
 				resolved[index] = nil
 			} else {
 				targetRows = append(targetRows, resolved[index]...)

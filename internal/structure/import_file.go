@@ -40,16 +40,21 @@ type ImportColumn struct {
 	LinkTarget     string          `json:"linkTarget,omitempty"`
 	RelinkTargetID string          `json:"relinkTargetId,omitempty"`
 	TargetFieldID  string          `json:"targetFieldId,omitempty"`
+	// TypeSource is "meta", "manifest" or "inferred".
+	TypeSource string `json:"typeSource,omitempty"`
 }
 
 type ImportAnalysis struct {
-	Format      string         `json:"format"`
-	Encoding    string         `json:"encoding,omitempty"`
-	Delimiter   string         `json:"delimiter,omitempty"`
-	HasHeader   bool           `json:"hasHeader"`
-	SampledRows int            `json:"sampledRows"`
-	TableName   string         `json:"tableName,omitempty"`
+	Format      string `json:"format"`
+	Encoding    string `json:"encoding,omitempty"`
+	Delimiter   string `json:"delimiter,omitempty"`
+	HasHeader   bool   `json:"hasHeader"`
+	SampledRows int    `json:"sampledRows"`
+	TableName   string `json:"tableName,omitempty"`
+	// MetaVersion is "v2" for a _meta sheet, "v1" for a manifest only, otherwise empty.
+	MetaVersion string         `json:"metaVersion"`
 	Columns     []ImportColumn `json:"columns"`
+	Notes       []ImportIssue  `json:"notes,omitempty"`
 }
 
 // ImportFile contains server-side analysis and the path to a private staged
@@ -59,6 +64,15 @@ type ImportFile struct {
 	path     string
 	sheet    string
 	manifest *tablePackageManifest
+	// The remaining fields come from a v2 _meta sheet.
+	notes            []ImportIssue
+	fieldSources     map[string]string
+	relationTargets  map[string]string
+	inferKeys        map[string]bool
+	metaOnly         bool
+	sourceInstanceID string
+	zone             *time.Location
+	attachments      ImportAttachmentStore
 }
 
 type importRows interface {
@@ -203,6 +217,7 @@ func AnalyzeImportFile(ctx context.Context, path, filename string, actor Actor) 
 	if err := file.analyzeRows(ctx, actor); err != nil {
 		return nil, err
 	}
+	file.Analysis.Notes = file.notes
 	return file, nil
 }
 
@@ -282,9 +297,18 @@ func (file *ImportFile) analyzeSpreadsheet() error {
 	}
 	file.sheet = sheets[0]
 	file.Analysis.Format = "xlsx"
+	metadata, invalidMeta := file.readImportMeta(book)
 	if index, err := book.GetSheetIndex("_pandatable"); err != nil {
 		return validation("The spreadsheet sheet list is invalid")
 	} else if index < 0 {
+		if metadata != nil {
+			if data, err := book.GetSheetIndex("Data"); err == nil && data >= 0 &&
+				file.synthesizeImportManifest(metadata, invalidMeta) {
+				file.sheet = "Data"
+				file.Analysis.Format = "package"
+				file.Analysis.TableName = file.manifest.Table.Name
+			}
+		}
 		return nil
 	}
 	rows, err := book.Rows("_pandatable")
@@ -342,10 +366,57 @@ func (file *ImportFile) analyzeSpreadsheet() error {
 	file.sheet = "Data"
 	file.Analysis.Format = "package"
 	file.Analysis.TableName = manifest.Table.Name
+	file.Analysis.MetaVersion = "v1"
+	if metadata != nil {
+		file.mergeImportMeta(metadata, invalidMeta)
+	}
 	return nil
 }
 
+// fallBackToPlain drops a metadata-only package whose data header does not
+// match its _meta rows; the workbook is then analyzed as a plain spreadsheet.
+func (file *ImportFile) fallBackToPlain() {
+	file.manifest, file.metaOnly = nil, false
+	file.fieldSources, file.relationTargets, file.inferKeys = nil, nil, nil
+	file.sourceInstanceID, file.zone = "", nil
+	file.Analysis.Format, file.Analysis.TableName, file.Analysis.MetaVersion = "xlsx", "", ""
+	file.note("", "Data", ImportReasonMetaInvalid)
+}
+
 func (file *ImportFile) analyzeRows(ctx context.Context, actor Actor) error {
+	if file.metaOnly {
+		rows, err := file.openRows()
+		if err != nil {
+			return err
+		}
+		header, err := rows.Next()
+		closeErr := rows.Close()
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close package data: %w", closeErr)
+		}
+		if !packageHeaderMatches(file.manifest, header) {
+			file.fallBackToPlain()
+		}
+	}
+	return file.analyzeRowsOnce(ctx, actor)
+}
+
+func packageHeaderMatches(manifest *tablePackageManifest, header []string) bool {
+	if len(header) != len(manifest.Fields)+1 || header[0] != "_id" {
+		return false
+	}
+	for index, field := range manifest.Fields {
+		if header[index+1] != field.Name {
+			return false
+		}
+	}
+	return true
+}
+
+func (file *ImportFile) analyzeRowsOnce(ctx context.Context, actor Actor) error {
 	rows, err := file.openRows()
 	if err != nil {
 		return err
@@ -426,6 +497,7 @@ func (file *ImportFile) analyzeRows(ctx context.Context, actor Actor) error {
 	for index, guess := range guesses {
 		columns[index].UIType, columns[index].Options = guess.result()
 		columns[index].Examples = guess.examples
+		columns[index].TypeSource = "inferred"
 	}
 	file.Analysis.Columns = columns
 	return nil
@@ -442,7 +514,10 @@ func (file *ImportFile) analyzePackageRows(ctx context.Context, rows importRows,
 			return validation("The package data header does not match the manifest")
 		}
 		column := ImportColumn{Index: index + 1, Name: field.Name, UIType: field.UIType,
-			Options: field.Options, PackageKey: field.Key}
+			Options: field.Options, PackageKey: field.Key, TypeSource: "manifest"}
+		if source := file.fieldSources[field.Key]; source != "" {
+			column.TypeSource = source
+		}
 		if field.UIType == "link" {
 			var options struct {
 				TargetTable *string `json:"targetTable"`
@@ -455,6 +530,12 @@ func (file *ImportFile) analyzePackageRows(ctx context.Context, rows importRows,
 			}
 		}
 		file.Analysis.Columns[index] = column
+	}
+	guesses := make(map[int]*importGuess)
+	for index, field := range file.manifest.Fields {
+		if file.inferKeys[field.Key] {
+			guesses[index] = newImportGuess()
+		}
 	}
 	for file.Analysis.SampledRows < importSampleRows {
 		if err := ctx.Err(); err != nil {
@@ -470,7 +551,18 @@ func (file *ImportFile) analyzePackageRows(ctx context.Context, rows importRows,
 		if len(record) > len(header) {
 			return validation("A package row has more columns than its manifest")
 		}
+		for index, guess := range guesses {
+			if index+1 < len(record) {
+				guess.add(record[index+1], codec.Env{Location: file.packageLocation()})
+			}
+		}
 		file.Analysis.SampledRows++
+	}
+	for index, guess := range guesses {
+		kind, options := guess.result()
+		file.manifest.Fields[index].UIType, file.manifest.Fields[index].Options = kind, options
+		column := &file.Analysis.Columns[index]
+		column.UIType, column.Options, column.Examples = kind, options, guess.examples
 	}
 	return nil
 }
@@ -609,6 +701,12 @@ func (guess *importGuess) add(value string, env codec.Env) {
 	}
 }
 
+// importChoiceColor rotates through the palette after its gray default.
+func importChoiceColor(index int) string {
+	colors := codec.ChoiceColors[1:]
+	return colors[index%len(colors)]
+}
+
 func (guess *importGuess) result() (string, json.RawMessage) {
 	if guess.count > 0 {
 		if guess.possible[codec.Integer] {
@@ -628,7 +726,7 @@ func (guess *importGuess) result() (string, json.RawMessage) {
 			choices := make([]codec.Choice, 0, len(guess.choiceOrder))
 			for index, key := range guess.choiceOrder {
 				choices = append(choices, codec.Choice{ID: "c" + strconv.Itoa(index+1),
-					Label: guess.choices[key], Color: "gray"})
+					Label: guess.choices[key], Color: importChoiceColor(index)})
 			}
 			options, err := json.Marshal(struct {
 				Choices []codec.Choice `json:"choices"`

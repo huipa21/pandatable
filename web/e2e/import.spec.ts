@@ -313,7 +313,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   await openExportMenu(page)
   const download = page.waitForEvent('download')
   await page
-    .getByRole('button', { name: en.export.package, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp06.export, exact: true })
     .click()
   const packageFile = await download
   expect(await packageFile.failure()).toBeNull()
@@ -326,7 +326,6 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     buffer: packageBytes,
   })
   await dialog.getByRole('button', { name: en.import.analyze }).click()
-  await expect(dialog.getByText(en.import.packageNotice)).toBeVisible()
   await dialog.getByLabel(en.import.tableName).fill('Restored tasks')
   await dialog
     .getByLabel(en.import.relink.replace('{table}', 'Projects'))
@@ -488,7 +487,9 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
 
   await page.goto(`/t/${restoredId}/v/${packageResult.result.viewId!}`)
   await page.locator('.transfer-menu > summary').click()
-  await page.getByRole('button', { name: en.import.append }).click()
+  await page
+    .getByRole('button', { name: en.gridPolish.gp06.import, exact: true })
+    .click()
   const packageAppend = page.locator('dialog.import-dialog')
   await packageAppend.locator('input[type=file]').setInputFiles({
     name: 'package.xlsx',
@@ -591,13 +592,18 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     await collaborator.page.goto(viewPath)
     await collaborator.page.locator('.transfer-menu > summary').click()
     await expect(
-      collaborator.page.getByRole('button', { name: en.import.append }),
+      collaborator.page.getByRole('button', {
+        name: en.gridPolish.gp06.import,
+      }),
     ).toHaveCount(0)
     await expect(collaborator.page.locator('.visibility-menu')).toHaveCount(0)
     await openExportMenu(collaborator.page)
     const readerDownload = collaborator.page.waitForEvent('download')
     await collaborator.page
-      .getByRole('button', { name: en.export.package, exact: true })
+      .getByRole('button', {
+        name: en.gridPolish.gp06.export,
+        exact: true,
+      })
       .click()
     expect(await (await readerDownload).failure()).toBeNull()
     const plainXlsx = await readFile(
@@ -622,7 +628,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     await collaborator.page.reload()
     await collaborator.page.locator('.transfer-menu > summary').click()
     await collaborator.page
-      .getByRole('button', { name: en.import.append })
+      .getByRole('button', { name: en.gridPolish.gp06.import, exact: true })
       .click()
     const append = collaborator.page.locator('dialog.import-dialog')
     await append.locator('input[type=file]').setInputFiles({

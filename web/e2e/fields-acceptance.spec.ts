@@ -133,6 +133,157 @@ async function openCellEditor(page: Page, field: { id: string }, rowIndex = 0) {
   )
 }
 
+test('GP-09 creates colored select options and renders distinct grid chips', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Field configuration is covered on desktop.')
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+
+  const create = async <T>(path: string, data: unknown): Promise<T> => {
+    const response = await page.request.post(path, { headers: headers(), data })
+    expect(response.status()).toBe(201)
+    return response.json()
+  }
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    '/api/v1/workspaces',
+    { name: `Choice colors ${Date.now()}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: 'Choice colors book' },
+  )
+  const table = await create<TableSchema>(`/api/v1/books/${book.id}/tables`, {
+    name: 'Choice colors table',
+  })
+  const view = table.views[0]
+  if (!view) throw new Error('The table view was not returned')
+  await page.goto(`/t/${table.table.id}/v/${view.id}`)
+
+  const panel = await openFieldPanel(page)
+  await panel
+    .getByRole('button', { name: en.field.panel.add, exact: true })
+    .click()
+  const editor = page.getByRole('dialog', {
+    name: en.field.panel.createTitle,
+    exact: true,
+  })
+  await editor.getByRole('textbox', { name: en.field.panel.name }).fill('Stage')
+  await editor.locator('[data-kind="single_select"]').click()
+  for (const [index, label] of ['Todo', 'Done'].entries()) {
+    await editor.getByRole('button', { name: en.field.panel.addChoice }).click()
+    const input = editor.getByRole('textbox', {
+      name: en.field.panel.choiceLabel.replace('{n}', String(index + 1)),
+    })
+    await expect(input).toBeFocused()
+    await input.fill(label)
+  }
+  const colorName = (n: number, color: string) =>
+    en.gridPolish.gp09.colorButton
+      .replace('{n}', String(n))
+      .replace('{color}', color)
+  const reorderName = (n: number) =>
+    en.gridPolish.gp09.reorderChoice.replace('{n}', String(n))
+  const firstColor = editor.getByRole('button', { name: colorName(1, 'Red') })
+  await firstColor.click()
+  const palette = editor.getByRole('listbox', {
+    name: en.field.panel.choiceColor.replace('{n}', '1'),
+  })
+  await expect(palette.getByRole('option')).toHaveCount(13)
+  const red = palette.getByRole('option', { name: 'Red', exact: true })
+  await expect(red).toBeFocused()
+  await expect(red).toHaveCSS('background-color', 'rgb(229, 72, 77)')
+  await red.press('ArrowRight')
+  const orange = palette.getByRole('option', { name: 'Orange', exact: true })
+  await expect(orange).toBeFocused()
+  await expect(orange).toHaveCSS('background-color', 'rgb(247, 107, 21)')
+  await page.keyboard.press('Escape')
+  await expect(palette).not.toBeVisible()
+  await expect(firstColor).toBeFocused()
+  await expect(editor).toBeVisible()
+
+  await editor.getByRole('button', { name: colorName(2, 'Orange') }).click()
+  await editor.getByRole('option', { name: 'Blue', exact: true }).click()
+  await editor.getByRole('button', { name: colorName(2, 'Blue') }).click()
+  await editor.getByRole('option', { name: 'Orange', exact: true }).click()
+  await editor
+    .getByRole('button', { name: reorderName(1) })
+    .press('Alt+ArrowDown')
+  await expect(editor.locator('.field-choice input').nth(0)).toHaveValue('Done')
+  await expect(
+    editor.getByRole('button', { name: reorderName(2) }),
+  ).toBeFocused()
+  await editor
+    .getByRole('button', { name: reorderName(2) })
+    .press('Alt+ArrowUp')
+  await expect(editor.locator('.field-choice input').nth(0)).toHaveValue('Todo')
+  await editor.getByRole('button', { name: reorderName(1) }).click()
+  await editor
+    .getByRole('button', {
+      name: en.gridPolish.gp09.moveDown.replace('{n}', '1'),
+    })
+    .click()
+  await expect(editor.locator('.field-choice input').nth(0)).toHaveValue('Done')
+  await editor.getByRole('button', { name: reorderName(2) }).click()
+  await editor
+    .getByRole('button', {
+      name: en.gridPolish.gp09.moveUp.replace('{n}', '2'),
+    })
+    .click()
+  await expect(editor.locator('.field-choice input').nth(0)).toHaveValue('Todo')
+  const secondRow = editor.locator('.field-choice').nth(1)
+  const secondBounds = await secondRow.boundingBox()
+  if (!secondBounds) throw new Error('The option drop target is not visible')
+  await editor
+    .locator('.field-choice')
+    .nth(0)
+    .locator('.choice-drag-handle')
+    .dragTo(secondRow, {
+      targetPosition: { x: secondBounds.width / 2, y: secondBounds.height - 2 },
+    })
+  await expect(editor.locator('.field-choice input').nth(0)).toHaveValue('Done')
+  await editor
+    .getByRole('button', { name: reorderName(2) })
+    .press('Alt+ArrowUp')
+  await expect(editor.locator('.field-choice input').nth(0)).toHaveValue('Todo')
+  await editor
+    .getByRole('button', { name: en.field.panel.create, exact: true })
+    .click()
+  await expect(editor).not.toBeVisible()
+
+  const schema = await schemaOf(page, table.table.id)
+  const stage = schema.fields.find((field) => field.name === 'Stage')
+  if (!stage) throw new Error('The select field was not returned')
+  expect(stage.options.choices).toMatchObject([
+    { label: 'Todo', color: 'red' },
+    { label: 'Done', color: 'orange' },
+  ])
+  await create(`/api/v1/tables/${table.table.id}/rows`, {
+    rows: [
+      { fields: { [stage.id]: 'Todo' } },
+      { fields: { [stage.id]: 'Done' } },
+    ],
+  })
+  await page.reload()
+  const chips = page.locator('revo-grid .field-chip')
+  const todo = chips.filter({ hasText: /^Todo$/ })
+  const done = chips.filter({ hasText: /^Done$/ })
+  await expect(todo).toBeVisible()
+  await expect(done).toBeVisible()
+  await expect(todo).toHaveClass(/chip-red/)
+  await expect(done).toHaveClass(/chip-orange/)
+  const backgrounds = await Promise.all([
+    todo.evaluate((element) => getComputedStyle(element).backgroundColor),
+    done.evaluate((element) => getComputedStyle(element).backgroundColor),
+  ])
+  expect(backgrounds[0]).not.toBe(backgrounds[1])
+  await page.request.delete(`/api/v1/tables/${table.table.id}`, {
+    headers: headers(),
+  })
+})
+
 test('AT-301..304 complete field acceptance: 12 M1 kinds, grid persistence, validation, constraints, system fields and authorship', async ({
   page,
   isMobile,

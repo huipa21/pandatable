@@ -648,7 +648,7 @@ func TestImportPackageRoundTrip(t *testing.T) {
 		}
 		result, err := f.service.RunImport(f.ctx, owner, ImportTarget{Kind: "book", ID: book.ID}, file, request, nil)
 		if err != nil || result.Rows != 1 || result.InvalidCells != 1 || len(result.Issues) != 1 ||
-			result.Issues[0] != (ImportIssue{Row: 2, Column: "Files", Value: "report.pdf"}) {
+			result.Issues[0] != (ImportIssue{Row: 2, Column: "Files", Value: "report.pdf", Reason: ImportReasonFileUnavailable}) {
 			t.Fatalf("attachment result = %+v, %#v", result, err)
 		}
 		schema, err := f.service.Schema(f.ctx, owner, result.TableID)

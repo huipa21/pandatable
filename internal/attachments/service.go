@@ -443,6 +443,93 @@ func (service *Service) RemovePurgedFile(ctx context.Context, id, storedPath str
 	return nil
 }
 
+// CloneStoredFile gives a stored attachment blob, and its optional thumbnail,
+// a second storage path for a new attachment id. Hard links share one blob, so
+// removing either attachment keeps the other's data; filesystems without links
+// fall back to a byte copy. A missing source wraps os.ErrNotExist.
+func (service *Service) CloneStoredFile(ctx context.Context, sourceID, storedPath string, hasThumb bool,
+	newID string) (string, error) {
+	source, sourceOK := acl.ParseUUID(sourceID)
+	target, targetOK := acl.ParseUUID(newID)
+	parts := strings.Split(storedPath, "/")
+	if !sourceOK || !targetOK || source.String() != sourceID || target.String() != newID || sourceID == newID ||
+		len(parts) != 4 || parts[0] != "files" || parts[3] != sourceID {
+		return "", errors.New("invalid attachment clone request")
+	}
+	sourceDirectory, err := service.storageDirectory(parts[1], parts[2])
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().UTC()
+	year, month := now.Format("2006"), now.Format("01")
+	targetDirectory, err := service.storageDirectory(year, month)
+	if err != nil {
+		return "", err
+	}
+	pairs := [][2]string{{filepath.Join(sourceDirectory, sourceID), filepath.Join(targetDirectory, newID)}}
+	if hasThumb {
+		pairs = append(pairs, [2]string{filepath.Join(sourceDirectory, sourceID+".thumb.png"),
+			filepath.Join(targetDirectory, newID+".thumb.png")})
+	}
+	created := make([]string, 0, len(pairs))
+	for _, pair := range pairs {
+		err := ctx.Err()
+		if err == nil {
+			err = cloneRegular(pair[0], pair[1])
+		}
+		if err != nil {
+			for _, path := range created {
+				_ = os.Remove(path)
+			}
+			return "", err
+		}
+		created = append(created, pair[1])
+	}
+	return filepath.ToSlash(filepath.Join("files", year, month, newID)), nil
+}
+
+func cloneRegular(source, target string) error {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("inspect attachment clone source: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("attachment clone source is not a regular file")
+	}
+	linkErr := os.Link(source, target)
+	if linkErr == nil {
+		return nil
+	}
+	if errors.Is(linkErr, os.ErrExist) {
+		return fmt.Errorf("attachment clone target exists: %w", linkErr)
+	}
+	input, err := openRegular(source)
+	if err != nil {
+		return fmt.Errorf("open attachment clone source: %w", err)
+	}
+	defer input.Close()
+	temporary := filepath.Join(filepath.Dir(target), ".clone-"+filepath.Base(target))
+	output, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("create attachment clone: %w", err)
+	}
+	_, err = io.Copy(output, input)
+	if err == nil {
+		err = output.Sync()
+	}
+	if closeErr := output.Close(); err == nil {
+		err = closeErr
+	}
+	if err == nil {
+		err = os.Rename(temporary, target)
+	}
+	if err != nil {
+		_ = os.Remove(temporary)
+		return fmt.Errorf("copy attachment clone: %w", err)
+	}
+	return nil
+}
+
 func newUUID() (pgtype.UUID, string, error) {
 	var value [16]byte
 	if _, err := rand.Read(value[:]); err != nil {

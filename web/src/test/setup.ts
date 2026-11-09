@@ -27,3 +27,18 @@ export class ThemeMedia extends EventTarget implements MediaQueryList {
 
 export const themeMedia = new ThemeMedia()
 vi.stubGlobal('matchMedia', () => themeMedia)
+
+if (!Element.prototype.scrollTo) {
+  Object.defineProperty(Element.prototype, 'scrollTo', {
+    configurable: true,
+    value(this: Element, options: ScrollToOptions | number, y?: number) {
+      if (typeof options === 'number') {
+        this.scrollLeft = options
+        this.scrollTop = y ?? this.scrollTop
+      } else {
+        if (options.left !== undefined) this.scrollLeft = options.left
+        if (options.top !== undefined) this.scrollTop = options.top
+      }
+    },
+  })
+}

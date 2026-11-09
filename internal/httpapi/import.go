@@ -496,6 +496,9 @@ func (api *authHTTP) runImport(id string, actor structure.Actor, target structur
 	defer api.imports.active.Done()
 	ctx, cancel := context.WithTimeout(events.WithID(api.imports.ctx, eventID), importJobTimeout)
 	defer cancel()
+	if api.attachments != nil {
+		file.UseAttachmentStore(api.attachments)
+	}
 	result, runErr := api.structure.RunImport(ctx, actor, target, file, request,
 		func(result structure.ImportResult) { api.imports.progress(id, result) })
 	if runErr != nil && target.Kind == "book" {
@@ -514,6 +517,26 @@ func (api *authHTTP) runImport(id string, actor structure.Actor, target structur
 	api.imports.finish(id, result, report, code)
 }
 
+// importIssueText localizes an issue reason for the CSV report. Row 0 holds
+// workbook notes that do not belong to a data row.
+func importIssueText(reason, locale string) string {
+	texts := map[string][2]string{
+		"":                                    {"Invalid value", "值无效"},
+		structure.ImportReasonMetaEdited:      {"Metadata edited outside PandaTable", "元数据已在 PandaTable 之外被修改"},
+		structure.ImportReasonMetaInvalid:     {"Invalid metadata ignored", "已忽略无效元数据"},
+		structure.ImportReasonFileUnavailable: {"File not available", "文件不可用"},
+		structure.ImportReasonLinkUnmatched:   {"Linked record not found", "未找到关联记录"},
+	}
+	text, ok := texts[reason]
+	if !ok {
+		return reason
+	}
+	if locale == "zh-CN" {
+		return text[1]
+	}
+	return text[0]
+}
+
 func writeImportReport(issues []structure.ImportIssue, locale string) (string, error) {
 	if len(issues) == 0 {
 		return "", nil
@@ -525,16 +548,17 @@ func writeImportReport(issues []structure.ImportIssue, locale string) (string, e
 	path := file.Name()
 	if _, err = file.WriteString("\xef\xbb\xbf"); err == nil {
 		writer := csv.NewWriter(file)
-		header := []string{"Row", "Column", "Value"}
+		header := []string{"Row", "Column", "Value", "Issue"}
 		if locale == "zh-CN" {
-			header = []string{"行", "列", "值"}
+			header = []string{"行", "列", "值", "问题"}
 		}
 		err = writer.Write(header)
 		for _, issue := range issues {
 			if err != nil {
 				break
 			}
-			err = writer.Write([]string{strconv.Itoa(issue.Row), issue.Column, issue.Value})
+			err = writer.Write([]string{strconv.Itoa(issue.Row), issue.Column, issue.Value,
+				importIssueText(issue.Reason, locale)})
 		}
 		writer.Flush()
 		if err == nil {

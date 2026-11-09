@@ -15,13 +15,17 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   import: []
-  export: [format: 'csv' | 'xlsx']
+  export: [format: 'xlsx']
 }>()
 const { t } = useI18n()
 const menu = ref<HTMLDetailsElement>()
 const trigger = ref<HTMLElement>()
 const canImport = computed(
   () => props.schema.myLevel === 'write' || props.schema.myLevel === 'owner',
+)
+const canExport = computed(
+  () =>
+    !!props.view && ['read', 'write', 'owner'].includes(props.schema.myLevel),
 )
 
 function close(focus = false) {
@@ -35,9 +39,9 @@ function importTable() {
   emit('import')
 }
 
-function exportTable(format: 'csv' | 'xlsx') {
+function exportTable() {
   close(true)
-  emit('export', format)
+  emit('export', 'xlsx')
 }
 
 function dismiss(event: PointerEvent) {
@@ -63,40 +67,34 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismiss))
 <template>
   <div class="table-toolbar-actions">
     <details
-      v-if="view || canImport"
+      v-if="canExport || canImport"
       ref="menu"
       class="view-export transfer-menu"
       @keydown="keydown"
     >
       <summary
         ref="trigger"
-        :aria-label="t('transfer.title')"
-        :title="t('transfer.title')"
+        class="grid-toolbar-button"
+        :aria-label="t('gridPolish.gp06.trigger')"
+        :title="t('gridPolish.gp06.trigger')"
       >
-        <AppIcon name="duplicate" :size="16" />
-        <span class="visually-hidden">{{ t('transfer.title') }}</span>
+        <AppIcon name="transfer" />
+        {{ t('gridPolish.gp06.trigger') }}
       </summary>
       <div class="view-export-panel">
         <button v-if="canImport" type="button" @click="importTable">
-          {{ t('import.append') }}
+          <AppIcon name="import" />
+          {{ t('gridPolish.gp06.import') }}
         </button>
         <button
-          v-if="view?.type === 'grid'"
-          type="button"
-          :disabled="exportBusy || !csvReady"
-          @click="exportTable('csv')"
-        >
-          {{ t('export.csv') }}
-        </button>
-        <button
-          v-if="view"
+          v-if="canExport"
           type="button"
           :disabled="exportBusy"
-          @click="exportTable('xlsx')"
+          @click="exportTable"
         >
-          {{ t('export.package') }}
+          <AppIcon name="export" />
+          {{ t('gridPolish.gp06.export') }}
         </button>
-        <p v-if="view">{{ t('export.packageNotice') }}</p>
       </div>
     </details>
     <PresenceAvatars :table-id="schema.table.id" :identity="identity" />
@@ -123,10 +121,9 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', dismiss))
 .view-export > summary {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 40px;
+  gap: 5px;
   min-height: 40px;
-  padding: 8px;
+  padding: 8px 6px;
   color: var(--text);
   background: transparent;
   border: 1px solid transparent;

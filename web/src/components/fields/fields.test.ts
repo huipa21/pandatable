@@ -263,9 +263,7 @@ describe('FieldEditor', () => {
       },
     })
     const input = wrapper.get('input')
-    expect((input.element as HTMLInputElement).value).toBe(
-      '2026-03-08 01:30:00-05:00',
-    )
+    expect((input.element as HTMLInputElement).value).toBe('2026-03-08 01:30')
     await input.setValue('2026-03-08 02:30')
     await input.trigger('keydown', { key: 'Enter' })
     expect(wrapper.get('[role="alert"]').text()).toContain('daylight-saving')
