@@ -13,6 +13,8 @@ import (
 	"unicode/utf16"
 
 	"github.com/xuri/excelize/v2"
+
+	"pandatable/internal/codec"
 )
 
 const (
@@ -32,6 +34,15 @@ func (plan *exportPlan) writePackage(ctx context.Context, w io.Writer) (result e
 	if err := book.SetSheetName("Sheet1", "Data"); err != nil {
 		return fmt.Errorf("name spreadsheet data sheet: %w", err)
 	}
+	book.SetActiveSheet(0)
+	if _, err := book.NewSheet(XLSXMetaSheet); err != nil {
+		return fmt.Errorf("create spreadsheet metadata sheet: %w", err)
+	}
+	if err := book.ProtectSheet(XLSXMetaSheet, &excelize.SheetProtectionOptions{
+		SelectLockedCells: true, SelectUnlockedCells: true,
+	}); err != nil {
+		return fmt.Errorf("protect spreadsheet metadata: %w", err)
+	}
 	if _, err := book.NewSheet("_pandatable"); err != nil {
 		return fmt.Errorf("create spreadsheet manifest sheet: %w", err)
 	}
@@ -40,6 +51,7 @@ func (plan *exportPlan) writePackage(ctx context.Context, w io.Writer) (result e
 	}
 	dateFormat := "yyyy-mm-dd"
 	dateTimeFormat := "yyyy-mm-dd hh:mm:ss.000"
+	timeFormat := "hh:mm:ss.000000"
 	dateStyle, err := book.NewStyle(&excelize.Style{CustomNumFmt: &dateFormat})
 	if err != nil {
 		return fmt.Errorf("create spreadsheet date style: %w", err)
@@ -47,6 +59,46 @@ func (plan *exportPlan) writePackage(ctx context.Context, w io.Writer) (result e
 	dateTimeStyle, err := book.NewStyle(&excelize.Style{CustomNumFmt: &dateTimeFormat})
 	if err != nil {
 		return fmt.Errorf("create spreadsheet datetime style: %w", err)
+	}
+	timeStyle, err := book.NewStyle(&excelize.Style{CustomNumFmt: &timeFormat})
+	if err != nil {
+		return fmt.Errorf("create spreadsheet time style: %w", err)
+	}
+	metadata, err := book.NewStreamWriter(XLSXMetaSheet)
+	if err != nil {
+		return fmt.Errorf("create spreadsheet metadata writer: %w", err)
+	}
+	if err := metadata.SetPanes(&excelize.Panes{
+		Freeze: true, YSplit: XLSXMetaHeaderRow, TopLeftCell: "A6", ActivePane: "bottomLeft",
+	}); err != nil {
+		return fmt.Errorf("freeze spreadsheet metadata header: %w", err)
+	}
+	info := [][]any{
+		{"format_version", plan.metadata.FormatVersion, "source_instance_id", plan.metadata.SourceInstanceID},
+		{"table_id", plan.metadata.TableID, "table_name", plan.metadata.TableName},
+		{"schema_version", plan.metadata.SchemaVersion, "exported_at", plan.metadata.ExportedAt.Format(time.RFC3339Nano)},
+		{"datetime_timezone", plan.metadata.DatetimeTimezone},
+	}
+	for index, row := range info {
+		if err := metadata.SetRow("A"+strconv.Itoa(index+1), row); err != nil {
+			return fmt.Errorf("write spreadsheet metadata source: %w", err)
+		}
+	}
+	headers := XLSXMetaColumns()
+	headerValues := make([]any, len(headers))
+	for index, header := range headers {
+		headerValues[index] = header
+	}
+	if err := metadata.SetRow("A"+strconv.Itoa(XLSXMetaHeaderRow), headerValues); err != nil {
+		return fmt.Errorf("write spreadsheet metadata header: %w", err)
+	}
+	for index, field := range plan.metadata.Fields {
+		if err := metadata.SetRow("A"+strconv.Itoa(XLSXMetaFirstFieldRow+index), field.Cells()); err != nil {
+			return fmt.Errorf("write spreadsheet metadata field: %w", err)
+		}
+	}
+	if err := metadata.Flush(); err != nil {
+		return fmt.Errorf("flush spreadsheet metadata: %w", err)
 	}
 	manifest, err := book.NewStreamWriter("_pandatable")
 	if err != nil {
@@ -104,6 +156,9 @@ func (plan *exportPlan) writePackage(ctx context.Context, w io.Writer) (result e
 					} else {
 						value = excelize.Cell{StyleID: dateStyle, Value: date.value}
 					}
+				}
+				if field.kind == codec.Time && value != nil {
+					value = excelize.Cell{StyleID: timeStyle, Value: value}
 				}
 				values[index+1] = value
 			}

@@ -354,7 +354,7 @@ const defaultViewId = computed(() => {
   const views = schema.value?.views ?? []
   return (views.find((item) => item.type === 'grid') ?? views[0])?.id
 })
-// The bare table route shows the default view without naming it in the URL.
+// The bare table route resolves to its default view before URL normalization.
 const viewId = computed(() =>
   typeof route.params.viewId === 'string'
     ? route.params.viewId
@@ -362,6 +362,23 @@ const viewId = computed(() =>
 )
 const view = computed(() =>
   schema.value?.views.find((item) => item.id === viewId.value),
+)
+watch(
+  [() => route.params.tableId, () => route.params.viewId, () => view.value?.id],
+  ([tableId, routeViewId, resolvedViewId]) => {
+    if (
+      typeof tableId === 'string' &&
+      typeof routeViewId !== 'string' &&
+      typeof resolvedViewId === 'string' &&
+      schema.value?.table.id === tableId
+    )
+      void router.replace({
+        path: `/t/${tableId}/v/${resolvedViewId}`,
+        query: route.query,
+        hash: route.hash,
+      })
+  },
+  { immediate: true },
 )
 const canCreateRow = computed(
   () =>

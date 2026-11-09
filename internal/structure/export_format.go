@@ -209,6 +209,16 @@ func (plan *exportPlan) spreadsheetValue(row exportRow, field rowField, labels m
 			return nil, errors.New("export list value has an invalid shape")
 		}
 		text = string(raw)
+	case codec.Attachment:
+		var references []XLSXAttachmentReference
+		if err := json.Unmarshal(raw, &references); err != nil || references == nil {
+			return nil, errors.New("export attachment value has an invalid shape")
+		}
+		encoded, err := json.Marshal(references)
+		if err != nil {
+			return nil, fmt.Errorf("encode export attachment references: %w", err)
+		}
+		text = string(encoded)
 	case codec.User, codec.CreatedBy, codec.UpdatedBy:
 		text, err = field.codec.FormatText(row.values[field.id], codec.Env{Location: plan.location})
 		if err != nil {
@@ -226,6 +236,14 @@ func (plan *exportPlan) spreadsheetValue(row exportRow, field rowField, labels m
 			return nil, err
 		}
 		return spreadsheetDate{value: value.UTC(), dateTime: true}, nil
+	case codec.Time:
+		value, err := time.Parse("15:04:05", text)
+		if err != nil {
+			return nil, fmt.Errorf("parse export time: %w", err)
+		}
+		elapsed := time.Duration(value.Hour())*time.Hour + time.Duration(value.Minute())*time.Minute +
+			time.Duration(value.Second())*time.Second + time.Duration(value.Nanosecond())
+		return float64(elapsed) / float64(24*time.Hour), nil
 	}
 	if (field.formula != nil || field.computed != nil) && text != "#ERROR" && text != "🔒" {
 		switch formulaFieldType(field) {

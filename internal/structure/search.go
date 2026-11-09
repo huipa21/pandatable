@@ -39,9 +39,25 @@ func compileQuickSearch(
 	table rowTable,
 	fields []rowField,
 	search *string,
+	searchField *string,
 ) (string, []any, error) {
 	if search == nil || *search == "" {
 		return "", nil, nil
+	}
+	if searchField != nil {
+		var selected []rowField
+		for _, field := range fields {
+			if field.id == *searchField && field.codec != nil && searchableQuickSearchKind(field.kind) {
+				selected = []rowField{field}
+				break
+			}
+		}
+		if len(selected) == 0 {
+			err := validation("Search field must be a visible searchable field in the table")
+			err.Details = map[string]any{"field": "searchField"}
+			return "", nil, err
+		}
+		fields = selected
 	}
 	compiler := filterCompiler{ctx: ctx, tx: tx, actor: actor, table: table}
 	clauses := make([]string, 0, len(fields))

@@ -17,10 +17,11 @@ import (
 const maxGroupBuckets = 1000
 
 type RowGroupRequest struct {
-	Path     []json.RawMessage `json:"path"`
-	Filter   *FilterNode       `json:"filter"`
-	Search   *string           `json:"search"`
-	FieldIDs *[]string         `json:"fieldIds"`
+	Path        []json.RawMessage `json:"path"`
+	Filter      *FilterNode       `json:"filter"`
+	Search      *string           `json:"search"`
+	SearchField *string           `json:"searchField"`
+	FieldIDs    *[]string         `json:"fieldIds"`
 }
 
 type RowGroupAggregate struct {
@@ -215,6 +216,14 @@ func (s *Service) QueryGroups(
 	if len(request.Path) > len(groupBy) || len(request.Path) > 3 {
 		return RowGroupResult{}, validation("Group path exceeds the configured grouping levels")
 	}
+	if err := validateQuickSearch(request.Search); err != nil {
+		return RowGroupResult{}, err
+	}
+	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table,
+		visibleRowFields(table, config.Fields, request.FieldIDs), request.Search, request.SearchField)
+	if err != nil {
+		return RowGroupResult{}, err
+	}
 	if len(groupBy) == 0 || len(request.Path) == len(groupBy) {
 		return RowGroupResult{
 			Groups: []RowGroupBucket{}, SchemaVersion: table.schemaVersion,
@@ -228,14 +237,6 @@ func (s *Service) QueryGroups(
 		if err != nil {
 			return RowGroupResult{}, err
 		}
-	}
-	if err := validateQuickSearch(request.Search); err != nil {
-		return RowGroupResult{}, err
-	}
-	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table,
-		visibleRowFields(table, config.Fields, request.FieldIDs), request.Search)
-	if err != nil {
-		return RowGroupResult{}, err
 	}
 	conditionSQL, conditionArgs := combineQueryConditions(filterSQL, filter.args, searchSQL, searchArgs)
 	groupSQL, groupArgs, err := compileGroupPath(ctx, tx, actor, table, groupBy, request.Path)

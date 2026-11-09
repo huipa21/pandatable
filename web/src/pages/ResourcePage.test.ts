@@ -335,11 +335,11 @@ it('opens a new row from the rightmost grid action, preserves the route on cance
       wrapper.get('[data-testid="new-row-dialog"]').attributes('data-row-id'),
     ).toBeUndefined()
     expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(router.currentRoute.value.fullPath).toBe('/t/t?draft=keep')
+    expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v?draft=keep')
     await wrapper.get('[data-testid="close-row"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="new-row-dialog"]').exists()).toBe(false)
-    expect(router.currentRoute.value.fullPath).toBe('/t/t?draft=keep')
+    expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v?draft=keep')
     expect(fetcher).toHaveBeenCalledTimes(1)
 
     await action.trigger('click')
@@ -358,6 +358,7 @@ it('opens a new row from the rightmost grid action, preserves the route on cance
     expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v')
     await router.push('/t/t?another=1')
     await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v?another=1')
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(wrapper.get('.grid-toolbar').element).toBe(grid)
   } finally {
@@ -991,7 +992,7 @@ it('restarts an in-flight schema read when the navigation permission changes', a
   }
 })
 
-it('renders a bare table route with its default view and ignores schema reads from an abandoned route', async () => {
+it('normalizes a bare table route to its default view and ignores schema reads from an abandoned route', async () => {
   vi.stubGlobal(
     'fetch',
     vi
@@ -1000,7 +1001,7 @@ it('renders a bare table route with its default view and ignores schema reads fr
   )
   const first = await setup('/t/t')
   try {
-    expect(first.router.currentRoute.value.path).toBe('/t/t')
+    expect(first.router.currentRoute.value.path).toBe('/t/t/v/v')
     expect(first.wrapper.find('[data-testid="production-grid"]').exists()).toBe(
       true,
     )

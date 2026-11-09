@@ -862,3 +862,167 @@ test('choice cells toggle and pick with one click and commit once', async ({
   expect(patches).toHaveLength(5)
   expectBrowserClean(page, diagnostics)
 })
+
+test('first-click editing survives direct, sidebar and New Entry navigation', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Inline grid editing is a desktop interaction.')
+  test.setTimeout(180_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const diagnostics = await observeBrowser(page)
+  await paceLogin(page)
+  await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await setLocale(page, 'en')
+  await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
+  await page
+    .getByLabel(en.auth.password, { exact: true })
+    .fill('Setup-password-123')
+  await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
+  await expect(page).toHaveURL(/\/home$/)
+
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    page,
+    '/api/v1/workspaces',
+    { name: `Edit activation ${Date.now()}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    page,
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: 'Edit activation book' },
+  )
+  const initialSchema = await create<TableSchema>(
+    page,
+    `/api/v1/books/${book.id}/tables`,
+    { name: 'Edit activation table' },
+  )
+  const tableId = initialSchema.table.id
+  const textResult = await create<FieldMutation>(
+    page,
+    `/api/v1/tables/${tableId}/fields`,
+    { name: 'Note', uiType: 'text' },
+  )
+  const checkboxResult = await create<FieldMutation>(
+    page,
+    `/api/v1/tables/${tableId}/fields`,
+    { name: 'Done', uiType: 'checkbox' },
+  )
+  if (!textResult.field || !checkboxResult.field)
+    throw new Error('The editing fields were not returned')
+  const schemaResponse = await page.request.get(
+    `/api/v1/tables/${tableId}/schema`,
+  )
+  expect(schemaResponse.status()).toBe(200)
+  const schema = (await schemaResponse.json()) as TableSchema
+  const view = schema.views[0]
+  if (!view) throw new Error('The grid view was not returned')
+  const rowsPath = `/api/v1/tables/${tableId}/rows`
+  const { rows } = await create<{ rows: DataRow[] }>(page, rowsPath, {
+    rows: [
+      {
+        fields: {
+          [textResult.field.id]: 'Before',
+          [checkboxResult.field.id]: false,
+        },
+      },
+    ],
+  })
+  const firstRow = rows[0]
+  if (!firstRow) throw new Error('The initial row was not returned')
+
+  const rowPath = (rowId: string) => `${rowsPath}/${rowId}`
+  const rowPatches: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (request.method() === 'PATCH' && path.startsWith(`${rowsPath}/`))
+      rowPatches.push(path)
+  })
+  const value = async (rowId: string, fieldId: string) => {
+    const response = await page.request.get(rowPath(rowId))
+    expect(response.status()).toBe(200)
+    return ((await response.json()) as DataRow).fields[fieldId]
+  }
+  const clickEditableTextAndCheckbox = async (
+    rowIndex: number,
+    rowId: string,
+  ) => {
+    const textPatchCount = rowPatches.length
+    const cell = await gridCell(page, textResult.field!.id, rowIndex)
+    await cell.click()
+    const textbox = page.getByRole('textbox', {
+      name: en.field.editor.value,
+      exact: true,
+    })
+    await expect(textbox).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(textbox).toHaveCount(0)
+    expect(rowPatches).toHaveLength(textPatchCount)
+
+    const checkboxCell = await gridCell(
+      page,
+      checkboxResult.field!.id,
+      rowIndex,
+    )
+    const checkbox = checkboxCell.locator('.field-check')
+    await expect(checkbox).toBeVisible()
+    const expected = (await value(rowId, checkboxResult.field!.id)) !== true
+    const patchCount = rowPatches.length
+    const patch = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        new URL(response.url()).pathname === rowPath(rowId),
+    )
+    await checkbox.click()
+    expect((await patch).status()).toBe(200)
+    expect(rowPatches).toHaveLength(patchCount + 1)
+    await expect
+      .poll(() => value(rowId, checkboxResult.field!.id))
+      .toBe(expected)
+  }
+
+  const viewPath = `/t/${tableId}/v/${view.id}`
+  await page.goto(`/t/${tableId}`)
+  await expect(page.locator('revo-grid')).toBeVisible()
+  await expect.poll(() => new URL(page.url()).pathname).toBe(viewPath)
+  await clickEditableTextAndCheckbox(0, firstRow.id)
+
+  await page.goto(`/w/${workspace.id}/b/${book.id}`)
+  const bookNode = page.locator(`[data-nav-id="${book.id}"]`)
+  await expect(bookNode).toBeVisible()
+  await bookNode.locator('button.book-toggle').click()
+  const tableNode = page.locator(`[data-nav-id="${tableId}"]`)
+  await expect(tableNode).toBeVisible()
+  await tableNode.locator('button.table-toggle').click()
+  await tableNode.locator(`[data-view-id="${view.id}"] a`).click()
+  await expect(page).toHaveURL(new RegExp(`${viewPath}$`))
+  await clickEditableTextAndCheckbox(0, firstRow.id)
+
+  await page
+    .locator('.grid-toolbar')
+    .getByRole('button', {
+      name: en.workspaceGrid.ux10.newEntry,
+      exact: true,
+    })
+    .click()
+  const dialog = page.locator('dialog.row-expand')
+  await expect(dialog).toBeVisible()
+  const createdResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === rowsPath,
+  )
+  await dialog
+    .getByRole('button', { name: en.mobileRows.create, exact: true })
+    .click()
+  expect((await createdResponse).status()).toBe(201)
+  await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
+  const createdRowId = new URL(page.url()).pathname.split('/').at(-1)!
+  await dialog
+    .getByRole('button', { name: en.rowExpand.close, exact: true })
+    .click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`${viewPath}$`))
+  await clickEditableTextAndCheckbox(1, createdRowId)
+  expectBrowserClean(page, diagnostics)
+})

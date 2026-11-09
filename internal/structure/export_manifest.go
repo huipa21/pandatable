@@ -36,6 +36,7 @@ type tablePackageManifest struct {
 	FormatVersion int            `json:"formatVersion"`
 	AppVersion    string         `json:"appVersion"`
 	ExportedAt    time.Time      `json:"exportedAt"`
+	MetaSHA256    string         `json:"metaSha256,omitempty"`
 	Table         packageTable   `json:"table"`
 	Fields        []packageField `json:"fields"`
 	Views         []packageView  `json:"views"`
@@ -47,7 +48,9 @@ type packageTable struct {
 	DisplayField *string `json:"displayField"`
 }
 
-func packageManifest(ctx context.Context, tx pgx.Tx, actor Actor, schema TableSchema, table rowTable, version string) ([]byte, error) {
+func packageManifest(ctx context.Context, tx pgx.Tx, actor Actor, schema TableSchema, table rowTable,
+	version string, exportedAt time.Time, metaSHA256 string,
+) ([]byte, error) {
 	if version == "" {
 		return nil, errors.New("package export requires an application version")
 	}
@@ -61,7 +64,7 @@ func packageManifest(ctx context.Context, tx pgx.Tx, actor Actor, schema TableSc
 	}
 	manifest := tablePackageManifest{
 		Format: "pandatable.table", FormatVersion: 1, AppVersion: version,
-		ExportedAt: time.Now().UTC(), Table: packageTable{Name: schema.Table.Name},
+		ExportedAt: exportedAt.UTC(), MetaSHA256: metaSHA256, Table: packageTable{Name: schema.Table.Name},
 		Fields: make([]packageField, 0, len(schema.Fields)),
 		Views:  make([]packageView, 0, len(schema.Views)), RowIDColumn: true,
 	}
@@ -181,18 +184,26 @@ func packageFieldOptions(ctx context.Context, tx pgx.Tx, user pgtype.UUID, field
 }
 
 func packageTargetName(ctx context.Context, tx pgx.Tx, user, target pgtype.UUID) (string, bool, error) {
+	table, readable, err := packageTargetTable(ctx, tx, user, target)
+	if err != nil || !readable {
+		return "", readable, err
+	}
+	return table.Name, true, nil
+}
+
+func packageTargetTable(ctx context.Context, tx pgx.Tx, user, target pgtype.UUID) (structuresql.GetTableRow, bool, error) {
 	access, err := acl.AccessUncached(ctx, tx, user, acl.Resource{Type: acl.Table, ID: target})
 	if err != nil {
-		return "", false, err
+		return structuresql.GetTableRow{}, false, err
 	}
 	if !access.Visible || access.Check(acl.Read) != nil {
-		return "", false, nil
+		return structuresql.GetTableRow{}, false, nil
 	}
 	table, err := structuresql.New(tx).GetTable(ctx, target)
 	if err != nil {
-		return "", false, notFoundIfNoRows(err, "read package relation target")
+		return structuresql.GetTableRow{}, false, notFoundIfNoRows(err, "read package relation target")
 	}
-	return table.Name, true, nil
+	return table, true, nil
 }
 
 func packageViewConfig(source ViewColumns, keys map[string]string) (ViewColumns, error) {

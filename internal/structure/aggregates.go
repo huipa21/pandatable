@@ -15,10 +15,11 @@ import (
 )
 
 type RowAggregateRequest struct {
-	Filter     *FilterNode      `json:"filter"`
-	Search     *string          `json:"search"`
-	FieldIDs   *[]string        `json:"fieldIds"`
-	Aggregates *[]ViewAggregate `json:"aggregates"`
+	Filter      *FilterNode      `json:"filter"`
+	Search      *string          `json:"search"`
+	SearchField *string          `json:"searchField"`
+	FieldIDs    *[]string        `json:"fieldIds"`
+	Aggregates  *[]ViewAggregate `json:"aggregates"`
 }
 
 type RowAggregate struct {
@@ -152,7 +153,7 @@ func (s *Service) QueryAggregates(
 			return RowAggregateResult{}, err
 		}
 	}
-	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table, fields, request.Search)
+	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table, fields, request.Search, request.SearchField)
 	if err != nil {
 		return RowAggregateResult{}, err
 	}

@@ -42,6 +42,7 @@ type RowQueryRequest struct {
 	Sorts        *[]RowSort        `json:"sorts"`
 	IncludeCount *bool             `json:"includeCount"`
 	Search       *string           `json:"search"`
+	SearchField  *string           `json:"searchField"`
 	FieldIDs     *[]string         `json:"fieldIds"`
 	Filter       *FilterNode       `json:"filter"`
 	GroupPath    []json.RawMessage `json:"groupPath,omitempty"`
@@ -788,7 +789,7 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 			return RowQueryResult{}, err
 		}
 	}
-	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table, fields, request.Search)
+	searchSQL, searchArgs, err := compileQuickSearch(ctx, tx, actor, table, fields, request.Search, request.SearchField)
 	if err != nil {
 		return RowQueryResult{}, err
 	}

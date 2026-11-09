@@ -27,12 +27,13 @@ const (
 )
 
 type ExportRequest struct {
-	Format   string          `json:"format"`
-	FieldIDs *[]string       `json:"fieldIds,omitempty"`
-	Filter   json.RawMessage `json:"filter,omitempty"`
-	Sorts    *[]RowSort      `json:"sorts,omitempty"`
-	GroupBy  *[]string       `json:"groupBy,omitempty"`
-	Search   *string         `json:"search,omitempty"`
+	Format      string          `json:"format"`
+	FieldIDs    *[]string       `json:"fieldIds,omitempty"`
+	Filter      json.RawMessage `json:"filter,omitempty"`
+	Sorts       *[]RowSort      `json:"sorts,omitempty"`
+	GroupBy     *[]string       `json:"groupBy,omitempty"`
+	Search      *string         `json:"search,omitempty"`
+	SearchField *string         `json:"searchField,omitempty"`
 }
 
 type ExportInfo struct {
@@ -51,6 +52,7 @@ type exportPlan struct {
 	query    string
 	args     []any
 	manifest []byte
+	metadata XLSXMetadata
 }
 
 type exportRow struct {
@@ -125,6 +127,16 @@ func (s *Service) withExportPlan(ctx context.Context, actor Actor, viewID string
 	if err := access.Check(acl.Read); err != nil {
 		return err
 	}
+	instanceID := ""
+	if request.Format == ExportPackage {
+		if version == "" {
+			return errors.New("package export requires an application version")
+		}
+		instanceID, err = s.xlsxSourceInstanceID(ctx)
+		if err != nil {
+			return err
+		}
+	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return fmt.Errorf("begin export snapshot: %w", err)
@@ -182,12 +194,21 @@ func (s *Service) withExportPlan(ctx context.Context, actor Actor, viewID string
 			}
 			plan.fields = append(plan.fields, rowField)
 		}
-		plan.manifest, err = packageManifest(ctx, tx, actor, schema, table, version)
+		if len(plan.fields)+1 > maxSpreadsheetColumns {
+			return validation("Table has too many columns for an XLSX package")
+		}
+		exportedAt := time.Now().UTC()
+		plan.metadata, err = buildXLSXMetadata(ctx, tx, user, schema, table, instanceID, exportedAt)
 		if err != nil {
 			return err
 		}
-		if len(plan.fields)+1 > maxSpreadsheetColumns {
-			return validation("Table has too many columns for an XLSX package")
+		metaSHA256, err := XLSXMetaSHA256(plan.metadata.Fields)
+		if err != nil {
+			return err
+		}
+		plan.manifest, err = packageManifest(ctx, tx, actor, schema, table, version, exportedAt, metaSHA256)
+		if err != nil {
+			return err
 		}
 	} else {
 		if request.FieldIDs != nil {
@@ -237,7 +258,7 @@ func (plan *exportPlan) buildQuery(ctx context.Context, config rowViewConfig, st
 		if err := validateQuickSearch(request.Search); err != nil {
 			return err
 		}
-		searchSQL, searchArgs, err := compileQuickSearch(ctx, plan.tx, plan.actor, plan.table, plan.fields, request.Search)
+		searchSQL, searchArgs, err := compileQuickSearch(ctx, plan.tx, plan.actor, plan.table, plan.fields, request.Search, request.SearchField)
 		if err != nil {
 			return err
 		}

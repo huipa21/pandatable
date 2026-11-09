@@ -758,7 +758,7 @@ func validateImportUsers(ctx context.Context, tx pgx.Tx, batch []importRecord, v
 
 func parseImportCell(column importColumnPlan, text string, isPackage bool, env codec.Env) (any, error) {
 	if isPackage && (column.field.kind == codec.Date || column.field.kind == codec.DateTime ||
-		column.field.kind == codec.CreatedAt || column.field.kind == codec.UpdatedAt) {
+		column.field.kind == codec.Time || column.field.kind == codec.CreatedAt || column.field.kind == codec.UpdatedAt) {
 		if value, numeric, err := parsePackageTemporal(column.field.kind, text); numeric || err != nil {
 			return value, err
 		}

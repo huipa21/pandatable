@@ -18,7 +18,6 @@ func TestLegacyPackageAttachmentNamesAreAmbiguous(t *testing.T) {
 		t.Fatal(err)
 	}
 	field := rowField{id: "files", kind: codec.Attachment, codec: bound}
-	plan := exportPlan{location: time.UTC}
 	files := [][]codec.AttachmentValue{
 		{{ID: "00000000-0000-0000-0000-000000000001", Name: "report.pdf", MIME: "application/pdf", Size: 10}},
 		{{ID: "00000000-0000-0000-0000-000000000002", Name: "report.pdf", MIME: "application/pdf", Size: 20}},
@@ -28,13 +27,9 @@ func TestLegacyPackageAttachmentNamesAreAmbiguous(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		row := exportRow{
-			record: RowRecord{Fields: map[string]json.RawMessage{field.id: raw}},
-			values: map[string]any{field.id: raw},
-		}
-		value, err := plan.spreadsheetValue(row, field, nil)
+		value, err := field.codec.FormatText(raw, codec.Env{Location: time.UTC})
 		if err != nil || value != "report.pdf" {
-			t.Fatalf("attachment package value = %v, %v", value, err)
+			t.Fatalf("legacy attachment name = %v, %v", value, err)
 		}
 		column := importColumnPlan{field: field, source: ImportColumn{UIType: "attachment"}}
 		if value, err := parseImportCell(column, "report.pdf", true, codec.Env{Location: time.UTC}); err == nil || value != nil {

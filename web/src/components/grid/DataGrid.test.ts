@@ -417,7 +417,11 @@ function queryResponse(
   }
 }
 
-async function mountGrid(schema: TableSchema, identity = navUser.id) {
+async function mountGrid(
+  schema: TableSchema,
+  identity = navUser.id,
+  routePath = '/',
+) {
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input)
     const body =
@@ -550,14 +554,36 @@ async function mountGrid(schema: TableSchema, identity = navUser.id) {
   vi.stubGlobal('fetch', fetch)
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: DataGrid }],
+    routes: [
+      { path: '/', component: DataGrid },
+      { path: '/t/:tableId', component: DataGrid },
+      { path: '/t/:tableId/v/:viewId', component: DataGrid },
+    ],
   })
+  await router.push(routePath)
   wrapper = mount(DataGrid, {
     props: { schema, viewId: 'v', identity },
     global: { plugins: [pinia, i18n, router] },
   })
   await flushPromises()
   return fetch
+}
+
+async function requestCellEdit() {
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  const source = grid.props('source') as { __rowId: string }[]
+  const model = source[gridState.focus.rowIndex]
+  if (!model) throw new Error('Missing focused grid row')
+  const event = new CustomEvent('beforeeditstart', {
+    detail: {
+      prop: gridState.fieldId,
+      model,
+      rowIndex: gridState.focus.rowIndex,
+    },
+    cancelable: true,
+  })
+  grid.vm.$emit('beforeeditstart', event)
+  return event.defaultPrevented
 }
 
 async function selectRow(id: string) {
@@ -598,6 +624,32 @@ async function selectRow(id: string) {
   await nextTick()
   return true
 }
+
+it('allows editing when the route resolves its default view', async () => {
+  const schema = schemaFor('text')
+  await mountGrid(schema, navUser.id, `/t/${schema.table.id}`)
+
+  expect(await requestCellEdit()).toBe(false)
+
+  expect(gridState.editCell).not.toHaveBeenCalled()
+})
+
+it('rejects editing when the route names a different view', async () => {
+  const schema = schemaFor('text')
+  await mountGrid(schema, navUser.id, `/t/${schema.table.id}/v/other`)
+
+  expect(await requestCellEdit()).toBe(true)
+})
+
+it('rejects editing after the schema version changes', async () => {
+  const schema = schemaFor('text')
+  await mountGrid(schema, navUser.id, `/t/${schema.table.id}`)
+  await wrapper!.setProps({
+    schema: { ...schema, schemaVersion: schema.schemaVersion + 1 },
+  })
+
+  expect(await requestCellEdit()).toBe(true)
+})
 
 it('shows visible selected-row actions only to writers', async () => {
   const schema = schemaFor('text')

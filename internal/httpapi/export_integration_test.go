@@ -163,7 +163,7 @@ func TestExportHTTPViewAndPackage(t *testing.T) {
 	}
 	defer bookFile.Close()
 	sheets := bookFile.GetSheetList()
-	if fmt.Sprint(sheets) != "[Data _pandatable]" {
+	if fmt.Sprint(sheets) != "[Data _meta _pandatable]" {
 		t.Fatalf("package sheets = %v", sheets)
 	}
 	visible, err := bookFile.GetSheetVisible("_pandatable")

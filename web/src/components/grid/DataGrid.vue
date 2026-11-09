@@ -466,7 +466,8 @@ function editOriginCurrent(origin: EditOrigin) {
     canWrite.value &&
     props.schema.schemaVersion === origin.schemaVersion &&
     (!origin.routeTableScoped ||
-      (params.tableId === origin.tableId && params.viewId === origin.viewId))
+      (params.tableId === origin.tableId &&
+        (typeof params.viewId !== 'string' || params.viewId === origin.viewId)))
   )
 }
 

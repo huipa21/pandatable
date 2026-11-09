@@ -612,6 +612,7 @@ export interface ExportViewQuery {
   sorts?: RowSort[]
   groupBy?: string[]
   search?: string
+  searchField?: string
 }
 
 export interface ImportColumn {
@@ -681,6 +682,7 @@ export interface RowQueryRequest {
   filter?: FilterNode | null
   /** Transient quick search; never saved to the view config. */
   search?: string
+  searchField?: string
   /** Group values to apply before paging expanded group rows. */
   groupPath?: RowValue[]
 }
@@ -697,6 +699,7 @@ export interface RowGroupRequest {
   path: RowValue[]
   filter?: FilterNode | null
   search?: string
+  searchField?: string
   fieldIds?: string[]
 }
 
@@ -720,6 +723,7 @@ export interface RowGroupResult {
 export interface RowAggregateRequest {
   filter?: FilterNode | null
   search?: string
+  searchField?: string
   /** Transient local grid visibility override. */
   fieldIds?: string[]
   /** Transient aggregate config override; never persisted by this endpoint. */

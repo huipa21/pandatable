@@ -307,12 +307,22 @@ func importBatchIDs(ctx context.Context, tx pgx.Tx, table rowTable, batch []impo
 	return ids, nil
 }
 
-// Excelize's date reader rounds serials to whole seconds. Decode the package
-// serial directly so its available fractional-second precision is retained.
+// Excelize's date reader rounds serials to whole seconds. Decode package date,
+// datetime, and time serials directly to retain fractional-second precision.
 func parsePackageTemporal(kind codec.Kind, text string) (any, bool, error) {
 	serial, err := strconv.ParseFloat(text, 64)
 	if err != nil {
 		return nil, false, nil
+	}
+	if kind == codec.Time {
+		if math.IsNaN(serial) || math.IsInf(serial, 0) || serial < 0 || serial >= 1 {
+			return nil, true, validation("The package time serial is invalid")
+		}
+		micros := int64(math.Round(serial * 86400 * 1_000_000))
+		if micros >= 86400*1_000_000 {
+			return nil, true, validation("The package time serial is invalid")
+		}
+		return pgtype.Time{Microseconds: micros, Valid: true}, true, nil
 	}
 	if math.IsNaN(serial) || math.IsInf(serial, 0) || serial < 1 || serial >= 2958466 {
 		return nil, true, validation("The package date serial is invalid")
