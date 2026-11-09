@@ -44,6 +44,25 @@ const selectedHigher = computed(
     selectedInherited.value &&
     rank[selectedInherited.value] > rank[level.value],
 )
+const privateOnlyYou = computed(() => {
+  const listing = share.listing
+  const userId = auth.user?.id
+  if (!listing || !userId || share.loading || share.busy || share.error)
+    return false
+
+  const grants = [...listing.items, ...listing.inherited]
+  return (
+    grants.some(
+      (grant) =>
+        grant.principalType === 'user' &&
+        grant.principalId === userId &&
+        grant.level === 'owner',
+    ) &&
+    grants.every(
+      (grant) => grant.principalType === 'user' && grant.principalId === userId,
+    )
+  )
+})
 const searchDisabled = computed(
   () =>
     share.searching ||
@@ -158,6 +177,9 @@ onBeforeUnmount(() => share.close(true))
       <p>{{ t('sharing.inheritanceNotice') }}</p>
       <p v-if="share.target.kind === 'workspace'">
         {{ t('sharing.lastOwnerNotice') }}
+      </p>
+      <p v-if="privateOnlyYou" class="private-state" role="status">
+        {{ t('wmb.privateOnlyYou') }}
       </p>
       <p v-if="share.loading || share.busy" role="status">
         {{ share.busy ? t('sharing.saving') : t('sharing.loading') }}

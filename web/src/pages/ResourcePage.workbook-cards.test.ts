@@ -166,6 +166,30 @@ it('orders workbooks by recency and ignores a legacy URL query', async () => {
   }
 })
 
+it('shows non-path-only book descriptions on a single ellipsized line', async () => {
+  const { wrapper, nav } = await setup()
+  try {
+    const book = nav.tree.workspaces[0]!.books[0]!
+    const description = '第一行说明\n第二行包含更多细节'
+    book.description = description
+    await flushPromises()
+
+    const cardDescription = wrapper.get('.workbook-card-description')
+    expect(cardDescription.text()).toBe(description)
+    expect(cardDescription.attributes('title')).toBe(description)
+
+    book.pathOnly = true
+    await flushPromises()
+    expect(wrapper.find('.workbook-card-description').exists()).toBe(false)
+    book.pathOnly = false
+    book.description = ''
+    await flushPromises()
+    expect(wrapper.find('.workbook-card-description').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('shows the empty-workspace creation hint only to creators', async () => {
   const { wrapper, nav } = await setup()
   try {

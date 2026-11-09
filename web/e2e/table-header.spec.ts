@@ -46,6 +46,8 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     .fill('Setup-password-123')
   await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
   await expect(page).toHaveURL(/\/(?:home|w\/[^/]+|change-password)$/)
+  await page.goto('/home')
+  await expect(page.locator('.breadcrumbs')).toHaveCount(0)
 
   const create = async <T>(path: string, data: unknown): Promise<T> => {
     const response = await page.request.post(path, { headers: headers(), data })
@@ -63,9 +65,10 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     '/api/v1/workspaces',
     { name: otherName },
   )
+  const bookName = `Book ${'B'.repeat(65)}`
   const { book } = await create<{ book: { id: string } }>(
     `/api/v1/workspaces/${workspace.id}/books`,
-    { name: `Book ${'B'.repeat(65)}` },
+    { name: bookName },
   )
   const schema = await create<TableSchema>(`/api/v1/books/${book.id}/tables`, {
     name: `Table ${'T'.repeat(65)}`,
@@ -80,12 +83,55 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     views.push({ type, id: result.view.id })
   }
 
-  for (const path of [
-    `/w/${workspace.id}`,
-    `/w/${workspace.id}/b/${book.id}`,
-    `/t/${schema.table.id}/v/${views[0]!.id}`,
+  for (const route of [
+    {
+      path: `/w/${workspace.id}`,
+      names: [workspaceName],
+      hrefs: [`/w/${workspace.id}`],
+    },
+    {
+      path: `/w/${workspace.id}/b/${book.id}`,
+      names: [workspaceName, bookName],
+      hrefs: [`/w/${workspace.id}`, `/w/${workspace.id}/b/${book.id}`],
+    },
+    {
+      path: `/t/${schema.table.id}`,
+      names: [workspaceName, bookName, schema.table.name],
+      hrefs: [
+        `/w/${workspace.id}`,
+        `/w/${workspace.id}/b/${book.id}`,
+        `/t/${schema.table.id}`,
+      ],
+    },
+    {
+      path: `/t/${schema.table.id}/v/${views[0]!.id}`,
+      names: [
+        workspaceName,
+        bookName,
+        schema.table.name,
+        schema.views[0]!.name,
+      ],
+      hrefs: [
+        `/w/${workspace.id}`,
+        `/w/${workspace.id}/b/${book.id}`,
+        `/t/${schema.table.id}`,
+        `/t/${schema.table.id}/v/${views[0]!.id}`,
+      ],
+    },
   ]) {
-    await page.goto(path)
+    await page.goto(route.path)
+    const links = page.locator('.breadcrumbs a')
+    await expect(links).toHaveCount(route.names.length)
+    for (const [index, name] of route.names.entries()) {
+      await expect(links.nth(index)).toHaveText(name)
+      await expect(links.nth(index)).toHaveAttribute(
+        'href',
+        route.hrefs[index]!,
+      )
+      if (index === route.names.length - 1)
+        await expect(links.nth(index)).toHaveAttribute('aria-current', 'page')
+      else await expect(links.nth(index)).not.toHaveAttribute('aria-current')
+    }
     const workspaceCrumb = page.locator('.breadcrumbs .breadcrumb-workspace')
     await expect(workspaceCrumb).toHaveText(workspaceName)
     await bounded(page, workspaceCrumb)
@@ -95,7 +141,7 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     await expect(
       page.getByRole('heading', { name: en.auth.homeTitle, exact: true }),
     ).toHaveCount(0)
-    if (!isMobile && path.startsWith('/t/')) {
+    if (!isMobile && route.path.startsWith('/t/')) {
       await expect(
         page.getByRole('button', { name: en.grid.addRow, exact: true }),
       ).toBeEnabled()
@@ -163,6 +209,7 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
       await expect(
         page.locator('.breadcrumbs a[aria-current="page"]'),
       ).toBeVisible()
+      if (width === 390) await noPageOverflow(page)
       const toolbar =
         view.type === 'grid' && width >= 768
           ? page.locator('.grid-toolbar')

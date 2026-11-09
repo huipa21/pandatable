@@ -42,7 +42,7 @@ export interface StructureAction {
   name?: string
 }
 
-export interface WorkspaceDetails {
+export interface ResourceDetails {
   icon?: BookIconName | null
   description?: string
 }
@@ -332,7 +332,7 @@ export const useNavStore = defineStore('nav', () => {
   async function submit(
     action: StructureAction,
     name: string,
-    workspace?: WorkspaceDetails,
+    details?: ResourceDetails,
   ) {
     const plural = `${action.kind}s`
     if (action.operation === 'create') {
@@ -345,17 +345,21 @@ export const useNavStore = defineStore('nav', () => {
         return tablePath(result.table.id, result.views)
       }
       if (action.kind === 'book') {
+        const description =
+          details?.description !== undefined && details.description !== ''
+            ? { description: details.description }
+            : {}
         const result = await mutate<{ book: { id: string } } & AuthMutation>(
           `/workspaces/${action.parentId}/books`,
           'POST',
-          { name },
+          { name, ...description },
         )
         return `/w/${action.parentId}/b/${result.book.id}`
       }
       const result = await mutate<{ workspace: { id: string } } & AuthMutation>(
         '/workspaces',
         'POST',
-        { name, ...workspace },
+        { name, ...details },
       )
       return `/w/${result.workspace.id}`
     }
@@ -364,8 +368,8 @@ export const useNavStore = defineStore('nav', () => {
       action.operation === 'delete' ? 'DELETE' : 'PATCH',
       action.operation === 'rename'
         ? action.kind === 'workspace'
-          ? { name, ...workspace }
-          : { name }
+          ? { name, ...details }
+          : { name, ...(action.kind === 'book' ? details : {}) }
         : undefined,
     )
     return null
@@ -396,7 +400,7 @@ export const useNavStore = defineStore('nav', () => {
       children: w.books.map((b, bi, books) => ({
         id: b.id,
         name: b.name,
-        description: '',
+        description: b.description,
         lastOpenedAt: b.lastOpenedAt,
         kind: 'book',
         path: `/w/${w.id}/b/${b.id}`,

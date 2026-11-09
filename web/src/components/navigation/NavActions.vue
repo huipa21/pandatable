@@ -110,7 +110,9 @@ function createView() {
         {{
           item.kind === 'workspace'
             ? t('dashboard.ds06.editWorkspace')
-            : t('nav.rename')
+            : item.kind === 'book'
+              ? t('wmb.editBook')
+              : t('nav.rename')
         }}
       </button>
       <button

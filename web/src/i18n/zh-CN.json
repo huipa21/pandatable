@@ -993,6 +993,10 @@
     }
   },
   "wmb": {
+    "bookDescription": "描述（可选）",
+    "bookValidationError": "请检查工作簿名称和描述。",
+    "editBook": "编辑工作簿",
+    "privateOnlyYou": "私有 - 仅你有权访问",
     "emptyBooksHint": "请使用侧边栏工作区名称旁的 ⋮ 菜单创建工作簿。",
     "editWorkspace": "编辑",
     "workspaceActions": "{name} 的工作区操作"

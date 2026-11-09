@@ -90,6 +90,53 @@ it('maps workspace metadata and sends optional icon/description on create and up
   ])
 })
 
+it('maps book descriptions and sends them only when provided or changed', async () => {
+  const tree = navigation()
+  tree.workspaces[0]!.books[0]!.description = 'Book description'
+  const fetch = vi.fn((_path: string, options: RequestInit) =>
+    Promise.resolve(
+      Response.json(
+        options.method === 'GET'
+          ? tree
+          : { book: { id: 'created' }, eventId: 'opaque' },
+      ),
+    ),
+  )
+  vi.stubGlobal('fetch', fetch)
+  const nav = useNavStore()
+  await nav.refresh()
+  expect(nav.flatItems.find((item) => item.kind === 'book')).toMatchObject({
+    description: 'Book description',
+  })
+
+  await nav.submit(
+    { operation: 'create', kind: 'book', parentId: 'w' },
+    'Name only',
+  )
+  await nav.submit(
+    { operation: 'create', kind: 'book', parentId: 'w' },
+    'With description',
+    { description: '项目\n第二行' },
+  )
+  await nav.submit({ operation: 'rename', kind: 'book', id: 'b' }, 'Updated', {
+    description: '',
+  })
+  const writes = fetch.mock.calls.filter(
+    ([, options]) => options.method !== 'GET',
+  )
+  expect(
+    writes.map(([path, options]) => [path, options.method, options.body]),
+  ).toEqual([
+    ['/api/v1/workspaces/w/books', 'POST', '{"name":"Name only"}'],
+    [
+      '/api/v1/workspaces/w/books',
+      'POST',
+      '{"name":"With description","description":"项目\\n第二行"}',
+    ],
+    ['/api/v1/books/b', 'PATCH', '{"name":"Updated","description":""}'],
+  ])
+})
+
 it('optimistically records a recent open and silently ignores a stale 404', async () => {
   const fetch = vi
     .fn()

@@ -1,47 +1,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useNavLocation } from '../../composables/useNavLocation'
 
 const { t } = useI18n()
-const route = useRoute()
 const location = useNavLocation()
 const crumbs = computed(() => {
-  if (!location.routeWorkspaceId.value && route.path !== '/home') return []
+  if (!location.routeWorkspaceId.value) return []
   const items: {
     id: string
     name: string
     path: string
     pathOnly: boolean
-    kind: 'root' | 'workspace' | 'book' | 'table' | 'view'
-  }[] = [
-    {
-      id: 'workspaces',
-      name: t('workspaceGrid.ux02.workspaces'),
-      path: '/home',
+    kind: 'workspace' | 'book' | 'table' | 'view'
+  }[] = []
+  for (const item of [
+    location.workspace.value,
+    location.book.value,
+    location.table.value,
+  ])
+    if (item) items.push({ ...item, kind: item.kind })
+  const table = location.table.value
+  const view = location.view.value
+  if (table && view)
+    items.push({
+      id: view.id,
+      name: view.name,
+      path: `/t/${table.id}/v/${view.id}`,
       pathOnly: false,
-      kind: 'root',
-    },
-  ]
-  if (location.routeWorkspaceId.value) {
-    for (const item of [
-      location.workspace.value,
-      location.book.value,
-      location.table.value,
-    ])
-      if (item) items.push({ ...item, kind: item.kind })
-    const table = location.table.value
-    const view = location.view.value
-    if (table && view)
-      items.push({
-        id: view.id,
-        name: view.name,
-        path: `/t/${table.id}/v/${view.id}`,
-        pathOnly: false,
-        kind: 'view',
-      })
-  }
+      kind: 'view',
+    })
   return items
 })
 </script>
@@ -58,7 +46,8 @@ const crumbs = computed(() => {
         class="breadcrumb-separator"
         :class="{
           'breadcrumb-separator-current': index === crumbs.length - 1,
-          'breadcrumb-separator-root': index === 1,
+          'breadcrumb-separator-workspace':
+            crumbs[index - 1]?.kind === 'workspace',
         }"
         aria-hidden="true"
       >
@@ -67,7 +56,6 @@ const crumbs = computed(() => {
       <RouterLink
         :to="item.path"
         :class="{
-          'breadcrumb-root': item.kind === 'root',
           'breadcrumb-workspace': item.kind === 'workspace',
         }"
         :aria-current="index === crumbs.length - 1 ? 'page' : undefined"

@@ -303,6 +303,7 @@ export interface NavTable {
 export interface NavBook {
   id: string
   name: string
+  description: string
   icon: BookIconName | null
   fallbackIcon: BookIconName
   lastOpenedAt: string | null
@@ -366,6 +367,7 @@ export interface Book {
   id: string
   workspaceId: string
   name: string
+  description: string
   icon: BookIconName | null
   fallbackIcon: BookIconName
   position: number

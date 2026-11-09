@@ -119,6 +119,66 @@ it('renders distinct direct/inherited sources and warning, reviews removals with
   }
 })
 
+it('shows private state only when the current user is the sole grantee in both locales', async () => {
+  const ownerGrant: DirectGrant = {
+    ...grant(),
+    id: 'alice-owner',
+    resourceType: 'workspace',
+    resourceId: 'w',
+    principalId: navUser.id,
+    level: 'owner',
+    inheritedLevel: null,
+    principal: {
+      name: navUser.displayName,
+      username: navUser.username,
+      status: 'active',
+    },
+  }
+  const privateListing: GrantListing = {
+    resource: { type: 'workspace', id: 'w' },
+    effectiveLevel: 'owner',
+    items: [ownerGrant],
+    inherited: [],
+  }
+  vi.mocked(fetch).mockResolvedValue(Response.json(privateListing))
+  const wrapper = mount(ShareDialog, {
+    global: await setup(),
+    attachTo: document.body,
+  })
+  const share = useSharingStore()
+  try {
+    share.open({ kind: 'workspace', id: 'w', name: 'Workspace' })
+    await flushPromises()
+    for (const [locale, message] of [
+      ['en', 'Private - only you have access'],
+      ['zh-CN', '私有 - 仅你有权访问'],
+    ] as const) {
+      i18n.global.locale.value = locale
+      await flushPromises()
+      expect(wrapper.get('[role="status"].private-state').text()).toBe(message)
+    }
+
+    share.listing = {
+      ...privateListing,
+      items: [
+        ownerGrant,
+        { ...grant(), resourceType: 'workspace', resourceId: 'w' },
+      ],
+    }
+    await flushPromises()
+    expect(wrapper.find('.private-state').exists()).toBe(false)
+
+    share.listing = {
+      ...privateListing,
+      inherited: [{ ...ownerGrant, id: 'inherited-bob', principalId: 'bob' }],
+    }
+    await flushPromises()
+    expect(wrapper.find('.private-state').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('labels dangling/disabled grants honestly and permits removal but not replacement', async () => {
   const global = await setup()
   for (const principal of [

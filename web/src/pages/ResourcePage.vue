@@ -986,6 +986,13 @@ onBeforeUnmount(() => {
               </span>
               <span class="workbook-card-content">
                 <span class="workbook-card-name">{{ child.name }}</span>
+                <span
+                  v-if="!child.pathOnly && child.description"
+                  class="workbook-card-description"
+                  :title="child.description"
+                >
+                  {{ child.description }}
+                </span>
                 <span v-if="child.pathOnly" class="workbook-card-context">
                   {{ t('nav.pathOnly') }}
                 </span>
@@ -1387,6 +1394,15 @@ onBeforeUnmount(() => {
   min-width: 0;
   overflow-wrap: anywhere;
   font-weight: 600;
+}
+
+.workbook-card-description {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workbook-card-context {

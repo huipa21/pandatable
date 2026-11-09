@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { createResourceLabel } from '../../i18n'
 import { useRouter } from 'vue-router'
 import { errorMessage, RequestError } from '../../api/client'
-import { useNavStore, type WorkspaceDetails } from '../../stores/nav'
+import { useNavStore, type ResourceDetails } from '../../stores/nav'
 import type { BookIconName } from '../../api/types'
 import IconPicker from '../common/IconPicker.vue'
 
@@ -24,15 +24,24 @@ const workspace = computed(() => {
 const workspaceEditor = computed(
   () => nav.editor?.kind === 'workspace' && nav.editor.operation !== 'delete',
 )
+const bookEditor = computed(
+  () => nav.editor?.kind === 'book' && nav.editor.operation !== 'delete',
+)
+const descriptionEditor = computed(
+  () => workspaceEditor.value || bookEditor.value,
+)
 const descriptionLength = computed(() => [...description.value].length)
 const descriptionInvalid = computed(() => descriptionLength.value > 500)
 const inlineError = computed(() => {
   if (
-    workspaceEditor.value &&
     error.value instanceof RequestError &&
     error.value.code === 'ERR_VALIDATION'
   )
-    return t('dashboard.ds06.workspaceValidationError')
+    return workspaceEditor.value
+      ? t('dashboard.ds06.workspaceValidationError')
+      : bookEditor.value
+        ? t('wmb.bookValidationError')
+        : errorMessage(error.value)
   return errorMessage(error.value)
 })
 const submitDisabled = computed(() => {
@@ -41,24 +50,39 @@ const submitDisabled = computed(() => {
     nav.busy ||
     (action?.operation !== 'delete' &&
       action !== null &&
-      (invalid.value || (workspaceEditor.value && descriptionInvalid.value)))
+      (invalid.value || (descriptionEditor.value && descriptionInvalid.value)))
   )
 })
-const workspaceDetails = computed<WorkspaceDetails | undefined>(() => {
+const resourceDetails = computed<ResourceDetails | undefined>(() => {
   const action = nav.editor
-  if (!action || action.kind !== 'workspace' || action.operation === 'delete')
-    return undefined
-  const details: WorkspaceDetails = {}
-  if (action.operation === 'create') {
-    if (icon.value !== null) details.icon = icon.value
-    if (description.value !== '') details.description = description.value
-  } else {
-    if (icon.value !== (workspace.value?.icon ?? null))
-      details.icon = icon.value
-    if (description.value !== (workspace.value?.description ?? ''))
-      details.description = description.value
+  if (!action || action.operation === 'delete') return undefined
+  if (action.kind === 'workspace') {
+    const details: ResourceDetails = {}
+    if (action.operation === 'create') {
+      if (icon.value !== null) details.icon = icon.value
+      if (description.value !== '') details.description = description.value
+    } else {
+      if (icon.value !== (workspace.value?.icon ?? null))
+        details.icon = icon.value
+      if (description.value !== (workspace.value?.description ?? ''))
+        details.description = description.value
+    }
+    return details
   }
-  return details
+  if (action.kind !== 'book') return undefined
+  const currentDescription =
+    action.id === undefined
+      ? ''
+      : (nav.flatItems.find(
+          (item) => item.id === action.id && item.kind === 'book',
+        )?.description ?? '')
+  if (action.operation === 'create')
+    return description.value === ''
+      ? undefined
+      : { description: description.value }
+  return description.value === currentDescription
+    ? undefined
+    : { description: description.value }
 })
 const invalid = computed(
   () =>
@@ -74,7 +98,13 @@ watch(
     icon.value =
       action?.kind === 'workspace' ? (workspace.value?.icon ?? null) : null
     description.value =
-      action?.kind === 'workspace' ? (workspace.value?.description ?? '') : ''
+      action?.kind === 'workspace'
+        ? (workspace.value?.description ?? '')
+        : action?.kind === 'book'
+          ? (nav.flatItems.find(
+              (item) => item.id === action.id && item.kind === 'book',
+            )?.description ?? '')
+          : ''
     await nextTick()
     if (action) dialog.value?.showModal()
     else dialog.value?.close()
@@ -89,14 +119,14 @@ async function save() {
     !action ||
     nav.busy ||
     (action.operation !== 'delete' &&
-      (invalid.value || (workspaceEditor.value && descriptionInvalid.value)))
+      (invalid.value || (descriptionEditor.value && descriptionInvalid.value)))
   )
     return
   try {
     const path = await nav.submit(
       action,
       name.value.trim(),
-      workspaceDetails.value,
+      resourceDetails.value,
     )
     nav.editor = null
     if (path) await router.push(path)
@@ -121,7 +151,9 @@ async function save() {
             : nav.editor.operation === 'rename'
               ? nav.editor.kind === 'workspace'
                 ? t('dashboard.ds06.editWorkspace')
-                : t('nav.rename')
+                : nav.editor.kind === 'book'
+                  ? t('wmb.editBook')
+                  : t('nav.rename')
               : t('nav.delete')
         }}
       </h2>
@@ -144,12 +176,22 @@ async function save() {
           <span>{{ t('dashboard.ds06.iconLabel') }}</span>
           <IconPicker v-model="icon" />
         </div>
+      </template>
+      <template v-if="descriptionEditor">
         <label class="structure-name workspace-description-field">
-          <span>{{ t('dashboard.ds06.descriptionLabel') }}</span>
+          <span>{{
+            bookEditor
+              ? t('wmb.bookDescription')
+              : t('dashboard.ds06.descriptionLabel')
+          }}</span>
           <textarea
             v-model="description"
             :disabled="nav.busy"
-            :aria-label="t('dashboard.ds06.descriptionLabel')"
+            :aria-label="
+              bookEditor
+                ? t('wmb.bookDescription')
+                : t('dashboard.ds06.descriptionLabel')
+            "
             :aria-invalid="descriptionInvalid"
             :aria-describedby="
               descriptionInvalid

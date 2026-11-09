@@ -469,6 +469,44 @@ it('offers owner-only workspace editing instead of Rename', async () => {
   }
 })
 
+it('offers owner-only book editing and prefills the book description', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  nav.tree.workspaces[0]!.books[0]!.description = 'Book details'
+  const item = nav.flatItems.find((entry) => entry.kind === 'book')!
+  const actions = mount(NavActions, { global, props: { item } })
+  const dialog = mount(StructureDialog, { global, attachTo: document.body })
+  try {
+    expect(actions.text()).toContain('Edit workbook')
+    expect(actions.text()).not.toContain('Rename')
+    await actions.get('summary').trigger('click')
+    const editButton = actions
+      .findAll('.nav-actions button')
+      .find((button) => button.text() === 'Edit workbook')
+    expect(editButton).toBeDefined()
+    await editButton!.trigger('click')
+    await flushPromises()
+    expect(nav.editor).toEqual({
+      operation: 'rename',
+      kind: 'book',
+      id: 'b',
+      name: 'Book',
+    })
+    expect(dialog.get('h2').text()).toBe('Edit workbook')
+    expect(dialog.get('textarea').element).toHaveProperty(
+      'value',
+      'Book details',
+    )
+    await actions.setProps({
+      item: { ...item, canEdit: false, level: 'read' },
+    })
+    expect(actions.text()).not.toContain('Edit workbook')
+  } finally {
+    actions.unmount()
+    dialog.unmount()
+  }
+})
+
 it('announces icon choices as a radio group and supports arrow-key selection', async () => {
   const { global } = await setup()
   const wrapper = mount(IconPicker, {
@@ -574,6 +612,80 @@ it('renders overlong descriptions and server validation errors inline', async ()
     )
     expect(wrapper.get('[role="alert"]').text()).toBe(
       'Check the workspace name, icon, and description.',
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('validates and submits optional book descriptions, including clearing on edit', async () => {
+  const { global } = await setup()
+  const nav = useNavStore()
+  nav.tree.workspaces[0]!.books[0]!.description = 'Existing'
+  const submit = vi.spyOn(nav, 'submit').mockResolvedValue(null)
+  const wrapper = mount(StructureDialog, { global, attachTo: document.body })
+  try {
+    const createAction = {
+      operation: 'create' as const,
+      kind: 'book' as const,
+      parentId: 'w',
+    }
+    nav.editor = createAction
+    await flushPromises()
+    expect(wrapper.get('h2').text()).toBe('New book')
+    expect(wrapper.find('.workspace-icon-field').exists()).toBe(false)
+    expect(wrapper.get('textarea').attributes('aria-label')).toBe(
+      'Description (optional)',
+    )
+    await wrapper.get('textarea').setValue('漢'.repeat(501))
+    expect(wrapper.get('#workspace-description-counter').text()).toBe(
+      '501/500 characters',
+    )
+    expect(
+      wrapper.get('button[type="submit"]').attributes('disabled'),
+    ).toBeDefined()
+    expect(submit).not.toHaveBeenCalled()
+
+    await wrapper.get('textarea').setValue('第一行\n第二行')
+    await wrapper.get('input').setValue('New book')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(submit).toHaveBeenLastCalledWith(createAction, 'New book', {
+      description: '第一行\n第二行',
+    })
+
+    const editAction = {
+      operation: 'rename' as const,
+      kind: 'book' as const,
+      id: 'b',
+      name: 'Book',
+    }
+    nav.editor = editAction
+    await flushPromises()
+    expect(wrapper.get('h2').text()).toBe('Edit workbook')
+    expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe(
+      'Existing',
+    )
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(submit).toHaveBeenLastCalledWith(editAction, 'Book', undefined)
+
+    nav.editor = editAction
+    await flushPromises()
+    await wrapper.get('textarea').setValue('')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(submit).toHaveBeenLastCalledWith(editAction, 'Book', {
+      description: '',
+    })
+
+    submit.mockRejectedValue(new RequestError('ERR_VALIDATION', 400))
+    nav.editor = editAction
+    await flushPromises()
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      'Check the book name and description.',
     )
   } finally {
     wrapper.unmount()

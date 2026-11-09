@@ -948,6 +948,32 @@ export async function verifyNavigation(
             .click()
           await expect(page.locator('main')).toContainText(en.nav.pathNotice)
           await expect(page.locator('main button')).toHaveCount(0)
+          await page.goto(`/t/${tid}`)
+          const breadcrumbLinks = page.locator('.breadcrumbs a')
+          await expect(breadcrumbLinks).toHaveCount(3)
+          await expect(await breadcrumbLinks.allTextContents()).toEqual([
+            '工作区 W',
+            '工作簿 B',
+            '数据表 T',
+          ])
+          await expect(breadcrumbLinks.nth(0)).toHaveAttribute(
+            'href',
+            `/w/${wid}`,
+          )
+          await expect(breadcrumbLinks.nth(1)).toHaveAttribute(
+            'href',
+            `/w/${wid}/b/${bid}`,
+          )
+          await expect(breadcrumbLinks.nth(2)).toHaveAttribute(
+            'href',
+            `/t/${tid}`,
+          )
+          await expect(breadcrumbLinks.nth(2)).toHaveAttribute(
+            'aria-current',
+            'page',
+          )
+          await expect(page.locator('.breadcrumb-path-only')).toHaveCount(2)
+          await noOverflow(page)
           await page.goto('/home')
           await expect(page).toHaveURL(/\/home$/)
           await create(page, 'workspace', 'Carol W2')

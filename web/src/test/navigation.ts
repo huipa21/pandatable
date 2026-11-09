@@ -33,6 +33,7 @@ export function navigation(): Navigation {
           {
             id: 'b',
             name: 'Book',
+            description: '',
             icon: null,
             fallbackIcon: 'book',
             lastOpenedAt: null,

@@ -50,37 +50,52 @@ it('builds header breadcrumbs from the route and adds the view only when named',
   const { router, global } = await setup('/t/t')
   const wrapper = mount(AppBreadcrumbs, { global })
   try {
-    expect(crumbs(wrapper)).toEqual([
-      'Workspaces',
-      'Workspace',
-      'Book',
-      'Table',
-    ])
-    expect(wrapper.get('.breadcrumb-root').attributes('href')).toBe('/home')
-    expect(wrapper.find('.breadcrumb-separator-root').exists()).toBe(true)
-    expect(
-      wrapper.findAll('.breadcrumbs a').at(-1)!.attributes('aria-current'),
-    ).toBe('page')
+    const routes = [
+      {
+        path: '/w/w',
+        texts: ['Workspace'],
+        hrefs: ['/w/w'],
+      },
+      {
+        path: '/w/w/b/b',
+        texts: ['Workspace', 'Book'],
+        hrefs: ['/w/w', '/w/w/b/b'],
+      },
+      {
+        path: '/t/t',
+        texts: ['Workspace', 'Book', 'Table'],
+        hrefs: ['/w/w', '/w/w/b/b', '/t/t'],
+      },
+      {
+        path: '/t/t/v/v',
+        texts: ['Workspace', 'Book', 'Table', 'Grid'],
+        hrefs: ['/w/w', '/w/w/b/b', '/t/t', '/t/t/v/v'],
+      },
+    ]
+    for (const routeCase of routes) {
+      await router.push(routeCase.path)
+      await flushPromises()
+      expect(crumbs(wrapper)).toEqual(routeCase.texts)
+      const links = wrapper.findAll('.breadcrumbs a')
+      expect(links.map((link) => link.attributes('href'))).toEqual(
+        routeCase.hrefs,
+      )
+      expect(links.at(-1)!.attributes('aria-current')).toBe('page')
+      expect(
+        links.slice(0, -1).every((link) => !link.attributes('aria-current')),
+      ).toBe(true)
+    }
+    expect(wrapper.find('.breadcrumb-root').exists()).toBe(false)
+    expect(wrapper.find('.breadcrumb-separator-root').exists()).toBe(false)
+    expect(wrapper.find('.breadcrumb-separator-workspace').exists()).toBe(true)
     expect(wrapper.get('.breadcrumb-workspace').text()).toBe('Workspace')
-    await wrapper.get('.breadcrumbs a').trigger('click')
+    await wrapper.get('.breadcrumb-workspace').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/home')
-    await router.push('/t/t')
+    expect(router.currentRoute.value.path).toBe('/w/w')
     await router.push('/t/t/v/v')
-    expect(crumbs(wrapper)).toEqual([
-      'Workspaces',
-      'Workspace',
-      'Book',
-      'Table',
-      'Grid',
-    ])
     expect(wrapper.get('.breadcrumb-separator-current').text()).toBe(
       i18n.global.t('nav.separator'),
     )
-    await router.push('/w/w/b/b')
-    expect(crumbs(wrapper)).toEqual(['Workspaces', 'Workspace', 'Book'])
-    await router.push('/w/w')
-    expect(crumbs(wrapper)).toEqual(['Workspaces', 'Workspace'])
     useNavStore().tree!.workspaces[0]!.name = 'Renamed workspace'
     await flushPromises()
     expect(wrapper.get('.breadcrumb-workspace').text()).toBe(
@@ -88,10 +103,30 @@ it('builds header breadcrumbs from the route and adds the view only when named',
     )
     useNavStore().lastWorkspaceId = 'w'
     await router.push('/home')
-    expect(crumbs(wrapper)).toEqual(['Workspaces'])
-    expect(wrapper.get('.breadcrumbs a').attributes('aria-current')).toBe(
-      'page',
-    )
+    expect(wrapper.find('.breadcrumbs').exists()).toBe(false)
+    await router.push('/profile')
+    expect(wrapper.find('.breadcrumbs').exists()).toBe(false)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('keeps path-only workspace and book ancestors in the breadcrumb', async () => {
+  const { global } = await setup('/t/t')
+  const workspace = useNavStore().tree!.workspaces[0]!
+  workspace.pathOnly = true
+  workspace.books[0]!.pathOnly = true
+  const wrapper = mount(AppBreadcrumbs, { global })
+  try {
+    expect(crumbs(wrapper)).toEqual(['Workspace', 'Book', 'Table'])
+    expect(wrapper.findAll('.breadcrumb-path-only')).toHaveLength(2)
+    expect(wrapper.findAll('.breadcrumb-path-visible')).toHaveLength(1)
+    expect(
+      wrapper.findAll('.breadcrumbs a').map((link) => link.attributes('href')),
+    ).toEqual(['/w/w', '/w/w/b/b', '/t/t'])
+    expect(
+      wrapper.findAll('.breadcrumbs a').at(-1)!.attributes('aria-current'),
+    ).toBe('page')
   } finally {
     wrapper.unmount()
   }
