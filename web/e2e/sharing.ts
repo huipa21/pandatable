@@ -178,7 +178,10 @@ async function confirm(page: Page) {
     .getByRole('button', { name: en.admin.confirm, exact: true })
     .click()
   await expect(dialog(page).locator('.share-review')).not.toBeVisible()
-  await expect(dialog(page).getByRole('status')).toHaveCount(0)
+  // The WMB-02 private-state line is a persistent status, not a pending one.
+  await expect(
+    dialog(page).locator('[role="status"]:not(.private-state)'),
+  ).toHaveCount(0)
 }
 async function add(
   page: Page,
@@ -561,7 +564,9 @@ export async function verifySharing(
     ).toBe(200)
     transientGroup = undefined
     await groupRefresh
-    await expect(dialog(alice).getByRole('status')).toHaveCount(0)
+    await expect(
+      dialog(alice).locator('[role="status"]:not(.private-state)'),
+    ).toHaveCount(0)
     expectHTTPFailure(alice, 'PUT', '/api/v1/grants', 404)
     await dialog(alice)
       .getByRole('button', { name: en.admin.confirm, exact: true })
@@ -600,7 +605,9 @@ export async function verifySharing(
       ).status(),
     ).toBe(200)
     await userRefresh
-    await expect(dialog(alice).getByRole('status')).toHaveCount(0)
+    await expect(
+      dialog(alice).locator('[role="status"]:not(.private-state)'),
+    ).toHaveCount(0)
     expectHTTPFailure(alice, 'PUT', '/api/v1/grants', 409)
     await dialog(alice)
       .getByRole('button', { name: en.admin.confirm, exact: true })

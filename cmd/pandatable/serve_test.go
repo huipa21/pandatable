@@ -128,7 +128,7 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 					t.Errorf("close migration verification: %v", err)
 				}
 			}()
-			var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount, mailCount, workspacePreferenceCount, bookIconCount, workspaceDetailsCount, recentResourcesCount int
+			var count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount, mailCount, workspacePreferenceCount, bookIconCount, workspaceDetailsCount, recentResourcesCount, bookDescriptionCount int
 			err = verification.QueryRow(ctx, `SELECT count(*),
 				count(*) FILTER (WHERE version_id = 1 AND is_applied),
 				count(*) FILTER (WHERE version_id = 2 AND is_applied),
@@ -139,14 +139,15 @@ func TestServePostgreSQLRestarts(t *testing.T) {
 				count(*) FILTER (WHERE version_id = 7 AND is_applied),
 				count(*) FILTER (WHERE version_id = 8 AND is_applied),
 				count(*) FILTER (WHERE version_id = 9 AND is_applied),
-				count(*) FILTER (WHERE version_id = 10 AND is_applied)
-				FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount, &mailCount, &workspacePreferenceCount, &bookIconCount, &workspaceDetailsCount, &recentResourcesCount)
+				count(*) FILTER (WHERE version_id = 10 AND is_applied),
+				count(*) FILTER (WHERE version_id = 11 AND is_applied)
+				FROM public.goose_db_version`).Scan(&count, &initialCount, &metadataCount, &restoreCount, &trashCount, &lifecycleCount, &mailCount, &workspacePreferenceCount, &bookIconCount, &workspaceDetailsCount, &recentResourcesCount, &bookDescriptionCount)
 			if err != nil {
 				t.Fatalf("read migration verification: %v", err)
 			}
-			if count != 11 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 || mailCount != 1 || workspacePreferenceCount != 1 || bookIconCount != 1 || workspaceDetailsCount != 1 || recentResourcesCount != 1 {
-				t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d, mail=%d, workspace preference=%d, book icons=%d, workspace details=%d, recent resources=%d; want 11 records and each migration 1",
-					iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount, mailCount, workspacePreferenceCount, bookIconCount, workspaceDetailsCount, recentResourcesCount)
+			if count != 12 || initialCount != 1 || metadataCount != 1 || restoreCount != 1 || trashCount != 1 || lifecycleCount != 1 || mailCount != 1 || workspacePreferenceCount != 1 || bookIconCount != 1 || workspaceDetailsCount != 1 || recentResourcesCount != 1 || bookDescriptionCount != 1 {
+				t.Fatalf("startup %d: version records=%d, initial=%d, metadata=%d, restore=%d, trash=%d, lifecycle=%d, mail=%d, workspace preference=%d, book icons=%d, workspace details=%d, recent resources=%d, book descriptions=%d; want 12 records and each migration 1",
+					iteration, count, initialCount, metadataCount, restoreCount, trashCount, lifecycleCount, mailCount, workspacePreferenceCount, bookIconCount, workspaceDetailsCount, recentResourcesCount, bookDescriptionCount)
 			}
 			if migrationRecords() != beforeRestarts {
 				t.Fatal("restart changed migration records")

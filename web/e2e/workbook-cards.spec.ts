@@ -259,10 +259,9 @@ test('UX-04: workbook cards respect icons, access, navigation and responsive sta
     if (isMobile)
       await page.getByRole('button', { name: en.nav.open, exact: true }).click()
     await page
-      .getByRole('button', {
-        name: en.wmb.workspaceActions.replace('{name}', firstWorkspaceName),
-        exact: true,
-      })
+      .locator(
+        `${isMobile ? '.nav-drawer' : '.sidebar-desktop'} .nav-tree [data-nav-id="${firstWorkspace}"] .workspace-nav-menu summary`,
+      )
       .click()
     await page
       .getByRole('button', { name: en.nav.create.book, exact: true })

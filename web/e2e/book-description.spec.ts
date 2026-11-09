@@ -58,7 +58,7 @@ async function createBookFromMenu(
     .getByRole('button', { name: en.nav.create.book, exact: true })
     .click()
 
-  const dialog = page.locator('dialog.structure-dialog')
+  const dialog = page.locator('dialog.structure-dialog:not(.view-dialog)')
   await expect(dialog).toBeVisible()
   await dialog.getByLabel(en.nav.name, { exact: true }).fill(name)
   if (description !== undefined) {
@@ -133,13 +133,14 @@ test('WMB-06: create, display, edit and clear an optional book description', asy
     .toBe(true)
 
   await card.click()
+  await expect(page).toHaveURL(`/w/${workspaceId}/b/${bookId}`)
   const tree = await workspaceTree(page, isMobile)
   const bookMenu = tree.locator(`[data-nav-id="${bookId}"] .node-actions`)
   await bookMenu.locator('summary').click()
   await bookMenu
     .getByRole('button', { name: en.wmb.editBook, exact: true })
     .click()
-  const dialog = page.locator('dialog.structure-dialog')
+  const dialog = page.locator('dialog.structure-dialog:not(.view-dialog)')
   await expect(dialog).toBeVisible()
   await expect(dialog.getByLabel(en.nav.name, { exact: true })).toHaveValue(
     describedName,

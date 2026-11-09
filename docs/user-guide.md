@@ -34,11 +34,15 @@ with an optional icon and description. In a workspace row's **⋯** menu, choose
 **Set as default** to change your preferred workspace; visiting another
 workspace does not change that preference.
 
-Open a workspace and choose **New book**, then open the book and choose **New
-table**. A workspace shows its visible books as searchable cards; recently
-opened books appear first when the search is empty. Each book keeps the same
-icon for everyone who can see it. A new table has a default grid and a
-display field named Name or 名称 according to the creator's profile language.
+Open a workspace and, if you are its owner, choose **⋮** next to its name in the
+sidebar and select **New book**. Book creation and editing can include an
+optional description of up to 500 code points; non-empty descriptions appear
+below the name on the workbook card. Workspace pages show visible books as
+cards ordered by recent opens, then server order. Use the header quick-search
+(Ctrl+K) to find workspaces, books, tables, or views; there is no separate
+workspace-page search field. Each book keeps the same icon for everyone who
+can see it. A new table has a default grid and a display field named Name or
+名称 according to the creator's profile language.
 Select a book to show its tables, select a table name to open its default view,
 or activate the table icon to list its views. On workspace pages the sidebar
 links to **Workspaces** and shows the current workspace. On workbook, table,
@@ -46,14 +50,19 @@ view, or row pages, it also shows only the current workbook, its tables, and
 their views; workbook trees start collapsed except for the active route. Use
 **Workspaces** or the workbook cards to switch context. A
 path-only workspace is context for shared descendants, not an eligible default
-or an invitation to manage its structure. The header shows
-where you are and its search button (Ctrl+K) jumps to any workspace, book,
-table, or view by name. The arrow next to the logo hides the sidebar; on a
-narrow screen it opens the navigation drawer.
+or an invitation to manage its structure. Workspace owners can use the
+sidebar's **⋮** menu to edit the workspace; book owners can use the book's
+**Edit** action to change its name or description. Breadcrumbs start with the
+current workspace, with no **Workspaces** root; **/home** has no breadcrumb.
+The arrow next to the logo hides the sidebar; on a narrow screen it opens the
+navigation drawer.
 
 An owner can use **Share** in a workspace row's or resource's **⋯** action
 menu to find a user or group, choose **Read**, **Write**, or **Owner** access,
 and review and confirm the change.
+Workspaces are private by default: only the owner and people granted access can
+see them and their contents. Access granted on a workspace or book is inherited
+by everything beneath it; to share only one book, grant access on that book.
 Readers can view data; writers can edit rows; owners can manage fields and
 sharing. Access inherited from a parent cannot be reduced on a child.
 Administrators do not automatically have access to workspace data. If a
@@ -216,18 +225,23 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 在工作区行的 **⋯** 菜单中选择**设为默认工作区**可更改首选工作区；仅访问其他工作区
 不会更改此设置。
 
-打开工作区并选择**新建工作簿**，再打开工作簿并选择**新建数据表**。工作区以可搜索的卡片
-显示其工作簿；搜索为空时，最近打开的工作簿排在前面。每个工作簿对所有可见用户显示相同
+打开工作区后，工作区所有者可在侧边栏工作区名称旁选择 **⋮**，再选择**新建工作簿**。
+创建或编辑工作簿时可选填最多 500 个代码点的描述；非空描述会显示在工作簿卡片名称下方。
+工作区页面按最近打开时间及服务器顺序显示可见工作簿卡片。可使用页眉快速搜索（Ctrl+K）
+查找工作区、工作簿、数据表或视图；工作区页面不再单独提供搜索框。每个工作簿对所有可见用户显示相同
 的图标。新表默认包含
 一个网格视图和显示字段，其名称根据创建者的个人资料语言为 Name 或名称。选择工作簿
 可查看其数据表，选择数据表名称可打开默认视图，点击数据表图标可列出其视图。在工作区页面，
 侧边栏链接到**工作区**并显示当前工作区。在工作簿、数据表、视图或行页面，侧边栏还会显示
 当前工作簿及其数据表和视图；除当前路由所需的上级节点外，工作簿树默认折叠。切换工作区请使用
 **工作区**链接或工作簿卡片。仅路径工作区只为共享的下级资源提供上下文，不能设为默认工作区，
-也不能管理其结构。页眉
-显示当前位置，搜索按钮（Ctrl+K）可按名称跳转到任意工作区、工作簿、数据表或视图。
+也不能管理其结构。工作区所有者可通过侧边栏 **⋮** 菜单编辑工作区；工作簿所有者可使用工作簿的
+**编辑**操作修改名称或描述。面包屑从当前工作区开始，不包含**工作区**根项；**/home** 不显示面包屑。
+页眉搜索按钮（Ctrl+K）可按名称跳转到任意工作区、工作簿、数据表或视图。
 徽标旁的箭头可隐藏侧边栏；在窄屏上它会打开导航抽屉。
 
+工作区默认私有：只有所有者和获授权的用户可查看工作区及其内容。在工作区或工作簿授予的访问权限
+会继承到其下级资源；若只需共享单个工作簿，请在该工作簿上授予访问权限。
 所有者可在工作区行或资源的 **⋯** 操作菜单中选择**共享**，查找用户或用户组，选择**只读**、
 **读写**或**所有者**权限，并在审核后确认更改。读取者可以查看数据；写入者可以编辑行；
 所有者可以管理字段和共享。从上级继承的权限不能在下级降低。管理员不会自动获得

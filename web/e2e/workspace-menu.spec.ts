@@ -73,10 +73,9 @@ test('WMB-03: workspace menu actions are keyboard and mobile accessible', async 
   cleanupStates.set(page, state)
   const prefix = `Workspace ${testInfo.project.name} ${Date.now()} `
   const name =
-    `${prefix}${'Long '.repeat(Math.max(1, Math.floor((100 - prefix.length) / 5)))}`.slice(
-      0,
-      100,
-    )
+    `${prefix}${'Long '.repeat(Math.max(1, Math.floor((100 - prefix.length) / 5)))}`
+      .slice(0, 100)
+      .trimEnd()
   const created = await page.request.post('/api/v1/workspaces', {
     headers: headers(),
     data: { name },
@@ -97,8 +96,8 @@ test('WMB-03: workspace menu actions are keyboard and mobile accessible', async 
     'aria-label',
     en.wmb.workspaceActions.replace('{name}', name),
   )
-  await expect(
-    workspaceLink.evaluate((element) => {
+  expect(
+    await workspaceLink.evaluate((element) => {
       const style = getComputedStyle(element)
       return (
         style.textOverflow === 'ellipsis' &&
@@ -138,7 +137,7 @@ test('WMB-03: workspace menu actions are keyboard and mobile accessible', async 
   await menu
     .getByRole('button', { name: en.nav.create.book, exact: true })
     .click()
-  const dialog = page.locator('dialog.structure-dialog')
+  const dialog = page.locator('dialog.structure-dialog:not(.view-dialog)')
   await expect(dialog).toBeVisible()
   if (isMobile) await expect(page.locator('.nav-drawer')).toBeVisible()
   await dialog
@@ -159,7 +158,7 @@ test('WMB-03: workspace menu actions are keyboard and mobile accessible', async 
   await editMenu
     .getByRole('button', { name: en.wmb.editWorkspace, exact: true })
     .click()
-  const editDialog = page.locator('dialog.structure-dialog')
+  const editDialog = page.locator('dialog.structure-dialog:not(.view-dialog)')
   await expect(editDialog).toBeVisible()
   await expect(editDialog.getByLabel(en.nav.name, { exact: true })).toHaveValue(
     name,

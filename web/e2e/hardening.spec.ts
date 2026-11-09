@@ -22,6 +22,7 @@ import type {
 import { openAccountMenu, setLocale } from './app-shell'
 import { openCreateView, openExportMenu } from './table-controls'
 import { closeMobileNavigation, openShare } from './sharing'
+import { openWorkspaceCreateBook } from './navigation'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import zh from '../src/i18n/zh-CN.json' with { type: 'json' }
 import { expect, paceLogin, test } from './fixtures'
@@ -498,13 +499,15 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
         { path: `/w/${data.workspaceId}/b/${data.bookId}`, kind: 'table' },
       ] as const) {
         await page.goto(target.path)
-        await page
-          .locator('main')
-          .getByRole('button', {
-            name: locale.nav.create[target.kind],
-            exact: true,
-          })
-          .click()
+        if (target.kind === 'book') await openWorkspaceCreateBook(page, locale)
+        else
+          await page
+            .locator('main')
+            .getByRole('button', {
+              name: locale.nav.create[target.kind],
+              exact: true,
+            })
+            .click()
         const dialog = page.getByRole('dialog', {
           name: locale.nav.dialogTitle,
           exact: true,
@@ -517,6 +520,7 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
           .getByRole('button', { name: locale.admin.cancel, exact: true })
           .click()
         await expect(dialog).not.toBeVisible()
+        if (target.kind === 'book') await closeMobileNavigation(page, locale)
         if (target.kind === 'book')
           await inspectSharing(
             page,
@@ -544,7 +548,10 @@ test('AT-806 resource menus and structure dialogs at 390px in both languages', a
         `[data-nav-id="${data.workspaceId}"][data-kind="workspace"]`,
       )
       await expect(workspace).toBeVisible()
-      await expect(workspace.locator('.node-actions')).toHaveCount(0)
+      await expect(
+        workspace.locator('.node-actions:not(.workspace-nav-menu)'),
+      ).toHaveCount(0)
+      await expect(workspace.locator('.workspace-nav-menu')).toHaveCount(1)
       await noPageOverflow(page, 'workspace context')
       await drawer
         .getByRole('button', { name: locale.nav.close, exact: true })

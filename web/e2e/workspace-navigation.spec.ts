@@ -15,6 +15,7 @@ import {
   test,
 } from './fixtures'
 import { setLocale } from './app-shell'
+import { closeMobileNavigation } from './sharing'
 
 const preferencePath = '/api/v1/auth/workspace-preference'
 const headers = () => ({
@@ -80,8 +81,10 @@ async function tree(page: Page, mobile: boolean, locale = en) {
 
 async function closeRow(page: Page) {
   const dialog = page.locator('dialog.row-expand')
+  const viewPath = new URL(page.url()).pathname.replace(/\/r\/[^/]+$/, '')
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await expect(dialog).not.toBeVisible()
+  await expect(page).toHaveURL(viewPath)
 }
 
 test('DS-09: dashboard link, current workspace context, breadcrumbs and table-only ancestry', async ({
@@ -261,6 +264,7 @@ test('DS-09: dashboard link, current workspace context, breadcrumbs and table-on
   await expect(sidebar.locator('.workbook-root')).not.toContainText(
     'Hidden sibling book',
   )
+  if (isMobile) await closeMobileNavigation(page, en)
   await page.locator('.breadcrumbs a').first().click()
   await expect(page).toHaveURL(new RegExp(`/w/${workspace}$`))
   if (isMobile) await expect(page.locator('.nav-drawer')).not.toBeVisible()

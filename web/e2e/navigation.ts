@@ -54,6 +54,18 @@ async function closeDrawer(page: Page, locale = en) {
       .click()
 }
 
+// D-239: books are created from the sidebar workspace actions menu.
+export async function openWorkspaceCreateBook(page: Page, locale = en) {
+  const workspaceId = /^\/w\/([^/]+)/.exec(new URL(page.url()).pathname)?.[1]
+  if (!workspaceId) throw new Error('Expected a workspace route')
+  const nav = await tree(page, locale)
+  const menu = nav.locator(`[data-nav-id="${workspaceId}"] .workspace-nav-menu`)
+  await menu.locator('summary').click()
+  await menu
+    .getByRole('button', { name: locale.nav.create.book, exact: true })
+    .click()
+}
+
 export async function create(
   page: Page,
   kind: 'workspace' | 'book' | 'table',
@@ -66,6 +78,8 @@ export async function create(
       .locator('main .dashboard-heading')
       .getByRole('button', { name: locale.nav.create.workspace, exact: true })
       .click()
+  } else if (kind === 'book') {
+    await openWorkspaceCreateBook(page, locale)
   } else {
     await page
       .locator('main')
@@ -97,7 +111,13 @@ export async function create(
   )
 }
 
-async function startRename(page: Page, id: string, name: string, locale = en) {
+async function startRename(
+  page: Page,
+  id: string,
+  name: string,
+  locale = en,
+  action = locale.nav.rename,
+) {
   const nav = await tree(page, locale)
   // Workbooks start collapsed on their own page.
   const bookToggle = nav.locator('.workbook-root .book-toggle')
@@ -105,7 +125,7 @@ async function startRename(page: Page, id: string, name: string, locale = en) {
   if ((await bookToggle.getAttribute('aria-expanded')) !== 'true')
     await bookToggle.click()
   const actions = nav.locator(`[data-nav-id="${id}"] > .node-actions`)
-  return renameFrom(page, actions, name, locale)
+  return renameFrom(page, actions, name, locale, action)
 }
 
 async function renameFrom(
@@ -127,8 +147,14 @@ async function renameFrom(
   return dialog
 }
 
-async function rename(page: Page, id: string, name: string, locale = en) {
-  const dialog = await startRename(page, id, name, locale)
+async function rename(
+  page: Page,
+  id: string,
+  name: string,
+  locale = en,
+  action = locale.nav.rename,
+) {
+  const dialog = await startRename(page, id, name, locale, action)
   await dialog
     .getByRole('button', { name: locale.admin.confirm, exact: true })
     .click()
@@ -813,7 +839,7 @@ export async function verifyNavigation(
     await closeDrawer(alice)
     await renameWorkspace(alice, wid, '工作区 W')
     await alice.goto(`/t/${tid}/v/${viewId}`)
-    await rename(alice, bid, '工作簿 B')
+    await rename(alice, bid, '工作簿 B', en, en.wmb.editBook)
     await setLocale(alice, 'zh-CN')
     await rename(alice, tid, '数据表 T', zh)
     await expect(
