@@ -20,6 +20,9 @@ internal/web/dist/*
 .env*
 !.env.example
 
+# Developer documentation kept locally
+/dev-docs/
+
 # IDE / OS
 .idea/
 .vscode/
