@@ -78,6 +78,86 @@ async function openActions(page: Page, id: string) {
   return details
 }
 
+test('header menu inserts and duplicates beside a field and preselects a filter', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Column headers are shown in the desktop grid.')
+  test.setTimeout(120_000)
+  await signIn(page)
+  const schema = await createTable(page, `header ${Date.now()}`)
+  const tableId = schema.table.id
+  const viewId = schema.views[0]!.id
+  const name = schema.fields.find((field) => field.name === 'Name')!
+  const neighbor = await addField(page, tableId, {
+    name: 'Neighbor',
+    uiType: 'text',
+  })
+  allowHTTPFailure(page, 'POST', `/api/v1/views/${viewId}/query`, 409)
+  await page.goto(`/t/${tableId}/v/${viewId}`)
+
+  async function openNameMenu() {
+    const header = page
+      .locator('revo-grid')
+      .getByRole('columnheader', { name: name.name, exact: true })
+    await header.hover()
+    await header
+      .getByRole('button', {
+        name: en.gridPolish.gp12.menuFor.replace('{name}', name.name),
+      })
+      .click()
+  }
+
+  await openNameMenu()
+  await page
+    .getByRole('menuitem', { name: en.gridPolish.gp12.insertRight })
+    .click()
+  const dialog = page.getByRole('dialog', { name: en.field.panel.createTitle })
+  await dialog.locator('[data-kind="text"]').click()
+  await dialog
+    .getByRole('textbox', { name: en.field.panel.name, exact: true })
+    .fill('Inserted')
+  await dialog.getByRole('button', { name: en.field.panel.create }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect
+    .poll(async () => {
+      const current = await schemaOf(page, tableId)
+      const inserted = current.fields.find((field) => field.name === 'Inserted')
+      const order = current.views[0]!.config.fields.filter(
+        (field) => field.visible,
+      ).map((field) => field.id)
+      return (
+        inserted &&
+        order.indexOf(inserted.id) === order.indexOf(name.id) + 1 &&
+        order.indexOf(neighbor.id) > order.indexOf(inserted.id)
+      )
+    })
+    .toBe(true)
+
+  await page.locator('.grid-fields-trigger').click()
+  await openNameMenu()
+  await page
+    .getByRole('menuitem', { name: en.gridPolish.gp12.duplicate })
+    .click()
+  await expect
+    .poll(async () => {
+      const current = await schemaOf(page, tableId)
+      const copy = current.fields.find((field) => field.name === 'Name (copy)')
+      const order = current.views[0]!.config.fields.filter(
+        (field) => field.visible,
+      ).map((field) => field.id)
+      return !!copy && order.indexOf(copy.id) === order.indexOf(name.id) + 1
+    })
+    .toBe(true)
+
+  await page.locator('.grid-fields-trigger').click()
+  await openNameMenu()
+  await page.getByRole('menuitem', { name: en.gridPolish.gp12.filter }).click()
+  await expect(
+    page.locator('.grid-filter-popover .filter-item select').first(),
+  ).toHaveValue(name.id)
+})
+
 test('field tiles keep menus, editors, visibility and restrictions accessible', async ({
   page,
   browser,

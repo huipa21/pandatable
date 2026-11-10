@@ -22,6 +22,7 @@ type RowGroupRequest struct {
 	Search      *string           `json:"search"`
 	SearchField *string           `json:"searchField"`
 	FieldIDs    *[]string         `json:"fieldIds"`
+	GroupBy     *[]string         `json:"groupBy"`
 }
 
 type RowGroupAggregate struct {
@@ -53,6 +54,20 @@ func viewGroupFields(viewType string, config rowViewConfig, table rowTable) []st
 		return nil
 	}
 	return []string{field.id}
+}
+
+func queryGroupFields(viewType string, config rowViewConfig, table rowTable, override *[]string) ([]string, error) {
+	groupBy := viewGroupFields(viewType, config, table)
+	if override != nil {
+		if viewType != "grid" {
+			return nil, validation("Grouping overrides are only supported for grid views")
+		}
+		groupBy = *override
+	}
+	if err := validateGroupConfig(ViewColumns{GroupBy: groupBy, Aggregates: config.Aggregates}, table); err != nil {
+		return nil, err
+	}
+	return groupBy, nil
 }
 
 func canonicalGroupKey(field rowField, expression string) string {
@@ -208,9 +223,8 @@ func (s *Service) QueryGroups(
 	if err := json.Unmarshal(lockedView.Config, &config); err != nil {
 		return RowGroupResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
-	groupBy := viewGroupFields(lockedView.Type, config, table)
-	viewConfig := ViewColumns{GroupBy: groupBy, Aggregates: config.Aggregates}
-	if err := validateGroupConfig(viewConfig, table); err != nil {
+	groupBy, err := queryGroupFields(lockedView.Type, config, table, request.GroupBy)
+	if err != nil {
 		return RowGroupResult{}, err
 	}
 	if len(request.Path) > len(groupBy) || len(request.Path) > 3 {

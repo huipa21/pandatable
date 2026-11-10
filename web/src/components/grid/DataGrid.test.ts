@@ -39,13 +39,21 @@ const gridState = vi.hoisted(() => ({
   scrollRow: vi.fn(),
   scrollColumn: vi.fn(),
   editorComponent: undefined as Component | undefined,
+  renderHeaders: false,
 }))
 
 vi.mock('@revolist/vue3-datagrid', async () => {
   const vue = await import('vue')
   return {
     useTemplates: () => ({
-      template: () => () => null,
+      template: (
+        component: { name?: string },
+        options?: { props?: (context: unknown) => Record<string, unknown> },
+      ) =>
+        component.name === 'GridColumnHeader'
+          ? (_render: unknown, context: unknown) =>
+              vue.h(component as Component, options?.props?.(context))
+          : () => null,
     }),
     default: vue.defineComponent({
       name: 'RevoGrid',
@@ -134,6 +142,25 @@ vi.mock('@revolist/vue3-datagrid', async () => {
                 ),
             },
             [
+              ...(gridState.renderHeaders
+                ? [
+                    vue.h(
+                      'div',
+                      { 'data-testid': 'grid-headers' },
+                      _props.columns.map(
+                        (column: {
+                          prop: string
+                          columnTemplate?: (
+                            render: typeof vue.h,
+                            context: unknown,
+                          ) => ReturnType<typeof vue.h>
+                        }) =>
+                          column.columnTemplate?.(vue.h, column) ??
+                          vue.h('span', { 'data-column': column.prop }, '#'),
+                      ),
+                    ),
+                  ]
+                : []),
               vue.h(
                 'button',
                 {
@@ -348,6 +375,7 @@ function addField(
 
 beforeEach(async () => {
   gridState.footerFailuresRemaining = 0
+  gridState.renderHeaders = false
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().setUser(navUser)
@@ -982,6 +1010,117 @@ async function waitForAppendVisibility(visible: boolean) {
     ),
   )
 }
+
+it('header menu sorts the view and hides a column and its summary without editing or resizing', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'other', 'text')
+  gridState.visibleFieldIds = ['name', 'other']
+  gridState.renderHeaders = true
+  const fetch = await mountGrid(markRaw(schema), navUser.id, '/', true)
+  const header = wrapper!.get('[aria-label="Column menu for Name"]')
+  const grid = wrapper!.get('[data-testid="fake-grid"]')
+  const mouseDown = vi.fn()
+  grid.element.addEventListener('mousedown', mouseDown)
+  await header.trigger('pointerdown')
+  await header.trigger('mousedown')
+  expect(mouseDown).not.toHaveBeenCalled()
+  expect(gridState.editCell).not.toHaveBeenCalled()
+  expect(
+    wrapper!.getComponent({ name: 'RevoGrid' }).props('columns'),
+  ).toHaveLength(3)
+
+  await header.trigger('click')
+  document.querySelector<HTMLButtonElement>('[data-action="sort-asc"]')!.click()
+  await flushPromises()
+  const saved = await wrapper!.vm.$.exposed?.flushColumnChanges()
+  await nextTick()
+  expect(
+    saved,
+    wrapper!
+      .findAll('[role="alert"]')
+      .map((item) => item.text())
+      .join('; '),
+  ).toBe(true)
+  const save = fetch.mock.calls.find(
+    ([url, init]) =>
+      String(url).endsWith('/views/v') && init?.method === 'PATCH',
+  )
+  expect(save).toBeDefined()
+  expect(JSON.parse(String(save![1]?.body)).config.sort).toEqual([
+    { field: 'name', dir: 'asc' },
+  ])
+  expect(wrapper!.vm.$.exposed?.exportQuery().sorts).toEqual([
+    { fieldId: 'name', direction: 'asc' },
+  ])
+
+  expect(
+    wrapper!.find('.grid-summary-cell[data-field-id="other"]').exists(),
+  ).toBe(true)
+  await wrapper!.get('[aria-label="Column menu for other"]').trigger('click')
+  expect(
+    document.querySelector('.column-header-menu')?.getAttribute('aria-label'),
+  ).toBe('Column menu for other')
+  const hide = document.querySelector<HTMLButtonElement>(
+    '[data-action="hide"]',
+  )!
+  expect(hide.disabled).toBe(false)
+  hide.click()
+  await flushPromises()
+  const config = wrapper!
+    .emitted('viewConfigChanged')
+    ?.at(-1)?.[0] as ViewColumns
+  expect(config.fields.find((field) => field.id === 'other')?.visible).toBe(
+    false,
+  )
+  expect(wrapper!.find('[aria-label="Column menu for other"]').exists()).toBe(
+    false,
+  )
+  expect(
+    wrapper!.find('.grid-summary-cell[data-field-id="other"]').exists(),
+  ).toBe(false)
+  expect(gridState.editCell).not.toHaveBeenCalled()
+})
+
+it('header menu groups locally for readers and sends the grouping to bucket and row queries', async () => {
+  const schema = schemaFor('text', 'read')
+  gridState.renderHeaders = true
+  const key = `pandatable:groups:${navUser.id}:v:name`
+  localStorage.setItem(key, JSON.stringify(['[null]']))
+  try {
+    const fetch = await mountGrid(schema, navUser.id, '/', true)
+    await wrapper!.get('[aria-label="Column menu for Name"]').trigger('click')
+    document.querySelector<HTMLButtonElement>('[data-action="group"]')!.click()
+    await flushPromises()
+    const requests = fetch.mock.calls
+      .filter(([url]) => /\/(groups|query)$/.test(String(url)))
+      .map(([url, init]) => ({
+        url: String(url),
+        body: JSON.parse(String(init?.body)) as {
+          groupBy?: string[]
+          groupPath?: unknown[]
+        },
+      }))
+    expect(
+      requests.some(
+        ({ url, body }) =>
+          url.endsWith('/groups') && body.groupBy?.[0] === 'name',
+      ),
+    ).toBe(true)
+    expect(
+      requests.some(
+        ({ url, body }) =>
+          url.endsWith('/query') &&
+          body.groupBy?.[0] === 'name' &&
+          body.groupPath?.length === 1,
+      ),
+    ).toBe(true)
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(
+      false,
+    )
+  } finally {
+    localStorage.removeItem(key)
+  }
+})
 
 it('creates one blank row, disables repeats, and records the authoritative undo', async () => {
   gridState.rowCount = 0

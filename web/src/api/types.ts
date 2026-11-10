@@ -686,6 +686,8 @@ export interface RowQueryRequest {
   searchField?: string
   /** Group values to apply before paging expanded group rows. */
   groupPath?: RowValue[]
+  /** Transient grouping override for a grid view. */
+  groupBy?: string[]
 }
 
 export interface RowQueryResult {

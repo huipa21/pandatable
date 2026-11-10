@@ -385,6 +385,219 @@ it('keeps new-field defaults and descriptions optional and saves their values', 
   }
 })
 
+it('header menu creates and places a new field next to its anchor in the view', async () => {
+  const initial = schema()
+  const created = field({ id: 'new', name: 'New field', position: 4096 })
+  const next = {
+    ...initial,
+    fields: [...initial.fields, created],
+    schemaVersion: 2,
+  }
+  const { fetch } = stubFetch(
+    Response.json({ field: created, schema: next, eventId: 'e' }),
+  )
+  const prepareReorder = vi.fn().mockResolvedValue(true)
+  const persistReorder = vi.fn().mockResolvedValue(true)
+  const finishReorder = vi.fn()
+  let applySchema: (value: TableSchema) => void = () => {}
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: initial,
+      menu: true,
+      columns: [
+        { id: 'name', visible: true },
+        { id: 'qty', visible: false },
+        { id: 'status', visible: true },
+      ],
+      prepareReorder,
+      persistReorder,
+      finishReorder,
+      onUpdate: (value: TableSchema) => applySchema(value),
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  applySchema = (value) => void wrapper.setProps({ schema: value })
+  try {
+    await wrapper.vm.$.exposed?.openCreate({
+      anchorFieldId: 'name',
+      side: 'right',
+    })
+    const dialog = wrapper.get('dialog.field-dialog')
+    await dialog.get('[data-kind="text"]').trigger('click')
+    await dialog.get('input').setValue('New field')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    expect(prepareReorder).toHaveBeenCalledOnce()
+    expect(prepareReorder.mock.invocationCallOrder[0]).toBeLessThan(
+      fetch.mock.invocationCallOrder[0]!,
+    )
+    expect(persistReorder).toHaveBeenCalledWith([
+      'name',
+      'new',
+      'qty',
+      'status',
+      'sys',
+    ])
+    expect(finishReorder).toHaveBeenCalledOnce()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('header menu does not create a field if pending view changes cannot be saved', async () => {
+  const initial = schema()
+  const { calls } = stubFetch()
+  const finishReorder = vi.fn()
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: initial,
+      menu: true,
+      columns: initial.fields.map((item) => ({ id: item.id, visible: true })),
+      prepareReorder: vi.fn().mockResolvedValue(false),
+      persistReorder: vi.fn().mockResolvedValue(true),
+      finishReorder,
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  try {
+    await wrapper.vm.$.exposed?.openCreate({
+      anchorFieldId: 'name',
+      side: 'right',
+    })
+    const dialog = wrapper.get('dialog.field-dialog')
+    await dialog.get('[data-kind="text"]').trigger('click')
+    await dialog.get('input').setValue('New field')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+    expect(calls()).toHaveLength(0)
+    expect(dialog.get('[role="alert"]').text()).toContain(
+      'pending view changes',
+    )
+    expect(finishReorder).toHaveBeenCalledOnce()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('header menu duplicates only field schema and reports a failed view placement', async () => {
+  const initial = schema()
+  const original = initial.fields.find((item) => item.id === 'status')!
+  original.description = 'Stages'
+  const copy = {
+    ...original,
+    id: 'copy',
+    name: 'Status (copy)',
+    position: 4096,
+  }
+  const next = {
+    ...initial,
+    fields: [...initial.fields, copy],
+    schemaVersion: 2,
+  }
+  const { calls } = stubFetch(
+    Response.json({ field: copy, schema: next, eventId: 'e' }),
+  )
+  let applySchema: (value: TableSchema) => void = () => {}
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: initial,
+      menu: true,
+      columns: initial.fields.map((item) => ({ id: item.id, visible: true })),
+      prepareReorder: vi.fn().mockResolvedValue(true),
+      persistReorder: vi.fn().mockResolvedValue(false),
+      finishReorder: vi.fn(),
+      onUpdate: (value: TableSchema) => applySchema(value),
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  applySchema = (value) => void wrapper.setProps({ schema: value })
+  try {
+    await wrapper.vm.$.exposed?.duplicate(original.id)
+    await flushPromises()
+    expect(JSON.parse(String(calls()[0]![1].body))).toEqual({
+      name: 'Status (copy)',
+      description: 'Stages',
+      uiType: 'single_select',
+      options: original.options,
+    })
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      'field was created, but its position could not be saved',
+    )
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('header menu duplicates a formula using its current referenced field names', async () => {
+  const initial = schema()
+  initial.fields[1]!.name = 'Units'
+  const formula = field({
+    id: 'formula',
+    name: 'Double quantity',
+    uiType: 'formula',
+    options: {
+      expr: '{Qty} * 2',
+      ast: {
+        kind: 'binary',
+        children: [{ kind: 'field', fieldId: 'qty', position: 1 }],
+      },
+    },
+    position: 4096,
+  })
+  initial.fields.push(formula)
+  const copy = { ...formula, id: 'copy', name: 'Double quantity (copy)' }
+  const next = {
+    ...initial,
+    fields: [...initial.fields, copy],
+    schemaVersion: 2,
+  }
+  const { calls } = stubFetch(
+    Response.json({ field: copy, schema: next, eventId: 'e' }),
+  )
+  let applySchema: (value: TableSchema) => void = () => {}
+  const wrapper = mount(FieldPanel, {
+    props: {
+      schema: initial,
+      menu: true,
+      columns: initial.fields.map((item) => ({ id: item.id, visible: true })),
+      prepareReorder: vi.fn().mockResolvedValue(true),
+      persistReorder: vi.fn().mockResolvedValue(true),
+      finishReorder: vi.fn(),
+      onUpdate: (value: TableSchema) => applySchema(value),
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  applySchema = (value) => void wrapper.setProps({ schema: value })
+  try {
+    await wrapper.vm.$.exposed?.duplicate(formula.id)
+    expect(JSON.parse(String(calls()[0]![1].body)).options).toEqual({
+      expr: '{Units} * 2',
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('header menu opens the field editor focused on its description', async () => {
+  const wrapper = await setup()
+  try {
+    await wrapper.vm.$.exposed?.openEditor('qty', { focus: 'description' })
+    const description = wrapper.get(
+      'dialog.field-dialog .field-description-editor textarea',
+    )
+    expect(document.activeElement).toBe(description.element)
+    expect(
+      (description.element.closest('details') as HTMLDetailsElement).open,
+    ).toBe(true)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('creates a select field with canonical options and a label default, then applies the returned schema', async () => {
   const next = { ...schema(), schemaVersion: 2 }
   const { calls } = stubFetch(

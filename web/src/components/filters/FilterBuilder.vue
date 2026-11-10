@@ -193,6 +193,14 @@ function addCondition() {
   publish([...group.value.items, newCondition()])
 }
 
+function addConditionForField(fieldId: string) {
+  if (!orderedFields.value.some((field) => field.id === fieldId)) return false
+  publish([...group.value.items, newCondition(fieldId)])
+  return true
+}
+
+defineExpose({ addConditionForField })
+
 function addGroup() {
   if (props.depth >= 3) return
   publish([...group.value.items, { op: 'and', items: [newCondition()] }])

@@ -1528,6 +1528,32 @@
       "thumbsUp": "Thumbs-up",
       "flag": "Flag"
     },
-    "gp12": {}
+    "gp12": {
+      "menuFor": "Column menu for {name}",
+      "edit": "Edit field",
+      "duplicate": "Duplicate field",
+      "description": "Edit field description",
+      "hide": "Hide field",
+      "display": "Set as display field",
+      "sortAsc": "Sort ascending",
+      "sortDesc": "Sort descending",
+      "filter": "Filter by this field",
+      "group": "Group by this field",
+      "insertLeft": "Insert left",
+      "insertRight": "Insert right",
+      "delete": "Delete field",
+      "copyName": "{name} (copy)",
+      "duplicateDisabled": "System and link fields cannot be duplicated.",
+      "displayRequired": "The display field cannot be hidden.",
+      "displayDisabled": "This field cannot be used as the display field.",
+      "deleteDisabled": "System and display fields cannot be deleted.",
+      "linkUnsupported": "Link fields cannot be sorted or grouped.",
+      "filterDisabled": "This field cannot be filtered.",
+      "alreadyGrouped": "This field is already grouped.",
+      "groupLimit": "A view supports at most three grouping levels.",
+      "groupPending": "Wait for the current grouping change to finish.",
+      "fieldUnavailable": "The field is no longer available.",
+      "placementFailed": "The field was created, but its position could not be saved in this view."
+    }
   }
 }

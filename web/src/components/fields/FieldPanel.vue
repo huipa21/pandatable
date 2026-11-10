@@ -144,6 +144,8 @@ const typeChangeKind = ref<Kind>('text')
 const typeChangePreview = ref<TypeChangeDryRun | null>(null)
 const creating = ref(false)
 const choosingType = ref(true)
+type FieldPlacement = { anchorFieldId: string; side: 'left' | 'right' }
+let createPlacement: FieldPlacement | undefined
 const draft = ref<FieldDraft>(draftFrom(null, env.value))
 const checkboxIconLabels = computed<Record<CheckboxIcon, string>>(() => ({
   check: t('gridPolish.gp11.check'),
@@ -628,6 +630,7 @@ async function mutate<T>(
 }
 
 async function openEditor(field: TableField | null) {
+  if (!field) createPlacement = undefined
   clearChoiceDrag()
   closeChoiceMoveMenu()
   choiceMoveStatus.value = ''
@@ -928,24 +931,29 @@ async function saveComputedField() {
       ? { aggregate: computedDraft.value.aggregate }
       : {}),
   }
-  const result = await mutate<FieldMutation>(
-    `/tables/${props.schema.table.id}/fields`,
-    'POST',
-    {
-      name: computedDraft.value.name,
-      ...(computedDraft.value.description.trim()
-        ? { description: computedDraft.value.description.trim() }
-        : {}),
-      uiType: computedDraft.value.kind,
-      options,
+  await createAndPosition(
+    createPlacement,
+    (forReorder) =>
+      mutate<FieldMutation>(
+        `/tables/${props.schema.table.id}/fields`,
+        'POST',
+        {
+          name: computedDraft.value.name,
+          ...(computedDraft.value.description.trim()
+            ? { description: computedDraft.value.description.trim() }
+            : {}),
+          uiType: computedDraft.value.kind,
+          options,
+        },
+        undefined,
+        forReorder,
+      ),
+    () => {
+      computedEditor.value?.close()
+      computedCreating.value = false
+      computedEditing.value = null
     },
   )
-  if (!result) return
-  emit('update', result.schema)
-  computedEditor.value?.close()
-  computedCreating.value = false
-  computedEditing.value = null
-  status.value = t('field.panel.saved')
 }
 
 async function openFormulaEditor(field: TableField | null = null) {
@@ -1062,18 +1070,30 @@ async function saveFormula() {
   const valid = await runFormulaCheck()
   if (!valid) return
   const field = formulaEditing.value
-  const result = field
-    ? await mutate<FieldMutation>(
-        `/fields/${field.id}`,
-        'PATCH',
-        {
-          name: formulaDraft.value.name,
-          description: formulaDraft.value.description,
-          options: { expr: formulaDraft.value.expression },
-        },
-        field.version,
-      )
-    : await mutate<FieldMutation>(
+  if (field) {
+    const result = await mutate<FieldMutation>(
+      `/fields/${field.id}`,
+      'PATCH',
+      {
+        name: formulaDraft.value.name,
+        description: formulaDraft.value.description,
+        options: { expr: formulaDraft.value.expression },
+      },
+      field.version,
+    )
+    if (!result) return
+    emit('update', result.schema)
+    formulaEditor.value?.close()
+    formulaCreating.value = false
+    formulaEditing.value = null
+    formulaCheck.value = null
+    status.value = t('field.panel.saved')
+    return
+  }
+  await createAndPosition(
+    createPlacement,
+    (forReorder) =>
+      mutate<FieldMutation>(
         `/tables/${props.schema.table.id}/fields`,
         'POST',
         {
@@ -1082,14 +1102,16 @@ async function saveFormula() {
           uiType: 'formula',
           options: { expr: formulaDraft.value.expression },
         },
-      )
-  if (!result) return
-  emit('update', result.schema)
-  formulaEditor.value?.close()
-  formulaCreating.value = false
-  formulaEditing.value = null
-  formulaCheck.value = null
-  status.value = t('field.panel.saved')
+        undefined,
+        forReorder,
+      ),
+    () => {
+      formulaEditor.value?.close()
+      formulaCreating.value = false
+      formulaEditing.value = null
+      formulaCheck.value = null
+    },
+  )
 }
 
 async function createRelation() {
@@ -1115,32 +1137,176 @@ async function createRelation() {
     status.value = t('field.panel.saved')
     return
   }
-  const result = await mutate<RelationMutation>(
-    `/tables/${props.schema.table.id}/relations`,
-    'POST',
-    {
-      name: relationDraft.value.name,
-      reverseName: relationDraft.value.reverseName,
-      targetTableId: relationDraft.value.targetTableId,
-      kind: relationDraft.value.kind,
-      sourceSide: relationDraft.value.sourceSide,
-      onDelete: relationDraft.value.onDelete,
+  await createAndPosition(
+    createPlacement,
+    (forReorder) =>
+      mutate<RelationMutation>(
+        `/tables/${props.schema.table.id}/relations`,
+        'POST',
+        {
+          name: relationDraft.value.name,
+          reverseName: relationDraft.value.reverseName,
+          targetTableId: relationDraft.value.targetTableId,
+          kind: relationDraft.value.kind,
+          sourceSide: relationDraft.value.sourceSide,
+          onDelete: relationDraft.value.onDelete,
+        },
+        undefined,
+        forReorder,
+      ),
+    () => {
+      relationEditor.value?.close()
+      relationCreating.value = false
+      void nav.refresh(true)
     },
   )
-  if (!result) return
-  emit('update', result.schema)
-  relationEditor.value?.close()
-  relationCreating.value = false
-  status.value = t('field.panel.saved')
-  void nav.refresh(true)
 }
 
-function openFieldEditor(field: TableField) {
-  if (field.uiType === 'formula') void openFormulaEditor(field)
-  else if (field.uiType === 'link') void openRelationEditor(field)
+async function openFieldEditor(field: TableField) {
+  if (field.uiType === 'formula') await openFormulaEditor(field)
+  else if (field.uiType === 'link') await openRelationEditor(field)
   else if (field.uiType === 'lookup' || field.uiType === 'rollup')
-    void openComputedEditor(field.uiType, field)
-  else void openEditor(field)
+    await openComputedEditor(field.uiType, field)
+  else await openEditor(field)
+}
+
+function exposedField(id: string) {
+  const field = props.schema.fields.find((item) => item.id === id)
+  if (!owner.value) {
+    error.value = new RequestError('ERR_PERMISSION_DENIED', 403)
+    return undefined
+  }
+  if (!field) error.value = t('gridPolish.gp12.fieldUnavailable')
+  return field
+}
+
+async function openEditorById(id: string, options?: { focus?: 'description' }) {
+  const field = exposedField(id)
+  if (!field) return
+  createPlacement = undefined
+  await openFieldEditor(field)
+  if (options?.focus !== 'description') return
+  const dialog =
+    field.uiType === 'formula'
+      ? formulaEditor.value
+      : field.uiType === 'link'
+        ? relationEditor.value
+        : field.uiType === 'lookup' || field.uiType === 'rollup'
+          ? computedEditor.value
+          : editor.value
+  const details = dialog?.querySelector<HTMLDetailsElement>(
+    '.field-description-editor',
+  )
+  if (details) {
+    details.open = true
+    details.querySelector<HTMLTextAreaElement>('textarea')?.focus()
+  }
+}
+
+async function openCreate(placement?: FieldPlacement) {
+  if (!owner.value) {
+    error.value = new RequestError('ERR_PERMISSION_DENIED', 403)
+    return
+  }
+  await openEditor(null)
+  createPlacement = placement
+}
+
+async function createAndPosition(
+  placement: FieldPlacement | undefined,
+  create: (
+    forReorder: boolean,
+  ) => Promise<{ field?: TableField; schema: TableSchema } | null>,
+  completed: () => void,
+) {
+  if (busy.value) return
+  let prepared = false
+  if (placement) reordering.value = true
+  try {
+    if (placement && props.prepareReorder) {
+      prepared = true
+      if (!(await props.prepareReorder())) {
+        error.value = t('field.panel.finishViewChanges')
+        return
+      }
+    }
+    const result = await create(!!placement)
+    if (!result) return
+    emit('update', result.schema)
+    completed()
+    createPlacement = undefined
+    if (placement) {
+      await nextTick()
+      const id = result.field?.id
+      const ids = orderedFields.value.map((field) => field.id)
+      if (!id || !ids.includes(id) || !ids.includes(placement.anchorFieldId)) {
+        error.value = t('gridPolish.gp12.placementFailed')
+        return
+      }
+      const order = ids.filter((fieldId) => fieldId !== id)
+      const anchor = order.indexOf(placement.anchorFieldId)
+      order.splice(anchor + (placement.side === 'right' ? 1 : 0), 0, id)
+      if (props.persistReorder) {
+        if (!(await props.persistReorder(order)))
+          error.value = t('gridPolish.gp12.placementFailed')
+      } else emit('reorder', order)
+    }
+    if (!error.value) status.value = t('field.panel.saved')
+  } catch (cause) {
+    error.value = cause
+  } finally {
+    if (prepared) props.finishReorder?.()
+    if (placement) reordering.value = false
+  }
+}
+
+async function duplicate(id: string) {
+  const field = exposedField(id)
+  if (!field) return
+  if (field.isSystem || field.uiType === 'link') {
+    error.value = t('gridPolish.gp12.duplicateDisabled')
+    return
+  }
+  await createAndPosition(
+    { anchorFieldId: field.id, side: 'right' },
+    (forReorder) =>
+      mutate<FieldMutation>(
+        `/tables/${props.schema.table.id}/fields`,
+        'POST',
+        {
+          name: t('gridPolish.gp12.copyName', { name: field.name }),
+          description: field.description,
+          uiType: field.uiType,
+          options:
+            field.uiType === 'formula'
+              ? { expr: formulaExpression(field) }
+              : field.options,
+        },
+        undefined,
+        forReorder,
+      ),
+    () => {},
+  )
+}
+
+async function askDeleteById(id: string) {
+  const field = exposedField(id)
+  if (!field) return
+  if (field.isSystem || field.id === props.schema.table.displayFieldId) {
+    error.value = t('gridPolish.gp12.deleteDisabled')
+    return
+  }
+  await askDelete(field)
+}
+
+async function setDisplayById(id: string) {
+  const field = exposedField(id)
+  if (!field) return
+  if (!canSetDisplay(field)) {
+    error.value = t('gridPolish.gp12.displayDisabled')
+    return
+  }
+  await setDisplay(field)
 }
 
 // After a version conflict, reseed the open editor from the latest metadata.
@@ -1230,25 +1396,39 @@ async function save() {
     error.value = body.message
     return
   }
-  const result = field
-    ? await mutate<FieldMutation>(
-        `/fields/${field.id}`,
-        'PATCH',
-        body.value,
-        field.version,
-      )
-    : await mutate<FieldMutation>(
+  if (field) {
+    const result = await mutate<FieldMutation>(
+      `/fields/${field.id}`,
+      'PATCH',
+      body.value,
+      field.version,
+    )
+    if (!result) return
+    emit('update', result.schema)
+    closeChoiceMoveMenu()
+    editor.value?.close()
+    editing.value = null
+    creating.value = false
+    status.value = t('field.panel.saved')
+    return
+  }
+  await createAndPosition(
+    createPlacement,
+    (forReorder) =>
+      mutate<FieldMutation>(
         `/tables/${props.schema.table.id}/fields`,
         'POST',
         body.value,
-      )
-  if (!result) return
-  emit('update', result.schema)
-  closeChoiceMoveMenu()
-  editor.value?.close()
-  editing.value = null
-  creating.value = false
-  status.value = t('field.panel.saved')
+        undefined,
+        forReorder,
+      ),
+    () => {
+      closeChoiceMoveMenu()
+      editor.value?.close()
+      editing.value = null
+      creating.value = false
+    },
+  )
 }
 
 function reorderCandidates(field: TableField) {
@@ -1768,6 +1948,7 @@ function changeKind() {
 
 async function selectCreateKind(kind: string) {
   if (busy.value) return
+  const placement = createPlacement
   const name = relationCreating.value
     ? relationDraft.value.name
     : computedCreating.value
@@ -1805,6 +1986,7 @@ async function selectCreateKind(kind: string) {
     formulaDraft.value.description = description
   } else if (isKind(kind)) {
     await openEditor(null)
+    createPlacement = placement
     draft.value.name = name
     draft.value.description = description
     draft.value.kind = kind
@@ -1885,7 +2067,13 @@ onBeforeUnmount(() => {
   controller = undefined
   own?.abort()
 })
-defineExpose({ openCreate: () => openEditor(null) })
+defineExpose({
+  openEditor: openEditorById,
+  openCreate,
+  duplicate,
+  askDelete: askDeleteById,
+  setDisplay: setDisplayById,
+})
 </script>
 
 <template>

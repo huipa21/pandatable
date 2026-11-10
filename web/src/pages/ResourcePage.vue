@@ -98,7 +98,22 @@ const rowWorkspace = ref<HTMLElement>()
 const gridWorkspace = ref<HTMLElement>()
 const gridToolbarBottom = ref(0)
 const mobileFilter = ref<HTMLDetailsElement>()
-const fieldPanel = ref<{ openCreate: () => Promise<void> }>()
+type FieldPlacement = { anchorFieldId: string; side: 'left' | 'right' }
+type HeaderFieldAction =
+  | { kind: 'edit'; id: string; options?: { focus?: 'description' } }
+  | { kind: 'duplicate' | 'delete' | 'display'; id: string }
+  | { kind: 'insert'; id: string; side: 'left' | 'right' }
+const fieldPanel = ref<{
+  openCreate: (placement?: FieldPlacement) => Promise<void>
+  openEditor: (id: string, options?: { focus?: 'description' }) => Promise<void>
+  duplicate: (id: string) => Promise<void>
+  askDelete: (id: string) => Promise<void>
+  setDisplay: (id: string) => Promise<void>
+}>()
+const filterPanel = ref<{ addConditionForField: (id: string) => boolean }>()
+const pendingHeaderAction = shallowRef<HeaderFieldAction | null>(null)
+const pendingFilterField = ref<string | null>(null)
+const filterMenuError = ref('')
 const fieldsOpen = ref(false)
 const filterOpen = ref(false)
 const fieldsVisited = ref(false)
@@ -272,6 +287,73 @@ async function openFieldCreate() {
     await fieldPanel.value.openCreate()
   }
 }
+function runHeaderFieldAction() {
+  const action = pendingHeaderAction.value
+  const panel = fieldPanel.value
+  if (!action || !panel || !fieldsOpen.value) return
+  pendingHeaderAction.value = null
+  switch (action.kind) {
+    case 'edit':
+      void panel.openEditor(action.id, action.options)
+      break
+    case 'duplicate':
+      void panel.duplicate(action.id)
+      break
+    case 'delete':
+      void panel.askDelete(action.id)
+      break
+    case 'display':
+      void panel.setDisplay(action.id)
+      break
+    case 'insert':
+      void panel.openCreate({ anchorFieldId: action.id, side: action.side })
+      break
+  }
+}
+async function openHeaderFieldAction(action: HeaderFieldAction) {
+  if (schema.value?.myLevel !== 'owner') return
+  closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
+  fieldsOpen.value = true
+  fieldsVisited.value = true
+  filterOpen.value = false
+  createFieldPending.value = false
+  pendingHeaderAction.value = action
+  await nextTick()
+  runHeaderFieldAction()
+}
+function runPendingFilter() {
+  const fieldId = pendingFilterField.value
+  if (!fieldId || !filterPanel.value || !filterOpen.value) return
+  pendingFilterField.value = null
+  filterMenuError.value = filterPanel.value.addConditionForField(fieldId)
+    ? ''
+    : t('gridPolish.gp12.fieldUnavailable')
+}
+async function openFilterForField(id: string) {
+  closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
+  fieldsOpen.value = false
+  filterOpen.value = true
+  filterVisited.value = true
+  createFieldPending.value = false
+  filterMenuError.value = ''
+  pendingFilterField.value = id
+  await nextTick()
+  runPendingFilter()
+}
+watch(
+  fieldsOpen,
+  (open) => {
+    if (!open) pendingHeaderAction.value = null
+  },
+  { flush: 'sync' },
+)
+watch(
+  filterOpen,
+  (open) => {
+    if (!open) pendingFilterField.value = null
+  },
+  { flush: 'sync' },
+)
 function toggleGridField(id: string, visible: boolean) {
   if (!grid.value?.toggleField) {
     fieldMenuError.value = t('grid.loading')
@@ -311,10 +393,14 @@ function finishFieldReorder() {
   fieldReordering.value = false
 }
 watch(fieldPanel, (panel) => {
-  if (!panel || !createFieldPending.value) return
-  createFieldPending.value = false
-  void panel.openCreate()
+  if (!panel) return
+  if (createFieldPending.value) {
+    createFieldPending.value = false
+    void panel.openCreate()
+  }
+  runHeaderFieldAction()
 })
+watch(filterPanel, runPendingFilter)
 onMounted(() => {
   media.addEventListener('change', resized)
   window.addEventListener('resize', measureGridToolbar)
@@ -1145,6 +1231,24 @@ onBeforeUnmount(() => {
               @toggle-fields="toggleFieldsMenu"
               @toggle-filter="toggleFilterMenu"
               @create-field="openFieldCreate"
+              @edit-field="
+                (id, options) =>
+                  openHeaderFieldAction({ kind: 'edit', id, options })
+              "
+              @duplicate-field="
+                (id) => openHeaderFieldAction({ kind: 'duplicate', id })
+              "
+              @insert-field="
+                (id, side) =>
+                  openHeaderFieldAction({ kind: 'insert', id, side })
+              "
+              @delete-field="
+                (id) => openHeaderFieldAction({ kind: 'delete', id })
+              "
+              @set-display="
+                (id) => openHeaderFieldAction({ kind: 'display', id })
+              "
+              @filter-field="openFilterForField"
               @schema-changed="loadSchema(true)"
               @view-updated="
                 (updated) => {
@@ -1225,10 +1329,12 @@ onBeforeUnmount(() => {
               <FilterBuilder
                 v-if="filterVisited"
                 :key="`${schema.table.id}:${view.id}`"
+                ref="filterPanel"
                 v-model="filterDraft"
                 :schema="schema"
                 compact
               />
+              <p v-if="filterMenuError" role="alert">{{ filterMenuError }}</p>
               <button type="button" @click="applyFilter">
                 {{ t('filter.apply') }}
               </button>

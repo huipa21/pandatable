@@ -22,6 +22,7 @@ import type {
   BeforeRangeSaveDataDetails,
   CellTemplateProp,
   ColumnRegular,
+  ColumnTemplateProp,
   Components,
   ColumnDragEventData,
   EditorCtrCallable,
@@ -83,6 +84,10 @@ import { RealtimeRowSync } from './realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
 import { gridPointerAction, isGridToggle } from './inlineEditing'
 import GridSearchPopover from './GridSearchPopover.vue'
+import GridColumnHeader from './GridColumnHeader.vue'
+import ColumnHeaderMenu, {
+  type ColumnHeaderAction,
+} from './ColumnHeaderMenu.vue'
 import {
   quickSearchFields,
   quickSearchParams,
@@ -132,6 +137,12 @@ const emit = defineEmits<{
   toggleFields: []
   toggleFilter: []
   createField: []
+  editField: [id: string, options?: { focus?: 'description' }]
+  duplicateField: [id: string]
+  insertField: [id: string, side: 'left' | 'right']
+  deleteField: [id: string]
+  setDisplay: [id: string]
+  filterField: [id: string]
 }>()
 const { t, locale } = useI18n()
 const { template } = useTemplates()
@@ -151,6 +162,12 @@ const summaryFieldId = ref<string | null>(null)
 const summaryActiveIndex = ref(0)
 const summaryMenuLeft = ref(0)
 const summaryListId = `grid-summary-${useId()}`
+const headerMenu = shallowRef<{ id: string; anchor: HTMLButtonElement } | null>(
+  null,
+)
+const headerMenuField = computed(() =>
+  props.schema.fields.find((field) => field.id === headerMenu.value?.id),
+)
 const ready = ref(false)
 const disposed = ref(false)
 const loading = ref(false)
@@ -1183,7 +1200,7 @@ function fetchPage(
     ...searchParams(),
     ...(groupPath?.length ? { groupPath } : {}),
     ...(columnState.localQuery.value
-      ? { fieldIds: visibleFieldIds.value }
+      ? { fieldIds: visibleFieldIds.value, groupBy: groupBy.value }
       : {}),
   }
   return request<RowQueryResult>(
@@ -1230,9 +1247,7 @@ const availableGroupFields = computed(() =>
   groupableFields.value.filter((field) => !groupBy.value.includes(field.id)),
 )
 const groupFieldToAdd = ref('')
-const groupEditDisabled = computed(
-  () => !columnState.canPersist.value || columnState.groupPending.value,
-)
+const groupEditDisabled = computed(() => columnState.groupPending.value)
 const groupAddDisabled = computed(
   () => groupEditDisabled.value || groupBy.value.length >= 3,
 )
@@ -1269,7 +1284,7 @@ function createGroupedRows() {
             ...(props.filter ? { filter: props.filter } : {}),
             ...searchParams(),
             ...(columnState.localQuery.value
-              ? { fieldIds: visibleFieldIds.value }
+              ? { fieldIds: visibleFieldIds.value, groupBy: groupBy.value }
               : {}),
           },
           AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
@@ -1620,6 +1635,89 @@ function closeRelationPicker() {
   relationRow.value = null
 }
 
+function openHeaderMenu(field: TableField, anchor: HTMLButtonElement) {
+  if (headerMenu.value?.anchor === anchor) {
+    headerMenu.value = null
+    return
+  }
+  headerMenu.value = { id: field.id, anchor }
+}
+
+function headerTemplate(field: TableField) {
+  return template<ColumnTemplateProp>(GridColumnHeader, {
+    props: () => ({
+      field,
+      isOpen: () => headerMenu.value?.id === field.id,
+      open: (anchor: HTMLButtonElement) => openHeaderMenu(field, anchor),
+    }),
+    key: () => `header-${field.id}`,
+  })
+}
+
+function headerAction(action: ColumnHeaderAction) {
+  const field = headerMenuField.value
+  if (!field) return
+  switch (action) {
+    case 'hide':
+      if (field.id !== props.schema.table.displayFieldId)
+        toggleField(field.id, false)
+      break
+    case 'sort-asc':
+    case 'sort-desc': {
+      if (field.uiType === 'link') return
+      const direction = action === 'sort-asc' ? 'asc' : 'desc'
+      columnState.change({
+        kind: 'sort',
+        sort: [{ field: field.id, dir: direction }],
+      })
+      updateSortCriteria([{ fieldId: field.id, direction }])
+      break
+    }
+    case 'filter':
+      emit('filterField', field.id)
+      break
+    case 'group':
+      if (
+        field.uiType !== 'link' &&
+        !groupBy.value.includes(field.id) &&
+        !groupAddDisabled.value
+      )
+        columnState.change({ kind: 'group', ids: [...groupBy.value, field.id] })
+      break
+    case 'edit':
+      if (canCreateField.value) emit('editField', field.id)
+      break
+    case 'description':
+      if (canCreateField.value)
+        emit('editField', field.id, { focus: 'description' })
+      break
+    case 'duplicate':
+      if (canCreateField.value && !field.isSystem && field.uiType !== 'link')
+        emit('duplicateField', field.id)
+      break
+    case 'insert-left':
+    case 'insert-right':
+      if (canCreateField.value)
+        emit(
+          'insertField',
+          field.id,
+          action === 'insert-left' ? 'left' : 'right',
+        )
+      break
+    case 'delete':
+      if (
+        canCreateField.value &&
+        !field.isSystem &&
+        field.id !== props.schema.table.displayFieldId
+      )
+        emit('deleteField', field.id)
+      break
+    case 'display':
+      if (canCreateField.value) emit('setDisplay', field.id)
+      break
+  }
+}
+
 const columns = computed<ColumnRegular[]>(() => {
   const definitions: ColumnRegular[] = [
     {
@@ -1708,6 +1806,8 @@ const columns = computed<ColumnRegular[]>(() => {
       definitions.push({
         prop: relationField.id,
         name: relationField.name,
+        columnTemplate: headerTemplate(relationField),
+        columnProperties: () => ({ 'aria-label': relationField.name }),
         size:
           columnState.config.value.fields.find((column) => column.id === id)
             ?.width ?? 180,
@@ -1792,6 +1892,8 @@ const columns = computed<ColumnRegular[]>(() => {
     definitions.push({
       prop: field.id,
       name: field.name,
+      columnTemplate: headerTemplate(field),
+      columnProperties: () => ({ 'aria-label': field.name }),
       size:
         columnState.config.value.fields.find((column) => column.id === id)
           ?.width ?? 180,
@@ -3498,6 +3600,11 @@ watch(
 watch(
   () => visibleFieldIds.value.join(','),
   () => {
+    if (
+      headerMenu.value &&
+      !visibleFieldIds.value.includes(headerMenu.value.id)
+    )
+      headerMenu.value = null
     if (ready.value) {
       focused = undefined
       realtime.setFocus(props.schema.table.id, null)
@@ -4419,6 +4526,18 @@ onBeforeUnmount(() => {
         'grid-has-field-action': desktop && canCreateField,
       }"
     >
+      <ColumnHeaderMenu
+        v-if="headerMenu && headerMenuField"
+        :key="headerMenu.id"
+        :field="headerMenuField"
+        :anchor="headerMenu.anchor"
+        :owner="canCreateField"
+        :display-field-id="schema.table.displayFieldId"
+        :group-by="groupBy"
+        :group-pending="columnState.groupPending.value"
+        @select="headerAction"
+        @close="headerMenu = null"
+      />
       <RevoGrid
         v-if="desktop"
         ref="host"
@@ -4767,6 +4886,12 @@ onBeforeUnmount(() => {
     var(--rg-theme-header-height, 45px) + var(--grid-content-height)
   );
   min-height: 0;
+}
+.data-grid revo-grid .header-content > span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
 }
 .data-grid .grid-has-field-action revo-grid {
   width: calc(100% - 52px);

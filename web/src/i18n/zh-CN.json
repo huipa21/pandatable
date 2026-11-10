@@ -1528,6 +1528,32 @@
       "thumbsUp": "点赞",
       "flag": "旗帜"
     },
-    "gp12": {}
+    "gp12": {
+      "menuFor": "{name}的列菜单",
+      "edit": "编辑字段",
+      "duplicate": "复制字段",
+      "description": "编辑字段描述",
+      "hide": "隐藏字段",
+      "display": "设为显示字段",
+      "sortAsc": "升序排序",
+      "sortDesc": "降序排序",
+      "filter": "按此字段筛选",
+      "group": "按此字段分组",
+      "insertLeft": "向左插入",
+      "insertRight": "向右插入",
+      "delete": "删除字段",
+      "copyName": "{name}（副本）",
+      "duplicateDisabled": "无法复制系统字段或关联字段。",
+      "displayRequired": "无法隐藏显示字段。",
+      "displayDisabled": "此字段不能用作显示字段。",
+      "deleteDisabled": "无法删除系统字段或显示字段。",
+      "linkUnsupported": "关联字段不能用于排序或分组。",
+      "filterDisabled": "无法按此字段筛选。",
+      "alreadyGrouped": "此字段已用于分组。",
+      "groupLimit": "一个视图最多支持三级分组。",
+      "groupPending": "请等待当前分组更改完成。",
+      "fieldUnavailable": "该字段已不可用。",
+      "placementFailed": "字段已创建，但无法在此视图中保存其位置。"
+    }
   }
 }

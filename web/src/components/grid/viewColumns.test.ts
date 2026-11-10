@@ -332,15 +332,16 @@ it('clears the failure after a grouping retry succeeds', async () => {
   expect(columns.failure.value).toBe('')
 })
 
-it('reports grouping as unavailable when the view cannot be saved', async () => {
+it('keeps grouping local when the view cannot be saved', async () => {
   const fetch = vi.fn()
   vi.stubGlobal('fetch', fetch)
   const { columns, state } = mounted()
   state.canWrite = false
   await flushPromises()
   columns.change({ kind: 'group', ids: ['other'] })
-  expect(columns.failure.value).toBe('translated failure')
-  expect(columns.config.value.groupBy).toBeUndefined()
+  expect(columns.failure.value).toBe('')
+  expect(columns.config.value.groupBy).toEqual(['other'])
+  expect(columns.localQuery.value).toBe(true)
   expect(columns.groupPending.value).toBe(false)
   expect(fetch).not.toHaveBeenCalled()
 })

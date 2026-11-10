@@ -54,6 +54,7 @@ export type ColumnIntent =
   | { kind: 'frozen'; count: number }
   | { kind: 'height'; height: NonNullable<ViewColumns['rowHeight']> }
   | { kind: 'group'; ids: string[] }
+  | { kind: 'sort'; sort: NonNullable<ViewColumns['sort']> }
 
 export function normalizeColumns(
   config: ViewColumns,
@@ -140,6 +141,8 @@ export function applyColumnIntents(
       result.rowHeight = intent.height
     } else if (intent.kind === 'group') {
       result.groupBy = [...intent.ids]
+    } else if (intent.kind === 'sort') {
+      result.sort = intent.sort.map((item) => ({ ...item }))
     } else {
       const field = result.fields.find((field) => field.id === intent.id)
       if (!field) continue
@@ -219,15 +222,19 @@ export function useViewColumns(options: {
 
   function change(intent: ColumnIntent) {
     if (disposed || !options.identity()) return
-    if (intent.kind === 'group' && !canPersist.value) {
-      failure.value = options.message(
-        new RequestError('ERR_PERMISSION_DENIED', 403),
-      )
-      return
-    }
     if (
       (intent.kind === 'width' && !Number.isFinite(intent.width)) ||
       (intent.kind === 'frozen' && !Number.isInteger(intent.count)) ||
+      (intent.kind === 'sort' &&
+        (new Set(intent.sort.map((item) => item.field)).size !==
+          intent.sort.length ||
+          intent.sort.some(
+            (item) =>
+              !['asc', 'desc'].includes(item.dir) ||
+              !liveSchema.fields.some(
+                (field) => field.id === item.field && field.uiType !== 'link',
+              ),
+          ))) ||
       (intent.kind === 'group' &&
         (intent.ids.length > 3 ||
           new Set(intent.ids).size !== intent.ids.length ||

@@ -99,6 +99,26 @@ func TestGroupedRowsHTTPAPIUsesFilteredBucketsAndGroupPaths(t *testing.T) {
 		`{"path":["North","Open","Alice","extra"]}`), 400, "ERR_VALIDATION")
 	f.expectStatus(f.api(reader, "POST", "/views/"+table.Views[0].ID+"/groups",
 		`{"path":[]}`), 200, "")
+	localGroups := decode[structure.RowGroupResult](f, f.api(reader, "POST",
+		"/views/"+table.Views[0].ID+"/groups",
+		fmt.Sprintf(`{"path":[],"groupBy":[%q]}`, status.ID)), 200)
+	if len(localGroups.Groups) != 2 || groupedBucket(t, localGroups.Groups, `"Open"`).Count != 5 ||
+		groupedBucket(t, localGroups.Groups, `"Blocked"`).Count != 1 {
+		t.Fatalf("reader's transient groups = %+v", localGroups)
+	}
+	localRows := decode[structure.RowQueryResult](f, f.api(reader, "POST",
+		"/views/"+table.Views[0].ID+"/query",
+		fmt.Sprintf(`{"groupPath":["Blocked"],"groupBy":[%q]}`, status.ID)), 200)
+	if len(localRows.Rows) != 1 || string(localRows.Rows[0].Fields[hours.ID]) != "7" {
+		t.Fatalf("reader's transient group rows = %+v", localRows)
+	}
+	f.expectStatus(f.api(reader, "POST", "/views/"+table.Views[0].ID+"/groups",
+		fmt.Sprintf(`{"path":[],"groupBy":[%q,%q]}`, status.ID, status.ID)), 400, "ERR_VALIDATION")
+	savedGroups := decode[structure.RowGroupResult](f, f.api(reader, "POST",
+		"/views/"+table.Views[0].ID+"/groups", `{"path":[]}`), 200)
+	if len(savedGroups.Groups) != 2 || groupedBucket(t, savedGroups.Groups, `"North"`).Count != 4 {
+		t.Fatalf("saved grouping changed by reader = %+v", savedGroups)
+	}
 	f.expectStatus(f.api(stranger, "POST", "/views/"+table.Views[0].ID+"/groups",
 		`{"path":[]}`), 404, "ERR_NOT_FOUND")
 

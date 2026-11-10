@@ -46,6 +46,7 @@ type RowQueryRequest struct {
 	FieldIDs     *[]string         `json:"fieldIds"`
 	Filter       *FilterNode       `json:"filter"`
 	GroupPath    []json.RawMessage `json:"groupPath,omitempty"`
+	GroupBy      *[]string         `json:"groupBy"`
 }
 
 type RowRecord struct {
@@ -744,10 +745,8 @@ func (s *Service) QueryRows(ctx context.Context, actor Actor, viewID string, req
 	if err := json.Unmarshal(lockedView.Config, &config); err != nil {
 		return RowQueryResult{}, fmt.Errorf("decode stored view config: %w", err)
 	}
-	groupBy := viewGroupFields(lockedView.Type, config, table)
-	if err := validateGroupConfig(ViewColumns{
-		GroupBy: groupBy, Aggregates: config.Aggregates,
-	}, table); err != nil {
+	groupBy, err := queryGroupFields(lockedView.Type, config, table, request.GroupBy)
+	if err != nil {
 		return RowQueryResult{}, err
 	}
 	config.Highlight = normalizeHighlightRules(config.Highlight, rowFieldIDs(table))

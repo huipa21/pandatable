@@ -94,6 +94,13 @@ drag an option's handle, press Alt+Up/Down on it, or use its move controls to
 reorder the options. Attachment fields support file selection and
 drag-and-drop; the administrator's upload limit applies.
 
+Hover or focus a column header and open its arrow menu to hide, sort, filter,
+or group by that field. Owners can also edit its settings or description,
+insert a field beside it, duplicate its schema without copying row values, set
+the display field, or delete it after confirmation. System and link fields
+cannot be duplicated, and the display field cannot be hidden or deleted.
+Changes that cannot be saved to the current view remain local.
+
 In the desktop grid, click a text, number or date cell once to edit it (double-click,
 Enter or F2 also work). Leaving the cell saves a valid value; an invalid value
 stays in the editor with its error, and Escape cancels. Click a checkbox to
@@ -262,6 +269,11 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 同时保存数据表的字段顺序），用复选框显示或隐藏它，或打开 **⋯** 菜单编辑、移动或删除。
 **编辑**与**添加字段**使用相同布局，高级设置中可设为显示字段；存在安全转换时，所有者可在其中更改字段类型。
 附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
+
+将鼠标悬停在列标题上或聚焦标题，然后打开箭头菜单，可按该字段隐藏、排序、筛选或分组。
+所有者还可以编辑字段设置或说明、在其旁边插入字段、仅复制字段结构而不复制行值、
+设为显示字段，或在确认后删除。系统字段和关联字段不能复制，显示字段不能隐藏或删除。
+无法保存到当前视图的更改只在本地生效。
 
 在桌面网格中，单击文本、数字或日期单元格即可编辑（双击、Enter 或 F2 同样可用）。
 离开单元格时会保存有效值；无效值会连同错误提示保留在编辑器中，按 Escape 取消。

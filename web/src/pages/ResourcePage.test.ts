@@ -56,8 +56,19 @@ async function setup(
       plugins: [pinia, i18n, router],
       stubs: {
         DataGrid: {
+          name: 'TestDataGrid',
           props: ['schema', 'fieldsOpen', 'filterOpen', 'filterCount'],
-          emits: ['toggleFields', 'toggleFilter', 'createField'],
+          emits: [
+            'toggleFields',
+            'toggleFilter',
+            'createField',
+            'editField',
+            'duplicateField',
+            'insertField',
+            'deleteField',
+            'setDisplay',
+            'filterField',
+          ],
           methods: {
             exportQuery: () => ({
               fieldIds: ['name'],
@@ -757,6 +768,59 @@ it('cancels a pending field editor when another menu opens before it loads', asy
     await vi.dynamicImportSettled()
     await flushPromises()
     expect(openCreate).not.toHaveBeenCalled()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('header menu forwards field actions and preselects the requested filter field', async () => {
+  useAuthStore().setUser(navUser)
+  const schema = tableSchema()
+  schema.fields[0]!.filterOps = ['contains']
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'other',
+    name: 'Other',
+    position: 2048,
+  })
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(schema)))
+  const methods = {
+    openCreate: vi.fn().mockResolvedValue(undefined),
+    openEditor: vi.fn().mockResolvedValue(undefined),
+    duplicate: vi.fn().mockResolvedValue(undefined),
+    askDelete: vi.fn().mockResolvedValue(undefined),
+    setDisplay: vi.fn().mockResolvedValue(undefined),
+  }
+  const panel = { methods, template: '<div />' }
+  const { wrapper } = await setup('/t/t/v/v', { FieldPanel: panel })
+  try {
+    const grid = wrapper.getComponent({ name: 'TestDataGrid' })
+    grid.vm.$emit('editField', 'other', { focus: 'description' })
+    await flushPromises()
+    expect(methods.openEditor).toHaveBeenCalledWith('other', {
+      focus: 'description',
+    })
+    grid.vm.$emit('insertField', 'name', 'right')
+    await flushPromises()
+    expect(methods.openCreate).toHaveBeenCalledWith({
+      anchorFieldId: 'name',
+      side: 'right',
+    })
+    grid.vm.$emit('duplicateField', 'other')
+    await flushPromises()
+    grid.vm.$emit('deleteField', 'other')
+    await flushPromises()
+    expect(methods.duplicate).toHaveBeenCalledWith('other')
+    expect(methods.askDelete).toHaveBeenCalledWith('other')
+    grid.vm.$emit('filterField', 'other')
+    await vi.dynamicImportSettled()
+    await flushPromises()
+    expect(
+      (
+        wrapper.get('.grid-filter-popover .filter-item select')
+          .element as HTMLSelectElement
+      ).value,
+    ).toBe('other')
   } finally {
     wrapper.unmount()
   }
