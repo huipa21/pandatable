@@ -98,6 +98,12 @@ editing a checkbox field, choose its **Icon** (including a heart or star).
 Date fields provide a calendar; time and date-time fields provide pickers with
 confirmation. Date-time values use the field's fixed timezone or the viewer's
 timezone, as configured.
+You can also type dates, times and date-times directly (for example, `11/15`,
+`1345` or `20261115 1345`). Your text stays as entered while the editor is
+focused; use the calendar or time scroller to choose a value instead.
+Long-text cells include an expand control for a larger editor. Its toolbar
+inserts Markdown syntax into plain text (images use a URL); close or apply to
+keep the draft, or press Escape to discard it.
 
 Hover or focus a column header and open its arrow menu to hide, sort, filter,
 or group by that field. Owners can also edit its settings or description,
@@ -140,7 +146,7 @@ Delete asks for confirmation. The summary bar stays at the bottom of the grid.
 Hover or focus a column's summary cell (or tap it on a touch device) to choose
 an aggregate, including percentage operations. Unconfigured summaries are
 hidden; choosing **None** clears a saved summary. These controls are no longer
-under a More menu. In a form view, an owner can configure the fields and labels;
+under a More menu. The bar also shows the filtered record count. In a form view, an owner can configure the fields and labels;
 users with write access can submit new rows, while readers cannot submit.
 
 In an editable view, use **Highlight** to add up to 20 independent rules. Each
@@ -287,6 +293,10 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 或使用移动控件调整顺序。附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
 创建或编辑复选框字段时，可在**图标**中选择爱心、星形等样式。日期字段提供日历；
 时间和日期时间字段提供可确认的选择器。日期时间按字段配置的固定时区或查看者时区显示。
+也可以直接输入日期、时间和日期时间，例如 `11/15`、`1345` 或 `20261115 1345`；
+编辑器聚焦时会保留输入文本，也可以使用日历或时间滚动器选择值。
+长文本单元格提供展开控件，可在更大的编辑器中修改；工具栏会插入 Markdown 语法，
+但内容仍是纯文本（图片仅使用 URL）。关闭或应用可保留草稿，按 Escape 可放弃草稿。
 
 将鼠标悬停在列标题上或聚焦标题，然后打开箭头菜单，可按该字段隐藏、排序、筛选或分组。
 所有者还可以编辑字段设置或说明、在其旁边插入字段、仅复制字段结构而不复制行值、
@@ -318,6 +328,7 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 所选行，删除前会要求确认。汇总栏固定在网格底部；将鼠标悬停或聚焦在列汇总单元格上
 （触屏可直接点击），即可选择汇总方式，包括百分比运算。未配置的汇总默认隐藏；
 选择**无**可清除已保存的汇总。
+汇总栏还会显示经过筛选的记录数。
 这些控件不再位于“更多”菜单中。在表单视图中，所有者可以配置字段
 和标签；有写入权限的用户可以提交新行，读取者不能提交。
 

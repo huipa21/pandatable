@@ -18,7 +18,9 @@ import {
 import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, Reason, Result, WireValue } from '../../fields/types'
 import type { CheckboxOptions } from '../../fields/number'
+import AppIcon from '../AppIcon.vue'
 import CheckboxIcon from './CheckboxIcon.vue'
+import LongTextDialog from './LongTextDialog.vue'
 import TemporalEditor from './TemporalEditor.vue'
 
 const props = withDefaults(
@@ -73,6 +75,13 @@ const input = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
 const checkboxButton = ref<HTMLButtonElement>()
 const checkboxChecked = ref(props.value === true)
 const temporalEditor = ref<InstanceType<typeof TemporalEditor>>()
+const longTextDialog = ref<InstanceType<typeof LongTextDialog>>()
+const longTextOpen = ref(false)
+let longTextSelection: {
+  start: number
+  end: number
+  direction: 'forward' | 'backward' | 'none'
+} | null = null
 const temporal = computed(() =>
   ['date', 'datetime', 'time'].includes(props.field.kind),
 )
@@ -269,15 +278,60 @@ function commitDraft() {
   return commitText()
 }
 
+function contains(target: EventTarget | null) {
+  return (
+    (temporalEditor.value?.contains(target) ?? false) ||
+    (target instanceof Node &&
+      (longTextDialog.value?.contains(target) ?? false))
+  )
+}
+
+function isPointerInPanel() {
+  return (
+    (temporalEditor.value?.isPointerInPanel() ?? false) ||
+    (longTextDialog.value?.contains(document.activeElement) ?? false)
+  )
+}
+
 defineExpose({
   commitDraft,
   hasPendingDraft,
   currentDraft,
   isComposing: () => temporalEditor.value?.isComposing() ?? composing.value,
-  contains: (target: EventTarget | null) =>
-    temporalEditor.value?.contains(target) ?? false,
-  isPointerInPanel: () => temporalEditor.value?.isPointerInPanel() ?? false,
+  contains,
+  isPointerInPanel,
 })
+
+function openLongTextDialog() {
+  if (!(input.value instanceof HTMLTextAreaElement)) return
+  longTextSelection = {
+    start: input.value.selectionStart,
+    end: input.value.selectionEnd,
+    direction: input.value.selectionDirection,
+  }
+  longTextOpen.value = true
+}
+
+function restoreLongTextFocus() {
+  longTextOpen.value = false
+  if (!(input.value instanceof HTMLTextAreaElement)) return
+  input.value.focus({ preventScroll: true })
+  if (longTextSelection)
+    input.value.setSelectionRange(
+      longTextSelection.start,
+      longTextSelection.end,
+      longTextSelection.direction,
+    )
+}
+
+function applyLongText(text: string) {
+  longTextOpen.value = false
+  draft.value = text
+  if (input.value instanceof HTMLTextAreaElement) input.value.value = text
+  previewText()
+  if (props.gridCommitOnLeave) commitText()
+  else emit('draftChanged')
+}
 
 function previewText() {
   if (!props.live) return
@@ -469,6 +523,19 @@ function keydown(event: KeyboardEvent) {
     if (props.gridCommitOnLeave) event.stopPropagation()
     return
   }
+  if (
+    props.field.presentation === 'multiline' &&
+    event.target === input.value &&
+    (event.key === 'F2' ||
+      ((event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === 'e'))
+  ) {
+    event.preventDefault()
+    event.stopPropagation()
+    openLongTextDialog()
+    return
+  }
   if (event.key === 'Escape') {
     event.preventDefault()
     emit('cancel')
@@ -560,18 +627,36 @@ function keydown(event: KeyboardEvent) {
         {{ choice.label }}
       </option>
     </select>
-    <textarea
+    <div
       v-else-if="field.presentation === 'multiline'"
-      ref="input"
-      v-model="draft"
-      :aria-label="label ?? t('field.editor.value')"
-      :aria-invalid="reason !== null"
-      :placeholder="defaultPlaceholder ?? t('field.editor.multilineHint')"
-      :required="required"
-      @input="previewText"
-      @compositionstart="composing = true"
-      @compositionend="compositionEnded"
-    />
+      class="field-long-text"
+      :class="{ 'field-long-text--grid': gridCommitOnLeave }"
+    >
+      <textarea
+        ref="input"
+        v-model="draft"
+        :aria-label="label ?? t('field.editor.value')"
+        :aria-invalid="reason !== null"
+        :placeholder="defaultPlaceholder ?? t('field.editor.multilineHint')"
+        :required="required"
+        @input="previewText"
+        @compositionstart="composing = true"
+        @compositionend="compositionEnded"
+      />
+      <button
+        type="button"
+        class="field-expand"
+        :aria-label="
+          t('cellEditors.ces05.expand', {
+            field: label ?? t('field.editor.value'),
+          })
+        "
+        @mousedown.prevent
+        @click="openLongTextDialog"
+      >
+        <AppIcon name="expand" />
+      </button>
+    </div>
     <div v-else-if="field.presentation === 'user'" class="field-user-editor">
       <input
         ref="input"
@@ -684,6 +769,15 @@ function keydown(event: KeyboardEvent) {
       {{ submitLabel ?? t('field.editor.apply') }}
     </button>
     <p v-if="reason" class="field-editor-error" role="alert">{{ error }}</p>
+    <LongTextDialog
+      v-if="field.presentation === 'multiline'"
+      ref="longTextDialog"
+      :open="longTextOpen"
+      :value="draft"
+      :field-name="label ?? t('field.editor.value')"
+      @apply="applyLongText"
+      @cancel="restoreLongTextFocus"
+    />
   </div>
 </template>
 
@@ -717,6 +811,40 @@ function keydown(event: KeyboardEvent) {
 }
 .field-editor textarea {
   min-height: 90px;
+}
+.field-long-text {
+  position: relative;
+}
+.field-long-text textarea {
+  padding-right: 30px;
+}
+.field-expand {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.field-expand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.field-long-text--grid .field-expand {
+  opacity: 0;
+  pointer-events: none;
+}
+.field-long-text--grid:hover .field-expand,
+.field-long-text--grid:focus-within .field-expand {
+  opacity: 1;
+  pointer-events: auto;
 }
 .field-user-results,
 .field-user-selected,

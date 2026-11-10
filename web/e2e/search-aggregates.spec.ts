@@ -134,7 +134,6 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
         filter,
         aggregates: [
           { fieldId: amount.id, aggregate: 'sum' },
-          { fieldId: rate.id, aggregate: 'avg' },
           { fieldId: note.id, aggregate: 'count_empty' },
           { fieldId: displayId, aggregate: 'unique' },
           { fieldId: counter.id, aggregate: 'count' },
@@ -143,7 +142,7 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     },
   })
   expect(config.status()).toBe(200)
-  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.setViewportSize({ width: 1440, height: 900 })
 
   const waitForAggregates = (search?: string) =>
     page.waitForResponse((response) => {
@@ -163,7 +162,6 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     aggregates: { fieldId: string; aggregate: string; value: unknown }[]
   }
   expect(aggregateValue(initial, amount.id, 'sum')).toBe('30')
-  expect(aggregateValue(initial, rate.id, 'avg')).toBe('2')
   expect(aggregateValue(initial, note.id, 'count_empty')).toBe(1)
   expect(aggregateValue(initial, displayId, 'unique')).toBe(3)
   expect(aggregateValue(initial, counter.id, 'count')).toBe(3)
@@ -181,6 +179,9 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     page.locator(`.grid-summary-cell[data-field-id="${amount.id}"] output`),
   ).toContainText('30')
   await expect(grid).toHaveAttribute('aria-rowcount', '3')
+  await expect(page.locator('.grid-summary-record-count')).toHaveText(
+    '3 records',
+  )
   const lastRow = grid.locator('revogr-data .rgRow[data-rgrow="2"]').first()
   const appendRow = page.getByRole('button', {
     name: en.grid.addRow,
@@ -209,12 +210,47 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
       )
     })
     .toBeLessThanOrEqual(2)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollHeight - window.innerHeight,
+    ),
+  ).toBe(0)
+  await expect
+    .poll(async () => {
+      const box = await summaryBar.boundingBox()
+      return box ? page.viewportSize()!.height - (box.y + box.height) : Infinity
+    })
+    .toBeLessThanOrEqual(16)
   const [barBox, appendBox] = await Promise.all([
     summaryBar.boundingBox(),
     appendRow.boundingBox(),
   ])
   if (!barBox || !appendBox) throw new Error('Footer geometry is unavailable')
   expect(barBox.y - (appendBox.y + appendBox.height)).toBeGreaterThan(20)
+
+  const rateSummary = page.locator(
+    `.grid-summary-cell[data-field-id="${rate.id}"]`,
+  )
+  const rateButton = rateSummary.getByRole('button')
+  await rateButton.hover()
+  await expect(rateSummary.locator('.grid-summary-hint')).toHaveCSS(
+    'opacity',
+    '1',
+  )
+  const countResult = waitForAggregates()
+  await rateButton.click()
+  await page
+    .getByRole('listbox', {
+      name: en.grid.aggregateForField.replace('{field}', 'Rate'),
+    })
+    .getByRole('option', { name: en.grid.aggregateLabels.count, exact: true })
+    .click()
+  const countAggregates = (await (await countResult).json()) as {
+    aggregates: { fieldId: string; aggregate: string; value: unknown }[]
+  }
+  expect(aggregateValue(countAggregates, rate.id, 'count')).toBe(3)
+  await expect(rateSummary.locator('output')).toContainText('Count')
+  await expect(rateSummary.locator('output')).toContainText('3')
 
   const expectAligned = async (fieldName: string, fieldId: string) => {
     const headerBox = await grid
@@ -238,7 +274,7 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     expect(
       Math.abs(summaryBox.x - headerBox.x),
       `${fieldName} summary x=${summaryBox.x}, header x=${headerBox.x}, footer transform=${footerTransform}, horizontal=${JSON.stringify(horizontalScroll)}`,
-    ).toBeLessThanOrEqual(2)
+    ).toBeLessThanOrEqual(1)
     expect(
       Math.abs(summaryBox.width - headerBox.width),
       `${fieldName} summary width=${summaryBox.width}, header width=${headerBox.width}`,
@@ -321,7 +357,7 @@ test('AT-509/510 quick search and footer aggregates use visible filtered rows', 
     aggregates: { fieldId: string; aggregate: string; value: unknown }[]
   }
   expect(aggregateValue(acmeFooter, amount.id, 'sum')).toBe('10')
-  expect(aggregateValue(acmeFooter, rate.id, 'avg')).toBe('2')
+  expect(aggregateValue(acmeFooter, rate.id, 'count')).toBe(1)
   expect(aggregateValue(acmeFooter, note.id, 'count_empty')).toBe(0)
   expect(aggregateValue(acmeFooter, displayId, 'unique')).toBe(1)
   expect(aggregateValue(acmeFooter, counter.id, 'count')).toBe(1)

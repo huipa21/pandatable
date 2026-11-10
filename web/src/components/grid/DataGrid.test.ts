@@ -3502,9 +3502,11 @@ it('resets footer scrolling when the desktop grid is removed and restored', asyn
 })
 
 it('keeps an unconfigured footer empty and removes its config when None is selected', async () => {
+  gridState.rowCount = 3
   const schema = schemaFor('text')
   addField(schema, 'amount', 'integer', { size: 'int' })
   const fetch = await mountGrid(schema)
+  expect(wrapper!.get('.grid-summary-record-count').text()).toBe('3 records')
   const cell = wrapper!.get('.grid-summary-cell[data-field-id="amount"]')
   const trigger = cell.get<HTMLButtonElement>('button')
   expect(cell.find('output').exists()).toBe(false)
@@ -3606,7 +3608,25 @@ it('offers type-aware footer operations, renders API values, and clears config',
   const schema = schemaFor('text')
   addField(schema, 'amount', 'integer', { size: 'int' })
   addField(schema, 'created', 'date')
+  addField(schema, 'checked', 'checkbox')
+  addField(schema, 'files', 'attachment')
   const fetch = await mountGrid(schema)
+
+  const checkboxMenu = await openFooterPicker('checked')
+  expect(
+    checkboxMenu
+      .findAll('[role="option"]')
+      .map((option) => option.attributes('data-aggregate')),
+  ).toEqual(['none', 'count', 'percent_checked'])
+  await checkboxMenu.get('[data-aggregate="none"]').trigger('click')
+  expect(
+    wrapper!.find('.grid-summary-cell[data-field-id="files"] button').exists(),
+  ).toBe(false)
+  expect(
+    wrapper!
+      .find('.grid-summary-cell[data-field-id="files"] .grid-summary-hint')
+      .exists(),
+  ).toBe(false)
 
   for (const aggregate of [
     'count',

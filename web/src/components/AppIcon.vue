@@ -102,6 +102,34 @@ const paths = {
   currency: ['M12 2v20M17 6H9a4 4 0 0 0 0 8h6a4 4 0 0 1 0 8H5'],
   import: ['M12 3v11m-4-4 4 4 4-4M4 14v6h16v-6'],
   export: ['M12 14V3m-4 4 4-4 4 4M4 14v6h16v-6'],
+  bold: ['M7 4h6a4 4 0 0 1 0 8H7z', 'M7 12h7a4 4 0 0 1 0 8H7z'],
+  italic: ['M19 4h-9M14 20H5M15 4L9 20'],
+  underline: ['M6 4v6a6 6 0 0 0 12 0V4', 'M4 21h16'],
+  strikethrough: [
+    'M16 5H10a3.5 3.5 0 0 0-2.5 6',
+    'M14 12a4 4 0 0 1 0 8H7',
+    'M4 12h16',
+  ],
+  'heading-1': ['M3 6v12M11 6v12M3 12h8', 'M16 10l3-2v10'],
+  'heading-2': [
+    'M3 6v12M11 6v12M3 12h8',
+    'M15 10a2.5 2.5 0 0 1 5 0c0 2.5-5 4.5-5 8h5',
+  ],
+  'heading-3': ['M3 6v12M11 6v12M3 12h8', 'M15 8h5l-3 4a3 3 0 1 1-2 5.2'],
+  quote: ['M3 12v6', 'M17 6H3M21 12H8M21 18H8'],
+  'list-bullet': ['M4 6h.01M4 12h.01M4 18h.01', 'M9 6h11M9 12h11M9 18h11'],
+  'list-ordered': [
+    'M10 6h11M10 12h11M10 18h11',
+    'M4 4h1v5M4 9h2',
+    'M4 15a1 1 0 0 1 2 0c0 1-2 2-2 4h2',
+  ],
+  'list-check': ['M3 7l2 2 4-4M3 17l2 2 4-4', 'M13 6h8M13 12h8M13 18h8'],
+  image: [
+    'M3 5h18v14H3z',
+    'M8.5 8a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z',
+    'M21 15l-5-5L5 19',
+  ],
+  'long-text': ['M4 6h16M4 10h16M4 14h16M4 18h10'],
 } as const
 export type IconName = keyof typeof paths
 export function fieldIconName(kind: string): IconName {

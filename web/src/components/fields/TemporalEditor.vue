@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { NButton, NDatePicker, NTimePicker } from 'naive-ui'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { NButton, NDatePicker } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { timeKind } from '../../fields/batch2'
 import { fieldErrorMessage } from '../../fields/messages'
@@ -10,6 +10,13 @@ import {
   type DateFormat,
   type DateTimeOptions,
 } from '../../fields/temporal'
+import {
+  isCompleteTyped,
+  normalizeTyped,
+  typedPlaceholder,
+  type TypedKind,
+} from '../../fields/temporalTyping'
+import TimeScroller from './TimeScroller.vue'
 import {
   fail,
   type FieldEnv,
@@ -53,7 +60,9 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const host = ref<HTMLElement>()
 const portal = ref<HTMLElement>()
+const textInput = ref<HTMLInputElement>()
 const portalDestination = ref<HTMLElement | string>('body')
+const portalStyle = ref<Record<string, string>>({})
 const show = ref(false)
 const composing = ref(false)
 const reason = ref<Reason | null>(null)
@@ -78,9 +87,6 @@ const twelveHours = computed(() =>
     ? options.value.format === '12h'
     : options.value.timeFormat === '12h',
 )
-const timeFormat = computed(() =>
-  twelveHours.value ? 'hh:mm:ss a' : 'HH:mm:ss',
-)
 const pickerFormat = computed(() => {
   if (props.field.kind === 'date') return dateFormat.value
   return `${dateFormat.value} ${twelveHours.value ? 'h:mm a' : 'HH:mm'}`
@@ -97,6 +103,27 @@ const error = computed(() =>
       ? fieldErrorMessage(reason.value)
       : '',
 )
+const typedKind = computed<TypedKind | null>(() =>
+  props.field.kind === 'date' ||
+  props.field.kind === 'datetime' ||
+  props.field.kind === 'time'
+    ? props.field.kind
+    : null,
+)
+const placeholder = computed(() =>
+  typedKind.value
+    ? typedPlaceholder(typedKind.value, {
+        dateFormat: options.value.dateFormat ?? 'iso',
+        twelveHours: twelveHours.value,
+        today: todayInFieldZone(),
+      })
+    : '',
+)
+const togglePanelLabel = computed(() =>
+  props.field.kind === 'time'
+    ? t('cellEditors.ces02.openTimePanel')
+    : t('cellEditors.ces02.openCalendar'),
+)
 
 let baselineValue = props.value
 let baselineCopy = props.field.formatCopy(baselineValue, props.env)
@@ -107,8 +134,6 @@ const draft = ref('')
 const dirty = ref(false)
 const panelPending = ref(false)
 const browserGap = ref(false)
-let typing = false
-let initializing = false
 let panelInteracted = false
 let panelTimeChanged = false
 let panelWallTime: string | null = null
@@ -164,47 +189,56 @@ function setBaseline(value: WireValue) {
 }
 
 setBaseline(props.value)
-const recovered =
-  props.initialDraft !== undefined && props.initialDraft !== baselineCopy
-draft.value = recovered
-  ? props.initialDraft!
-  : props.field.formatDisplay(props.value, props.env)
-dirty.value = recovered
+function resetDraft(value: WireValue, initialDraft?: string) {
+  const formatted = props.field.formatDisplay(value, props.env)
+  draft.value = initialDraft ?? formatted
+  dirty.value = initialDraft !== undefined && initialDraft !== formatted
+}
 
-const timeValue = computed(() => {
-  if (!pickerValue.value) return null
-  const match = /^(\d{2}):(\d{2}):(\d{2})$/.exec(pickerValue.value)
-  if (!match) return null
-  const hour = Number(match[1])
-  const minute = Number(match[2])
-  const second = Number(match[3])
-  const date = new Date(2000, 0, 15, hour, minute, second, 0)
-  return date.getTime()
-})
+resetDraft(props.value, props.initialDraft)
+
+function positionPanel() {
+  const rect = host.value?.getBoundingClientRect()
+  if (!rect) return
+  const panelHeight = props.field.kind === 'time' ? 270 : 360
+  const panelWidth = props.field.kind === 'time' ? 260 : 320
+  const below = rect.bottom + 4
+  const top =
+    below + panelHeight <= window.innerHeight
+      ? below
+      : Math.max(8, rect.top - panelHeight - 4)
+  portalStyle.value = {
+    position: 'fixed',
+    top: `${top}px`,
+    left: `${Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8))}px`,
+    zIndex: '2000',
+  }
+}
 
 function inputElement() {
-  return host.value?.querySelector<HTMLInputElement>('input') ?? null
+  return textInput.value ?? null
 }
 
-function syncInputAttributes() {
-  const input = inputElement()
-  if (!input) return
-  // Naive UI applies fallthrough attributes to its wrapper, not its input.
-  input.setAttribute('aria-label', props.label)
-  input.setAttribute('aria-invalid', String(Boolean(error.value)))
-  input.required = props.required
-}
-
-function writeInput(text: string) {
-  const input = inputElement()
-  if (!input) return
-  initializing = true
-  input.value = text
-  input.dispatchEvent(new Event('input', { bubbles: true }))
-  initializing = false
-}
-
-watch([() => props.label, () => props.required, error], syncInputAttributes)
+watch(
+  [() => props.value, () => props.initialDraft],
+  ([value, initialDraft]) => {
+    if (document.activeElement === inputElement()) return
+    setBaseline(value)
+    resetDraft(value, initialDraft)
+    reason.value = null
+    requiredError.value = false
+    panelPending.value = false
+    panelInteracted = false
+    panelTimeChanged = false
+    panelWallTime = null
+    panelFraction = undefined
+    panelTimeError = null
+  },
+  { deep: true },
+)
+watch(show, (visible) => {
+  if (visible) void nextTick(positionPanel)
+})
 
 onMounted(async () => {
   const fullscreen = document.fullscreenElement
@@ -216,13 +250,18 @@ onMounted(async () => {
     dialog ??
     (fullscreen instanceof HTMLElement ? fullscreen : document.body)
   await nextTick()
-  syncInputAttributes()
   const input = inputElement()
-  if (recovered || browserGap.value) writeInput(draft.value)
   if (props.autoFocus && input && !input.matches(':disabled')) {
     input.focus({ preventScroll: true })
-    show.value = true
+    show.value = props.gridCommitOnLeave
   }
+  window.addEventListener('resize', positionPanel)
+  window.addEventListener('scroll', positionPanel, true)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', positionPanel)
+  window.removeEventListener('scroll', positionPanel, true)
 })
 
 function normalizeDayPeriod(text: string) {
@@ -244,11 +283,64 @@ function normalizeDayPeriod(text: string) {
   return text
 }
 
+function todayInFieldZone() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: props.env.timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  return {
+    year: Number(parts.find((part) => part.type === 'year')?.value),
+    month: Number(parts.find((part) => part.type === 'month')?.value),
+    day: Number(parts.find((part) => part.type === 'day')?.value),
+  }
+}
+
+function typedContext() {
+  return {
+    dateFormat: options.value.dateFormat ?? 'iso',
+    twelveHours: twelveHours.value,
+    today: todayInFieldZone(),
+  }
+}
+
 function parseText(text: string): Result<WireValue> {
-  let normalized = normalizeDayPeriod(text.trim())
-  if (props.field.kind === 'time' && /^\d{2}:\d{2}$/.test(normalized))
-    normalized += ':00'
+  const kind = typedKind.value
+  let normalized = kind
+    ? (normalizeTyped(kind, text, typedContext()) ??
+      normalizeDayPeriod(text.trim()))
+    : normalizeDayPeriod(text.trim())
+  if (kind === 'time' && /^\d{2}:\d{2}$/.test(normalized)) normalized += ':00'
   return props.field.parsePaste(normalized, props.env)
+}
+
+function syncPickerHighlight(text: string) {
+  const kind = typedKind.value
+  if (!kind || !isCompleteTyped(kind, text, typedContext())) return
+  const normalized = normalizeTyped(kind, text, typedContext())
+  if (normalized === null) return
+  const result = props.field.parsePaste(normalized, props.env)
+  if (!result.ok || result.value === null) return
+  if (kind === 'date') {
+    pickerValue.value = String(result.value)
+    return
+  }
+  const copy = props.field.formatCopy(result.value, props.env)
+  if (kind === 'time') {
+    const match = /^(\d{2}:\d{2}:\d{2})(\.\d{1,6})?$/.exec(copy)
+    if (!match) return
+    pickerValue.value = match[1]!
+    panelFraction = match[2] ?? ''
+    return
+  }
+  const match = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(\.\d{1,6})?/.exec(copy)
+  if (!match) return
+  const wall = match[1]!
+  panelWallTime = wall.slice(11)
+  panelFraction = match[2] ?? ''
+  browserGap.value = !localWallExists(wall)
+  pickerValue.value = browserGap.value ? `${wall.slice(0, 10)} 12:00:00` : wall
 }
 
 function pickerText(value: string) {
@@ -313,21 +405,21 @@ function commitResult(
   result: Result<WireValue>,
   text: string,
   retainFocus = false,
+  preserveFocusedText = false,
 ) {
   if (!validate(result, text, true) || !result.ok) return false
   setBaseline(result.value)
   dirty.value = false
   panelPending.value = false
-  draft.value = props.field.formatDisplay(result.value, props.env)
+  draft.value =
+    preserveFocusedText && document.activeElement === inputElement()
+      ? text
+      : props.field.formatDisplay(result.value, props.env)
   panelInteracted = false
   panelTimeChanged = false
   panelWallTime = null
   panelFraction = undefined
   panelTimeError = null
-  if (browserGap.value)
-    void nextTick(() => {
-      if (browserGap.value && !dirty.value) writeInput(draft.value)
-    })
   emit('draftChanged')
   if (retainFocus) emit('commit', result.value, true)
   else emit('commit', result.value)
@@ -351,6 +443,7 @@ function commitDraft(retainFocus = false) {
       : props.field.normalize(baselineValue),
     text,
     retainFocus,
+    true,
   )
 }
 
@@ -366,8 +459,6 @@ function inputChanged(event: Event) {
     !(event.target instanceof HTMLInputElement)
   )
     return
-  typing = true
-  if (initializing) return
   draft.value = event.target.value
   dirty.value = true
   panelInteracted = false
@@ -376,35 +467,9 @@ function inputChanged(event: Event) {
   panelFraction = undefined
   panelTimeError = null
   panelPending.value = false
-  emit('draftChanged')
-}
-
-function inputFinished(event: Event) {
-  if (
-    event.target !== inputElement() ||
-    !(event.target instanceof HTMLInputElement)
-  )
-    return
-  typing = false
-  if (initializing) return
-  const input = event.target
-  const text = draft.value
-  const start = input.selectionStart
-  const end = input.selectionEnd
-  const direction = input.selectionDirection
+  syncPickerHighlight(draft.value)
   if (props.live && !composing.value) previewDraft()
-  void nextTick(() => {
-    if (
-      dirty.value &&
-      draft.value === text &&
-      inputElement() === input &&
-      input.value !== text
-    ) {
-      input.value = text
-      if (document.activeElement === input && start !== null && end !== null)
-        input.setSelectionRange(start, end, direction ?? undefined)
-    }
-  })
+  emit('draftChanged')
 }
 
 function pickerUpdated(value: string | string[] | null) {
@@ -417,9 +482,8 @@ function pickerUpdated(value: string | string[] | null) {
     emit('invalidValue')
     return
   }
-  if (!typing && dirty.value && !panelInteracted) return
+  if (dirty.value && !panelInteracted) return
   pickerValue.value = value
-  if (typing) return
   if (value === null) {
     clear()
     return
@@ -427,14 +491,6 @@ function pickerUpdated(value: string | string[] | null) {
   if (props.field.kind === 'date') {
     commitResult(fromPicker(value), value)
     return
-  }
-  if (props.field.kind === 'time') {
-    const result = fromPicker(value)
-    draft.value = result.ok
-      ? props.field.formatCopy(result.value, props.env)
-      : value
-    dirty.value = true
-    emit('draftChanged')
   }
 }
 
@@ -464,12 +520,7 @@ function pickerConfirmed(
     draft.value = text
     dirty.value = true
     emit('draftChanged')
-    queueMicrotask(() => {
-      void nextTick(() => {
-        if (dirty.value && draft.value === text) writeInput(text)
-      })
-    })
-  }
+  } else show.value = false
 }
 
 function clear() {
@@ -500,13 +551,32 @@ function cancel() {
   panelFraction = undefined
   panelTimeError = null
   emit('draftChanged')
-  writeInput(draft.value)
-  if (browserGap.value)
-    void nextTick(() => {
-      if (browserGap.value && !dirty.value) writeInput(draft.value)
-    })
   if (props.live) emit('preview', value)
   emit('cancel')
+}
+
+function panelTimeUpdated(value: string) {
+  pickerValue.value = value
+  const result = fromPicker(value)
+  if (!result.ok) {
+    reason.value = result.reason
+    return
+  }
+  reason.value = null
+  requiredError.value = false
+  draft.value = props.field.formatDisplay(result.value, props.env)
+  dirty.value = true
+  panelPending.value = true
+  emit('draftChanged')
+}
+
+function panelTimePicked() {
+  void nextTick(() => {
+    const input = inputElement()
+    if (!input) return
+    input.focus({ preventScroll: true })
+    input.setSelectionRange(input.value.length, input.value.length)
+  })
 }
 
 function parsePanelTime(text: string) {
@@ -687,11 +757,6 @@ function panelClick(event: MouseEvent) {
   const day = event.target.closest(
     '.n-date-panel-date:not(.n-date-panel-date--disabled)',
   )
-  if (props.field.kind === 'time' && item) {
-    panelPending.value = true
-    emit('draftChanged')
-    return
-  }
   if (props.field.kind !== 'datetime') return
   if (item) selectPanelTime(item)
   else if (day) rememberPanelTime()
@@ -718,15 +783,22 @@ function panelInput(event: Event) {
 
 function updateShow(value: boolean) {
   show.value = value && !inputElement()?.matches(':disabled')
-  if (!show.value && dirty.value)
-    void nextTick(() => {
-      if (!show.value && dirty.value) writeInput(draft.value)
-    })
+}
+
+function confirmPanel() {
+  if (commitDraft()) show.value = false
 }
 
 function keydown(event: KeyboardEvent, inPanel = false) {
   if (event.isComposing || composing.value) {
     event.stopPropagation()
+    return
+  }
+  if (!inPanel && event.target !== inputElement()) return
+  if (inPanel) panelInteracted = true
+  if (event.altKey && event.key === 'ArrowDown') {
+    event.preventDefault()
+    show.value = true
     return
   }
   if (event.key === 'Escape') {
@@ -739,7 +811,7 @@ function keydown(event: KeyboardEvent, inPanel = false) {
   event.preventDefault()
   if (inPanel || panelInteracted) {
     event.stopPropagation()
-    if (commitDraft()) show.value = false
+    confirmPanel()
     return
   }
   const hadDraft = dirty.value || panelPending.value
@@ -747,6 +819,31 @@ function keydown(event: KeyboardEvent, inPanel = false) {
     show.value = false
     if (!hadDraft) event.stopPropagation()
   } else event.stopPropagation()
+}
+
+function togglePanel() {
+  show.value = !show.value
+  if (show.value && dirty.value && props.field.kind !== 'time')
+    syncPickerHighlight(draft.value)
+}
+
+function focusLeft(event: FocusEvent) {
+  if (contains(event.relatedTarget) || pointerInPanel) return
+  if (!props.gridCommitOnLeave && (dirty.value || panelPending.value))
+    commitDraft()
+  show.value = false
+}
+
+function panelFocusOut(event: FocusEvent) {
+  focusLeft(event)
+  emit('focusout', event)
+}
+
+function contains(target: EventTarget | null) {
+  return (
+    target instanceof Node &&
+    Boolean(host.value?.contains(target) || portal.value?.contains(target))
+  )
 }
 
 function compositionEnded() {
@@ -760,9 +857,7 @@ defineExpose({
   hasPendingDraft: () => dirty.value || panelPending.value,
   currentDraft,
   isComposing: () => composing.value,
-  contains: (target: EventTarget | null) =>
-    target instanceof Node &&
-    Boolean(host.value?.contains(target) || portal.value?.contains(target)),
+  contains,
   isPointerInPanel: () => pointerInPanel,
 })
 </script>
@@ -771,64 +866,48 @@ defineExpose({
   <div
     ref="host"
     class="temporal-editor"
-    @input.capture="inputChanged"
-    @input="inputFinished"
+    @focusout="focusLeft"
+    @input="inputChanged"
     @keydown.capture="keydown($event)"
     @compositionstart.capture="composing = true"
     @compositionend.capture="compositionEnded"
   >
-    <NTimePicker
-      v-if="field.kind === 'time'"
-      :value="timeValue"
-      :value-format="'HH:mm:ss'"
-      :format="timeFormat"
-      :placeholder="defaultPlaceholder"
-      :use-12-hours="twelveHours"
-      :actions="pickerActions"
-      :clearable="!required"
-      :status="error ? 'error' : undefined"
-      :show="show"
-      :to="portal"
-      @update:show="updateShow"
-      @update:formatted-value="pickerUpdated"
-      @confirm="pickerConfirmed"
-      @clear="clear"
-    />
-    <NDatePicker
-      v-else
-      :type="field.kind === 'date' ? 'date' : 'datetime'"
-      :formatted-value="pickerValue"
-      :value-format="
-        field.kind === 'date' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss'
-      "
-      :format="pickerFormat"
-      :placeholder="defaultPlaceholder"
-      :date-format="dateFormat"
-      :time-picker-format="twelveHours ? 'h:mm a' : 'HH:mm'"
-      :time-picker-props="{ use12Hours: twelveHours }"
-      :actions="pickerActions"
-      :clearable="!required"
-      :status="error ? 'error' : undefined"
-      :show="show"
-      :to="portal"
-      :year-range="[1, 9999]"
-      @update:show="updateShow"
-      @update:formatted-value="pickerUpdated"
-      @confirm="pickerConfirmed"
-      @clear="clear"
-    >
-      <template #confirm="{ onConfirm, disabled, text }">
-        <NButton
-          data-temporal-confirm
-          size="tiny"
-          type="primary"
-          :disabled="disabled"
-          @click="onConfirm"
+    <div class="temporal-editor-control">
+      <input
+        ref="textInput"
+        class="temporal-editor-input"
+        type="text"
+        :value="draft"
+        :placeholder="placeholder"
+        :aria-label="label"
+        :aria-invalid="Boolean(error)"
+        :aria-required="required || undefined"
+        :required="required"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button
+        type="button"
+        class="temporal-editor-toggle"
+        :aria-label="togglePanelLabel"
+        :aria-expanded="show"
+        @click="togglePanel"
+      >
+        <svg
+          v-if="field.kind === 'time'"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
         >
-          {{ text }}
-        </NButton>
-      </template>
-    </NDatePicker>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+        <svg v-else viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <rect x="3.5" y="5" width="17" height="16" rx="2" />
+          <path d="M7.5 3v4M16.5 3v4M4 9h16" />
+        </svg>
+      </button>
+    </div>
     <p v-if="error" class="temporal-editor-error" role="alert">{{ error }}</p>
     <p v-if="browserGap" class="temporal-editor-warning" role="status">
       {{ t('gridPolish.gp08.browserGap') }}
@@ -837,12 +916,57 @@ defineExpose({
       <div
         ref="portal"
         class="temporal-picker-portal"
+        :style="portalStyle"
         @pointerdown.capture="panelPointerDown"
         @click.capture="panelClick"
         @input.capture="panelInput"
         @keydown.capture="keydown($event, true)"
-        @focusout="emit('focusout', $event)"
-      />
+        @focusout="panelFocusOut"
+      >
+        <NDatePicker
+          v-if="show && field.kind !== 'time'"
+          :type="field.kind === 'date' ? 'date' : 'datetime'"
+          :panel="true"
+          :formatted-value="pickerValue"
+          :value-format="
+            field.kind === 'date' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss'
+          "
+          :format="pickerFormat"
+          :date-format="dateFormat"
+          :time-picker-format="twelveHours ? 'h:mm a' : 'HH:mm'"
+          :time-picker-props="{ use12Hours: twelveHours }"
+          :actions="pickerActions"
+          :clearable="!required"
+          :show="show"
+          :year-range="[1, 9999]"
+          @update:show="updateShow"
+          @update:formatted-value="pickerUpdated"
+          @confirm="pickerConfirmed"
+          @clear="clear"
+        >
+          <template #confirm="{ onConfirm, disabled, text }">
+            <NButton
+              data-temporal-confirm
+              size="tiny"
+              type="primary"
+              :disabled="disabled"
+              @click="onConfirm"
+            >
+              {{ text }}
+            </NButton>
+          </template>
+        </NDatePicker>
+        <TimeScroller
+          v-else-if="show"
+          :value="pickerValue"
+          :twelve-hours="twelveHours"
+          :clearable="!required"
+          @update:value="panelTimeUpdated"
+          @pick="panelTimePicked"
+          @confirm="confirmPanel"
+          @clear="clear"
+        />
+      </div>
     </Teleport>
   </div>
 </template>
@@ -851,10 +975,69 @@ defineExpose({
 .temporal-editor {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
-.temporal-editor :deep(.n-date-picker),
-.temporal-editor :deep(.n-time-picker) {
+
+.temporal-editor-control {
+  position: relative;
+  min-width: 0;
+}
+
+.temporal-editor-input {
+  box-sizing: border-box;
   width: 100%;
+  min-height: 34px;
+  padding: 6px 38px 6px 10px;
+  border: 1px solid var(--n-border-color, #d9d9d9);
+  border-radius: 4px;
+  color: var(--n-text-color, #222);
+  background: var(--n-color, #fff);
+  font: inherit;
+}
+
+.temporal-editor-input:focus {
+  border-color: var(--n-primary-color, #2080f0);
+  outline: 2px solid
+    color-mix(in srgb, var(--n-primary-color, #2080f0) 20%, transparent);
+  outline-offset: 0;
+}
+
+.temporal-editor-input[aria-invalid='true'] {
+  border-color: #c0362c;
+}
+
+.temporal-editor-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  width: 34px;
+  height: 100%;
+  place-items: center;
+  border: 0;
+  color: var(--n-text-color-3, #666);
+  background: transparent;
+  cursor: pointer;
+}
+
+.temporal-editor-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.temporal-editor-toggle:focus-visible {
+  outline: 2px solid var(--n-primary-color, #2080f0);
+  outline-offset: -2px;
+}
+
+.temporal-picker-portal {
+  width: max-content;
+  max-width: calc(100vw - 16px);
 }
 .temporal-editor-error,
 .temporal-editor-warning {

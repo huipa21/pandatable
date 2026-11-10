@@ -432,8 +432,8 @@
     "aggregateLabels": {
       "none": "无",
       "count": "计数",
-      "count_empty": "空值计数",
-      "count_filled": "非空计数",
+      "count_empty": "空",
+      "count_filled": "已填",
       "unique": "唯一值",
       "sum": "求和",
       "avg": "平均值",
@@ -1548,6 +1548,57 @@
       "groupPending": "请等待当前分组更改完成。",
       "fieldUnavailable": "该字段已不可用。",
       "placementFailed": "字段已创建，但无法在此视图中保存其位置。"
+    }
+  },
+  "cellEditors": {
+    "ces01": {},
+    "ces02": {
+      "openCalendar": "打开日历",
+      "openTimePanel": "打开时间选择器",
+      "hour": "小时",
+      "minute": "分钟",
+      "second": "秒",
+      "period": "上午/下午",
+      "am": "上午",
+      "pm": "下午",
+      "clear": "清除",
+      "confirm": "确定"
+    },
+    "ces03": {},
+    "ces04": {
+      "dialogLabel": "{fieldName}长文本编辑器",
+      "textareaLabel": "{fieldName}文本",
+      "toolbar": "文本格式",
+      "close": "应用并关闭编辑器",
+      "commandWithShortcut": "{label}（{shortcut}）",
+      "commands": {
+        "bold": "粗体",
+        "italic": "斜体",
+        "underline": "下划线",
+        "strike": "删除线",
+        "code": "代码",
+        "heading1": "一级标题",
+        "heading2": "二级标题",
+        "heading3": "三级标题",
+        "quote": "引用",
+        "bullet": "项目符号列表",
+        "ordered": "编号列表",
+        "check": "待办列表",
+        "link": "链接",
+        "image": "图片"
+      },
+      "placeholderText": "文本",
+      "placeholderUrl": "网址",
+      "discardPrompt": "放弃更改？",
+      "discard": "放弃",
+      "keep": "继续编辑",
+      "counter": "{count} / {max} 个字符"
+    },
+    "ces05": {
+      "expand": "展开{field}"
+    },
+    "ces06": {
+      "records": "{n} 条记录"
     }
   }
 }

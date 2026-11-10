@@ -28,7 +28,13 @@ function mountTemporal(
   const field = bindField(kind, options)
   if (!field.ok) throw new Error(field.reason)
   const wrapper = mount(TemporalEditor, {
-    props: { field: field.value, value, env, label: 'Value' },
+    props: {
+      field: field.value,
+      value,
+      env,
+      label: 'Value',
+      gridCommitOnLeave: true,
+    },
     global: { plugins: [i18n] },
     attachTo: document.body,
   })
@@ -106,23 +112,73 @@ describe('temporal editor', () => {
     const wrapper = mountTemporal('time', '09:15:12.123456')
     await flushPromises()
     const popup = panel(wrapper)
-    const columns = popup.querySelectorAll<HTMLElement>('.n-time-picker-col')
+    const columns = popup.querySelectorAll<HTMLElement>('.time-scroller-column')
     const minute = Array.from(
-      columns[1]?.querySelectorAll<HTMLElement>('.n-time-picker-col__item') ??
-        [],
+      columns[1]?.querySelectorAll<HTMLElement>('.time-scroller-option') ?? [],
     ).find((item) => item.textContent?.trim() === '35')
     if (!minute) throw new Error('Time picker minute was not found')
     minute.click()
     await flushPromises()
-    expect(wrapper.emitted('commit')).toBeUndefined()
-    const buttons = popup.querySelectorAll<HTMLButtonElement>(
-      '.n-time-picker-panel button',
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe(
+      '09:35:12.123456',
     )
-    const confirm = buttons[buttons.length - 1]
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    const confirm = popup.querySelector<HTMLButtonElement>(
+      '.time-scroller-confirm',
+    )
     if (!confirm) throw new Error('Time picker confirm button was not found')
     confirm.click()
     await flushPromises()
     expect(wrapper.emitted('commit')).toEqual([['09:35:12.123456']])
+  })
+
+  it('supports 12-hour picks and arrow-key navigation within a column', async () => {
+    const wrapper = mountTemporal('time', '09:15:12', { format: '12h' })
+    await flushPromises()
+    const popup = panel(wrapper)
+    const hour = Array.from(
+      popup.querySelectorAll<HTMLButtonElement>(
+        '.time-scroller-column:first-child .time-scroller-option',
+      ),
+    ).find((item) => item.textContent?.trim() === '09')
+    if (!hour) throw new Error('Time scroller hour was not found')
+    const pressDown = () =>
+      hour.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'ArrowDown',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    pressDown()
+    await flushPromises()
+    expect(hour.getAttribute('aria-selected')).toBe('false')
+    let selectedHour = Array.from(
+      popup.querySelectorAll<HTMLButtonElement>(
+        '.time-scroller-column:first-child .time-scroller-option',
+      ),
+    ).find((item) => item.textContent?.trim() === '10')
+    expect(selectedHour?.getAttribute('aria-selected')).toBe('true')
+    pressDown()
+    await flushPromises()
+    selectedHour = Array.from(
+      popup.querySelectorAll<HTMLButtonElement>(
+        '.time-scroller-column:first-child .time-scroller-option',
+      ),
+    ).find((item) => item.textContent?.trim() === '11')
+    expect(selectedHour?.getAttribute('aria-selected')).toBe('true')
+
+    const pm = Array.from(
+      popup.querySelectorAll<HTMLButtonElement>(
+        '.time-scroller-column:nth-child(3) .time-scroller-option',
+      ),
+    ).find((item) => item.textContent?.trim() === 'PM')
+    if (!pm) throw new Error('Time scroller PM option was not found')
+    pm.click()
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe(
+      '11:15:12 PM',
+    )
   })
 
   it.each(['datetime', 'time'] as const)(
@@ -142,7 +198,7 @@ describe('temporal editor', () => {
       else {
         const minute = Array.from(
           popup.querySelectorAll<HTMLElement>(
-            '.n-time-picker-col:nth-child(2) .n-time-picker-col__item',
+            '.time-scroller-column:nth-child(2) .time-scroller-option',
           ),
         ).find((item) => item.textContent?.trim() === '35')
         if (!minute) throw new Error('Time picker minute was not found')
@@ -170,15 +226,153 @@ describe('temporal editor', () => {
     expect(wrapper.emitted('commit')).toEqual([['09:35:00']])
   })
 
-  it('keeps a live typed date when the picker reports a stale empty value', async () => {
+  it('keeps human-paced time typing and the caret stable between keys', async () => {
+    const wrapper = mountTemporal('time', null)
+    await flushPromises()
+    const input = wrapper.get<HTMLInputElement>('input').element
+    let typed = ''
+
+    for (const character of '13:45') {
+      const start = input.selectionStart ?? input.value.length
+      const end = input.selectionEnd ?? start
+      typed += character
+      input.setRangeText(character, start, end, 'end')
+      input.dispatchEvent(
+        new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertText',
+          data: character,
+        }),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      await flushPromises()
+      expect(input.value).toBe(typed)
+      expect(input.selectionStart).toBe(typed.length)
+    }
+
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('commit')).toEqual([['13:45:00']])
+  })
+
+  it('does not carry an escaped time draft into a new editor instance', async () => {
+    const first = mountTemporal('time', null)
+    await flushPromises()
+    await first.get('input').setValue('13:45')
+    await first.get('input').trigger('keydown', { key: 'Escape' })
+    first.unmount()
+
+    const second = mountTemporal('time', null)
+    await flushPromises()
+    expect(second.get<HTMLInputElement>('input').element.value).toBe('')
+  })
+
+  it('shows a typed format hint and opens a form panel on request', async () => {
+    const field = bindField('date', {})
+    if (!field.ok) throw new Error(field.reason)
+    const wrapper = mount(TemporalEditor, {
+      props: {
+        field: field.value,
+        value: null,
+        env: { timeZone: 'UTC', locale: 'en' },
+        label: 'Date',
+        autoFocus: false,
+      },
+      global: { plugins: [i18n] },
+      attachTo: document.body,
+    })
+    cleanup.push(() => wrapper.unmount())
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('input').element.placeholder).toBe(
+      'YYYY-MM-DD',
+    )
+    expect(panel(wrapper).querySelector('.n-date-panel')).toBeNull()
+
+    await wrapper.get('input').trigger('keydown', {
+      key: 'ArrowDown',
+      altKey: true,
+    })
+    await flushPromises()
+    expect(panel(wrapper).querySelector('.n-date-panel')).not.toBeNull()
+    expect(
+      wrapper.get('.temporal-editor-toggle').attributes('aria-expanded'),
+    ).toBe('true')
+  })
+
+  it('resets from a changed value while the input is unfocused', async () => {
+    const field = bindField('date', {})
+    if (!field.ok) throw new Error(field.reason)
+    const wrapper = mount(TemporalEditor, {
+      props: {
+        field: field.value,
+        value: '2026-03-01',
+        env: { timeZone: 'UTC', locale: 'en' },
+        label: 'Date',
+        autoFocus: false,
+      },
+      global: { plugins: [i18n] },
+      attachTo: document.body,
+    })
+    cleanup.push(() => wrapper.unmount())
+    await flushPromises()
+    await wrapper.setProps({ value: '2026-03-15' })
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe(
+      '2026-03-15',
+    )
+    expect(wrapper.vm.currentDraft()).toBe('2026-03-15')
+  })
+
+  it('does not recommit an Enter edit when the form input later blurs', async () => {
+    const field = bindField('date', {})
+    if (!field.ok) throw new Error(field.reason)
+    const wrapper = mount(TemporalEditor, {
+      props: {
+        field: field.value,
+        value: null,
+        env: { timeZone: 'UTC', locale: 'en' },
+        label: 'Date',
+        autoFocus: false,
+      },
+      global: { plugins: [i18n] },
+      attachTo: document.body,
+    })
+    cleanup.push(() => wrapper.unmount())
+    await flushPromises()
+    const input = wrapper.get<HTMLInputElement>('input').element
+    input.focus()
+    await wrapper.get('input').setValue('2026-11-15')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('commit')).toEqual([['2026-11-15']])
+
+    input.blur()
+    await flushPromises()
+    expect(wrapper.emitted('commit')).toHaveLength(1)
+  })
+
+  it('commits compact typed dates through the existing paste parser', async () => {
+    const wrapper = mountTemporal('date', null)
+    await flushPromises()
+    await wrapper.get('input').setValue('20261115')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('commit')).toEqual([['2026-11-15']])
+  })
+
+  it('retains invalid typed time text after Enter', async () => {
+    const wrapper = mountTemporal('time', null)
+    await flushPromises()
+    await wrapper.get('input').setValue('25:00')
+    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    expect(wrapper.emitted('invalidDraft')?.[0]?.[0]).toBe('25:00')
+    expect(wrapper.get<HTMLInputElement>('input').element.value).toBe('25:00')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+  })
+
+  it('keeps a live typed date while its panel highlight is synchronized', async () => {
     const wrapper = mountTemporal('date', null)
     await wrapper.setProps({ live: true, autoFocus: false })
     await flushPromises()
     await wrapper.get('input').setValue('2026-10-27')
-    wrapper
-      .findComponent({ name: 'DatePicker' })
-      .vm.$emit('update:formattedValue', null)
-    await flushPromises()
     expect(wrapper.emitted('preview')).toEqual([['2026-10-27']])
     expect(wrapper.emitted('commit')).toBeUndefined()
     expect(wrapper.vm.currentDraft()).toBe('2026-10-27')
@@ -212,9 +406,7 @@ describe('temporal editor', () => {
       await wrapper.get('input').setValue('2026-10-27')
       await wrapper.get('input').trigger('keydown', { key: 'Enter' })
       expect(wrapper.emitted('commit')).toEqual([['2026-10-27']])
-      expect(wrapper.findComponent({ name: 'DatePicker' }).props('show')).toBe(
-        false,
-      )
+      expect(panel(wrapper).querySelector('.n-date-panel')).toBeNull()
       expect(onKeydown).toHaveBeenCalledOnce()
     } finally {
       document.body.removeEventListener('keydown', onKeydown)
@@ -459,6 +651,8 @@ describe('temporal editor', () => {
     await flushPromises()
     const popup = document.querySelector<HTMLElement>('.temporal-picker-portal')
     if (!popup) throw new Error('Temporal picker portal was not mounted')
+    await wrapper.get('.temporal-editor-toggle').trigger('click')
+    await flushPromises()
     await clickDay(popup, 8)
     const confirm = popup.querySelector<HTMLButtonElement>(
       '[data-temporal-confirm]',
@@ -466,6 +660,10 @@ describe('temporal editor', () => {
     if (!confirm) throw new Error('Datetime confirm button was not found')
     confirm.click()
     await flushPromises()
+    expect(wrapper.emitted('invalidDraft')?.[0]?.slice(0, 2)).toEqual([
+      '2026-03-08 02:30:45',
+      'nonexistent_local_time',
+    ])
     expect(wrapper.get('[role="alert"]').text()).toContain('daylight-saving')
     expect(wrapper.emitted('invalidValue')).toHaveLength(1)
     expect(wrapper.emitted('commit')).toBeUndefined()
@@ -484,7 +682,7 @@ describe('temporal editor', () => {
     })
     await flushPromises()
     await wrapper.get('input').trigger('keydown', { key: 'Enter' })
-    expect(wrapper.emitted('commit')).toEqual([[wire]])
+    expect(wrapper.emitted('commit')).toEqual([[wire, true]])
   })
 
   it('reports invalid live drafts and prevents clearing required values', async () => {

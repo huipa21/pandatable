@@ -85,6 +85,38 @@ describe('grid scalar editor lifecycle', () => {
     wrapper.unmount()
   })
 
+  it('keeps TimeScroller clicks in the edit boundary and cancels with Escape', async () => {
+    const { wrapper, save, close, discardDraft } = mountEditor(
+      'time',
+      '09:15:00',
+      {},
+      undefined,
+      document.body,
+    )
+    await flushPromises()
+    const portal = Array.from(
+      document.querySelectorAll<HTMLElement>('.temporal-picker-portal'),
+    ).find((candidate) => wrapper.vm.contains(candidate))
+    const scroller = portal?.querySelector<HTMLElement>('[data-time-scroller]')
+    if (!scroller) throw new Error('Time scroller was not opened')
+    const minute = Array.from(
+      scroller.querySelectorAll<HTMLButtonElement>(
+        '.time-scroller-column:nth-child(2) .time-scroller-option',
+      ),
+    ).find((candidate) => candidate.textContent?.trim() === '35')
+    if (!minute) throw new Error('Time scroller minute was not found')
+    minute.click()
+    await flushPromises()
+    expect(save).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+
+    await wrapper.get('input').trigger('keydown', { key: 'Escape' })
+    expect(save).not.toHaveBeenCalled()
+    expect(discardDraft).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('accepts a second date selection if the grid retains its temporal editor', async () => {
     const { wrapper, save } = mountEditor(
       'date',
@@ -110,7 +142,7 @@ describe('grid scalar editor lifecycle', () => {
     }
     await selectDay(15)
     expect(save).toHaveBeenNthCalledWith(1, '2026-03-15', false)
-    await wrapper.get('input').trigger('click')
+    await wrapper.get('.temporal-editor-toggle').trigger('click')
     await flushPromises()
     await selectDay(20)
     expect(save).toHaveBeenNthCalledWith(2, '2026-03-20', false)

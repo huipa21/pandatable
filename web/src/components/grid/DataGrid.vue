@@ -161,6 +161,7 @@ const summaryTrigger = shallowRef<HTMLButtonElement | null>(null)
 const summaryFieldId = ref<string | null>(null)
 const summaryActiveIndex = ref(0)
 const summaryMenuLeft = ref(0)
+const summaryMenuWidth = ref(180)
 const summaryListId = `grid-summary-${useId()}`
 const headerMenu = shallowRef<{ id: string; anchor: HTMLButtonElement } | null>(
   null,
@@ -995,7 +996,11 @@ function positionSummaryPicker() {
   const anchor = summaryTrigger.value?.getBoundingClientRect()
   const surface = gridSurface.value?.getBoundingClientRect()
   if (!anchor || !surface) return
-  const width = Math.min(220, surface.width)
+  const cell = footerSummaryCells.value.find(
+    (candidate) => candidate.fieldId === summaryFieldId.value,
+  )
+  const width = Math.min(Math.max(cell?.width ?? 180, 180), surface.width)
+  summaryMenuWidth.value = width
   summaryMenuLeft.value = Math.max(
     0,
     Math.min(anchor.left - surface.left, surface.width - width),
@@ -4628,7 +4633,7 @@ onBeforeUnmount(() => {
                 :style="footerCellStyle(cell)"
               >
                 <button
-                  v-if="cell.item && cell.fieldId"
+                  v-if="cell.item && cell.fieldId && cell.aggregates.length"
                   type="button"
                   class="grid-summary-trigger"
                   :aria-label="
@@ -4651,10 +4656,13 @@ onBeforeUnmount(() => {
                     v-if="hasFooterAggregate(cell.fieldId)"
                     :id="summaryOutputId(cell.fieldId)"
                   >
-                    <span>{{
+                    <span class="grid-summary-label">{{
                       groupAggregateLabel(selectedFooterAggregate(cell.fieldId))
                     }}</span>
-                    <span v-if="footerAggregateValue(cell.fieldId)">
+                    <span
+                      v-if="footerAggregateValue(cell.fieldId)"
+                      class="grid-summary-value"
+                    >
                       {{
                         formatFooterAggregateValue(
                           footerAggregateValue(cell.fieldId)?.value,
@@ -4663,16 +4671,38 @@ onBeforeUnmount(() => {
                         )
                       }}
                     </span>
-                    <span v-else-if="footerAggregateLoading" role="status">{{
-                      t('grid.footerAggregatesLoading')
+                    <span
+                      v-else-if="footerAggregateLoading"
+                      class="grid-summary-value"
+                      role="status"
+                    >
+                      {{ t('grid.footerAggregatesLoading') }}
+                    </span>
+                    <span v-else class="grid-summary-value">{{
+                      t('grid.aggregateNoValue')
                     }}</span>
-                    <span v-else>{{ t('grid.aggregateNoValue') }}</span>
                   </output>
-                  <span class="grid-summary-hint" aria-hidden="true">
+                  <span
+                    v-if="!hasFooterAggregate(cell.fieldId)"
+                    class="grid-summary-hint"
+                    aria-hidden="true"
+                  >
                     <span>{{ t('gridPolish.gp04.summary') }}</span>
                     <AppIcon name="chevronDown" :size="14" />
                   </span>
                 </button>
+                <span
+                  v-else-if="cell.key === '__selected' && queryReady"
+                  class="grid-summary-record-count"
+                >
+                  {{
+                    t(
+                      'cellEditors.ces06.records',
+                      { n: rows.total },
+                      rows.total,
+                    )
+                  }}
+                </span>
                 <span v-else aria-hidden="true"></span>
               </div>
             </div>
@@ -4684,7 +4714,10 @@ onBeforeUnmount(() => {
         :id="summaryListId"
         ref="summaryMenu"
         class="grid-summary-menu"
-        :style="{ left: `${summaryMenuLeft}px` }"
+        :style="{
+          left: `${summaryMenuLeft}px`,
+          width: `${summaryMenuWidth}px`,
+        }"
         role="listbox"
         tabindex="-1"
         :aria-label="
@@ -4699,7 +4732,10 @@ onBeforeUnmount(() => {
           :id="summaryOptionId(index)"
           :key="aggregate"
           class="grid-summary-option"
-          :class="{ active: index === summaryActiveIndex }"
+          :class="{
+            active: index === summaryActiveIndex,
+            'is-first-aggregate': index === 1,
+          }"
           :data-aggregate="aggregate"
           role="option"
           :aria-selected="selectedFooterAggregate(summaryFieldId) === aggregate"
@@ -4862,14 +4898,18 @@ onBeforeUnmount(() => {
 
 <style>
 .data-grid {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 .grid-surface {
   position: relative;
   display: flex;
   flex-direction: column;
-  height: min(65vh, 680px);
-  min-height: min(65vh, 680px);
+  flex: 1 1 auto;
+  min-height: 240px;
   background: var(--grid-canvas);
 }
 .data-grid .grid-surface > revo-grid {
@@ -5112,8 +5152,8 @@ onBeforeUnmount(() => {
   flex: 0 0 32px;
   height: 32px;
   min-width: 0;
-  background: var(--panel-surface);
-  border-top: 1px solid var(--border);
+  background: var(--grid-canvas);
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
   color: var(--text);
 }
 .grid-summary-viewport {
@@ -5138,7 +5178,7 @@ onBeforeUnmount(() => {
   position: sticky;
   z-index: 2;
   left: 0;
-  background: var(--panel-surface);
+  background: var(--grid-canvas);
 }
 .grid-summary-cell {
   display: flex;
@@ -5147,13 +5187,29 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: 100%;
   overflow: hidden;
-  background: var(--panel-surface);
-  border-right: 1px solid var(--border);
+  background: transparent;
   color: var(--text);
+}
+.grid-summary-cell:hover,
+.grid-summary-cell:focus-within {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.grid-summary-record-count {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 0 6px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .data-grid .grid-summary-trigger {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   box-sizing: border-box;
   width: 100%;
@@ -5166,23 +5222,31 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: 0;
   font-size: 12px;
-  text-align: left;
+  text-align: right;
   cursor: pointer;
 }
 .grid-summary-trigger output {
   display: flex;
   flex: 1 1 auto;
+  justify-content: flex-end;
   gap: 4px;
   min-width: 0;
   overflow: hidden;
-  color: var(--text);
+  color: var(--muted);
+  font-size: 12px;
   white-space: nowrap;
 }
 .grid-summary-trigger output > span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.grid-summary-trigger output > span:last-child {
+.grid-summary-trigger output .grid-summary-label {
+  color: var(--muted);
+  font-weight: 400;
+}
+.grid-summary-trigger output .grid-summary-value {
+  color: var(--text);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .grid-summary-hint {
@@ -5228,8 +5292,9 @@ onBeforeUnmount(() => {
   z-index: 4;
   bottom: 36px;
   box-sizing: border-box;
-  width: min(220px, 100%);
-  max-height: min(320px, calc(100% - 40px));
+  width: 180px;
+  max-width: 100%;
+  max-height: 240px;
   padding: 4px;
   overflow-y: auto;
   color: var(--text);
@@ -5246,6 +5311,11 @@ onBeforeUnmount(() => {
   padding: 6px 8px;
   border-radius: 4px;
   cursor: pointer;
+}
+.grid-summary-option.is-first-aggregate {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
 }
 .grid-summary-option.active {
   background: color-mix(in srgb, var(--accent) 12%, var(--panel-surface));

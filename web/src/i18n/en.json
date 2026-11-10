@@ -432,13 +432,13 @@
     "aggregateLabels": {
       "none": "None",
       "count": "Count",
-      "count_empty": "Count empty",
-      "count_filled": "Count filled",
+      "count_empty": "Empty",
+      "count_filled": "Filled",
       "unique": "Unique",
       "sum": "Sum",
       "avg": "Average",
-      "min": "Minimum",
-      "max": "Maximum",
+      "min": "Min",
+      "max": "Max",
       "earliest": "Earliest",
       "latest": "Latest",
       "percent_checked": "Percent checked",
@@ -1548,6 +1548,57 @@
       "groupPending": "Wait for the current grouping change to finish.",
       "fieldUnavailable": "The field is no longer available.",
       "placementFailed": "The field was created, but its position could not be saved in this view."
+    }
+  },
+  "cellEditors": {
+    "ces01": {},
+    "ces02": {
+      "openCalendar": "Open calendar",
+      "openTimePanel": "Open time picker",
+      "hour": "Hour",
+      "minute": "Minute",
+      "second": "Second",
+      "period": "AM/PM",
+      "am": "AM",
+      "pm": "PM",
+      "clear": "Clear",
+      "confirm": "OK"
+    },
+    "ces03": {},
+    "ces04": {
+      "dialogLabel": "Long-text editor for {fieldName}",
+      "textareaLabel": "Text for {fieldName}",
+      "toolbar": "Text formatting",
+      "close": "Apply and close editor",
+      "commandWithShortcut": "{label} ({shortcut})",
+      "commands": {
+        "bold": "Bold",
+        "italic": "Italic",
+        "underline": "Underline",
+        "strike": "Strikethrough",
+        "code": "Code",
+        "heading1": "Heading 1",
+        "heading2": "Heading 2",
+        "heading3": "Heading 3",
+        "quote": "Quote",
+        "bullet": "Bulleted list",
+        "ordered": "Numbered list",
+        "check": "Checklist",
+        "link": "Link",
+        "image": "Image"
+      },
+      "placeholderText": "text",
+      "placeholderUrl": "url",
+      "discardPrompt": "Discard changes?",
+      "discard": "Discard",
+      "keep": "Keep editing",
+      "counter": "{count} / {max} characters"
+    },
+    "ces05": {
+      "expand": "Expand {field}"
+    },
+    "ces06": {
+      "records": "{n} record | {n} records"
     }
   }
 }

@@ -1,4 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { config, flushPromises, mount } from '@vue/test-utils'
 import { i18n, loadLocale } from '../../i18n'
 import { bindField, type BoundField } from '../../fields/registry'
@@ -11,12 +20,29 @@ import { invalidateUserLabels } from '../../fields/userDirectory'
 
 config.global.plugins = [i18n]
 
+const nativeShowModal = HTMLDialogElement.prototype.showModal
+const nativeClose = HTMLDialogElement.prototype.close
+
+beforeAll(() => {
+  HTMLDialogElement.prototype.showModal = function () {
+    this.setAttribute('open', '')
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.removeAttribute('open')
+  }
+})
+
 beforeEach(async () => {
   await loadLocale('en')
   await loadLocale('zh-CN')
   i18n.global.locale.value = 'en'
 })
 afterEach(() => vi.unstubAllGlobals())
+
+afterAll(() => {
+  HTMLDialogElement.prototype.showModal = nativeShowModal
+  HTMLDialogElement.prototype.close = nativeClose
+})
 
 function field(kind: string, options: unknown = null): BoundField {
   const bound = bindField(kind, options)
@@ -314,6 +340,81 @@ describe('FieldEditor', () => {
     expect(long.emitted('commit')).toBeUndefined()
     await area.trigger('keydown', { key: 'Enter', ctrlKey: true })
     expect(long.emitted('commit')).toEqual([['a\nb']])
+  })
+
+  it('opens the long text dialog with the draft and applies it in form mode', async () => {
+    const wrapper = mount(FieldEditor, {
+      attachTo: document.body,
+      props: {
+        field: field('long_text'),
+        value: 'stored value',
+        label: 'Notes',
+      },
+    })
+    const area = wrapper.get('textarea')
+    await area.setValue('current draft')
+    const expand = wrapper.get('.field-expand')
+    expect(expand.attributes('aria-label')).toBe('Expand Notes')
+    await expand.trigger('click')
+    await flushPromises()
+
+    const dialogArea = document.querySelector<HTMLTextAreaElement>(
+      'dialog.long-text-dialog[open] .long-text-dialog__textarea',
+    )
+    expect(dialogArea?.value).toBe('current draft')
+    if (!dialogArea) throw new Error('Long-text dialog was not mounted')
+    dialogArea.value = 'applied draft'
+    dialogArea.dispatchEvent(new Event('input', { bubbles: true }))
+    dialogArea.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        ctrlKey: true,
+        bubbles: true,
+      }),
+    )
+
+    expect((area.element as HTMLTextAreaElement).value).toBe('applied draft')
+    expect(wrapper.emitted('draftChanged')).toHaveLength(1)
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('opens the long text dialog by shortcut outside IME composition', async () => {
+    const wrapper = mount(FieldEditor, {
+      attachTo: document.body,
+      props: { field: field('long_text'), value: 'stored value' },
+    })
+    const area = wrapper.get('textarea')
+    ;(area.element as HTMLTextAreaElement).focus()
+
+    await area.trigger('compositionstart')
+    await area.trigger('keydown', { key: 'F2' })
+    expect(document.querySelector('dialog.long-text-dialog[open]')).toBeNull()
+    await area.trigger('compositionend')
+    await area.trigger('keydown', { key: 'F2' })
+    await flushPromises()
+    expect(
+      document.querySelector('dialog.long-text-dialog[open]'),
+    ).not.toBeNull()
+
+    const dialogArea = document.querySelector<HTMLTextAreaElement>(
+      'dialog.long-text-dialog[open] .long-text-dialog__textarea',
+    )
+    if (!dialogArea) throw new Error('Long-text dialog was not mounted')
+    dialogArea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    )
+    await flushPromises()
+    await area.trigger('keydown', {
+      key: 'e',
+      ctrlKey: true,
+      shiftKey: true,
+    })
+    await flushPromises()
+    expect(
+      document.querySelector('dialog.long-text-dialog[open]'),
+    ).not.toBeNull()
+    wrapper.unmount()
   })
 
   it('toggles checkboxes immediately', async () => {

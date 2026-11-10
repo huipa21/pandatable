@@ -1052,7 +1052,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="resource-page">
+  <section
+    class="resource-page"
+    :class="{
+      'is-grid-view': kind === 'table' && view?.type === 'grid' && desktop,
+    }"
+  >
     <p v-if="(!nav.loaded && !nav.error) || loading" role="status">
       {{ t('nav.loading') }}
     </p>
@@ -1651,6 +1656,21 @@ onBeforeUnmount(() => {
 .grid-workspace {
   position: relative;
   min-width: 0;
+}
+
+.resource-page.is-grid-view {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.resource-page.is-grid-view .row-workspace,
+.resource-page.is-grid-view .grid-workspace {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .grid-field-popover,
