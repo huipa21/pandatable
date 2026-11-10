@@ -7,7 +7,6 @@ import {
   ref,
   toRaw,
   watch,
-  type ObjectDirective,
 } from 'vue'
 import AppIcon, { fieldIconName } from '../AppIcon.vue'
 import { useI18n } from 'vue-i18n'
@@ -96,12 +95,10 @@ const saved = ref(false)
 const preserveUploads = ref(false)
 const draft = ref<Record<string, WireValue>>({})
 const invalidDraftFields = ref(new Set<string>())
-const pendingDraftFields = ref(new Set<string>())
-const editorVersions = ref<Record<string, number>>({})
 const draftVersion = ref(0)
 type DraftEditor = Pick<
   InstanceType<typeof FieldEditor>,
-  'contains' | 'isPointerInPanel'
+  'commitDraft' | 'hasPendingDraft'
 >
 const draftEditors = new Map<string, DraftEditor>()
 const blocked = ref(false)
@@ -228,44 +225,6 @@ function defaultPlaceholder(item: DialogField) {
   return item.result.value.formatCopy(item.value.value, env.value) || undefined
 }
 
-type PlaceholderState = {
-  control: HTMLInputElement | HTMLTextAreaElement
-  original: string | null
-  applied: string | undefined
-}
-const placeholderStates = new WeakMap<HTMLElement, PlaceholderState>()
-
-// FieldEditor has no placeholder prop; retain its own hint when a default is cleared.
-function syncDefaultPlaceholder(container: HTMLElement, value?: string) {
-  const control = container.querySelector<
-    HTMLInputElement | HTMLTextAreaElement
-  >('.field-editor input[type="text"], .field-editor textarea')
-  if (!control) return
-  let state = placeholderStates.get(container)
-  if (!state || state.control !== control) {
-    state = {
-      control,
-      original: control.getAttribute('placeholder'),
-      applied: undefined,
-    }
-    placeholderStates.set(container, state)
-  } else if (
-    state.applied !== undefined &&
-    control.getAttribute('placeholder') !== state.applied
-  )
-    state.original = control.getAttribute('placeholder')
-  if (value !== undefined) control.setAttribute('placeholder', value)
-  else if (state.applied !== undefined) {
-    if (state.original === null) control.removeAttribute('placeholder')
-    else control.setAttribute('placeholder', state.original)
-  }
-  state.applied = value
-}
-
-const vDefaultPlaceholder: ObjectDirective<HTMLElement, string | undefined> = {
-  mounted: (element, binding) => syncDefaultPlaceholder(element, binding.value),
-  updated: (element, binding) => syncDefaultPlaceholder(element, binding.value),
-}
 const message = computed(() =>
   typeof error.value === 'string'
     ? error.value
@@ -295,8 +254,6 @@ function begin() {
 function resetDraft() {
   draft.value = {}
   invalidDraftFields.value.clear()
-  pendingDraftFields.value.clear()
-  editorVersions.value = {}
   draftEditors.clear()
   draftVersion.value++
   preserveUploads.value = false
@@ -448,87 +405,21 @@ async function save(value: WireValue) {
   }
 }
 
-function draftFieldElement(fieldId: string) {
-  return [
-    ...(dialog.value?.querySelectorAll<HTMLElement>('.row-field') ?? []),
-  ].find((element) => element.dataset.fieldId === fieldId)
-}
-
 function isDraftEditor(editor: unknown): editor is DraftEditor {
   return (
     typeof editor === 'object' &&
     editor !== null &&
-    'contains' in editor &&
-    typeof editor.contains === 'function' &&
-    'isPointerInPanel' in editor &&
-    typeof editor.isPointerInPanel === 'function'
+    'commitDraft' in editor &&
+    typeof editor.commitDraft === 'function' &&
+    'hasPendingDraft' in editor &&
+    typeof editor.hasPendingDraft === 'function'
   )
 }
 
 function setDraftEditor(fieldId: string, editor: unknown) {
   if (editor === null) draftEditors.delete(fieldId)
   else if (isDraftEditor(editor)) draftEditors.set(fieldId, editor)
-  else throw new TypeError('Field editor does not expose its containment check')
-}
-
-function trackTemporalPicker(event: Event) {
-  if (!creating.value || !canWrite.value) return
-  const target = event.target
-  if (!(target instanceof Element)) return
-  const portal = target.closest('.temporal-picker-portal')
-  if (!portal) return
-  const changed =
-    (event.type === 'click' &&
-      target.closest(
-        '.n-date-panel-date:not(.n-date-panel-date--disabled), .n-time-picker-col__item:not(.n-time-picker-col__item--disabled)',
-      )) ||
-    (event.type === 'input' &&
-      target.closest('.n-date-panel-date-input input, .n-time-picker input'))
-  if (!changed) return
-  for (const [fieldId, editor] of draftEditors)
-    if (editor.contains(target)) {
-      pendingDraftFields.value.add(fieldId)
-      break
-    }
-}
-
-function flushTemporalDraft(fieldId: string) {
-  const editor = draftEditors.get(fieldId)
-  const portal = [
-    ...(dialog.value?.querySelectorAll<HTMLElement>(
-      '.temporal-picker-portal',
-    ) ?? []),
-  ].find((element) => editor?.contains(element))
-  portal?.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
-  )
-}
-
-function flushTemporalOnPointerDown(event: PointerEvent) {
-  if (!creating.value || !canWrite.value) return
-  for (const fieldId of [...pendingDraftFields.value]) {
-    const item = fields.value.find((field) => field.field.id === fieldId)
-    if (item?.field.uiType !== 'datetime' && item?.field.uiType !== 'time')
-      continue
-    const editor = draftEditors.get(fieldId)
-    if (editor && !editor.contains(event.target)) flushTemporalDraft(fieldId)
-  }
-}
-
-function flushTemporalOnFocusOut(event: FocusEvent) {
-  if (!creating.value || !canWrite.value) return
-  for (const fieldId of [...pendingDraftFields.value]) {
-    const item = fields.value.find((field) => field.field.id === fieldId)
-    if (item?.field.uiType !== 'datetime' && item?.field.uiType !== 'time')
-      continue
-    const editor = draftEditors.get(fieldId)
-    if (
-      editor?.contains(event.target) &&
-      !editor.contains(event.relatedTarget) &&
-      !editor.isPointerInPanel()
-    )
-      flushTemporalDraft(fieldId)
-  }
+  else throw new TypeError('Field editor does not expose its draft API')
 }
 
 function updateDraft(fieldId: string, value: WireValue) {
@@ -537,80 +428,20 @@ function updateDraft(fieldId: string, value: WireValue) {
   const item = fields.value.find((field) => field.field.id === fieldId)
   if (!item?.result.ok || item.field.isSystem || item.result.value.readOnly)
     return
-  if (
-    item.field.uiType === 'attachment' &&
-    draftFieldElement(fieldId)?.querySelector(
-      '.field-attachment-editor [role="status"]',
-    )
-  )
-    return
   draft.value = { ...draft.value, [fieldId]: value }
   invalidDraftFields.value.delete(fieldId)
-  pendingDraftFields.value.delete(fieldId)
-  if (item.field.uiType === 'user')
-    editorVersions.value = {
-      ...editorVersions.value,
-      [fieldId]: (editorVersions.value[fieldId] ?? 0) + 1,
-    }
   error.value = null
 }
 
-function trackPendingDraft(fieldId: string, kind: string, event: Event) {
-  const target = event.target
-  if (!(target instanceof Element)) return
-  if (kind === 'attachment') {
-    const files =
-      event.type === 'change' &&
-      target instanceof HTMLInputElement &&
-      target.type === 'file' &&
-      !!target.files?.length
-    const dropped =
-      event.type === 'drop' &&
-      event instanceof DragEvent &&
-      !!event.dataTransfer?.files.length
-    const removed =
-      event.type === 'click' && target.closest('.field-attachment-list button')
-    if (files || dropped || removed) pendingDraftFields.value.add(fieldId)
-  } else if (
-    kind === 'multi_user' &&
-    event.type === 'click' &&
-    target.closest('.field-user-results button, .field-user-selected button')
-  ) {
-    pendingDraftFields.value.add(fieldId)
-    if (target.closest('.field-user-selected button'))
-      void nextTick(() => {
-        if (
-          creating.value &&
-          !draftFieldElement(fieldId)?.querySelector('.field-user-selected li')
-        )
-          updateDraft(fieldId, null)
-      })
-  }
+function hasPendingDrafts() {
+  return [...draftEditors.values()].some((editor) => editor.hasPendingDraft())
 }
 
 function flushPendingDrafts() {
-  for (const fieldId of [...pendingDraftFields.value]) {
-    const item = fields.value.find((field) => field.field.id === fieldId)
-    const section = draftFieldElement(fieldId)
-    if (!item || !section) continue
-    if (item.field.uiType === 'datetime' || item.field.uiType === 'time') {
-      flushTemporalDraft(fieldId)
-      continue
-    }
-    if (
-      item.field.uiType === 'attachment' &&
-      section.querySelector(
-        '.field-attachment-editor [role="status"], .field-attachment-editor [role="alert"]',
-      )
-    )
-      continue
-    const selector =
-      item.field.uiType === 'multi_user'
-        ? '.field-user-editor > button'
-        : '.field-editor > button'
-    const button = section.querySelector<HTMLButtonElement>(selector)
-    if (button && !button.disabled) button.click()
-  }
+  let valid = true
+  for (const editor of draftEditors.values())
+    if (editor.hasPendingDraft() && !editor.commitDraft()) valid = false
+  return valid
 }
 
 async function create() {
@@ -622,12 +453,12 @@ async function create() {
     saving.value
   )
     return
-  flushPendingDrafts()
+  const pendingValid = flushPendingDrafts()
   if (invalidDraftFields.value.size) {
     error.value = t('gridPolish.gp05.invalid')
     return
   }
-  if (pendingDraftFields.value.size) {
+  if (!pendingValid || hasPendingDrafts()) {
     error.value = t('gridPolish.gp05.applyPending')
     return
   }
@@ -733,7 +564,8 @@ async function discardDraftAttachments() {
     [...ids].flatMap(([fieldId, attachmentIds]) =>
       [...attachmentIds].map((attachmentId) =>
         discardAttachment(context.tableId, fieldId, attachmentId).catch(
-          () => {},
+          (cause: unknown) =>
+            console.error('Failed to discard a temporary attachment', cause),
         ),
       ),
     ),
@@ -811,8 +643,6 @@ function duplicate() {
   startDraftContext()
   draft.value = values
   invalidDraftFields.value.clear()
-  pendingDraftFields.value.clear()
-  editorVersions.value = {}
   preserveUploads.value = false
   activeTab.value = 'details'
   search.value = ''
@@ -1044,7 +874,7 @@ watch(
         (creating.value &&
           (Object.keys(draft.value).length > 0 ||
             invalidDraftFields.value.size > 0 ||
-            pendingDraftFields.value.size > 0)))
+            hasPendingDrafts())))
     generation++
     controller?.abort()
     if (realtimeController) {
@@ -1139,10 +969,6 @@ function leaveField(event: FocusEvent) {
     :class="{ 'row-expand-fullscreen': fullscreen }"
     :style="dialogStyle"
     :aria-label="creating ? title : t('rowExpand.title', { id: rowId })"
-    @click.capture="trackTemporalPicker"
-    @input.capture="trackTemporalPicker"
-    @pointerdown.capture="flushTemporalOnPointerDown"
-    @focusout.capture="flushTemporalOnFocusOut"
     @keydown.capture="saveShortcut"
     @cancel.prevent="
       activeTab === 'details' ? close() : switchTab('details', true)
@@ -1366,23 +1192,13 @@ function leaveField(event: FocusEvent) {
               <template v-else-if="item.result.ok && item.value.ok">
                 <fieldset
                   v-if="creating && canEditField(item)"
-                  v-default-placeholder="defaultPlaceholder(item)"
                   class="row-field-editor"
                   :data-field-type="item.field.uiType"
                   :disabled="saving"
-                  @change.capture="
-                    trackPendingDraft(item.field.id, item.field.uiType, $event)
-                  "
-                  @click="
-                    trackPendingDraft(item.field.id, item.field.uiType, $event)
-                  "
-                  @drop.capture="
-                    trackPendingDraft(item.field.id, item.field.uiType, $event)
-                  "
                 >
                   <legend class="row-tab-label">{{ item.field.name }}</legend>
                   <FieldEditor
-                    :key="`${draftVersion}-${item.field.id}-${editorVersions[item.field.id] ?? 0}`"
+                    :key="`${draftVersion}-${item.field.id}`"
                     :ref="(editor) => setDraftEditor(item.field.id, editor)"
                     :field="item.result.value"
                     :value="
@@ -1391,6 +1207,7 @@ function leaveField(event: FocusEvent) {
                         : null
                     "
                     :env="env"
+                    :default-placeholder="defaultPlaceholder(item)"
                     :label="item.field.name"
                     :auto-focus="false"
                     :live="true"

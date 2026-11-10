@@ -17,10 +17,12 @@ import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { isChoiceColor, nextChoiceColor } from '../../fields/choice'
 import { fieldKindLabel } from '../../fields/messages'
+import { CHECKBOX_ICONS, type CheckboxIcon } from '../../fields/number'
 import { isKind, kindConstraints } from '../../fields/registry'
 import type { FieldEnv, Kind } from '../../fields/types'
 import AppIcon from '../AppIcon.vue'
 import ChoiceColorPicker from './ChoiceColorPicker.vue'
+import CheckboxIconPreview from './CheckboxIcon.vue'
 import FieldTypePicker from './FieldTypePicker.vue'
 import {
   createBody,
@@ -143,6 +145,51 @@ const typeChangePreview = ref<TypeChangeDryRun | null>(null)
 const creating = ref(false)
 const choosingType = ref(true)
 const draft = ref<FieldDraft>(draftFrom(null, env.value))
+const checkboxIconLabels = computed<Record<CheckboxIcon, string>>(() => ({
+  check: t('gridPolish.gp11.check'),
+  square_check: t('gridPolish.gp11.squareCheck'),
+  circle_check: t('gridPolish.gp11.circleCheck'),
+  star: t('gridPolish.gp11.star'),
+  heart: t('gridPolish.gp11.heart'),
+  thumbs_up: t('gridPolish.gp11.thumbsUp'),
+  flag: t('gridPolish.gp11.flag'),
+}))
+const selectedCheckboxIcon = computed<CheckboxIcon>(
+  () =>
+    CHECKBOX_ICONS.find((icon) => icon === draft.value.checkboxIcon) ?? 'check',
+)
+
+function checkboxIconKeydown(event: KeyboardEvent, icon: CheckboxIcon) {
+  const index = CHECKBOX_ICONS.indexOf(icon)
+  let next: number
+  switch (event.key) {
+    case 'ArrowRight':
+    case 'ArrowDown':
+      next = (index + 1) % CHECKBOX_ICONS.length
+      break
+    case 'ArrowLeft':
+    case 'ArrowUp':
+      next = (index + CHECKBOX_ICONS.length - 1) % CHECKBOX_ICONS.length
+      break
+    case 'Home':
+      next = 0
+      break
+    case 'End':
+      next = CHECKBOX_ICONS.length - 1
+      break
+    default:
+      return
+  }
+  event.preventDefault()
+  draft.value.checkboxIcon = CHECKBOX_ICONS[next]!
+  if (event.currentTarget instanceof HTMLButtonElement) {
+    const radios =
+      event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+        '[role="radio"]',
+      )
+    radios?.[next]?.focus()
+  }
+}
 const conflict = ref(false)
 const deleting = ref<TableField | null>(null)
 const relationCreating = ref(false)
@@ -2160,6 +2207,43 @@ defineExpose({ openCreate: () => openEditor(null) })
               :disabled="busy || storageFixed"
             />
           </label>
+          <div v-if="draft.kind === 'checkbox'" class="checkbox-icon-setting">
+            <span>{{ t('gridPolish.gp11.icon') }}</span>
+            <div
+              class="checkbox-icon-picker"
+              role="radiogroup"
+              :aria-label="t('gridPolish.gp11.icon')"
+            >
+              <button
+                v-for="icon in CHECKBOX_ICONS"
+                :key="icon"
+                type="button"
+                role="radio"
+                :aria-label="checkboxIconLabels[icon]"
+                :title="checkboxIconLabels[icon]"
+                :aria-checked="selectedCheckboxIcon === icon"
+                :tabindex="selectedCheckboxIcon === icon ? 0 : -1"
+                :disabled="busy"
+                @click="draft.checkboxIcon = icon"
+                @keydown="checkboxIconKeydown($event, icon)"
+              >
+                <CheckboxIconPreview :icon="icon" :checked="true" />
+              </button>
+            </div>
+            <div class="checkbox-icon-preview">
+              <span>{{ t('gridPolish.gp11.preview') }}</span>
+              <CheckboxIconPreview
+                :icon="selectedCheckboxIcon"
+                :checked="true"
+                :label="t('field.checkbox.checked')"
+              />
+              <CheckboxIconPreview
+                :icon="selectedCheckboxIcon"
+                :checked="false"
+                :label="t('field.checkbox.unchecked')"
+              />
+            </div>
+          </div>
           <label
             v-if="['integer', 'decimal', 'float'].includes(draft.kind)"
             class="field-check"
@@ -3075,6 +3159,34 @@ defineExpose({ openCreate: () => openEditor(null) })
 </template>
 
 <style scoped>
+.checkbox-icon-setting,
+.checkbox-icon-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox-icon-picker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.checkbox-icon-picker button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.checkbox-icon-picker button[aria-checked='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.checkbox-icon-preview {
+  color: var(--muted);
+}
 .field-choice {
   position: relative;
 }

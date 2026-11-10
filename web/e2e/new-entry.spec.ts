@@ -214,7 +214,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await openGrid(page, `/t/${table.tableId}?draft=keep`)
   const toolbar = page.locator('.grid-toolbar')
   const action = toolbar.getByRole('button', {
-    name: en.workspaceGrid.ux10.newEntry,
+    name: en.gridPolish.gp10.new,
     exact: true,
   })
   await expect(action).toBeVisible()
@@ -335,7 +335,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await applyText(dialog, code, 'unique-code')
   await applyText(dialog, table.name, 'Created from form')
   const checkSection = await editField(dialog, check)
-  await checkSection.locator('input').click()
+  await checkSection.getByRole('checkbox').click()
   const stageSection = await editField(dialog, stage)
   await stageSection.locator('select').selectOption('Beta')
   const tagsSection = await editField(dialog, tags)
@@ -419,7 +419,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await setTheme(page, 'dark')
   await setLocale(page, 'zh-CN')
   const translated = toolbar.getByRole('button', {
-    name: zh.workspaceGrid.ux10.newEntry,
+    name: zh.gridPolish.gp10.new,
     exact: true,
   })
   await translated.click()
@@ -471,7 +471,7 @@ test('creation refreshes filtered, sorted and grouped views without inventing vi
   await openGrid(page, table.path)
   const grid = page.locator('revo-grid')
   const action = page.getByRole('button', {
-    name: en.workspaceGrid.ux10.newEntry,
+    name: en.gridPolish.gp10.new,
     exact: true,
   })
   const dialog = page.locator('dialog.row-expand')
@@ -597,7 +597,7 @@ test('readers cannot open New Entry, while writers can create through it', async
     await grant('write')
     await reader.reload()
     const action = reader.getByRole('button', {
-      name: en.workspaceGrid.ux10.newEntry,
+      name: en.gridPolish.gp10.new,
       exact: true,
     })
     await expect(action).toBeVisible()

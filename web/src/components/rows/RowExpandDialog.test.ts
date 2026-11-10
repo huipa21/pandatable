@@ -210,9 +210,10 @@ it('shows a fixed new-entry title, inline editors and no system or navigation co
   const { wrapper } = await setup(schema, vi.fn<typeof fetch>(), null)
   expect(wrapper.get('header h2').text()).toBe('New entry')
   expect(
-    (wrapper.get('[data-field-id="name"] input').element as HTMLInputElement)
-      .checked,
-  ).toBe(true)
+    wrapper
+      .get('[data-field-id="name"] [role="checkbox"]')
+      .attributes('aria-checked'),
+  ).toBe('true')
   expect(wrapper.findAll('.row-field')).toHaveLength(2)
   expect(wrapper.find('[aria-label="Previous row"]').exists()).toBe(false)
   expect(wrapper.find('[aria-label="Next row"]').exists()).toBe(false)
@@ -377,6 +378,44 @@ it('waits for attachment uploads, commits them from Save, and preserves them aft
   expect(
     fetcher.mock.calls.some(([url]) => String(url).endsWith('/discard')),
   ).toBe(false)
+})
+
+it('discards an upload that finishes after the new-entry editor unmounts', async () => {
+  const attachment = {
+    id: '0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b',
+    name: 'late.txt',
+    mime: 'text/plain',
+    size: 4,
+    thumb: null,
+  }
+  let release!: (response: Response) => void
+  const fetcher = vi.fn<typeof fetch>(async (url) => {
+    if (String(url).endsWith('/attachments'))
+      return new Promise<Response>((resolve) => {
+        release = resolve
+      })
+    if (String(url).endsWith('/discard'))
+      return new Response(null, { status: 204 })
+    throw new Error(`Unexpected request: ${String(url)}`)
+  })
+  const mounted = await setup(schemaWith('attachment'), fetcher, null)
+  const upload = mounted.wrapper.get('.attachment-file-input')
+  Object.defineProperty(upload.element, 'files', {
+    configurable: true,
+    value: [new File(['test'], attachment.name, { type: attachment.mime })],
+  })
+  await upload.trigger('change')
+  mounted.wrapper.unmount()
+  wrapper = undefined
+  release(Response.json(attachment))
+  await flushPromises()
+  const discards = fetcher.mock.calls.filter(([url]) =>
+    String(url).endsWith('/discard'),
+  )
+  expect(discards).toHaveLength(1)
+  expect(String(discards[0]?.[0])).toContain(
+    `/tables/t/fields/name/attachments/${attachment.id}/discard`,
+  )
 })
 
 it('discards applied temporary attachments when a new-entry draft is closed', async () => {
@@ -1383,7 +1422,7 @@ it('does not discard copied attachments when a duplicate draft is closed', async
 })
 
 it.each(['checkbox', 'single_select', 'multi_select'])(
-  'uses the native %s editor',
+  'uses the %s editor',
   async (kind) => {
     const schema = schemaWith(
       kind,
@@ -1400,7 +1439,7 @@ it.each(['checkbox', 'single_select', 'multi_select'])(
     const { wrapper } = await setup(schema)
     await wrapper.get('.row-field-value[role="button"]').trigger('click')
     if (kind === 'checkbox')
-      await wrapper.get('.field-editor input').setValue(true)
+      await wrapper.get('.field-editor [role="checkbox"]').trigger('click')
     else
       await wrapper
         .get('select')

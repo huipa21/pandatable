@@ -99,6 +99,24 @@ describe('FieldRenderer', () => {
       props: { field: field('checkbox'), value: true },
     })
     expect(box.get('[role="img"]').attributes('aria-label')).toBe('Checked')
+    expect(box.get('.field-check').classes()).toContain('checked')
+    expect(box.find('.field-check svg').exists()).toBe(false)
+  })
+
+  it('renders a checked checkbox star and its unchecked outline', async () => {
+    const wrapper = mount(FieldRenderer, {
+      props: { field: field('checkbox', { icon: 'star' }), value: true },
+    })
+    const icon = wrapper.get('.field-check')
+    expect(icon.attributes('data-icon')).toBe('star')
+    expect(icon.classes()).toContain('checked')
+    expect(icon.get('svg path').attributes('d')).toMatch(/^M12 3l3 6/)
+    expect(icon.attributes('aria-label')).toBe('Checked')
+
+    await wrapper.setProps({ value: false })
+    expect(icon.classes()).not.toContain('checked')
+    expect(icon.find('svg path').exists()).toBe(true)
+    expect(icon.attributes('aria-label')).toBe('Not checked')
   })
 
   it('formats numbers and datetimes for display', () => {
@@ -300,12 +318,19 @@ describe('FieldEditor', () => {
 
   it('toggles checkboxes immediately', async () => {
     const wrapper = mount(FieldEditor, {
-      props: { field: field('checkbox'), value: false },
+      props: { field: field('checkbox', { icon: 'heart' }), value: false },
     })
-    await wrapper.get('input').setValue(true)
+    const button = wrapper.get('button[role="checkbox"]')
+    expect(button.attributes('aria-checked')).toBe('false')
+    expect(button.get('.field-check').attributes('data-icon')).toBe('heart')
+    await button.trigger('keydown', { key: ' ' })
     expect(wrapper.emitted('commit')).toEqual([[true]])
-    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
-    expect(wrapper.emitted('commit')).toEqual([[true]])
+    expect(button.attributes('aria-checked')).toBe('true')
+    await button.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('commit')).toEqual([[true], [false]])
+    expect(button.attributes('aria-checked')).toBe('false')
+    await button.trigger('click')
+    expect(wrapper.emitted('commit')).toEqual([[true], [false], [true]])
   })
 
   it('does not commit during IME composition', async () => {

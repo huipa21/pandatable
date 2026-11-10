@@ -325,6 +325,20 @@ export const floatKind: FieldKind<FloatOptions> = {
 
 // ---- checkbox ----
 
+export const CHECKBOX_ICONS = [
+  'check',
+  'square_check',
+  'circle_check',
+  'star',
+  'heart',
+  'thumbs_up',
+  'flag',
+] as const
+export type CheckboxIcon = (typeof CHECKBOX_ICONS)[number]
+export interface CheckboxOptions {
+  icon?: CheckboxIcon
+}
+
 const CHECKBOX_TRUE = [
   'true',
   '1',
@@ -351,7 +365,7 @@ const CHECKBOX_FALSE = [
   '错',
 ]
 
-export const checkboxKind: FieldKind<Record<string, never>> = {
+export const checkboxKind: FieldKind<CheckboxOptions> = {
   kind: 'checkbox',
   readOnly: false,
   presentation: 'checkbox',
@@ -359,8 +373,11 @@ export const checkboxKind: FieldKind<Record<string, never>> = {
   normalizeOptions(raw) {
     const set = OptionSet.parse(raw)
     if (!set.ok) return set
+    const present = set.value.has('icon')
+    const icon = set.value.enum('icon', 'check', CHECKBOX_ICONS)
+    if (!icon.ok) return icon
     const done = set.value.done()
-    return done.ok ? ok({}) : done
+    return done.ok ? ok(present ? { icon: icon.value } : {}) : done
   },
   normalize(value) {
     if (value === null) return ok(false)

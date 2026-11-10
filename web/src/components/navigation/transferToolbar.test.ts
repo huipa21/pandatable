@@ -28,7 +28,6 @@ function mountToolbar(level: 'none' | 'read' | 'write' | 'owner' = 'owner') {
       schema,
       view: schema.views[0],
       identity: 'alice',
-      csvReady: false,
       exportBusy: false,
       exportError: '',
     },

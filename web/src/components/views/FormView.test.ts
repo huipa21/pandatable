@@ -88,6 +88,33 @@ it('submits live field values and shows the configured confirmation message', as
   )
 })
 
+it('renders a checkbox icon and requires a checked value when configured', async () => {
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ row: { id: '1' } }))
+  vi.stubGlobal('fetch', fetcher)
+  const form = await setup('owner')
+  const schema = JSON.parse(JSON.stringify(form.props('schema'))) as TableSchema
+  schema.fields[0]!.uiType = 'checkbox'
+  schema.fields[0]!.options = { icon: 'heart' }
+  schema.fields[0]!.default = false
+  schema.schemaVersion++
+  await form.setProps({ schema, view: schema.views[0]! })
+  const checkbox = form.get('[role="checkbox"][aria-label="Topic"]')
+  expect(checkbox.attributes('aria-required')).toBe('true')
+  expect(checkbox.get('.field-check').attributes('data-icon')).toBe('heart')
+  await form.get('form').trigger('submit')
+  expect(form.get('[role="alert"]').text()).toContain('Topic is required')
+  expect(fetcher).not.toHaveBeenCalled()
+  await checkbox.trigger('click')
+  await form.get('form').trigger('submit')
+  await flushPromises()
+  expect(fetcher).toHaveBeenCalledWith(
+    '/api/v1/views/v/form-submit',
+    expect.objectContaining({
+      body: JSON.stringify({ fields: { name: true } }),
+    }),
+  )
+})
+
 it('preserves an in-progress draft when the same schema and view are refreshed', async () => {
   const fetcher = vi.fn().mockResolvedValue(Response.json({ row: { id: '1' } }))
   vi.stubGlobal('fetch', fetcher)

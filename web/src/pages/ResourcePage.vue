@@ -220,7 +220,7 @@ function closeGridMenus(event: KeyboardEvent) {
 }
 function closeToolbarMenus(toolbar: Element | null | undefined) {
   for (const menu of toolbar?.querySelectorAll<HTMLDetailsElement>(
-    ':scope > details[open], .table-toolbar-actions > details[open]',
+    ':scope > details[open], .table-toolbar-actions > details[open], .grid-toolbar-end > details[open]',
   ) ?? [])
     menu.open = false
 }
@@ -232,7 +232,8 @@ function activateToolbarMenu(event: MouseEvent) {
   if (
     !toolbar ||
     (menu.parentElement !== toolbar &&
-      !menu.parentElement?.classList.contains('table-toolbar-actions'))
+      !menu.parentElement?.classList.contains('table-toolbar-actions') &&
+      !menu.parentElement?.classList.contains('grid-toolbar-end'))
   )
     return
   closeToolbarMenus(toolbar)
@@ -1078,7 +1079,6 @@ onBeforeUnmount(() => {
               :schema="schema"
               :view="view"
               :identity="auth.user?.id ?? ''"
-              :csv-ready="!!grid"
               :export-busy="exportBusy"
               :export-error="exportError"
               @import="importOpen = true"
@@ -1178,7 +1178,6 @@ onBeforeUnmount(() => {
                   :schema="schema"
                   :view="view"
                   :identity="auth.user?.id ?? ''"
-                  :csv-ready="!!grid"
                   :export-busy="exportBusy"
                   :export-error="exportError"
                   @import="importOpen = true"
@@ -1188,12 +1187,12 @@ onBeforeUnmount(() => {
               <template #toolbar-end>
                 <button
                   v-if="canCreateRow"
-                  class="new-entry"
+                  class="grid-toolbar-button new-entry"
                   type="button"
                   @click="openNewRow"
                 >
-                  <AppIcon name="plus" :size="16" />
-                  {{ t('workspaceGrid.ux10.newEntry') }}
+                  <AppIcon name="plus" />
+                  {{ t('gridPolish.gp10.new') }}
                 </button>
               </template>
             </DataGrid>
@@ -1449,20 +1448,23 @@ onBeforeUnmount(() => {
   margin-left: auto;
 }
 
+/* Mirrors DataGrid's scoped `.grid-toolbar-button` (Fields, Filter). */
 .new-entry {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-height: 40px;
-  margin-left: auto;
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  font-weight: 600;
+  padding: 8px 6px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
   white-space: nowrap;
 }
 
 .new-entry:hover {
-  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .new-entry:focus-visible {

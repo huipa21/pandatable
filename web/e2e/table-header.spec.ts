@@ -162,7 +162,7 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
         await setTheme(page, theme)
         const labels = locale === 'en' ? en : zh
         const newEntry = toolbar.getByRole('button', {
-          name: labels.workspaceGrid.ux10.newEntry,
+          name: labels.gridPolish.gp10.new,
           exact: true,
         })
         await expect(newEntry).toBeVisible()
@@ -369,4 +369,131 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
       }
     }
   }
+})
+
+test('GP-10.3 places field-scoped search immediately left of New', async ({
+  page,
+}) => {
+  test.setTimeout(120_000)
+  test.skip(
+    (page.viewportSize()?.width ?? 0) < 768,
+    'production grid is desktop-only',
+  )
+  await paceLogin(page)
+  await page.goto('/login')
+  if ((await page.locator('html').getAttribute('lang')) === 'zh-CN')
+    await setLocale(page, 'en')
+  await page.getByLabel(en.auth.login, { exact: true }).fill('first-admin')
+  await page
+    .getByLabel(en.auth.password, { exact: true })
+    .fill('Setup-password-123')
+  await page.getByRole('button', { name: en.auth.signIn, exact: true }).click()
+  await expect(page).toHaveURL(/\/(?:home|w\/[^/]+|change-password)$/)
+
+  const create = async <T>(path: string, data: unknown): Promise<T> => {
+    const response = await page.request.post(path, { headers: headers(), data })
+    expect(response.status(), await response.text()).toBe(201)
+    return response.json()
+  }
+  const stamp = Date.now()
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    '/api/v1/workspaces',
+    { name: `Search UI ${stamp}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: `Search UI book ${stamp}` },
+  )
+  const created = await create<TableSchema>(`/api/v1/books/${book.id}/tables`, {
+    name: `Search UI table ${stamp}`,
+  })
+  const tableId = created.table.id
+  const { field: comment } = await create<{
+    field: TableSchema['fields'][number]
+  }>(`/api/v1/tables/${tableId}/fields`, { name: 'Comment', uiType: 'text' })
+  const schema = (await (
+    await page.request.get(`/api/v1/tables/${tableId}/schema`)
+  ).json()) as TableSchema
+  const nameField = schema.fields.find(
+    (field) => field.id === schema.table.displayFieldId,
+  )!
+  await create(`/api/v1/tables/${tableId}/rows`, {
+    rows: [
+      { fields: { [nameField.id]: 'Zebra name', [comment.id]: 'plain' } },
+      { fields: { [nameField.id]: 'Plain', [comment.id]: 'zebra comment' } },
+    ],
+  })
+
+  await page.setViewportSize({ width: 1280, height: 844 })
+  await page.goto(`/t/${tableId}/v/${schema.views[0]!.id}`)
+  const toolbar = page.locator('.grid-toolbar')
+  const end = toolbar.locator('.grid-toolbar-end')
+  const search = end.locator(':scope > .grid-search')
+  const trigger = search.locator(':scope > summary')
+  const newEntry = end.getByRole('button', {
+    name: en.gridPolish.gp10.new,
+    exact: true,
+  })
+  await expect(trigger).toBeVisible()
+  await expect(newEntry).toBeVisible()
+  expect(
+    await search.evaluate((element) =>
+      element.nextElementSibling?.classList.contains('new-entry'),
+    ),
+  ).toBe(true)
+  const searchBounds = (await trigger.boundingBox())!
+  const newBounds = (await newEntry.boundingBox())!
+  expect(searchBounds.x + searchBounds.width).toBeLessThanOrEqual(
+    newBounds.x + 1,
+  )
+  expect(newBounds.x - (searchBounds.x + searchBounds.width)).toBeLessThan(16)
+
+  const style = (locator: Locator) =>
+    locator.evaluate((element) => {
+      const computed = getComputedStyle(element)
+      return {
+        height: element.getBoundingClientRect().height,
+        fontFamily: computed.fontFamily,
+        fontSize: computed.fontSize,
+        fontWeight: computed.fontWeight,
+      }
+    })
+  expect(await style(newEntry)).toEqual(
+    await style(toolbar.locator('.grid-fields-trigger')),
+  )
+
+  await trigger.click()
+  const menu = search.locator('.grid-search-menu')
+  await expect(menu).toBeVisible()
+  await menu.locator('.grid-search-field-button').click()
+  await expect(
+    menu.getByRole('option', { name: en.gridPolish.gp10.allFields }),
+  ).toHaveAttribute('aria-selected', 'true')
+  await menu.getByRole('option', { name: nameField.name, exact: true }).click()
+  const scoped = page.waitForResponse((response) => {
+    const request = response.request()
+    if (
+      request.method() !== 'POST' ||
+      !new URL(response.url()).pathname.endsWith('/query')
+    )
+      return false
+    const body = request.postDataJSON() as {
+      search?: string
+      searchField?: string
+    }
+    return body.search === 'zebra' && body.searchField === nameField.id
+  })
+  await menu
+    .getByRole('searchbox', { name: en.grid.quickSearch, exact: true })
+    .fill('zebra')
+  const result = (await (await scoped).json()) as {
+    rows: { fields: Record<string, unknown> }[]
+  }
+  expect(result.rows.map((row) => row.fields[nameField.id])).toEqual([
+    'Zebra name',
+  ])
+  await expect(trigger.locator('.grid-search-dot')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(search).not.toHaveAttribute('open', '')
+  await expect(trigger).toBeFocused()
 })

@@ -18,22 +18,34 @@ func (checkboxCodec) Bind(raw json.RawMessage) (Field, error) {
 	if err != nil {
 		return nil, err
 	}
+	icon, err := set.enum("icon", "", "check", "square_check", "circle_check", "star", "heart", "thumbs_up", "flag")
+	if err != nil {
+		return nil, err
+	}
 	if err := set.done(); err != nil {
 		return nil, err
 	}
-	return checkboxField{}, nil
+	options, err := json.Marshal(struct {
+		Icon string `json:"icon,omitempty"`
+	}{Icon: icon})
+	if err != nil {
+		return nil, err
+	}
+	return checkboxField{options: options}, nil
 }
 
-type checkboxField struct{}
+type checkboxField struct {
+	options json.RawMessage
+}
 
 var (
 	checkboxTrue  = map[string]bool{"true": true, "1": true, "yes": true, "y": true, "on": true, "checked": true, "x": true, "✓": true, "✔": true, "☑": true, "是": true, "对": true}
 	checkboxFalse = map[string]bool{"false": true, "0": true, "no": true, "n": true, "off": true, "unchecked": true, "☐": true, "否": true, "错": true}
 )
 
-func (checkboxField) Kind() Kind               { return Checkbox }
-func (checkboxField) ReadOnly() bool           { return false }
-func (checkboxField) Options() json.RawMessage { return json.RawMessage(`{}`) }
+func (checkboxField) Kind() Kind                     { return Checkbox }
+func (checkboxField) ReadOnly() bool                 { return false }
+func (field checkboxField) Options() json.RawMessage { return field.options }
 func (checkboxField) Column() Column {
 	return Column{Type: ddl.DataType{Kind: ddl.Boolean}, NotNull: true, Default: ddl.DefaultValue{Kind: ddl.Literal, Literal: "false"}}
 }

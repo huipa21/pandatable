@@ -438,7 +438,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   for (const spec of specs) {
     const field = schema.fields.find((field) => field.name === spec.name)!
     section = await edit(field.id)
-    if (spec.uiType === 'checkbox') await section.locator('input').check()
+    if (spec.uiType === 'checkbox') await section.getByRole('checkbox').check()
     else if (spec.uiType === 'single_select')
       await section.locator('select').selectOption('Beta')
     else {

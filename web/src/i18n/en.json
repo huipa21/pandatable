@@ -1511,8 +1511,23 @@
       "moveDown": "Move option {n} down",
       "moved": "Option moved to position {n} of {total}."
     },
-    "gp10": {},
-    "gp11": {},
+    "gp10": {
+      "new": "New",
+      "field": "Search in",
+      "allFields": "All fields",
+      "clear": "Clear search"
+    },
+    "gp11": {
+      "icon": "Icon",
+      "preview": "Preview",
+      "check": "Check",
+      "squareCheck": "Square check",
+      "circleCheck": "Circle check",
+      "star": "Star",
+      "heart": "Heart",
+      "thumbsUp": "Thumbs-up",
+      "flag": "Flag"
+    },
     "gp12": {}
   }
 }

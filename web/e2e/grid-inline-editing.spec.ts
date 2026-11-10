@@ -1001,7 +1001,7 @@ test('first-click editing survives direct, sidebar and New Entry navigation', as
   await page
     .locator('.grid-toolbar')
     .getByRole('button', {
-      name: en.workspaceGrid.ux10.newEntry,
+      name: en.gridPolish.gp10.new,
       exact: true,
     })
     .click()

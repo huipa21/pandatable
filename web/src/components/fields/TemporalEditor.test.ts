@@ -125,6 +125,43 @@ describe('temporal editor', () => {
     expect(wrapper.emitted('commit')).toEqual([['09:35:12.123456']])
   })
 
+  it.each(['datetime', 'time'] as const)(
+    'commits an unconfirmed %s panel draft through the editor API',
+    async (kind) => {
+      const wrapper = mountTemporal(
+        kind,
+        kind === 'datetime' ? '2026-03-01T14:15:12.123456Z' : '09:15:12.123456',
+        kind === 'datetime'
+          ? { timezone: 'fixed', fixedTz: 'America/New_York' }
+          : {},
+      )
+      await flushPromises()
+      expect(wrapper.vm.hasPendingDraft()).toBe(false)
+      const popup = panel(wrapper)
+      if (kind === 'datetime') await clickDay(popup, 15)
+      else {
+        const minute = Array.from(
+          popup.querySelectorAll<HTMLElement>(
+            '.n-time-picker-col:nth-child(2) .n-time-picker-col__item',
+          ),
+        ).find((item) => item.textContent?.trim() === '35')
+        if (!minute) throw new Error('Time picker minute was not found')
+        minute.click()
+        await flushPromises()
+      }
+      expect(wrapper.vm.hasPendingDraft()).toBe(true)
+      expect(wrapper.vm.commitDraft()).toBe(true)
+      expect(wrapper.emitted('commit')).toEqual([
+        [
+          kind === 'datetime'
+            ? '2026-03-15T13:15:12.123456Z'
+            : '09:35:12.123456',
+        ],
+      ])
+      expect(wrapper.vm.hasPendingDraft()).toBe(false)
+    },
+  )
+
   it('accepts typed HH:mm and emits the existing canonical time wire shape', async () => {
     const wrapper = mountTemporal('time', null)
     await flushPromises()

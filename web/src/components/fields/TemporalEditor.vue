@@ -28,12 +28,14 @@ const props = withDefaults(
     autoFocus?: boolean
     live?: boolean
     initialDraft?: string
+    defaultPlaceholder?: string
   }>(),
   {
     required: false,
     autoFocus: true,
     live: false,
     initialDraft: undefined,
+    defaultPlaceholder: undefined,
   },
 )
 const emit = defineEmits<{
@@ -101,6 +103,7 @@ let fraction = ''
 const pickerValue = ref<string | null>(null)
 const draft = ref('')
 const dirty = ref(false)
+const panelPending = ref(false)
 const browserGap = ref(false)
 let typing = false
 let initializing = false
@@ -304,6 +307,7 @@ function commitResult(result: Result<WireValue>, text: string) {
   if (!validate(result, text, true) || !result.ok) return false
   setBaseline(result.value)
   dirty.value = false
+  panelPending.value = false
   draft.value = props.field.formatDisplay(result.value, props.env)
   panelInteracted = false
   panelTimeChanged = false
@@ -320,6 +324,11 @@ function commitResult(result: Result<WireValue>, text: string) {
 }
 
 function commitDraft() {
+  if (panelPending.value && props.field.kind === 'datetime') {
+    const date = panelDateText()
+    if (date && panelWallTime && !panelTimeError)
+      recordPanelDraft(panelWallTime + (panelFraction ?? fraction))
+  }
   const text = currentDraft()
   const unchangedWallTime =
     props.field.kind === 'datetime' &&
@@ -357,6 +366,8 @@ function inputChanged(event: Event) {
   panelWallTime = null
   panelFraction = undefined
   panelTimeError = null
+  panelPending.value = false
+  emit('draftChanged')
   if (props.live && !composing.value) previewDraft()
 }
 
@@ -386,6 +397,7 @@ function pickerUpdated(value: string | string[] | null) {
       ? props.field.formatCopy(result.value, props.env)
       : value
     dirty.value = true
+    emit('draftChanged')
   }
 }
 
@@ -441,6 +453,7 @@ function cancel() {
   setBaseline(value)
   draft.value = props.field.formatDisplay(value, props.env)
   dirty.value = false
+  panelPending.value = false
   reason.value = null
   requiredError.value = false
   show.value = false
@@ -449,6 +462,7 @@ function cancel() {
   panelWallTime = null
   panelFraction = undefined
   panelTimeError = null
+  emit('draftChanged')
   writeInput(draft.value)
   if (browserGap.value)
     void nextTick(() => {
@@ -537,8 +551,7 @@ function panelTimeInput(input: HTMLInputElement) {
     panelWallTime =
       parsed.value.slice(0, 6) + (seconds ?? parsed.value.slice(6))
     panelTimeError = null
-    if (dirty.value)
-      recordPanelDraft(panelWallTime + (panelFraction ?? fraction))
+    recordPanelDraft(panelWallTime + (panelFraction ?? fraction))
   } else {
     panelWallTime = null
     panelTimeError = 'invalid_time'
@@ -591,7 +604,7 @@ function syncPanelTime() {
       const date = panelDateText()
       if (/^\d{4}-\d{2}-\d{2}$/.test(date))
         browserGap.value = !localWallExists(`${date} ${panelWallTime}`)
-      if (dirty.value)
+      if (dirty.value || panelPending.value)
         recordPanelDraft(panelWallTime + (panelFraction ?? fraction))
       const timeInput = portal.value?.querySelector<HTMLInputElement>(
         '.n-date-panel-header .n-time-picker input',
@@ -630,12 +643,24 @@ function panelPointerDown() {
 }
 
 function panelClick(event: MouseEvent) {
-  if (props.field.kind !== 'datetime' || !(event.target instanceof Element))
+  if (!(event.target instanceof Element)) return
+  const item = event.target.closest<HTMLElement>(
+    '.n-time-picker-col__item:not(.n-time-picker-col__item--disabled)',
+  )
+  const day = event.target.closest(
+    '.n-date-panel-date:not(.n-date-panel-date--disabled)',
+  )
+  if (props.field.kind === 'time' && item) {
+    panelPending.value = true
+    emit('draftChanged')
     return
-  const item = event.target.closest<HTMLElement>('.n-time-picker-col__item')
+  }
+  if (props.field.kind !== 'datetime') return
   if (item) selectPanelTime(item)
-  else if (event.target.closest('.n-date-panel-date')) rememberPanelTime()
+  else if (day) rememberPanelTime()
   else return
+  panelPending.value = true
+  emit('draftChanged')
   syncPanelTime()
 }
 
@@ -649,11 +674,18 @@ function panelInput(event: Event) {
     panelTimeInput(event.target)
   else if (event.target.closest('.n-date-panel-date-input')) rememberPanelTime()
   else return
+  panelPending.value = true
+  emit('draftChanged')
   syncPanelTime()
 }
 
 function updateShow(value: boolean) {
   show.value = value && !inputElement()?.matches(':disabled')
+  if (!show.value && panelPending.value && dirty.value)
+    void nextTick(() => {
+      if (!show.value && panelPending.value && dirty.value)
+        writeInput(draft.value)
+    })
 }
 
 function keydown(event: KeyboardEvent, inPanel = false) {
@@ -670,15 +702,8 @@ function keydown(event: KeyboardEvent, inPanel = false) {
   if (event.key !== 'Enter' || event.shiftKey) return
   event.preventDefault()
   event.stopPropagation()
-  if (props.field.kind === 'datetime' && (inPanel || panelInteracted)) {
-    const confirm = portal.value?.querySelector<HTMLButtonElement>(
-      '[data-temporal-confirm]',
-    )
-    if (confirm && !confirm.disabled) confirm.click()
-    return
-  }
-  if (props.field.kind === 'time' && (inPanel || panelInteracted)) {
-    pickerConfirmed(null, pickerValue.value)
+  if (inPanel || panelInteracted) {
+    if (commitDraft()) show.value = false
     return
   }
   commitDraft()
@@ -692,6 +717,7 @@ function compositionEnded() {
 
 defineExpose({
   commitDraft,
+  hasPendingDraft: () => dirty.value || panelPending.value,
   currentDraft,
   isComposing: () => composing.value,
   contains: (target: EventTarget | null) =>
@@ -715,6 +741,7 @@ defineExpose({
       :value="timeValue"
       :value-format="'HH:mm:ss'"
       :format="timeFormat"
+      :placeholder="defaultPlaceholder"
       :use-12-hours="twelveHours"
       :actions="pickerActions"
       :clearable="!required"
@@ -734,6 +761,7 @@ defineExpose({
         field.kind === 'date' ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss'
       "
       :format="pickerFormat"
+      :placeholder="defaultPlaceholder"
       :date-format="dateFormat"
       :time-picker-format="twelveHours ? 'h:mm a' : 'HH:mm'"
       :time-picker-props="{ use12Hours: twelveHours }"

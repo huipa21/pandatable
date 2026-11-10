@@ -5,7 +5,9 @@ import type { BoundField } from '../../fields/registry'
 import { choiceLabels, type ChoiceOptions } from '../../fields/choice'
 import { safeHref } from '../../fields/text'
 import type { FieldEnv, WireValue } from '../../fields/types'
+import type { CheckboxOptions } from '../../fields/number'
 import type { AttachmentValue } from '../../api/types'
+import CheckboxIcon from './CheckboxIcon.vue'
 import {
   queueUserLabels,
   userLabel,
@@ -89,11 +91,10 @@ const users = computed(() =>
     ]"
   >
     <template v-if="field.presentation === 'checkbox'">
-      <span
-        class="field-check"
-        :class="{ checked: value === true }"
-        role="img"
-        :aria-label="
+      <CheckboxIcon
+        :icon="(field.options as CheckboxOptions).icon"
+        :checked="value === true"
+        :label="
           value === true
             ? t('field.checkbox.checked')
             : t('field.checkbox.unchecked')
@@ -198,21 +199,6 @@ const users = computed(() =>
   width: 48px;
   height: 36px;
   object-fit: cover;
-}
-.field-check {
-  display: inline-grid;
-  width: 16px;
-  height: 16px;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-}
-.field-check.checked {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.field-check.checked::after {
-  content: '\2713';
 }
 .field-chip {
   --chip: #8a8f98;

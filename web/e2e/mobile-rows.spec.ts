@@ -248,7 +248,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
         exact: true,
       })
       .click()
-    if (spec.kind === 'checkbox') await section.locator('input').click()
+    if (spec.kind === 'checkbox') await section.getByRole('checkbox').click()
     else if (spec.kind === 'single_select')
       await section.locator('select').selectOption(spec.input)
     else if (spec.kind === 'multi_select') {

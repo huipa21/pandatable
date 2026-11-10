@@ -69,6 +69,7 @@ export interface FieldDraft {
   ratingMax: string
   displayDecimals: string
   thousandSep: boolean
+  checkboxIcon: string
   dateFormat: string
   timeFormat: string
   durationFormat: string
@@ -122,6 +123,7 @@ export function draftFrom(field: TableField | null, env: FieldEnv): FieldDraft {
     ratingMax: text(options.max, '5'),
     displayDecimals: text(options.displayDecimals, ''),
     thousandSep: options.thousandSep !== false,
+    checkboxIcon: text(options.icon, ''),
     dateFormat: text(options.dateFormat, 'iso'),
     timeFormat: text(
       kind === 'time' ? options.format : options.timeFormat,
@@ -205,6 +207,8 @@ export function draftOptions(draft: FieldDraft): Record<string, unknown> {
         : {}
     case 'rating':
       return { max: integer(draft.ratingMax), icon: 'star' }
+    case 'checkbox':
+      return draft.checkboxIcon ? { icon: draft.checkboxIcon } : {}
     case 'float':
       return draft.displayDecimals.trim()
         ? {

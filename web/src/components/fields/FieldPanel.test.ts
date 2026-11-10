@@ -165,6 +165,79 @@ async function openType(
   await flushPromises()
 }
 
+it('creates and edits a checkbox icon without changing legacy options', async () => {
+  const next = schema()
+  next.fields.push(
+    field({
+      id: 'check',
+      name: 'Approved',
+      uiType: 'checkbox',
+      options: { icon: 'heart' },
+      position: 4096,
+    }),
+  )
+  const { calls } = stubFetch(
+    Response.json({
+      field: next.fields.at(-1),
+      schema: next,
+      eventId: 'checkbox-created',
+    }),
+    Response.json({
+      field: { ...next.fields.at(-1), options: { icon: 'star' } },
+      schema: next,
+      eventId: 'checkbox-edited',
+    }),
+  )
+  const wrapper = await setup()
+  try {
+    await openType(wrapper, 'checkbox')
+    const create = wrapper.get('dialog[aria-label="New field"]')
+    await create.get('input').setValue('Approved')
+    const options = create.findAll('[role="radio"]')
+    expect(options).toHaveLength(7)
+    expect(
+      create
+        .get('[role="radio"][aria-label="Check"]')
+        .attributes('aria-checked'),
+    ).toBe('true')
+    await create.get('[role="radio"][aria-label="Heart"]').trigger('click')
+    expect(
+      create
+        .get('[role="radio"][aria-label="Heart"]')
+        .attributes('aria-checked'),
+    ).toBe('true')
+    await create.get('form').trigger('submit')
+    await flushPromises()
+    expect(JSON.parse(String(calls()[0]![1].body))).toMatchObject({
+      uiType: 'checkbox',
+      options: { icon: 'heart' },
+    })
+
+    await wrapper.setProps({ schema: next })
+    await fieldAction(wrapper, 'check', 'Edit')
+    const edit = wrapper.get('dialog[aria-label="Edit field"]')
+    expect(
+      edit.get('[role="radio"][aria-label="Heart"]').attributes('aria-checked'),
+    ).toBe('true')
+    await edit.get('[role="radio"][aria-label="Star"]').trigger('click')
+    await edit.get('form').trigger('submit')
+    await flushPromises()
+    expect(JSON.parse(String(calls()[1]![1].body))).toEqual({
+      options: { icon: 'star' },
+    })
+
+    const legacy = field({ uiType: 'checkbox', options: {} })
+    const draft = draftFrom(legacy, {})
+    draft.name = 'Renamed'
+    expect(patchBody(legacy, draft, {})).toEqual({
+      ok: true,
+      value: { name: 'Renamed' },
+    })
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('searches icon-bearing types and carries the name into advanced editors', async () => {
   stubFetch()
   const wrapper = await setup()

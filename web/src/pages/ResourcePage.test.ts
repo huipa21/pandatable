@@ -76,9 +76,9 @@ async function setup(
               <details class="grid-highlights"><summary>Colour</summary></details>
               <slot name="after-highlight" />
               <details class="grid-format"><summary>Format</summary></details>
-              <details class="grid-search"><summary>Search</summary></details>
               <div class="grid-toolbar-end">
                 <slot name="toolbar-actions" />
+                <details class="grid-search"><summary>Search</summary></details>
                 <slot name="toolbar-end" />
               </div>
             </div>`,
@@ -104,7 +104,7 @@ async function setup(
   return { wrapper, router, nav }
 }
 
-it('downloads the active desktop view and full-table package using native links', async () => {
+it('exports the active desktop view as an XLSX package using a native link', async () => {
   useAuthStore().setUser(navUser)
   const schema = tableSchema()
   schema.views[0]!.config.filter = {
@@ -128,43 +128,23 @@ it('downloads the active desktop view and full-table package using native links'
   try {
     expect(wrapper.find('.view-create').exists()).toBe(false)
     expect(wrapper.find('.view-links').exists()).toBe(false)
-    expect(wrapper.get('.view-export p').text()).toContain(
-      'View locks are not included.',
-    )
+    expect(wrapper.find('.view-export p').exists()).toBe(false)
     await wrapper
       .findAll('.view-export button')
-      .find((button) => button.text() === i18n.global.t('export.csv'))!
+      .find(
+        (button) => button.text() === i18n.global.t('gridPolish.gp06.export'),
+      )!
       .trigger('click')
     await flushPromises()
-    const csvRequest = fetcher.mock.calls.find(([path]) =>
+    const packageRequest = fetcher.mock.calls.find(([path]) =>
       String(path).endsWith('/export'),
     )?.[1]
-    expect(JSON.parse(String(csvRequest?.body))).toEqual({
-      format: 'csv',
-      fieldIds: ['name'],
-      sorts: [{ fieldId: 'name', direction: 'desc' }],
-      groupBy: [],
-      search: 'active',
-      filter: { field: 'name', cmp: 'contains', value: 'active' },
-    })
-    expect(links).toEqual([`/api/v1/exports/${'A'.repeat(26)}`])
-    await wrapper
-      .findAll('.view-export button')
-      .find((button) => button.text() === i18n.global.t('export.package'))!
-      .trigger('click')
-    await flushPromises()
-    const packageRequest = fetcher.mock.calls
-      .filter(([path]) => String(path).endsWith('/export'))
-      .at(-1)?.[1]
     expect(JSON.parse(String(packageRequest?.body))).toEqual({ format: 'xlsx' })
-    expect(links).toHaveLength(2)
+    expect(links).toEqual([`/api/v1/exports/${'A'.repeat(26)}`])
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
     expect(wrapper.get('.view-export summary').attributes('aria-label')).toBe(
-      i18n.global.t('transfer.title'),
-    )
-    expect(wrapper.get('.view-export p').text()).toContain(
-      '不包含视图锁定状态。',
+      i18n.global.t('gridPolish.gp06.trigger'),
     )
   } finally {
     wrapper.unmount()
@@ -172,7 +152,7 @@ it('downloads the active desktop view and full-table package using native links'
   }
 })
 
-it('exports mobile field overrides, reports failures, and cancels stale navigation requests', async () => {
+it('reports export failures and cancels stale navigation requests on mobile', async () => {
   useAuthStore().setUser(navUser)
   media.matches = false
   const schema = tableSchema()
@@ -200,29 +180,24 @@ it('exports mobile field overrides, reports failures, and cancels stale navigati
     .spyOn(HTMLAnchorElement.prototype, 'click')
     .mockImplementation(() => {})
   const { wrapper, router } = await setup('/t/t/v/v')
-  try {
-    await wrapper
+  const exportButton = () =>
+    wrapper
       .findAll('.view-export button')
-      .find((button) => button.text() === i18n.global.t('export.csv'))!
-      .trigger('click')
+      .find(
+        (button) => button.text() === i18n.global.t('gridPolish.gp06.export'),
+      )!
+  try {
+    await exportButton().trigger('click')
     await flushPromises()
     const request = fetcher.mock.calls.find(([path]) =>
       String(path).endsWith('/export'),
     )?.[1]
-    expect(JSON.parse(String(request?.body))).toEqual({
-      format: 'csv',
-      fieldIds: ['mobile-field'],
-      groupBy: [],
-      filter: null,
-    })
+    expect(JSON.parse(String(request?.body))).toEqual({ format: 'xlsx' })
     expect(
       wrapper.get('.table-export-feedback[role="alert"]').text(),
     ).toContain('Export could not be started.')
     mode = 'pending'
-    await wrapper
-      .findAll('.view-export button')
-      .find((button) => button.text() === i18n.global.t('export.csv'))!
-      .trigger('click')
+    await exportButton().trigger('click')
     expect(wrapper.find('.table-export-feedback[role="status"]').exists()).toBe(
       true,
     )
@@ -327,7 +302,7 @@ it('opens a new row from the rightmost grid action, preserves the route on cance
     const grid = wrapper.get('.grid-toolbar').element
     const toolbarEnd = wrapper.get('.grid-toolbar-end')
     const action = toolbarEnd.get('.new-entry')
-    expect(action.text()).toBe('New Entry')
+    expect(action.text()).toBe('New')
     expect(toolbarEnd.element.lastElementChild).toBe(action.element)
     await action.trigger('click')
     await flushPromises()
@@ -500,27 +475,28 @@ it.each([
       expect(toolbar.find('.schema-summary').exists()).toBe(false)
       const transferMenu = toolbar.get('.view-export')
       expect(transferMenu.get('summary').attributes('aria-label')).toBe(
-        i18n.global.t('transfer.title'),
+        i18n.global.t('gridPolish.gp06.trigger'),
       )
       const actions = transferMenu
         .findAll('button')
         .map((button) => button.text())
-      expect(actions.includes(i18n.global.t('import.append'))).toBe(
+      expect(actions.includes(i18n.global.t('gridPolish.gp06.import'))).toBe(
         level !== 'read',
       )
-      expect(actions.includes(i18n.global.t('export.csv'))).toBe(
-        type === 'grid',
+      expect(actions.includes(i18n.global.t('gridPolish.gp06.export'))).toBe(
+        true,
       )
-      expect(actions.includes(i18n.global.t('export.package'))).toBe(true)
-      expect(actions).toHaveLength(
-        1 + Number(level !== 'read') + Number(type === 'grid'),
-      )
+      expect(actions).toHaveLength(1 + Number(level !== 'read'))
       expect(toolbar.find('.visibility-menu').exists()).toBe(level === 'owner')
       const newEntry = toolbar.find('.new-entry')
       expect(newEntry.exists()).toBe(
         type === 'grid' && desktop && level !== 'read',
       )
-      if (newEntry.exists()) expect(newEntry.text()).toBe('New Entry')
+      if (newEntry.exists()) {
+        expect(newEntry.text()).toBe('New')
+        expect(newEntry.classes()).toContain('grid-toolbar-button')
+        expect(newEntry.find('svg.app-icon').exists()).toBe(true)
+      }
       expect(
         toolbar.get('.view-export button:last-of-type').attributes('disabled'),
       ).toBeUndefined()
@@ -530,9 +506,9 @@ it.each([
       await flushPromises()
       expect(wrapper.text()).not.toContain('视图和数据表选项')
       expect(toolbar.get('.view-export summary').attributes('aria-label')).toBe(
-        i18n.global.t('transfer.title'),
+        i18n.global.t('gridPolish.gp06.trigger'),
       )
-      if (newEntry.exists()) expect(newEntry.text()).toBe('新建条目')
+      if (newEntry.exists()) expect(newEntry.text()).toBe('新建')
     } finally {
       wrapper.unmount()
     }
@@ -601,16 +577,17 @@ it('uses the newly selected table and view for the next export', async () => {
     await flushPromises()
     await wrapper
       .findAll('.view-export button')
-      .find((button) => button.text() === i18n.global.t('export.csv'))!
+      .find(
+        (button) => button.text() === i18n.global.t('gridPolish.gp06.export'),
+      )!
       .trigger('click')
     await flushPromises()
     const exportCall = fetcher.mock.calls.find(([path]) =>
       String(path).endsWith('/export'),
     )
     expect(String(exportCall?.[0])).toBe('/api/v1/views/v2/export')
-    expect(JSON.parse(String(exportCall?.[1]?.body))).toMatchObject({
-      format: 'csv',
-      filter: { field: 'name', cmp: 'contains', value: 'second' },
+    expect(JSON.parse(String(exportCall?.[1]?.body))).toEqual({
+      format: 'xlsx',
     })
     expect(click).toHaveBeenCalledOnce()
   } finally {
@@ -853,8 +830,11 @@ it('moves table sharing into the Grid Visibility menu with Escape, outside dismi
       'grid-highlights',
       'visibility-menu visibility-menu--toolbar',
       'grid-format',
-      'grid-search',
     ])
+    expect(
+      toolbar.get('.grid-toolbar-end > details.grid-search').element
+        .nextElementSibling,
+    ).toBe(toolbar.get('.new-entry').element)
     const menu = toolbar.get('.visibility-menu')
     const details = menu.element as HTMLDetailsElement
     const summary = menu.get('summary')

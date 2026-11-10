@@ -9,7 +9,6 @@ const props = defineProps<{
   schema: TableSchema
   view?: TableView
   identity: string
-  csvReady: boolean
   exportBusy: boolean
   exportError: string
 }>()

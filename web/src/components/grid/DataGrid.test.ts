@@ -16,6 +16,7 @@ import { useUndoStore } from '../../stores/undo'
 import { navUser, tableSchema } from '../../test/navigation'
 import { ThemeMedia } from '../../test/setup'
 import DataGrid from './DataGrid.vue'
+import GridSearchPopover from './GridSearchPopover.vue'
 import { formatTsv } from './tsv'
 
 const gridState = vi.hoisted(() => ({
@@ -3152,6 +3153,71 @@ it('sends transient quick search and renders configured footer aggregates', asyn
   expect(
     wrapper!.get('.grid-summary-cell[data-field-id="amount"] output').text(),
   ).toContain('42')
+})
+
+it('scopes quick search to one visible searchable field and falls back to all fields', async () => {
+  const schema = schemaFor('text')
+  addField(schema, 'comment', 'text')
+  addField(schema, 'files', 'attachment')
+  const fetch = await mountGrid(markRaw(schema))
+  const popover = wrapper!.getComponent(GridSearchPopover)
+  expect(popover.props('fields').map((field) => field.id)).toEqual([
+    'name',
+    'comment',
+  ])
+  const lastQuery = () =>
+    fetch.mock.calls
+      .filter(([path]) => String(path).endsWith('/query'))
+      .map(([, init]) => JSON.parse(String(init?.body)) as RowQueryRequest)
+      .at(-1)
+  const settle = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await flushPromises()
+  }
+
+  popover.vm.$emit('update:modelValue', { term: 'us', fieldId: 'comment' })
+  await settle()
+  expect(lastQuery()).toMatchObject({ search: 'us', searchField: 'comment' })
+  expect(wrapper!.vm.$.exposed?.exportQuery()).toMatchObject({
+    search: 'us',
+    searchField: 'comment',
+  })
+
+  wrapper!.vm.$.exposed?.toggleField('comment', false)
+  await settle()
+  expect(popover.props('modelValue')).toEqual({ term: 'us', fieldId: null })
+  expect(lastQuery()?.search).toBe('us')
+  expect(lastQuery()?.searchField).toBeUndefined()
+  await vi.waitFor(() =>
+    expect(wrapper!.emitted('viewUpdated')).toHaveLength(1),
+  )
+
+  popover.vm.$emit('update:modelValue', { term: 'us', fieldId: 'name' })
+  const respond = fetch.getMockImplementation()!
+  let rejected = 0
+  fetch.mockImplementation(async (path, init) => {
+    const body = typeof init?.body === 'string' ? init.body : ''
+    if (String(path).endsWith('/query') && body.includes('searchField')) {
+      rejected += 1
+      return Response.json(
+        {
+          error: {
+            code: 'ERR_VALIDATION',
+            message: 'invalid',
+            details: { field: 'searchField' },
+          },
+        },
+        { status: 400 },
+      )
+    }
+    return respond(path, init)
+  })
+  await settle()
+  await settle()
+  expect(rejected).toBeGreaterThan(0)
+  expect(popover.props('modelValue')).toEqual({ term: 'us', fieldId: null })
+  expect(lastQuery()?.searchField).toBeUndefined()
+  expect(wrapper!.find('[role="alert"]').exists()).toBe(false)
 })
 
 it('tracks the public footer column scroll event while keeping pinned cells fixed', async () => {

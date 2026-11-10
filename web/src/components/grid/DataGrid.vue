@@ -82,6 +82,12 @@ import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { RealtimeRowSync } from './realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
 import { gridPointerAction, isGridToggle } from './inlineEditing'
+import GridSearchPopover from './GridSearchPopover.vue'
+import {
+  quickSearchFields,
+  quickSearchParams,
+  type QuickSearch,
+} from './quickSearch'
 import { formatTsv, parseTsv, TsvError } from './tsv'
 import {
   isCompleteFilter,
@@ -157,6 +163,23 @@ const appendAtEnd = ref(false)
 const appendWidth = ref(0)
 const footerScrollLeft = ref(0)
 const searchTerm = ref('')
+const searchFieldId = ref<string | null>(null)
+const quickSearch = computed<QuickSearch>({
+  get: () => ({ term: searchTerm.value, fieldId: searchFieldId.value }),
+  set: (value) => {
+    searchTerm.value = value.term
+    searchFieldId.value = value.fieldId
+  },
+})
+const searchParams = () =>
+  quickSearchParams({
+    term: searchTerm.value,
+    fieldId: searchFields.value.some(
+      (field) => field.id === searchFieldId.value,
+    )
+      ? searchFieldId.value
+      : null,
+  })
 const footerAggregates = shallowRef<RowAggregate[]>([])
 const footerAggregateError = ref('')
 const footerAggregateLoading = ref(false)
@@ -359,6 +382,7 @@ const gridEditorComponent = defineComponent({
         fieldEnv: fieldEnvironment.value,
         tableId: props.schema.table.id,
         fieldId: item.field.id,
+        required: item.field.isRequired,
         identity: props.identity,
         initialDraft: originalDraft?.text,
         canCommit: () => editOriginCurrent(origin),
@@ -882,6 +906,9 @@ const visibleFieldIds = computed(() =>
     .filter((field) => field.visible)
     .map((field) => field.id),
 )
+const searchFields = computed(() =>
+  quickSearchFields(props.schema.fields, visibleFieldIds.value),
+)
 const footerSummaryCells = computed(() =>
   columnFooterCells(columns.value).map((cell) => {
     const item = cell.fieldId ? fieldById.value.get(cell.fieldId) : undefined
@@ -1119,6 +1146,25 @@ const unsupportedField = computed(() =>
   ),
 )
 
+/** A hidden/deleted search field raced the request: fall back to all fields. */
+function recoverSearchField(cause: unknown) {
+  if (
+    !(cause instanceof RequestError) ||
+    cause.code !== 'ERR_VALIDATION' ||
+    cause.details.field !== 'searchField' ||
+    searchFieldId.value === null
+  )
+    return false
+  const before = JSON.stringify(searchParams())
+  searchFieldId.value = null
+  // A changed request refetches through the debounced search watcher.
+  if (JSON.stringify(searchParams()) === before)
+    queueMicrotask(() => {
+      if (!disposed.value && ready.value) void initialize(0)
+    })
+  return true
+}
+
 function fetchPage(
   offset: number,
   limit: number,
@@ -1134,7 +1180,7 @@ function fetchPage(
     includeCount,
     sorts: sortCriteria.value,
     ...(props.filter ? { filter: props.filter } : {}),
-    ...(searchTerm.value ? { search: searchTerm.value } : {}),
+    ...searchParams(),
     ...(groupPath?.length ? { groupPath } : {}),
     ...(columnState.localQuery.value
       ? { fieldIds: visibleFieldIds.value }
@@ -1164,6 +1210,7 @@ const remoteRows = new RemoteRowsWindow(
       queueMicrotask(flushDeferredRealtime)
   },
   (cause) => {
+    if (recoverSearchField(cause)) return
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
     error.value = cause
@@ -1220,7 +1267,7 @@ function createGroupedRows() {
           {
             path,
             ...(props.filter ? { filter: props.filter } : {}),
-            ...(searchTerm.value ? { search: searchTerm.value } : {}),
+            ...searchParams(),
             ...(columnState.localQuery.value
               ? { fieldIds: visibleFieldIds.value }
               : {}),
@@ -1246,6 +1293,7 @@ function createGroupedRows() {
         queueMicrotask(flushDeferredRealtime)
     },
     (cause) => {
+      if (recoverSearchField(cause)) return
       if (
         cause instanceof RequestError &&
         [401, 403, 404].includes(cause.status)
@@ -1283,7 +1331,7 @@ async function loadFooterAggregates() {
         aggregates,
         fieldIds: visibleFieldIds.value,
         ...(props.filter ? { filter: props.filter } : {}),
-        ...(searchTerm.value ? { search: searchTerm.value } : {}),
+        ...searchParams(),
       },
       AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
     )
@@ -1300,6 +1348,7 @@ async function loadFooterAggregates() {
       controller.signal.aborted
     )
       return
+    if (recoverSearchField(cause)) return
     if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
       handleAccessFailure(cause)
     footerAggregateError.value = errorMessage(cause)
@@ -1391,7 +1440,7 @@ const rowSync = new RealtimeRowSync({
         fieldIds: visibleFieldIds.value,
         sorts: sortCriteria.value,
         ...(props.filter ? { filter: props.filter } : {}),
-        ...(searchTerm.value ? { search: searchTerm.value } : {}),
+        ...searchParams(),
       } satisfies RowQueryRequest,
       AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     )
@@ -2579,7 +2628,7 @@ function dismissToolbarMenus(event: PointerEvent) {
   const target = event.target
   if (!(target instanceof Element) || target.closest('dialog[open]')) return
   for (const menu of toolbar.value?.querySelectorAll<HTMLDetailsElement>(
-    ':scope > details[open]',
+    ':scope > details[open], :scope > .grid-toolbar-end > details[open]',
   ) ?? [])
     if (!menu.contains(target)) menu.open = false
 }
@@ -2673,6 +2722,7 @@ async function initialize(anchor = 0, preserveCellErrors = false) {
     if (!disposed.value && generation === initializationGeneration) {
       initializing = false
       if (groupedMode.value && pendingAppendReveal) syncSource()
+      if (recoverSearchField(cause)) return
       error.value = cause
       loading.value = false
     }
@@ -3475,12 +3525,22 @@ watch(
     if (ready.value) void initialize(0)
   },
 )
-watch(searchTerm, () => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => {
-    searchTimer = undefined
-    if (ready.value) void initialize(0)
-  }, 250)
+watch(
+  () => JSON.stringify(searchParams()),
+  () => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      searchTimer = undefined
+      if (ready.value) void initialize(0)
+    }, 250)
+  },
+)
+watch(searchFields, (fields) => {
+  if (
+    searchFieldId.value !== null &&
+    !fields.some((field) => field.id === searchFieldId.value)
+  )
+    searchFieldId.value = null
 })
 watch(
   saving,
@@ -3747,7 +3807,7 @@ defineExpose({
     fieldIds: [...visibleFieldIds.value],
     sorts: sortCriteria.value.map((sort) => ({ ...sort })),
     groupBy: [...groupBy.value],
-    ...(searchTerm.value ? { search: searchTerm.value } : {}),
+    ...searchParams(),
   }),
 })
 
@@ -4256,29 +4316,6 @@ onBeforeUnmount(() => {
           </fieldset>
         </div>
       </details>
-      <details v-if="desktop" class="grid-search">
-        <summary
-          :aria-label="t('grid.quickSearch')"
-          :title="t('grid.quickSearch')"
-        >
-          <AppIcon name="search" />
-        </summary>
-        <div
-          class="grid-search-menu"
-          @keydown.esc.stop.prevent="closeToolbarPopover"
-        >
-          <label class="grid-quick-search">
-            <span>{{ t('grid.quickSearch') }}</span>
-            <input
-              v-model="searchTerm"
-              type="search"
-              maxlength="512"
-              :aria-label="t('grid.quickSearch')"
-              :placeholder="t('grid.quickSearchPlaceholder')"
-            />
-          </label>
-        </div>
-      </details>
       <span v-if="!columnState.canPersist.value" role="status">{{
         t('grid.columnsLocal')
       }}</span>
@@ -4321,6 +4358,11 @@ onBeforeUnmount(() => {
         >
           {{ t('grid.pendingCellDrafts') }}
         </span>
+        <GridSearchPopover
+          v-if="desktop"
+          v-model="quickSearch"
+          :fields="searchFields"
+        />
         <slot name="toolbar-end" />
       </div>
     </div>
@@ -4635,6 +4677,7 @@ onBeforeUnmount(() => {
         :label="t('field.editor.value')"
         :table-id="schema.table.id"
         :field-id="bulkEditField.field.id"
+        :required="bulkEditField.field.isRequired"
         :identity="identity"
         :resolve-user="resolveBulkUser"
         :submit-label="t('grid.previewBulkEdit')"
@@ -4819,8 +4862,7 @@ onBeforeUnmount(() => {
 .grid-toolbar > details > summary::-webkit-details-marker {
   display: none;
 }
-.grid-format > summary,
-.grid-search > summary {
+.grid-format > summary {
   justify-content: center;
   min-width: 40px;
 }
@@ -4838,25 +4880,16 @@ onBeforeUnmount(() => {
   border-radius: 5px;
   text-align: center;
 }
-.grid-quick-search {
-  display: grid;
-  gap: 6px;
-}
-.grid-quick-search input {
-  width: 100%;
-}
 .grid-groups,
 .grid-sorts,
 .grid-highlights,
-.grid-format,
-.grid-search {
+.grid-format {
   position: static;
 }
 .grid-groups > fieldset,
 .grid-sorts > fieldset,
 .grid-highlights > fieldset,
-.grid-format-menu,
-.grid-search-menu {
+.grid-format-menu {
   position: absolute;
   z-index: 3;
   top: 100%;
@@ -4931,11 +4964,6 @@ onBeforeUnmount(() => {
 }
 .grid-frozen-control input {
   width: 6em;
-}
-.grid-search-menu {
-  width: min(320px, calc(100vw - 24px));
-  right: 0;
-  left: auto;
 }
 .grid-group-fields {
   display: grid;

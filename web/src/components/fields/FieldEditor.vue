@@ -17,6 +17,8 @@ import {
 } from '../../fields/userDirectory'
 import { fieldErrorMessage } from '../../fields/messages'
 import type { FieldEnv, Reason, Result, WireValue } from '../../fields/types'
+import type { CheckboxOptions } from '../../fields/number'
+import CheckboxIcon from './CheckboxIcon.vue'
 import TemporalEditor from './TemporalEditor.vue'
 
 const props = withDefaults(
@@ -36,6 +38,7 @@ const props = withDefaults(
     resolveUser?: (id: string) => string | null
     gridCommitOnLeave?: boolean
     initialDraft?: string
+    defaultPlaceholder?: string
   }>(),
   {
     env: () => ({}),
@@ -51,6 +54,7 @@ const props = withDefaults(
     resolveUser: undefined,
     gridCommitOnLeave: false,
     initialDraft: undefined,
+    defaultPlaceholder: undefined,
   },
 )
 const emit = defineEmits<{
@@ -66,6 +70,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const input = ref<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>()
+const checkboxButton = ref<HTMLButtonElement>()
+const checkboxChecked = ref(props.value === true)
 const temporalEditor = ref<InstanceType<typeof TemporalEditor>>()
 const temporal = computed(() =>
   ['date', 'datetime', 'time'].includes(props.field.kind),
@@ -101,6 +107,7 @@ const attachmentFiles = ref<AttachmentValue[]>(
 )
 const attachmentError = ref('')
 const uploadingAttachments = ref(false)
+const attachmentPending = ref(false)
 const dragOver = ref(false)
 const stagedAttachmentIds = new Set<string>()
 const removedAttachmentIds = new Set<string>()
@@ -108,6 +115,8 @@ const userQuery = ref('')
 const userResults = ref<DirectoryPrincipal[]>([])
 const userSearching = ref(false)
 const userSearchFailed = ref(false)
+const userPending = ref(false)
+let unmounted = false
 let userSearchGeneration = 0
 let userSearchController: AbortController | undefined
 const choices = computed(
@@ -135,6 +144,7 @@ const showSubmitButton = computed(() =>
   ),
 )
 const placeholder = computed(() => {
+  if (props.defaultPlaceholder !== undefined) return props.defaultPlaceholder
   switch (props.field.presentation) {
     case 'date':
       return t('field.editor.datePlaceholder')
@@ -149,18 +159,38 @@ const error = computed(() =>
 )
 
 onMounted(() => {
-  if (props.autoFocus) input.value?.focus()
+  if (props.autoFocus) (input.value ?? checkboxButton.value)?.focus()
 })
+watch(
+  () => props.value,
+  (value) => {
+    if (props.field.presentation === 'checkbox')
+      checkboxChecked.value = value === true
+  },
+)
 async function discardTemporaryAttachments() {
   if (!props.tableId || !props.fieldId) return
   const ids = props.preserveUploads
     ? removedAttachmentIds
     : new Set([...stagedAttachmentIds, ...removedAttachmentIds])
   for (const id of ids)
-    await discardAttachment(props.tableId, props.fieldId, id).catch(() => {})
+    await discardTemporaryAttachment(props.tableId, props.fieldId, id)
+}
+
+async function discardTemporaryAttachment(
+  tableId: string,
+  fieldId: string,
+  id: string,
+) {
+  try {
+    await discardAttachment(tableId, fieldId, id)
+  } catch (cause) {
+    console.error('Failed to discard a temporary attachment', cause)
+  }
 }
 
 onBeforeUnmount(() => {
+  unmounted = true
   userSearchController?.abort()
   void discardTemporaryAttachments()
 })
@@ -213,8 +243,30 @@ function commitText() {
   return finish(props.field.parsePaste(draft.value, props.env))
 }
 
+function hasPendingDraft() {
+  if (temporal.value) return temporalEditor.value?.hasPendingDraft() ?? false
+  if (props.field.presentation === 'user') return userPending.value
+  if (props.field.presentation === 'attachment')
+    return (
+      attachmentPending.value ||
+      uploadingAttachments.value ||
+      attachmentError.value !== ''
+    )
+  return false
+}
+
+function commitDraft() {
+  if (props.field.presentation === 'user') return commitUsers()
+  if (props.field.presentation === 'attachment') return commitAttachments()
+  if (props.field.presentation === 'select') return commitSelect()
+  if (props.field.presentation === 'checkbox')
+    return finish(props.field.normalize(checkboxChecked.value))
+  return commitText()
+}
+
 defineExpose({
-  commitDraft: commitText,
+  commitDraft,
+  hasPendingDraft,
   currentDraft,
   isComposing: () => temporalEditor.value?.isComposing() ?? composing.value,
   contains: (target: EventTarget | null) =>
@@ -235,40 +287,46 @@ function previewText() {
 }
 
 function commitSelect() {
-  finish(props.field.normalize(multiple.value ? selected.value : single.value))
+  return finish(
+    props.field.normalize(multiple.value ? selected.value : single.value),
+  )
 }
 
-function commitCheckbox(event: Event) {
-  finish(props.field.normalize((event.target as HTMLInputElement).checked))
+function toggleCheckbox() {
+  const checked = !checkboxChecked.value
+  if (finish(props.field.normalize(checked))) checkboxChecked.value = checked
 }
 
 function commit() {
-  if (props.field.presentation === 'user') commitUsers()
-  else if (props.field.presentation === 'attachment') commitAttachments()
-  else if (props.field.presentation === 'select') commitSelect()
-  else if (props.field.presentation === 'checkbox')
-    finish(
-      props.field.normalize(
-        input.value instanceof HTMLInputElement && input.value.checked,
-      ),
-    )
-  else commitText()
+  commitDraft()
 }
 
 function commitAttachments() {
+  if (uploadingAttachments.value || attachmentError.value) return false
   if (attachmentFiles.value.length > attachmentOptions.value.maxFiles) {
     attachmentError.value = t('field.editor.attachmentLimit', {
       count: attachmentOptions.value.maxFiles,
     })
-    return
+    return false
   }
-  attachmentError.value = ''
-  finish(props.field.normalize(attachmentFiles.value as unknown as WireValue))
+  const committed = finish(
+    props.field.normalize(attachmentFiles.value as unknown as WireValue),
+  )
+  if (committed) {
+    attachmentPending.value = false
+    emit('draftChanged')
+  }
+  return committed
 }
 
 async function addAttachmentFiles(files: FileList | File[]) {
   if (!props.tableId || !props.fieldId || uploadingAttachments.value) return
+  const tableId = props.tableId
+  const fieldId = props.fieldId
   const selectedFiles = Array.from(files)
+  if (!selectedFiles.length) return
+  attachmentPending.value = true
+  emit('draftChanged')
   if (selectedFiles.length > availableAttachmentSlots.value) {
     attachmentError.value = t('field.editor.attachmentLimit', {
       count: attachmentOptions.value.maxFiles,
@@ -279,13 +337,18 @@ async function addAttachmentFiles(files: FileList | File[]) {
   uploadingAttachments.value = true
   try {
     for (const file of selectedFiles) {
+      if (unmounted) break
       try {
         const uploaded = await uploadAttachment(
-          props.tableId,
-          props.fieldId,
+          tableId,
+          fieldId,
           file,
           AbortSignal.timeout(120_000),
         )
+        if (unmounted) {
+          await discardTemporaryAttachment(tableId, fieldId, uploaded.id)
+          break
+        }
         stagedAttachmentIds.add(uploaded.id)
         attachmentFiles.value = [...attachmentFiles.value, uploaded]
       } catch (cause) {
@@ -295,6 +358,7 @@ async function addAttachmentFiles(files: FileList | File[]) {
     }
   } finally {
     uploadingAttachments.value = false
+    emit('draftChanged')
     if (attachmentInput.value) attachmentInput.value.value = ''
   }
 }
@@ -305,6 +369,8 @@ function removeAttachment(file: AttachmentValue) {
   )
   if (stagedAttachmentIds.has(file.id)) stagedAttachmentIds.delete(file.id)
   removedAttachmentIds.add(file.id)
+  attachmentPending.value = true
+  emit('draftChanged')
 }
 
 function dropAttachments(event: DragEvent) {
@@ -331,21 +397,37 @@ function userLabel(id: string) {
 }
 
 function commitUsers() {
-  finish(
+  const committed = finish(
     props.field.normalize(
       multipleUsers.value ? selectedUsers.value : single.value,
     ),
   )
+  if (committed) {
+    userPending.value = false
+    emit('draftChanged')
+  }
+  return committed
 }
 
 function chooseUser(user: DirectoryPrincipal) {
   userSearchFailed.value = false
   if (!multipleUsers.value) {
-    finish(props.field.normalize(user.id))
+    single.value = user.id
+    selectedUsers.value = [user.id]
+    commitUsers()
     return
   }
-  if (!selectedUsers.value.includes(user.id))
+  if (!selectedUsers.value.includes(user.id)) {
     selectedUsers.value = [...selectedUsers.value, user.id]
+    userPending.value = true
+    emit('draftChanged')
+  }
+}
+
+function removeUser(id: string) {
+  selectedUsers.value = selectedUsers.value.filter((item) => item !== id)
+  userPending.value = true
+  emit('draftChanged')
 }
 
 async function searchUsers() {
@@ -402,15 +484,24 @@ function keydown(event: KeyboardEvent) {
 
 <template>
   <div v-if="!field.readOnly" class="field-editor" @keydown="keydown">
-    <input
+    <button
       v-if="field.presentation === 'checkbox'"
-      ref="input"
-      type="checkbox"
-      :checked="value === true"
+      ref="checkboxButton"
+      type="button"
+      class="field-checkbox"
+      role="checkbox"
+      :aria-checked="checkboxChecked"
       :aria-label="label ?? t('field.editor.value')"
-      :required="required"
-      @change="commitCheckbox"
-    />
+      :aria-required="required || undefined"
+      @click="toggleCheckbox"
+      @keydown.space.prevent.stop="toggleCheckbox"
+      @keydown.enter.prevent.stop="toggleCheckbox"
+    >
+      <CheckboxIcon
+        :icon="(field.options as CheckboxOptions).icon"
+        :checked="checkboxChecked"
+      />
+    </button>
     <TemporalEditor
       v-else-if="temporal"
       ref="temporalEditor"
@@ -422,6 +513,7 @@ function keydown(event: KeyboardEvent) {
       :auto-focus="autoFocus"
       :live="live"
       :initial-draft="initialDraft"
+      :default-placeholder="defaultPlaceholder"
       @commit="emit('commit', $event)"
       @preview="emit('preview', $event)"
       @invalid-value="emit('invalidValue')"
@@ -468,7 +560,7 @@ function keydown(event: KeyboardEvent) {
       v-model="draft"
       :aria-label="label ?? t('field.editor.value')"
       :aria-invalid="reason !== null"
-      :placeholder="t('field.editor.multilineHint')"
+      :placeholder="defaultPlaceholder ?? t('field.editor.multilineHint')"
       :required="required"
       @input="previewText"
       @compositionstart="composing = true"
@@ -505,7 +597,7 @@ function keydown(event: KeyboardEvent) {
             v-if="multipleUsers"
             type="button"
             :aria-label="t('field.editor.removeUser', { name: userLabel(id) })"
-            @click="selectedUsers = selectedUsers.filter((item) => item !== id)"
+            @click="removeUser(id)"
           >
             {{ t('field.panel.remove') }}
           </button>
@@ -514,7 +606,7 @@ function keydown(event: KeyboardEvent) {
       <button
         v-if="multipleUsers"
         type="button"
-        :disabled="selectedUsers.length === 0"
+        :disabled="selectedUsers.length === 0 && !userPending"
         @click="commitUsers"
       >
         {{ submitLabel ?? t('field.editor.apply') }}
@@ -593,6 +685,19 @@ function keydown(event: KeyboardEvent) {
 .field-editor {
   display: grid;
   gap: 4px;
+}
+.field-checkbox {
+  display: inline-grid;
+  width: fit-content;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.field-checkbox:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 .field-editor input[type='text'],
 .field-editor textarea,

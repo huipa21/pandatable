@@ -133,6 +133,94 @@ async function openCellEditor(page: Page, field: { id: string }, rowIndex = 0) {
   )
 }
 
+test('GP-11 selects a heart checkbox and persists a grid toggle', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'Field configuration is covered on desktop.')
+  test.setTimeout(60_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+
+  const create = async <T>(path: string, data: unknown): Promise<T> => {
+    const response = await page.request.post(path, { headers: headers(), data })
+    expect(response.status()).toBe(201)
+    return response.json()
+  }
+  const { workspace } = await create<{ workspace: { id: string } }>(
+    '/api/v1/workspaces',
+    { name: `Checkbox icons ${Date.now()}` },
+  )
+  const { book } = await create<{ book: { id: string } }>(
+    `/api/v1/workspaces/${workspace.id}/books`,
+    { name: 'Checkbox icons book' },
+  )
+  const table = await create<TableSchema>(`/api/v1/books/${book.id}/tables`, {
+    name: 'Checkbox icons table',
+  })
+  const view = table.views[0]
+  if (!view) throw new Error('The table view was not returned')
+  await page.goto(`/t/${table.table.id}/v/${view.id}`)
+
+  const panel = await openFieldPanel(page)
+  await panel.getByRole('button', { name: en.field.panel.add }).click()
+  const editor = page.getByRole('dialog', {
+    name: en.field.panel.createTitle,
+    exact: true,
+  })
+  await editor.getByRole('textbox', { name: en.field.panel.name }).fill('Liked')
+  await editor.locator('[data-kind="checkbox"]').click()
+  const picker = editor.getByRole('radiogroup', {
+    name: en.gridPolish.gp11.icon,
+  })
+  await expect(picker.getByRole('radio')).toHaveCount(7)
+  await expect(
+    picker.getByRole('radio', { name: en.gridPolish.gp11.check }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await picker.getByRole('radio', { name: en.gridPolish.gp11.heart }).click()
+  await expect(
+    picker.getByRole('radio', { name: en.gridPolish.gp11.heart }),
+  ).toHaveAttribute('aria-checked', 'true')
+  await editor.getByRole('button', { name: en.field.panel.create }).click()
+  await expect(editor).not.toBeVisible()
+
+  const schema = await schemaOf(page, table.table.id)
+  const liked = schema.fields.find((field) => field.name === 'Liked')
+  if (!liked) throw new Error('The checkbox field was not returned')
+  expect(liked.options).toEqual({ icon: 'heart' })
+  await create(`/api/v1/tables/${table.table.id}/rows`, {
+    rows: [{ fields: { [liked.id]: false } }],
+  })
+  await page.reload()
+  const icon = page.locator('revo-grid .field-check[data-icon="heart"]')
+  await expect(icon).toBeVisible()
+  await expect(icon).toHaveAttribute('aria-label', en.field.checkbox.unchecked)
+  expect(
+    await icon
+      .locator('path')
+      .first()
+      .evaluate((path) => getComputedStyle(path).fill),
+  ).toBe('none')
+
+  await icon.click()
+  await expect
+    .poll(async () => (await queryOf(page, view.id)).rows[0]?.fields[liked.id])
+    .toBe(true)
+  await expect(icon).toHaveClass(/checked/)
+  expect(
+    await icon
+      .locator('path')
+      .first()
+      .evaluate((path) => getComputedStyle(path).fill),
+  ).not.toBe('none')
+  await page.reload()
+  await expect(icon).toHaveClass(/checked/)
+  await expect(icon).toHaveAttribute('aria-label', en.field.checkbox.checked)
+  await page.request.delete(`/api/v1/tables/${table.table.id}`, {
+    headers: headers(),
+  })
+})
+
 test('GP-09 creates colored select options and renders distinct grid chips', async ({
   page,
   isMobile,

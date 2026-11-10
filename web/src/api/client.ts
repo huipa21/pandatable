@@ -8,6 +8,7 @@ export interface ErrorDetails {
   option?: string
   count?: number
   relatedRowId?: string
+  field?: string
 }
 
 export class RequestError extends Error {
@@ -39,6 +40,8 @@ function readDetails(value: unknown): ErrorDetails {
     /^[1-9]\d{0,18}$/.test(raw.relatedRowId)
   )
     details.relatedRowId = raw.relatedRowId
+  if (typeof raw.field === 'string' && /^[A-Za-z]{1,40}$/.test(raw.field))
+    details.field = raw.field
   return details
 }
 

@@ -145,7 +145,9 @@ async function submit() {
     if (
       item.config.required &&
       item.field &&
-      empty(draft.value[item.field.id])
+      (item.field.uiType === 'checkbox'
+        ? draft.value[item.field.id] !== true
+        : empty(draft.value[item.field.id]))
     ) {
       error.value = t('form.requiredField', {
         label: item.config.label || item.field.name,
