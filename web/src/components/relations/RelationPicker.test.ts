@@ -165,11 +165,7 @@ it('confirms one-to-one replacement with both row labels and persists replacemen
     '/api/v1/tables/target/schema',
     '/api/v1/views/target-view/query',
   ])
-  await picker.get('input[type="checkbox"]').setValue(true)
-  await picker
-    .findAll('button')
-    .find((button) => button.text() === 'Save links')!
-    .trigger('click')
+  await picker.get('button[aria-label="Link “Right A”"]').trigger('click')
   await flushPromises()
 
   expect(confirm).toHaveBeenCalledWith(
@@ -207,4 +203,167 @@ it('confirms one-to-one replacement with both row labels and persists replacemen
       remove: [],
     },
   ])
+})
+
+function manyFixture() {
+  const schema = tableSchema()
+  const field = {
+    id: 'relation-field',
+    name: 'Country',
+    description: '',
+    uiType: 'link',
+    options: {
+      relationId: 'relation',
+      targetTableId: 'target',
+      side: 'parent',
+    },
+    isSystem: false,
+    isRequired: false,
+    isUnique: false,
+    default: null,
+    position: 2048,
+    version: 1,
+  }
+  schema.fields.push(field)
+  schema.relations = [
+    {
+      id: 'relation',
+      kind: 'many_many',
+      parentTableId: 't',
+      childTableId: 'target',
+      parentFieldId: field.id,
+      childFieldId: 'reverse-field',
+      onDelete: 'set_null',
+    },
+  ]
+  const targetSchema: TableSchema = {
+    ...tableSchema(),
+    table: {
+      ...tableSchema().table,
+      id: 'target',
+      bookId: 'b',
+      name: 'Countries',
+      displayFieldId: 'target-name',
+    },
+    fields: [
+      {
+        ...tableSchema().fields[0]!,
+        id: 'target-name',
+        name: 'Name',
+        position: 1024,
+      },
+    ],
+    views: [{ ...tableSchema().views[0]!, id: 'target-view' }],
+  }
+  return { schema, field, targetSchema }
+}
+
+it('searches the target table by display field and links or unlinks a row immediately', async () => {
+  const { schema, field, targetSchema } = manyFixture()
+  const all = [
+    { id: '1', fields: { 'target-name': 'China' } },
+    { id: '2', fields: { 'target-name': 'Hong Kong' } },
+    { id: '3', fields: { 'target-name': 'Macau' } },
+  ]
+  const queries: Record<string, unknown>[] = []
+  const linkBodies: unknown[] = []
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/v1/tables/target/schema')
+      return Response.json(targetSchema)
+    if (url === '/api/v1/views/target-view/query') {
+      const body = JSON.parse(String(init?.body)) as { search?: string }
+      queries.push(body)
+      const rows = body.search
+        ? all.filter((row) =>
+            row.fields['target-name']
+              .toLowerCase()
+              .includes(body.search!.toLowerCase()),
+          )
+        : all
+      return Response.json({
+        rows,
+        fieldIds: ['target-name'],
+        total: rows.length,
+        schemaVersion: 1,
+      })
+    }
+    if (url.endsWith('/links/relation-field')) {
+      const body = JSON.parse(String(init?.body)) as {
+        add: string[]
+        remove: string[]
+      }
+      linkBodies.push(body)
+      return Response.json({
+        row: {
+          id: '10',
+          fields: {
+            [field.id]: body.add.length
+              ? [{ id: '2', label: 'Hong Kong' }]
+              : [],
+          },
+        },
+        changes: [],
+        eventId: 'event',
+      })
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+  vi.stubGlobal('fetch', fetcher)
+  wrapper = mount(RelationPicker, {
+    props: {
+      open: false,
+      schema,
+      field,
+      rowId: '10',
+      links: [],
+      identity: navUser.id,
+    },
+    global: { plugins: [pinia, i18n] },
+    attachTo: document.body,
+  })
+  await wrapper.setProps({ open: true })
+  await flushPromises()
+
+  const picker = wrapper.get('dialog')
+  expect(picker.get('.relation-linked-count').text()).toBe('0 linked records')
+  expect(picker.get('.relation-total').text()).toBe('3 records')
+  expect(
+    picker.findAll('.relation-option-label').map((el) => el.text()),
+  ).toEqual(['China', 'Hong Kong', 'Macau'])
+
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  try {
+    await picker.get('input[type="search"]').setValue('hong')
+    vi.advanceTimersByTime(300)
+  } finally {
+    vi.useRealTimers()
+  }
+  await flushPromises()
+
+  expect(queries.at(-1)).toMatchObject({
+    offset: 0,
+    search: 'hong',
+    searchField: 'target-name',
+  })
+  expect(
+    fetcher.mock.calls.filter(([url]) => url.endsWith('/schema')),
+  ).toHaveLength(1)
+  expect(
+    picker.findAll('.relation-option-label').map((el) => el.text()),
+  ).toEqual(['Hong Kong'])
+  expect(picker.get('.relation-total').text()).toBe('1 records')
+
+  await picker.get('button[aria-label="Link “Hong Kong”"]').trigger('click')
+  await flushPromises()
+  expect(linkBodies.at(-1)).toEqual({ add: ['2'], remove: [] })
+  const linkedRow = wrapper.emitted('updated')?.[0]?.[0] as DataRow
+  expect(wrapper.emitted('close')).toBeUndefined()
+
+  await wrapper.setProps({ links: linkedRow.fields[field.id] })
+  expect(picker.get('.relation-linked-count').text()).toBe('1 linked records')
+  const unlink = picker.get('button[aria-label="Unlink “Hong Kong”"]')
+  expect(unlink.attributes('aria-pressed')).toBe('true')
+  await unlink.trigger('click')
+  await flushPromises()
+  expect(linkBodies.at(-1)).toEqual({ add: [], remove: ['2'] })
 })

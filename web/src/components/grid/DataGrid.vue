@@ -222,6 +222,23 @@ let cellWriteTail: Promise<void> = Promise.resolve()
 const clipboardErrors = ref<string[]>([])
 const clipboardMessage = ref('')
 const selectedRows = ref(new Set<string>())
+const selectAllPending = ref(false)
+const selectAllIds = shallowRef<string[]>([])
+let selectAllController: AbortController | undefined
+let hoveredRow: string | null = null
+const allRowsSelected = computed(
+  () =>
+    (selectAllIds.value.length > 0 &&
+      selectAllIds.value.every((id) => selectedRows.value.has(id))) ||
+    (!groupedMode.value &&
+      gridSource.value.length > 0 &&
+      gridSource.value.every(
+        (model) =>
+          typeof model.__rowId === 'string' &&
+          model.__rowId !== '' &&
+          selectedRows.value.has(model.__rowId),
+      )),
+)
 const deleteDialog = ref<HTMLDialogElement>()
 const bulkEditDialog = ref<HTMLDialogElement>()
 const bulkEditFieldId = ref('')
@@ -327,7 +344,7 @@ const hasPendingCellDrafts = computed(
     activeEdit.value !== null,
 )
 const bulkActionsBlocked = computed(
-  () => saving.value || hasPendingCellDrafts.value,
+  () => saving.value || hasPendingCellDrafts.value || selectAllPending.value,
 )
 const gridEditorComponent = defineComponent({
   props: {
@@ -1724,6 +1741,9 @@ function headerAction(action: ColumnHeaderAction) {
 }
 
 const columns = computed<ColumnRegular[]>(() => {
+  const selected = selectedRows.value
+  const allSelected = allRowsSelected.value
+  const selectionDisabled = selectAllPending.value || loading.value
   const definitions: ColumnRegular[] = [
     {
       prop: '__selected',
@@ -1731,6 +1751,21 @@ const columns = computed<ColumnRegular[]>(() => {
       size: 104,
       pin: 'colPinStart',
       readonly: true,
+      columnTemplate: (render) =>
+        render('span', { class: 'grid-selection-header' }, [
+          render('span', { class: 'grid-row-number' }, '#'),
+          canWrite.value
+            ? render('input', {
+                type: 'checkbox',
+                class: 'grid-select-all',
+                'aria-label': t('grid.selectAllRows'),
+                checked: allSelected,
+                indeterminate: selected.size > 0 && !allSelected,
+                disabled: selectionDisabled,
+                onChange: () => void toggleAllRows(),
+              })
+            : null,
+        ]),
       cellTemplate: (render, { model }) =>
         model.__rowId
           ? render(
@@ -1748,7 +1783,9 @@ const columns = computed<ColumnRegular[]>(() => {
                 canWrite.value
                   ? render('input', {
                       type: 'checkbox',
-                      checked: selectedRows.value.has(String(model.__rowId)),
+                      class: 'grid-row-select',
+                      checked: selected.has(String(model.__rowId)),
+                      disabled: selectAllPending.value,
                       'aria-label': t('grid.selectRow', {
                         id: model.__rowId,
                       }),
@@ -2794,6 +2831,9 @@ function syncSource() {
 }
 
 async function initialize(anchor = 0, preserveCellErrors = false) {
+  selectAllController?.abort()
+  selectAllIds.value = []
+  clearRowHover()
   const generation = ++initializationGeneration
   initializing = true
   realtimeEpoch++
@@ -3137,6 +3177,7 @@ function focusLeft(event: FocusEvent) {
 }
 
 function scroll(event: CustomEvent<ViewPortScrollEvent>) {
+  clearRowHover()
   if (event.detail.dimension === 'rgCol') {
     if (disposed.value || !desktop.value) return
     footerScrollLeft.value = columnFooterScrollLeft(
@@ -3222,7 +3263,7 @@ function sortFieldOptions(index: number) {
 }
 
 function selectRow(id: string, selected: boolean) {
-  if (!canWrite.value) return
+  if (!canWrite.value || selectAllPending.value) return
   const next = new Set(selectedRows.value)
   if (selected) {
     if (!next.has(id) && next.size >= 1000) {
@@ -3232,6 +3273,85 @@ function selectRow(id: string, selected: boolean) {
     next.add(id)
   } else next.delete(id)
   selectedRows.value = next
+}
+
+async function toggleAllRows() {
+  if (!canWrite.value || selectAllPending.value || loading.value) return
+  if (allRowsSelected.value) {
+    selectedRows.value = new Set()
+    return
+  }
+  const controller = new AbortController()
+  selectAllController = controller
+  selectAllPending.value = true
+  const epoch = realtimeEpoch
+  try {
+    const ids: string[] = []
+    let total = 0
+    do {
+      const result = await fetchPage(
+        ids.length,
+        remotePageSize,
+        ids.length === 0,
+        controller.signal,
+      )
+      if (
+        controller.signal.aborted ||
+        disposed.value ||
+        epoch !== realtimeEpoch
+      )
+        return
+      if (ids.length === 0) {
+        if (result.total === null) throw new Error(t('grid.loadError'))
+        total = result.total
+      }
+      if (total > 1000) {
+        error.value = t('grid.selectionLimit')
+        return
+      }
+      if (!result.rows.length && ids.length < total)
+        throw new Error(t('grid.loadError'))
+      ids.push(...result.rows.map((row) => row.id))
+    } while (ids.length < total)
+    if (!canWrite.value) return
+    selectAllIds.value = ids
+    selectedRows.value = new Set(ids)
+  } catch (cause) {
+    if (!controller.signal.aborted && !disposed.value) {
+      if (
+        cause instanceof RequestError &&
+        [401, 403, 404].includes(cause.status)
+      )
+        handleAccessFailure(cause)
+      error.value = cause
+    }
+  } finally {
+    if (selectAllController === controller) {
+      selectAllController = undefined
+      selectAllPending.value = false
+    }
+  }
+}
+
+function clearRowHover() {
+  host.value?.$el
+    .querySelectorAll('.grid-row-hover')
+    .forEach((row) => row.classList.remove('grid-row-hover'))
+  hoveredRow = null
+}
+
+function hoverRow(event: MouseEvent) {
+  const target = event.target
+  const row =
+    target instanceof Element ? target.closest('.rgRow[data-rgrow]') : null
+  const index = row?.getAttribute('data-rgrow') ?? null
+  if (index === hoveredRow) return
+  clearRowHover()
+  if (index === null || !gridSource.value[Number(index)]?.__rowId) return
+  hoveredRow = index
+  host.value?.$el
+    .querySelectorAll(`revogr-data .rgRow[data-rgrow="${index}"]`)
+    .forEach((item) => item.classList.add('grid-row-hover'))
 }
 
 function handleAccessFailure(failure: RequestError) {
@@ -3640,6 +3760,8 @@ watch(
 watch(
   () => JSON.stringify(searchParams()),
   () => {
+    selectAllController?.abort()
+    selectAllIds.value = []
     clearTimeout(searchTimer)
     searchTimer = setTimeout(() => {
       searchTimer = undefined
@@ -3925,6 +4047,7 @@ defineExpose({
 
 onBeforeUnmount(() => {
   disposed.value = true
+  selectAllController?.abort()
   if (appendLayoutFrame !== undefined) cancelAnimationFrame(appendLayoutFrame)
   appendResizeObserver?.disconnect()
   editorBoundary?.editor.captureBeforeUnmount()
@@ -4560,6 +4683,8 @@ onBeforeUnmount(() => {
         :use-clipboard="true"
         :hide-attribution="true"
         @created="created"
+        @mouseover="hoverRow"
+        @mouseleave="clearRowHover"
         @viewportscroll="scroll"
         @aftergridrender="scheduleAppendLayout"
         @afterrender="scheduleAppendLayout"
@@ -4933,6 +5058,80 @@ onBeforeUnmount(() => {
   min-width: 0;
   height: 100%;
 }
+.data-grid revo-grid revogr-header .rgHeaderCell,
+.data-grid .grid-add-field {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-surface));
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px var(--border);
+}
+.data-grid revo-grid .header-content > .grid-selection-header {
+  display: grid;
+  align-items: center;
+  justify-items: start;
+}
+.grid-selection-header > *,
+.grid-row-number-cell > .grid-row-number,
+.grid-row-number-cell > .grid-row-select {
+  grid-area: 1 / 1;
+}
+.grid-selection-header > .grid-row-number,
+.grid-row-number-cell > .grid-row-number {
+  pointer-events: none;
+}
+.grid-select-all,
+.grid-row-select {
+  margin: 0;
+  opacity: 0;
+}
+.grid-row-number-cell > .grid-row-expand,
+.grid-row-number-cell > .grid-comment-count {
+  opacity: 0;
+}
+.data-grid .grid-row-number-cell {
+  display: grid;
+  grid-template-columns: minmax(20px, 1fr) auto auto;
+  height: 100%;
+}
+.data-grid .grid-row-expand {
+  grid-column: 3;
+  grid-row: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.grid-row-number-cell > .grid-comment-count {
+  grid-area: 1 / 2;
+}
+.grid-row-hover .grid-row-select,
+.grid-row-hover .grid-row-expand,
+.grid-row-hover .grid-comment-count,
+.rgRow:focus-within .grid-row-select,
+.rgRow:focus-within .grid-row-expand,
+.rgRow:focus-within .grid-comment-count,
+revo-grid:has(revogr-header:hover) .grid-select-all,
+.grid-selection-header:focus-within .grid-select-all {
+  opacity: 1;
+}
+.grid-row-hover .grid-row-number-cell:has(.grid-row-select) .grid-row-number,
+.rgRow:focus-within
+  .grid-row-number-cell:has(.grid-row-select)
+  .grid-row-number,
+revo-grid:has(revogr-header:hover)
+  .grid-selection-header:has(input)
+  .grid-row-number,
+.grid-selection-header:focus-within:has(input) .grid-row-number {
+  opacity: 0;
+}
+.data-grid revo-grid .grid-row-hover .rgCell {
+  background: color-mix(in srgb, var(--accent) 9%, var(--grid-canvas));
+}
+.data-grid revo-grid .grid-row-hover .grid-highlight-cell {
+  box-shadow: inset 0 0 0 100vmax
+    color-mix(in srgb, var(--accent) 9%, transparent);
+}
 .data-grid .grid-has-field-action revo-grid {
   width: calc(100% - 52px);
 }
@@ -4950,7 +5149,7 @@ onBeforeUnmount(() => {
   height: 40px;
   padding: 0;
   color: var(--muted);
-  background: var(--panel-surface);
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel-surface));
   border: 0;
   border-right: 1px solid var(--border);
   border-left: 1px solid var(--border);

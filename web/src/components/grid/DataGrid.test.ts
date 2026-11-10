@@ -721,6 +721,122 @@ it('shows visible selected-row actions only to writers', async () => {
   expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
 })
 
+it('selects all matching rows across pages and clears them from the header', async () => {
+  gridState.renderHeaders = true
+  gridState.rowCount = 251
+  const fetch = await mountGrid(schemaFor('text'))
+  await selectRow('9007199254740993')
+  expect(
+    (wrapper!.get('.grid-select-all').element as HTMLInputElement)
+      .indeterminate,
+  ).toBe(true)
+  fetch.mockClear()
+  await wrapper!.get('.grid-select-all').setValue(true)
+  await flushPromises()
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('251 selected')
+  expect(
+    (wrapper!.get('.grid-select-all').element as HTMLInputElement).checked,
+  ).toBe(true)
+  expect(
+    fetch.mock.calls
+      .filter(([path]) => String(path).endsWith('/query'))
+      .map(([, init]) => JSON.parse(String(init?.body)).offset),
+  ).toEqual([0, 100, 200])
+  await wrapper!.get('.grid-select-all').setValue(false)
+  expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
+})
+
+it('retains the selection and reports the existing limit for select all', async () => {
+  gridState.renderHeaders = true
+  gridState.rowCount = 1001
+  await mountGrid(schemaFor('text'))
+  await selectRow('9007199254740993')
+  await wrapper!.get('.grid-select-all').setValue(true)
+  await flushPromises()
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('1 selected')
+  expect(wrapper!.get('[role="alert"]').text()).toContain(
+    'Select no more than 1,000 rows',
+  )
+})
+
+it('allows select all at the 1,000-row boundary', async () => {
+  gridState.renderHeaders = true
+  gridState.rowCount = 1000
+  await mountGrid(schemaFor('text'))
+  await wrapper!.get('.grid-select-all').setValue(true)
+  await flushPromises()
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('1000 selected')
+  expect(wrapper!.find('[role="alert"]').exists()).toBe(false)
+})
+
+it('reports a select-all query failure without changing the existing selection', async () => {
+  gridState.renderHeaders = true
+  gridState.rowCount = 2
+  const fetch = await mountGrid(schemaFor('text'))
+  await selectRow('9007199254740993')
+  fetch.mockResolvedValueOnce(
+    Response.json({ code: 'ERR_INTERNAL' }, { status: 500 }),
+  )
+  await wrapper!.get('.grid-select-all').setValue(true)
+  await flushPromises()
+  expect(wrapper!.get('.grid-row-actions').text()).toContain('1 selected')
+  expect(wrapper!.get('[role="alert"]').text()).not.toBe('')
+  expect(
+    (wrapper!.get('.grid-select-all').element as HTMLInputElement).disabled,
+  ).toBe(false)
+})
+
+it('does not render select all for readers', async () => {
+  gridState.renderHeaders = true
+  await mountGrid(schemaFor('text', 'read'))
+  expect(wrapper!.find('.grid-select-all').exists()).toBe(false)
+  expect(wrapper!.get('.grid-selection-header').text()).toBe('#')
+})
+
+it('checks the header when every row is selected individually', async () => {
+  gridState.renderHeaders = true
+  gridState.rowCount = 2
+  await mountGrid(schemaFor('text'))
+  await selectRow('9007199254740993')
+  expect(
+    (wrapper!.get('.grid-select-all').element as HTMLInputElement)
+      .indeterminate,
+  ).toBe(true)
+  await selectRow('9007199254740994')
+  expect(
+    (wrapper!.get('.grid-select-all').element as HTMLInputElement).checked,
+  ).toBe(true)
+  await wrapper!.get('.grid-select-all').setValue(false)
+  expect(wrapper!.find('.grid-row-actions').exists()).toBe(false)
+})
+
+it('highlights only the hovered row across pinned and scrolling regions', async () => {
+  gridState.rowCount = 2
+  await mountGrid(schemaFor('text'))
+  const grid = wrapper!.get('[data-testid="fake-grid"]')
+  grid.element
+    .querySelectorAll('revogr-data')
+    .forEach((region) => region.remove())
+  const regions = [
+    document.createElement('revogr-data'),
+    document.createElement('revogr-data'),
+  ]
+  for (const region of regions) {
+    region.innerHTML =
+      '<div class="rgRow" data-rgrow="0"><span>First</span></div>' +
+      '<div class="rgRow" data-rgrow="1"><span>Second</span></div>'
+    grid.element.append(region)
+  }
+  await grid.get('[data-rgrow="0"] span').trigger('mouseover')
+  expect(grid.findAll('.grid-row-hover')).toHaveLength(2)
+  expect(grid.findAll('[data-rgrow="1"].grid-row-hover')).toHaveLength(0)
+  await grid.get('[data-rgrow="1"] span').trigger('mouseover')
+  expect(grid.findAll('[data-rgrow="0"].grid-row-hover')).toHaveLength(0)
+  expect(grid.findAll('[data-rgrow="1"].grid-row-hover')).toHaveLength(2)
+  await grid.trigger('mouseleave')
+  expect(grid.findAll('.grid-row-hover')).toHaveLength(0)
+})
+
 it.each([
   { outcome: 'succeeds', rejected: false },
   { outcome: 'fails and the draft is discarded', rejected: true },

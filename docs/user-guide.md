@@ -112,6 +112,12 @@ the display field, or delete it after confirmation. System and link fields
 cannot be duplicated, and the display field cannot be hidden or deleted.
 Changes that cannot be saved to the current view remain local.
 
+Hover a desktop row to highlight it and replace its number with a selection
+checkbox (writers only) and an expand icon. Keyboard focus also reveals these
+controls. Hover the header to replace **#** with **Select all rows**, which
+selects the current filtered view across pages, up to 1,000 rows; activate it
+again to clear the selection.
+
 In the desktop grid, click a text, number or date cell once to edit it (double-click,
 Enter or F2 also work). Leaving the cell saves a valid value; an invalid value
 stays in the editor with its error, and Escape cancels. Click a checkbox to
@@ -302,6 +308,10 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 所有者还可以编辑字段设置或说明、在其旁边插入字段、仅复制字段结构而不复制行值、
 设为显示字段，或在确认后删除。系统字段和关联字段不能复制，显示字段不能隐藏或删除。
 无法保存到当前视图的更改只在本地生效。
+
+悬停桌面行时会高亮整行，行号会替换为选择复选框（仅写入者）和展开图标；
+键盘聚焦也会显示这些控件。悬停表头时，**#** 会替换为**选择所有行**，
+可跨页选择当前筛选视图中的所有行（最多 1,000 行），再次激活可清空选择。
 
 在桌面网格中，单击文本、数字或日期单元格即可编辑（双击、Enter 或 F2 同样可用）。
 离开单元格时会保存有效值；无效值会连同错误提示保留在编辑器中，按 Escape 取消。

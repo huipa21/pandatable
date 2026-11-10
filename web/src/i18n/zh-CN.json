@@ -325,6 +325,7 @@
     "selectedRowsCount": "已选择 {count} 行",
     "editRows": "编辑所选行",
     "selectRow": "选择行 {id}",
+    "selectAllRows": "选择所有行",
     "selectionLimit": "每次最多选择 1,000 行。",
     "pendingCellDrafts": "请先保存或取消待处理的单元格编辑，再使用所选行操作。",
     "saving": "正在保存行更改",
@@ -1472,8 +1473,15 @@
     "previous": "上一页",
     "next": "下一页",
     "page": "第 {page} 页，共 {pages} 页",
-    "cancel": "取消",
-    "save": "保存关联"
+    "searchPlaceholder": "搜索要关联的记录…",
+    "linkedCount": "已关联 {count} 条记录",
+    "recordCount": "{count} 条记录",
+    "noMatches": "没有匹配搜索的记录。",
+    "link": "关联",
+    "unlink": "取消关联",
+    "linkRecord": "关联“{label}”",
+    "unlinkRecord": "取消关联“{label}”",
+    "close": "关闭"
   },
   "gridPolish": {
     "gp01": {},

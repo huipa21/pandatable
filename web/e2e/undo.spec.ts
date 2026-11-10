@@ -284,10 +284,16 @@ test('AT-608: reverse-order undo and redo preserve rows, links, comments and vie
     name: en.relation.pickerTitle.replace('{field}', 'Projects'),
     exact: true,
   })
-  await picker.getByLabel('Apollo', { exact: true }).check()
   await picker
-    .getByRole('button', { name: en.relation.save, exact: true })
+    .getByRole('button', { name: 'Link “Apollo”', exact: true })
     .click()
+  await expect(
+    picker.getByRole('button', { name: 'Unlink “Apollo”', exact: true }),
+  ).toBeVisible()
+  await picker
+    .getByRole('button', { name: en.relation.close, exact: true })
+    .click()
+  await expect(picker).not.toBeVisible()
   await expect
     .poll(
       async () =>

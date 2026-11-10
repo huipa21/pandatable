@@ -232,9 +232,14 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
   await page.goto(`/t/${tasks.table.id}/v/${tasks.views[0]!.id}`)
   await expect(page.locator('revo-grid')).toBeVisible()
   const picker = await openPicker(page, 'Project', 0)
-  await picker.getByRole('checkbox', { name: 'Project A', exact: true }).check()
   await picker
-    .getByRole('button', { name: en.relation.save, exact: true })
+    .getByRole('button', { name: 'Link “Project A”', exact: true })
+    .click()
+  await expect(
+    picker.getByRole('button', { name: 'Unlink “Project A”', exact: true }),
+  ).toBeVisible()
+  await picker
+    .getByRole('button', { name: en.relation.close, exact: true })
     .click()
   await expect(picker).not.toBeVisible()
   const linkedTask = await getRow(page, tasks.table.id, taskRows[0]!.id)
@@ -287,17 +292,17 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
   await expect(page.locator('revo-grid')).toBeVisible()
   const firstPicker = await openPicker(page, 'Right', 0)
   await firstPicker
-    .getByRole('checkbox', { name: 'Right A', exact: true })
-    .check()
+    .getByRole('button', { name: 'Link “Right A”', exact: true })
+    .click()
+  await expect(
+    firstPicker.getByRole('button', { name: 'Unlink “Right A”', exact: true }),
+  ).toBeVisible()
   await firstPicker
-    .getByRole('button', { name: en.relation.save, exact: true })
+    .getByRole('button', { name: en.relation.close, exact: true })
     .click()
   await expect(firstPicker).not.toBeVisible()
 
   const secondPicker = await openPicker(page, 'Right', 1)
-  await secondPicker
-    .getByRole('checkbox', { name: 'Right A', exact: true })
-    .check()
   let replacementMessage = ''
   page.once('dialog', async (dialog) => {
     replacementMessage = dialog.message()
@@ -310,7 +315,13 @@ test('AT-401..406 relation fields, linked rows, replacement, delete policies and
     409,
   )
   await secondPicker
-    .getByRole('button', { name: en.relation.save, exact: true })
+    .getByRole('button', { name: 'Link “Right A”', exact: true })
+    .click()
+  await expect(
+    secondPicker.getByRole('button', { name: 'Unlink “Right A”', exact: true }),
+  ).toBeVisible()
+  await secondPicker
+    .getByRole('button', { name: en.relation.close, exact: true })
     .click()
   await expect(secondPicker).not.toBeVisible()
   expect(replacementMessage).toContain('Right A')

@@ -325,6 +325,7 @@
     "selectedRowsCount": "{count} selected",
     "editRows": "Edit selected",
     "selectRow": "Select row {id}",
+    "selectAllRows": "Select all rows",
     "selectionLimit": "Select no more than 1,000 rows at a time.",
     "pendingCellDrafts": "Save or cancel pending cell edits before using selected-row actions.",
     "saving": "Saving row changes",
@@ -1472,8 +1473,15 @@
     "previous": "Previous",
     "next": "Next",
     "page": "Page {page} of {pages}",
-    "cancel": "Cancel",
-    "save": "Save links"
+    "searchPlaceholder": "Search records to link…",
+    "linkedCount": "{count} linked records",
+    "recordCount": "{count} records",
+    "noMatches": "No records match your search.",
+    "link": "Link",
+    "unlink": "Unlink",
+    "linkRecord": "Link “{label}”",
+    "unlinkRecord": "Unlink “{label}”",
+    "close": "Close"
   },
   "gridPolish": {
     "gp01": {},

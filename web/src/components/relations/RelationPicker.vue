@@ -14,6 +14,10 @@ import { bindField } from '../../fields/registry'
 import { isWireValue, type FieldEnv } from '../../fields/types'
 import { useAuthStore } from '../../stores/auth'
 import { linkUndoSteps, useUndoStore } from '../../stores/undo'
+import AppIcon from '../AppIcon.vue'
+
+const PAGE_SIZE = 100
+const SEARCH_DELAY = 250
 
 const props = defineProps<{
   open: boolean
@@ -31,15 +35,18 @@ const { t, locale } = useI18n()
 const auth = useAuthStore()
 const undo = useUndoStore()
 const dialog = ref<HTMLDialogElement>()
+const searchInput = ref<HTMLInputElement>()
 const options = ref<RelationLink[]>([])
-const selected = ref<string[]>([])
+const search = ref('')
 const offset = ref(0)
 const total = ref(0)
 const loading = ref(false)
-const saving = ref(false)
+const pendingId = ref<string | null>(null)
 const error = ref<unknown>(null)
+let target: { viewId: string; display: TableField | undefined } | undefined
 let controller: AbortController | undefined
 let generation = 0
+let searchTimer: ReturnType<typeof setTimeout> | undefined
 
 const env = computed<FieldEnv>(() => ({
   timeZone: auth.user?.effectiveTimezone,
@@ -58,6 +65,7 @@ const links = computed<RelationLink[]>(() =>
       )
     : [],
 )
+const linkedIds = computed(() => new Set(links.value.map((link) => link.id)))
 const relation = computed(() => {
   const relationId = props.field?.options.relationId
   return typeof relationId === 'string'
@@ -76,8 +84,11 @@ const single = computed(
     relation.value?.kind === 'one_one' ||
     (relation.value?.kind === 'one_many' && side.value === 'child'),
 )
-const page = computed(() => Math.floor(offset.value / 100) + 1)
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / 100)))
+const saving = computed(() => pendingId.value !== null)
+const page = computed(() => Math.floor(offset.value / PAGE_SIZE) + 1)
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(total.value / PAGE_SIZE)),
+)
 const dialogTitle = computed(() =>
   props.field ? t('relation.pickerTitle', { field: props.field.name }) : '',
 )
@@ -93,15 +104,6 @@ function current(token: number, signal: AbortSignal) {
   return (
     token === generation && !signal.aborted && props.identity === auth.user?.id
   )
-}
-
-function selectedOnPage(id: string) {
-  return selected.value.includes(id)
-}
-
-function toggle(id: string, checked: boolean) {
-  const next = selected.value.filter((value) => value !== id)
-  selected.value = checked ? (single.value ? [id] : [...next, id]) : next
 }
 
 async function relatedRowLabel(id: string) {
@@ -138,26 +140,36 @@ async function loadPage(nextOffset = 0) {
   loading.value = true
   error.value = null
   try {
-    const targetSchema = await request<TableSchema>(
-      `/tables/${encodeURIComponent(targetTableId.value)}/schema`,
-      'GET',
-      undefined,
-      AbortSignal.any([own.signal, AbortSignal.timeout(10_000)]),
-    )
-    if (!current(token, own.signal)) return
-    const view = targetSchema.views.find((item) => item.type === 'grid')
-    if (!view) throw new Error(t('relation.noRows'))
-    const display = targetSchema.fields.find(
-      (field) => field.id === targetSchema.table.displayFieldId,
-    )
+    if (!target) {
+      const targetSchema = await request<TableSchema>(
+        `/tables/${encodeURIComponent(targetTableId.value)}/schema`,
+        'GET',
+        undefined,
+        AbortSignal.any([own.signal, AbortSignal.timeout(10_000)]),
+      )
+      if (!current(token, own.signal)) return
+      const view = targetSchema.views.find((item) => item.type === 'grid')
+      if (!view) throw new Error(t('relation.noRows'))
+      target = {
+        viewId: view.id,
+        display: targetSchema.fields.find(
+          (field) => field.id === targetSchema.table.displayFieldId,
+        ),
+      }
+    }
+    const { viewId, display } = target
+    const term = search.value.trim()
     const result = await request<RowQueryResult>(
-      `/views/${encodeURIComponent(view.id)}/query`,
+      `/views/${encodeURIComponent(viewId)}/query`,
       'POST',
       {
         offset: nextOffset,
-        limit: 100,
+        limit: PAGE_SIZE,
         includeCount: true,
         ...(display ? { fieldIds: [display.id] } : {}),
+        ...(term
+          ? { search: term, ...(display ? { searchField: display.id } : {}) }
+          : {}),
       },
       AbortSignal.any([own.signal, AbortSignal.timeout(10_000)]),
     )
@@ -184,85 +196,89 @@ async function loadPage(nextOffset = 0) {
   }
 }
 
-async function save() {
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    searchTimer = undefined
+    void loadPage(0)
+  }, SEARCH_DELAY)
+}
+
+function searchNow() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = undefined
+  void loadPage(0)
+}
+
+function applied(result: LinkMutation) {
+  if (!Array.isArray(result.changes))
+    throw new Error('Link mutation returned an unsupported response')
+  if (props.identity === auth.user?.id)
+    undo.record(linkUndoSteps(result.changes))
+  emit('updated', result.row)
+}
+
+async function toggle(item: RelationLink) {
   if (saving.value) return
   if (!props.field || !props.rowId || !relation.value) {
     error.value = t('relation.invalid')
     return
   }
-  const currentIDs = links.value.map((link) => link.id)
-  const change = {
-    add: selected.value.filter((id) => !currentIDs.includes(id)),
-    remove: currentIDs.filter((id) => !selected.value.includes(id)),
-  }
-  if (!change.add.length && !change.remove.length) {
-    close()
-    return
-  }
-  saving.value = true
+  const linked = linkedIds.value.has(item.id)
+  const change = linked
+    ? { add: [], remove: [item.id] }
+    : {
+        add: [item.id],
+        remove: single.value
+          ? links.value.map((link) => link.id).filter((id) => id !== item.id)
+          : [],
+      }
+  pendingId.value = item.id
   error.value = null
   const path =
     `/tables/${encodeURIComponent(props.schema.table.id)}/rows/` +
     `${encodeURIComponent(props.rowId)}/links/${encodeURIComponent(props.field.id)}`
   try {
-    const result = await request<LinkMutation>(path, 'POST', change)
-    if (!Array.isArray(result.changes))
-      throw new Error('Link mutation returned an unsupported response')
-    if (props.identity === auth.user?.id)
-      undo.record(linkUndoSteps(result.changes))
-    emit('updated', result.row)
-    finishClose()
+    applied(await request<LinkMutation>(path, 'POST', change))
   } catch (cause) {
-    if (
-      cause instanceof RequestError &&
-      cause.code === 'ERR_RELATION_CONFLICT'
-    ) {
-      const selectedItem = options.value.find((item) =>
-        change.add.includes(item.id),
-      )
-      const relatedRowId = cause.details.relatedRowId
-      if (selectedItem && relatedRowId) {
-        let existingLabel: string
-        try {
-          existingLabel = await relatedRowLabel(relatedRowId)
-        } catch (lookupError) {
-          error.value = lookupError
-          return
-        }
-        if (
-          !window.confirm(
-            t('relation.replaceConfirm', {
-              target: selectedItem.label,
-              existing: existingLabel,
-            }),
-          )
-        ) {
-          error.value = cause
-          return
-        }
-        try {
-          const result = await request<LinkMutation>(path, 'POST', {
+    const relatedRowId =
+      cause instanceof RequestError && cause.code === 'ERR_RELATION_CONFLICT'
+        ? cause.details.relatedRowId
+        : undefined
+    if (!linked && relatedRowId) {
+      let existingLabel: string
+      try {
+        existingLabel = await relatedRowLabel(relatedRowId)
+      } catch (lookupError) {
+        error.value = lookupError
+        return
+      }
+      if (
+        !window.confirm(
+          t('relation.replaceConfirm', {
+            target: item.label,
+            existing: existingLabel,
+          }),
+        )
+      ) {
+        error.value = cause
+        return
+      }
+      try {
+        applied(
+          await request<LinkMutation>(path, 'POST', {
             ...change,
             replace: true,
-          })
-          if (!Array.isArray(result.changes))
-            throw new Error('Link mutation returned an unsupported response', {
-              cause,
-            })
-          if (props.identity === auth.user?.id)
-            undo.record(linkUndoSteps(result.changes))
-          emit('updated', result.row)
-          finishClose()
-          return
-        } catch (replacementError) {
-          error.value = replacementError
-          return
-        }
+          }),
+        )
+      } catch (replacementError) {
+        error.value = replacementError
       }
+      return
     }
     error.value = cause
   } finally {
-    saving.value = false
+    pendingId.value = null
   }
 }
 
@@ -275,8 +291,14 @@ function finishClose() {
   generation++
   controller?.abort()
   controller = undefined
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = undefined
   dialog.value?.close()
   emit('close')
+}
+
+function onBackdrop(event: MouseEvent) {
+  if (event.target === dialog.value) close()
 }
 
 watch(
@@ -285,14 +307,19 @@ watch(
     if (!open) {
       controller?.abort()
       generation++
+      if (searchTimer) clearTimeout(searchTimer)
+      searchTimer = undefined
       dialog.value?.close()
       return
     }
-    selected.value = links.value.map((link) => link.id)
+    target = undefined
+    search.value = ''
     options.value = []
     offset.value = 0
     total.value = 0
+    error.value = null
     if (!dialog.value?.open) dialog.value?.showModal()
+    searchInput.value?.focus()
     void loadPage()
   },
 )
@@ -304,6 +331,7 @@ watch(
 )
 onBeforeUnmount(() => {
   controller?.abort()
+  if (searchTimer) clearTimeout(searchTimer)
   dialog.value?.close()
 })
 </script>
@@ -314,103 +342,222 @@ onBeforeUnmount(() => {
     class="relation-picker"
     :aria-label="dialogTitle"
     @cancel.prevent="close"
+    @click="onBackdrop"
   >
-    <h2>{{ dialogTitle }}</h2>
-    <p v-if="loading" role="status">{{ t('relation.loading') }}</p>
-    <p v-if="message" role="alert">{{ message }}</p>
-    <ul v-if="!loading && options.length" class="relation-options">
-      <li v-for="item in options" :key="item.id">
-        <label>
-          <input
-            type="checkbox"
-            :checked="selectedOnPage(item.id)"
-            :disabled="saving"
-            @change="
-              toggle(item.id, ($event.target as HTMLInputElement).checked)
-            "
+    <header class="relation-search">
+      <AppIcon name="search" :size="18" />
+      <input
+        ref="searchInput"
+        v-model="search"
+        type="search"
+        :placeholder="t('relation.searchPlaceholder')"
+        :aria-label="t('relation.searchPlaceholder')"
+        @input="onSearchInput"
+        @keydown.enter.prevent="searchNow"
+      />
+      <span class="relation-linked-count" role="status">
+        <AppIcon name="link" :size="14" />
+        {{ t('relation.linkedCount', { count: links.length }) }}
+      </span>
+    </header>
+    <p v-if="message" class="relation-error" role="alert">{{ message }}</p>
+    <ul
+      v-if="options.length"
+      class="relation-options"
+      :aria-busy="loading"
+      :aria-label="dialogTitle"
+    >
+      <li
+        v-for="item in options"
+        :key="item.id"
+        :class="{ linked: linkedIds.has(item.id) }"
+      >
+        <span class="relation-option-label">{{ item.label }}</span>
+        <button
+          type="button"
+          class="relation-toggle"
+          :class="{ linked: linkedIds.has(item.id) }"
+          :aria-pressed="linkedIds.has(item.id)"
+          :aria-label="
+            linkedIds.has(item.id)
+              ? t('relation.unlinkRecord', { label: item.label })
+              : t('relation.linkRecord', { label: item.label })
+          "
+          :title="
+            linkedIds.has(item.id) ? t('relation.unlink') : t('relation.link')
+          "
+          :disabled="saving"
+          @click="toggle(item)"
+        >
+          <AppIcon
+            :name="linkedIds.has(item.id) ? 'checkMark' : 'plus'"
+            :size="16"
           />
-          <span>{{ item.label }}</span>
-        </label>
+        </button>
       </li>
     </ul>
-    <p v-else-if="!loading && !message">{{ t('relation.noRows') }}</p>
-    <nav
-      v-if="pageCount > 1"
-      class="relation-paging"
-      :aria-label="t('relation.paging')"
-    >
-      <button
-        type="button"
-        :disabled="loading || saving || offset === 0"
-        @click="loadPage(Math.max(0, offset - 100))"
-      >
-        {{ t('relation.previous') }}
-      </button>
-      <span role="status">{{
-        t('relation.page', { page, pages: pageCount })
-      }}</span>
-      <button
-        type="button"
-        :disabled="loading || saving || page >= pageCount"
-        @click="loadPage(offset + 100)"
-      >
-        {{ t('relation.next') }}
-      </button>
-    </nav>
-    <div class="relation-actions">
+    <p v-else-if="loading" class="relation-empty" role="status">
+      {{ t('relation.loading') }}
+    </p>
+    <p v-else-if="!message" class="relation-empty">
+      {{ search.trim() ? t('relation.noMatches') : t('relation.noRows') }}
+    </p>
+    <footer class="relation-footer">
       <button type="button" :disabled="saving" @click="close">
-        {{ t('relation.cancel') }}
+        {{ t('relation.close') }}
       </button>
-      <button
-        type="button"
-        :disabled="saving || loading || !!message"
-        @click="save"
+      <nav
+        v-if="pageCount > 1"
+        class="relation-paging"
+        :aria-label="t('relation.paging')"
       >
-        {{ saving ? t('relation.saving') : t('relation.save') }}
-      </button>
-    </div>
+        <button
+          type="button"
+          :disabled="loading || offset === 0"
+          @click="loadPage(Math.max(0, offset - PAGE_SIZE))"
+        >
+          {{ t('relation.previous') }}
+        </button>
+        <span>{{ t('relation.page', { page, pages: pageCount }) }}</span>
+        <button
+          type="button"
+          :disabled="loading || page >= pageCount"
+          @click="loadPage(offset + PAGE_SIZE)"
+        >
+          {{ t('relation.next') }}
+        </button>
+      </nav>
+      <span class="relation-total">
+        {{ t('relation.recordCount', { count: total }) }}
+      </span>
+    </footer>
   </dialog>
 </template>
 
 <style scoped>
 .relation-picker {
-  width: min(460px, calc(100vw - 32px));
+  display: none;
+  width: min(560px, calc(100vw - 32px));
   max-height: min(80vh, 640px);
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 10px;
+  background: var(--panel-surface);
   color: var(--text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
+}
+.relation-picker[open] {
+  display: flex;
+  flex-direction: column;
+}
+.relation-search {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.relation-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.relation-linked-count {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--border);
+  white-space: nowrap;
+  font-size: 0.875rem;
 }
 .relation-options {
-  max-height: 48vh;
+  flex: 1;
+  min-height: 0;
   margin: 0;
   padding: 0;
   overflow: auto;
   list-style: none;
 }
-.relation-options label {
+.relation-options[aria-busy='true'] {
+  opacity: 0.6;
+}
+.relation-options li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.relation-option-label {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-weight: 600;
+}
+.relation-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--highlight-green-2-bg);
+  color: var(--highlight-green-2-text);
+  cursor: pointer;
+}
+.relation-toggle:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+.relation-toggle.linked {
+  background: var(--accent);
+  color: var(--panel-surface);
+}
+.relation-toggle:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.relation-empty,
+.relation-error {
+  margin: 0;
+  padding: 16px;
+}
+.relation-error {
+  color: var(--highlight-red-2-text);
+}
+.relation-footer {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 8px;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
-.relation-options label span {
-  overflow-wrap: anywhere;
+.relation-footer > button,
+.relation-paging button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-surface);
+  color: var(--text);
 }
-.relation-actions,
 .relation-paging {
   display: flex;
-  justify-content: space-between;
   gap: 8px;
   align-items: center;
-  margin-top: 12px;
 }
-.relation-picker button {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
-  color: var(--text);
+.relation-total {
+  color: var(--muted);
+  font-size: 0.875rem;
 }
 </style>
