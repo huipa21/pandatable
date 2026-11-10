@@ -72,14 +72,15 @@ control or resource is unavailable, contact its owner.
 
 Open a table's grid and edit cells with the appropriate editor. On desktop, the
 full-width plus row after the last row creates one row immediately using
-defaults. To fill in
-values before creating it, choose **New Entry** at the right of the toolbar,
-apply each edited field, and choose **Create row**. Untouched fields use their
-defaults; closing the draft creates nothing. If a required field has no
-default, use the form instead of the plus. Invalid values are reported and not
-saved. On desktop, **Fields**
-searches the field list and controls which columns are visible; choose **System
-fields** to include system columns. Owners can add a field with the plus button
+defaults. To fill in values first, choose **New** at the right of the toolbar.
+The **New entry** form has inline labels and editors, a field-name search, and
+a **Save** icon in its upper-right corner; system fields are omitted. Untouched
+fields use their defaults, and closing the draft creates nothing. If a required
+field has no default, use the form instead of the plus. Invalid values are
+reported and not saved. If write access is revoked while the form is open, it
+reports the permission change and prevents saving. On desktop, **Fields**
+searches the field list and controls which columns are visible; choose **System fields** to include system
+columns. Owners can add a field with the plus button
 in the grid header or **Add field** in the field menu, choose its type, and
 optionally set a default value and description. The searchable type list also
 includes relations, lookups, rollups and formulas. In **Fields**, each field is
@@ -92,7 +93,11 @@ exists. For single-select and multi-select fields, new options receive
 different preset colors automatically. Choose a swatch to change a color, and
 drag an option's handle, press Alt+Up/Down on it, or use its move controls to
 reorder the options. Attachment fields support file selection and
-drag-and-drop; the administrator's upload limit applies.
+drag-and-drop; the administrator's upload limit applies. When creating or
+editing a checkbox field, choose its **Icon** (including a heart or star).
+Date fields provide a calendar; time and date-time fields provide pickers with
+confirmation. Date-time values use the field's fixed timezone or the viewer's
+timezone, as configured.
 
 Hover or focus a column header and open its arrow menu to hide, sort, filter,
 or group by that field. Owners can also edit its settings or description,
@@ -127,12 +132,15 @@ personal view** on the table page.
 
 The desktop grid toolbar provides **Filter**, **Group**, **Sort**, **Highlight**,
 and **Format** controls. Format contains row height, column width, order, and
-freezing; **Fields** controls visibility, and the separate search control
-searches visible fields. With selected rows, writers can directly **Edit** or
-**Delete** them; bulk Edit applies one typed value to the selected rows, and
-Delete asks for confirmation. A summary cell below each visible column opens
-its aggregate picker, including percentage operations. These controls are no
-longer under a More menu. In a form view, an owner can configure the fields and labels;
+freezing; **Fields** controls visibility. **Search**, immediately left of
+**New**, searches all visible searchable fields or a selected field. With
+selected rows, writers can directly **Edit** or **Delete** them; bulk Edit
+applies one typed value to the selected rows, and
+Delete asks for confirmation. The summary bar stays at the bottom of the grid.
+Hover or focus a column's summary cell (or tap it on a touch device) to choose
+an aggregate, including percentage operations. Unconfigured summaries are
+hidden; choosing **None** clears a saved summary. These controls are no longer
+under a More menu. In a form view, an owner can configure the fields and labels;
 users with write access can submit new rows, while readers cannot submit.
 
 In an editable view, use **Highlight** to add up to 20 independent rules. Each
@@ -159,11 +167,11 @@ to your access. Other participants' row changes refresh the gallery.
 
 The grid's **#** column is the row position, not its unique database ID (hidden
 by default). Use its expand icon to open a row. The first data column supplies
-the popup title. Search fields by name or value, toggle normal/compact layout,
-or expand the popup to fill only the table area. Up/down navigate in view order
+the popup title. Search fields by name or value, or expand the popup to fill only
+the table area. Click a value to edit it. Up/down navigate in view order
 (Kanban uses displayed cards). Finish an active edit before navigating.
 **Duplicate row** creates an unsaved draft: review unique values and choose
-**Save duplicate** to insert it. System, calculated and linked fields are not
+the **Save** icon to insert it. System, calculated and linked fields are not
 copied. Closing the draft inserts nothing. **Delete row** asks for confirmation
 and supports Undo. Comments/history icons open overlays; their close button or
 Escape returns to the row fields without discarding an active field edit.
@@ -176,21 +184,26 @@ people save the same cell, the last saved value wins.
 
 ### 6. Import and export
 
-To create a table from a CSV or XLSX file, open a book and choose **Import as a
+To create a table from an XLSX file, open a book and choose **Import as a
 new table**. To append to an existing table, choose **Import** in its toolbar
 to open **Import into this table**; write access is required. Select the file,
 choose **Analyze file**, review the detected columns, types, or mappings, and
 choose **Start import**. Review the result and download the invalid-cell report
 when offered.
 
-From a table or view, open the single **Import or export** toolbar icon to
-choose **Import**, **Export CSV (current view)**, or **Export workbook** when
-available. CSV downloads the visible fields and respects the current filter,
-sort, and search. A **PandaTable XLSX package**
-can also be exported and imported, but it is **not a complete backup**:
-nonempty attachment identities and contents are not recovered, distinct
-timestamps may collapse to the same value, and view locks are not preserved.
-Review link choices and any reported dependencies after importing a package.
+From a table or view, open **Import/Export** and choose **Import** or **Export**.
+The exported XLSX contains the full table and shared views, with a visible
+`_meta` sheet describing field types and a hidden sheet for view metadata.
+Plain XLSX files are also supported. CSV import and current-view CSV export
+remain available through the API, not the user interface.
+
+An XLSX package is **not a complete backup**: attachment file contents are
+not embedded, Excel timestamps can lose precision, and view locks are not
+preserved. An attachment can be relinked only on the same PandaTable instance
+when the source file still exists and you can read its source table; otherwise
+its name appears in the issues report. Relations are matched to accessible
+targets in the same book; unmatched or ambiguous values are reported. Review
+the import report and any dependencies after importing.
 
 ### 7. Trash and backups
 
@@ -259,16 +272,21 @@ PandaTable 按工作区（公司或项目群）、工作簿（一个项目，其
 ### 3. 使用行和字段
 
 打开数据表的网格，并使用相应的编辑器修改单元格。在桌面端，最后一行下方横跨表格的
-加号会使用默认值直接创建一行；要先填写内容，请选择工具栏右侧的**新建条目**，逐个应用编辑值，
-然后选择**创建行**。未编辑的字段使用默认值；关闭草稿不会创建行。如果必填字段没有
-默认值，请使用表单而不是加号。无效值会显示错误且不会保存。在桌面端，使用**字段**
+加号会使用默认值直接创建一行；要先填写内容，请选择工具栏右侧的**新建**。
+**新建记录**表单将标签和编辑器并排显示，可按字段名搜索，并通过右上角的**保存**图标提交；
+系统字段不会显示。未编辑的字段使用默认值；关闭草稿不会创建行。如果必填字段没有
+默认值，请使用表单而不是加号。无效值会显示错误且不会保存。如果表单打开时写入权限被撤销，
+表单会提示权限变更并禁止保存。在桌面端，使用**字段**
 搜索字段并控制显示哪些列；选择**系统字段**
 可显示系统列。所有者可以通过网格表头的加号或字段菜单中的**添加字段**新建字段，
 选择类型，并按需设置默认值和说明。可搜索的类型列表也包含关联、查找、汇总和公式。
 在**字段**中，每个字段显示为紧凑的磁贴：拖动字段名可调整当前网格的列顺序（所有者
 同时保存数据表的字段顺序），用复选框显示或隐藏它，或打开 **⋯** 菜单编辑、移动或删除。
 **编辑**与**添加字段**使用相同布局，高级设置中可设为显示字段；存在安全转换时，所有者可在其中更改字段类型。
-附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
+单选和多选的新选项会自动分配预设颜色；可通过色块更改颜色，拖动手柄、按 Alt+上/下方向键
+或使用移动控件调整顺序。附件字段支持选择文件和拖放；上传大小受管理员设置的限制。
+创建或编辑复选框字段时，可在**图标**中选择爱心、星形等样式。日期字段提供日历；
+时间和日期时间字段提供可确认的选择器。日期时间按字段配置的固定时区或查看者时区显示。
 
 将鼠标悬停在列标题上或聚焦标题，然后打开箭头菜单，可按该字段隐藏、排序、筛选或分组。
 所有者还可以编辑字段设置或说明、在其旁边插入字段、仅复制字段结构而不复制行值、
@@ -294,9 +312,12 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 临时调整，并在数据表页面选择**将当前更改保存为个人视图**。
 
 桌面网格工具栏提供**筛选**、**分组**、**排序**、**高亮**和**格式**控件。**格式**
-包含行高、列宽、顺序和冻结；**字段**控制列的可见性，独立的搜索控件搜索可见字段。
+包含行高、列宽、顺序和冻结；**字段**控制列的可见性。**新建**左侧的**搜索**可搜索
+所有可见且支持搜索的字段，也可选择单个字段。
 选择行后，写入者可以直接**编辑**或**删除**所选行；批量编辑会将一个类型化的值应用到
-所选行，删除前会要求确认。每个可见列下方的汇总单元格可打开汇总选项，包括百分比运算。
+所选行，删除前会要求确认。汇总栏固定在网格底部；将鼠标悬停或聚焦在列汇总单元格上
+（触屏可直接点击），即可选择汇总方式，包括百分比运算。未配置的汇总默认隐藏；
+选择**无**可清除已保存的汇总。
 这些控件不再位于“更多”菜单中。在表单视图中，所有者可以配置字段
 和标签；有写入权限的用户可以提交新行，读取者不能提交。
 
@@ -317,9 +338,9 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 ### 5. 协作
 
 网格的 **#** 列表示行位置，不是默认隐藏的唯一数据库 ID。点击展开图标可打开行，
-首个数据列用作弹窗标题。可按字段名称或值搜索、切换普通/紧凑布局，或仅在数据表
-区域内全屏。上下箭头按视图顺序导航（看板仅导航当前显示的卡片），导航前请完成
-当前编辑。**复制行**创建未保存的草稿，检查唯一字段后点击**保存副本**才会插入；
+首个数据列用作弹窗标题。可按字段名称或值搜索，或仅在数据表区域内全屏；点击字段值
+即可编辑。上下箭头按视图顺序导航（看板仅导航当前显示的卡片），导航前请完成
+当前编辑。**复制行**创建未保存的草稿，检查唯一字段后点击**保存**图标才会插入；
 系统、计算和关联字段不会复制，关闭草稿不会插入。**删除行**需要确认并支持撤销。
 评论和历史记录以覆盖层显示，点击关闭或按 Escape 返回字段，并保留当前字段草稿。
 
@@ -330,16 +351,20 @@ Ctrl+Y 撤销或重做。如果其他用户已更改数据，撤销时可能需�
 
 ### 6. 导入和导出
 
-要从 CSV 或 XLSX 文件创建数据表，请打开工作簿并选择**导入为新表**。要向已有表
+要从 XLSX 文件创建数据表，请打开工作簿并选择**导入为新表**。要向已有表
 追加数据，请在该表的工具栏选择**导入**，打开**导入到此表**；这需要写入权限。选择文件，点击
 **分析文件**，检查检测到的列、类型或映射，然后选择**开始导入**。检查结果，并在
 提供报告时下载无效单元格报告。
 
-在数据表或视图中，打开工具栏中的**导入或导出**图标，可选择**导入**、**导出 CSV
-（当前视图）**，以及可用时的**导出工作簿**。CSV 会下载可见字段，并遵循当前筛选、排序和
-搜索。也可以导出和导入 **PandaTable XLSX 数据包**，但它**不是完整备份**：
-非空附件的身份和内容无法恢复，不同时间戳可能合并为同一值，视图锁定状态也不会
-保留。导入数据包后，请检查关联选项和报告的依赖问题。
+在数据表或视图中，打开工具栏中的**导入/导出**，选择**导入**或**导出**。
+导出的 XLSX 包含完整数据表和共享视图、描述字段类型的可见 `_meta` 工作表，以及保存
+视图元数据的隐藏工作表；也支持普通 XLSX 文件。CSV 导入及当前视图的 CSV 导出仍可通过
+API 使用，但不在用户界面中提供。
+
+XLSX 数据包**不是完整备份**：附件内容不会嵌入，Excel 时间戳可能损失精度，视图锁定
+状态也不会保留。只有在同一 PandaTable 实例中、源文件仍存在且你有权读取源表时，附件
+才能重新关联；否则其名称会列入问题报告。关联字段匹配同一工作簿中有权限访问的目标；
+未匹配或存在多个匹配的数据会被报告。导入后请检查问题报告和相关依赖。
 
 ### 7. 回收站和备份
 

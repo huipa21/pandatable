@@ -767,7 +767,7 @@ test('blank-create errors and permission changes do not fabricate rows', async (
     en.errors.ERR_REQUIRED_FIELD,
   )
   await expect(page.getByRole('alert')).toContainText(
-    'Use New Entry to provide the required or unique values.',
+    'Use New to provide the required or unique values.',
   )
   await expect(page.locator('dialog[open]')).toHaveCount(0)
   await setLocale(page, 'zh-CN')
@@ -775,7 +775,7 @@ test('blank-create errors and permission changes do not fabricate rows', async (
     zh.errors.ERR_REQUIRED_FIELD,
   )
   await expect(page.getByRole('alert')).toContainText(
-    '请使用“新建条目”填写必填值或其他唯一值。',
+    '请使用“新建”填写必填值或其他唯一值。',
   )
   await setLocale(page, 'en')
   expect((await query(page, table.viewId)).total).toBe(0)
@@ -885,7 +885,7 @@ test('mobile retains its existing form-based creation', async ({
   await expect(dialog).toBeVisible()
   expect((await query(page, table.viewId)).total).toBe(0)
   await dialog
-    .getByRole('button', { name: en.mobileRows.create, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   await expect.poll(async () => (await query(page, table.viewId)).total).toBe(1)
 })

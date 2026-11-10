@@ -58,7 +58,7 @@ const props = withDefaults(
   },
 )
 const emit = defineEmits<{
-  commit: [value: WireValue]
+  commit: [value: WireValue, retainFocus?: boolean]
   preview: [value: WireValue]
   invalidValue: []
   invalidDraft: [text: string, reason: Reason, message?: string]
@@ -219,6 +219,11 @@ function finish(result: Result<WireValue>) {
   reason.value = null
   emit('commit', result.value)
   return true
+}
+
+function temporalCommit(value: WireValue, retainFocus?: boolean) {
+  if (retainFocus) emit('commit', value, true)
+  else emit('commit', value)
 }
 
 function currentDraft() {
@@ -512,9 +517,10 @@ function keydown(event: KeyboardEvent) {
       :required="required"
       :auto-focus="autoFocus"
       :live="live"
+      :grid-commit-on-leave="gridCommitOnLeave"
       :initial-draft="initialDraft"
       :default-placeholder="defaultPlaceholder"
-      @commit="emit('commit', $event)"
+      @commit="temporalCommit"
       @preview="emit('preview', $event)"
       @invalid-value="emit('invalidValue')"
       @invalid-draft="

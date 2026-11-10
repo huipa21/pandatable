@@ -351,7 +351,10 @@ func (file *ImportFile) synthesizeImportManifest(metadata *XLSXMetadata, invalid
 
 func importMetaUserFieldOK(base packageField, row XLSXMetaField) (packageField, bool) {
 	patched, err := importMetaUserField(base, row)
-	return patched, err == nil
+	if err != nil {
+		return base, false
+	}
+	return patched, true
 }
 
 func importMetaLinkOptions(row XLSXMetaField) (json.RawMessage, bool) {

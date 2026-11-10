@@ -15,7 +15,9 @@ import { openExportMenu } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 import type {
   DataRow,
+  ImportAnalysis,
   ImportJob,
+  ImportMapping,
   TableField,
   TableSchema,
   ViewMutation,
@@ -105,6 +107,63 @@ async function doneJob(page: Page) {
   )
 }
 
+async function analyzeCSV(
+  page: Page,
+  bookId: string,
+  name: string,
+  buffer: Buffer,
+) {
+  const response = await page.request.post(
+    `/api/v1/books/${bookId}/imports/analyze`,
+    {
+      headers: headers(),
+      multipart: { file: { name, mimeType: 'text/csv', buffer } },
+    },
+  )
+  expect(response.status(), await response.text()).toBe(201)
+  return (await response.json()) as { id: string; analysis: ImportAnalysis }
+}
+
+async function runCSVImport(
+  page: Page,
+  id: string,
+  name: string,
+  analysis: ImportAnalysis,
+  adjust?: (mappings: ImportMapping[]) => void,
+) {
+  const mappings: ImportMapping[] = analysis.columns.map((column) => ({
+    index: column.index,
+    name: column.name,
+    uiType: column.uiType,
+    options: column.options ?? {},
+    targetFieldId: '',
+    skip: false,
+    relink: false,
+  }))
+  adjust?.(mappings)
+  const started = await page.request.post(`/api/v1/imports/${id}`, {
+    headers: headers(),
+    data: { name, hasHeader: analysis.hasHeader, columns: mappings },
+  })
+  expect(started.status(), await started.text()).toBe(202)
+  let job: ImportJob | undefined
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`/api/v1/imports/${id}`)
+        expect(response.status(), await response.text()).toBe(200)
+        job = (await response.json()) as ImportJob
+        if (job.status === 'failed')
+          throw new Error(`CSV import failed: ${job.errorCode}`)
+        return job.status
+      },
+      { timeout: 240_000, intervals: [250, 500, 1000] },
+    )
+    .toBe('done')
+  if (!job) throw new Error('CSV import returned no job')
+  return job
+}
+
 async function openBookImport(page: Page, workspaceId: string, bookId: string) {
   await page.goto(`/w/${workspaceId}/b/${bookId}`)
   await page
@@ -188,7 +247,7 @@ function gbkFixture() {
   return Buffer.concat(parts)
 }
 
-test('AT-702–704 package restoration, GBK wizard and XLSX append permissions', async ({
+test('AT-702–704 package restoration, GBK API and XLSX append permissions', async ({
   page,
   browser,
 }, testInfo) => {
@@ -499,12 +558,6 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
   })
   await packageAppend.getByRole('button', { name: en.import.analyze }).click()
   await expect(
-    packageAppend.getByText(en.import.packageAppendNotice),
-  ).toBeVisible()
-  await expect(
-    packageAppend.getByText(en.import.packageDataWarning),
-  ).toBeVisible()
-  await expect(
     packageAppend.getByLabel(en.import.targetField.replace('{name}', 'Amount')),
   ).toHaveValue(restored.fields.find((field) => field.name === 'Amount')!.id)
   await closeImport(page, packageAppend)
@@ -515,43 +568,55 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     mimeType: 'text/csv',
     buffer: gbkFixture(),
   })
-  await gbk.getByRole('button', { name: en.import.analyze }).click()
+  await expect(gbk.getByRole('alert')).toHaveText(en.gridPolish.gp06.onlyExcel)
   await expect(
-    gbk.getByText(en.import.encoding.replace('{encoding}', 'gbk')),
-  ).toBeVisible()
+    gbk.getByRole('button', { name: en.import.analyze }),
+  ).toBeDisabled()
+  await gbk.getByRole('button', { name: en.import.close, exact: true }).click()
+  await expect(gbk).toBeHidden()
+  const gbkAnalysis = await analyzeCSV(page, bookId, 'gbk.csv', gbkFixture())
+  expect(gbkAnalysis.analysis.encoding).toBe('gbk')
   for (const [field, type] of [
     ['Number', 'integer'],
     ['Day', 'date'],
     ['Stage', 'single_select'],
     ['Details', 'text'],
   ] as const) {
-    await expect(
-      gbk.getByLabel(en.import.columnType.replace('{name}', field)),
-    ).toHaveValue(type)
+    expect(
+      gbkAnalysis.analysis.columns.find((column) => column.name === field)
+        ?.uiType,
+    ).toBe(type)
   }
-  await gbk.getByLabel(en.import.tableName).fill('GBK imported')
-  await gbk
-    .getByLabel(en.import.columnName.replace('{name}', 'Details'))
-    .fill('Notes')
-  await gbk
-    .getByLabel(en.import.columnType.replace('{name}', 'Details'))
-    .selectOption('long_text')
-  const gbkFinished = doneJob(page)
-  await gbk.getByRole('button', { name: en.import.start }).click()
-  const gbkResult = (await (await gbkFinished).json()) as ImportJob
+  const gbkResult = await runCSVImport(
+    page,
+    gbkAnalysis.id,
+    'GBK imported',
+    gbkAnalysis.analysis,
+    (mappings) => {
+      const details = mappings.find((mapping) => mapping.name === 'Details')
+      if (!details) throw new Error('GBK Details column is missing')
+      details.name = 'Notes'
+      details.uiType = 'long_text'
+      details.options = {}
+    },
+  )
   expect(gbkResult).toMatchObject({
     status: 'done',
     result: { rows: 10_000, invalidCells: 1 },
     hasReport: true,
   })
-  const reportDownload = page.waitForEvent('download')
-  await gbk.getByRole('link', { name: en.import.downloadReport }).click()
-  const report = await reportDownload
-  expect(await report.failure()).toBeNull()
-  expect((await readFile((await report.path())!)).toString('utf8')).toContain(
-    '4323,Number,bad-number',
+  const report = await page.request.get(
+    `/api/v1/imports/${gbkAnalysis.id}/issues`,
   )
-  await closeImport(page, gbk)
+  expect(report.status()).toBe(200)
+  expect(await report.text()).toContain('4323,Number,bad-number')
+  expect(
+    (
+      await page.request.delete(`/api/v1/imports/${gbkAnalysis.id}`, {
+        headers: headers(),
+      })
+    ).status(),
+  ).toBe(200)
 
   const destination = await makeTable(page, bookId, 'Append destination')
   const amountField = await makeField(page, destination.table.id, {
@@ -594,6 +659,7 @@ test('AT-702–704 package restoration, GBK wizard and XLSX append permissions',
     await expect(
       collaborator.page.getByRole('button', {
         name: en.gridPolish.gp06.import,
+        exact: true,
       }),
     ).toHaveCount(0)
     await expect(collaborator.page.locator('.visibility-menu')).toHaveCount(0)
@@ -695,7 +761,7 @@ test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MB', asy
   )
   test.setTimeout(300_000)
   await loginOwner(page)
-  const { workspaceId, bookId } = await makeBook(page, `large-${Date.now()}`)
+  const { bookId } = await makeBook(page, `large-${Date.now()}`)
   const project = process.env.COMPOSE_PROJECT_NAME
   expect(project).toBeTruthy()
   const limitBytes = 300_000_000
@@ -703,17 +769,18 @@ test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MB', asy
   const lines = ['Name,Amount']
   for (let index = 0; index < 200_000; index++)
     lines.push(`row-${index},${index}`)
-  const dialog = await openBookImport(page, workspaceId, bookId)
-  await dialog.locator('input[type=file]').setInputFiles({
-    name: 'large.csv',
-    mimeType: 'text/csv',
-    buffer: Buffer.from(lines.join('\n') + '\n'),
-  })
-  await dialog.getByRole('button', { name: en.import.analyze }).click()
-  await dialog.getByLabel(en.import.tableName).fill('Large imported')
-  const finished = doneJob(page)
-  await dialog.getByRole('button', { name: en.import.start }).click()
-  const result = (await (await finished).json()) as ImportJob
+  const analyzed = await analyzeCSV(
+    page,
+    bookId,
+    'large.csv',
+    Buffer.from(lines.join('\n') + '\n'),
+  )
+  const result = await runCSVImport(
+    page,
+    analyzed.id,
+    'Large imported',
+    analyzed.analysis,
+  )
   expect(result).toMatchObject({
     status: 'done',
     result: { rows: 200_000, invalidCells: 0 },
@@ -731,5 +798,11 @@ test('AT-705 imports 200,000 CSV rows with app high-water RSS below 300 MB', asy
   expect(peak, 'app process peak RSS throughout its lifetime').toBeLessThan(
     limitBytes,
   )
-  await closeImport(page, dialog)
+  expect(
+    (
+      await page.request.delete(`/api/v1/imports/${analyzed.id}`, {
+        headers: headers(),
+      })
+    ).status(),
+  ).toBe(200)
 })

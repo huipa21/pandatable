@@ -148,12 +148,12 @@ describe('grid scalar editor lifecycle', () => {
     expect(cancelled.close).toHaveBeenCalledOnce()
   })
 
-  it('accepts a new draft if the editor remains mounted after a commit', async () => {
+  it('keeps focus after an unchanged temporal Enter and accepts the next draft', async () => {
     const { wrapper, save } = mountEditor('datetime', null)
     const input = wrapper.get('input')
     await input.trigger('keydown', { key: 'Enter' })
     await input.trigger('keydown', { key: 'Enter' })
-    expect(save).toHaveBeenCalledExactlyOnceWith(null, false)
+    expect(save).toHaveBeenCalledExactlyOnceWith(null, true)
 
     await input.setValue('2026-01-01 00:30')
     await input.trigger('keydown', { key: 'Enter' })

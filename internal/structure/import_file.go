@@ -701,10 +701,9 @@ func (guess *importGuess) add(value string, env codec.Env) {
 	}
 }
 
-// importChoiceColor rotates through the palette after its gray default.
+// importChoiceColor uses gray after the other colors, matching field creation.
 func importChoiceColor(index int) string {
-	colors := codec.ChoiceColors[1:]
-	return colors[index%len(colors)]
+	return codec.ChoiceColors[(index+1)%len(codec.ChoiceColors)]
 }
 
 func (guess *importGuess) result() (string, json.RawMessage) {

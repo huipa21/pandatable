@@ -9,6 +9,7 @@ import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore } from '../../stores/realtime'
 import { navUser, tableSchema } from '../../test/navigation'
 import type { DataRow } from '../../api/types'
+import FieldEditor from '../fields/FieldEditor.vue'
 import RowExpandDialog from './RowExpandDialog.vue'
 
 let pinia: ReturnType<typeof createPinia>
@@ -83,6 +84,23 @@ function schemaWith(kind: string, options: Record<string, unknown> = {}) {
   schema.fields[0]!.options = options
   return schema
 }
+
+it.each(['create', 'edit'])(
+  'passes schema requiredness to the %s row editor',
+  async (mode) => {
+    const schema = schemaWith('date')
+    schema.fields[0]!.isRequired = true
+    stored.fields.name = '2026-10-27'
+    const { wrapper } = await setup(
+      schema,
+      undefined,
+      mode === 'create' ? null : id,
+    )
+    if (mode === 'edit')
+      await wrapper.get('.row-field-value[role="button"]').trigger('click')
+    expect(wrapper.findComponent(FieldEditor).props('required')).toBe(true)
+  },
+)
 
 const textCases = [
   ['text', {}, '中文 text', '中文 text'],
@@ -1616,6 +1634,55 @@ it('reports lost write permission when a realtime ACL refresh interrupts an edit
   expect(wrapper.find('.field-editor').exists()).toBe(false)
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
+
+it('reports lost write permission while a blank new entry is open', async () => {
+  const { wrapper } = await setup(tableSchema(), undefined, null)
+  await wrapper.setProps({ schema: { ...tableSchema(), myLevel: 'read' } })
+  expect(wrapper.get('[role="alert"]').text()).toContain(
+    'You do not have permission',
+  )
+  expect(
+    wrapper.get('button[aria-label="Save"]').attributes('disabled'),
+  ).toBeDefined()
+})
+
+it.each([false, true])(
+  'removes temporal editors cleanly when new-entry write access is revoked (fullscreen: %s)',
+  async (fullscreen) => {
+    const schema = tableSchema()
+    schema.fields.push(
+      { ...schema.fields[0]!, id: 'date', uiType: 'date', options: {} },
+      { ...schema.fields[0]!, id: 'datetime', uiType: 'datetime', options: {} },
+    )
+    const consoleError = vi.spyOn(console, 'error')
+    const { wrapper } = await setup(schema, undefined, null)
+    if (fullscreen) {
+      const workspace = document.createElement('div')
+      vi.spyOn(workspace, 'getBoundingClientRect').mockReturnValue(
+        new DOMRect(220, 120, 900, 500),
+      )
+      await wrapper.setProps({ workspace })
+      await wrapper
+        .get('[aria-label="Toggle table fullscreen"]')
+        .trigger('click')
+    }
+    expect(
+      wrapper
+        .get('dialog.row-expand')
+        .classes()
+        .includes('row-expand-fullscreen'),
+    ).toBe(fullscreen)
+    const portalRoot = wrapper.get('[data-temporal-portal-root]')
+    expect(portalRoot.findAll('.temporal-picker-portal')).toHaveLength(2)
+    await wrapper.setProps({ schema: { ...schema, myLevel: 'read' } })
+    await flushPromises()
+    expect(portalRoot.findAll('.temporal-picker-portal')).toHaveLength(0)
+    expect(wrapper.get('[role="alert"]').text()).toContain(
+      'You do not have permission',
+    )
+    expect(consoleError).not.toHaveBeenCalled()
+  },
+)
 
 it('restarts an in-flight read on a permission change without leaving perpetual loading', async () => {
   let release!: (response: Response) => void

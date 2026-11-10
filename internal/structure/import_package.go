@@ -159,7 +159,7 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 					}
 				}
 			}
-			for _, field := range file.manifest.Fields {
+			for index, field := range file.manifest.Fields {
 				if codec.IsSystem(codec.Kind(field.UIType)) || field.UIType == "link" ||
 					field.UIType == "formula" || isComputedKind(field.UIType) {
 					continue
@@ -170,6 +170,24 @@ func (s *Service) runNewPackageImport(ctx context.Context, actor Actor, bookID s
 				}
 				if field.PGType != "" && pgTypeName(bound.Column().Type) != field.PGType {
 					return validation("The package field type does not match its options")
+				}
+				column := file.Analysis.Columns[index]
+				mapping := mappings[column.Index]
+				if file.Analysis.MetaVersion == "v2" &&
+					(column.TypeSource == "manifest" || column.TypeSource == "inferred") &&
+					field.UIType != string(codec.Attachment) && field.UIType != "autonumber" &&
+					mapping.UIType != "" {
+					if packageStructuralKind(mapping.UIType) || mapping.UIType == string(codec.Attachment) ||
+						mapping.UIType == "autonumber" {
+						return validation("A fallback field requires a writable field type")
+					}
+					if len(mapping.Options) == 0 {
+						if mapping.UIType != field.UIType {
+							return validation("A changed field type requires options")
+						}
+					} else {
+						field.UIType, field.Options = mapping.UIType, mapping.Options
+					}
 				}
 				id, err := s.createImportField(ctx, c, tableID, physical, FieldInput{
 					Name: field.Name, UIType: field.UIType, Options: field.Options,

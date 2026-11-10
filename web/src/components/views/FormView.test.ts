@@ -6,6 +6,7 @@ import { i18n, loadLocale } from '../../i18n'
 import type { TableSchema } from '../../api/types'
 import { tableSchema, navUser } from '../../test/navigation'
 import { useAuthStore } from '../../stores/auth'
+import FieldEditor from '../fields/FieldEditor.vue'
 import FormView from './FormView.vue'
 
 let wrapper: VueWrapper | undefined
@@ -114,6 +115,46 @@ it('renders a checkbox icon and requires a checked value when configured', async
     }),
   )
 })
+
+it.each(['text', 'checkbox'])(
+  'enforces schema-level requiredness for a %s even when the form makes it optional',
+  async (kind) => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(Response.json({ row: { id: '1' } }))
+    vi.stubGlobal('fetch', fetcher)
+    const form = await setup('owner')
+    const schema = JSON.parse(
+      JSON.stringify(form.props('schema')),
+    ) as TableSchema
+    schema.fields[0]!.uiType = kind
+    schema.fields[0]!.isRequired = true
+    schema.fields[0]!.default = kind === 'checkbox' ? false : null
+    schema.views[0]!.config.form!.fields[0]!.required = false
+    schema.schemaVersion++
+    await form.setProps({ schema, view: schema.views[0]! })
+
+    expect(form.find('.required-mark').exists()).toBe(true)
+    expect(form.findComponent(FieldEditor).props('required')).toBe(true)
+    await form.get('form').trigger('submit')
+    expect(form.get('[role="alert"]').text()).toContain('Topic is required')
+    expect(fetcher).not.toHaveBeenCalled()
+
+    if (kind === 'checkbox')
+      await form.get('[role="checkbox"]').trigger('click')
+    else await form.get('input[aria-label="Topic"]').setValue('Required value')
+    await form.get('form').trigger('submit')
+    await flushPromises()
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/views/v/form-submit',
+      expect.objectContaining({
+        body: JSON.stringify({
+          fields: { name: kind === 'checkbox' ? true : 'Required value' },
+        }),
+      }),
+    )
+  },
+)
 
 it('preserves an in-progress draft when the same schema and view are refreshed', async () => {
   const fetcher = vi.fn().mockResolvedValue(Response.json({ row: { id: '1' } }))

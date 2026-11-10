@@ -52,6 +52,18 @@ func TestImportFileCSVDetectionAndSampling(t *testing.T) {
 	}
 }
 
+func TestImportChoiceColorExhaustionMatchesFieldCreation(t *testing.T) {
+	want := []string{
+		"red", "orange", "amber", "yellow", "lime", "green", "teal",
+		"cyan", "blue", "indigo", "purple", "pink", "gray", "red", "orange",
+	}
+	for index, color := range want {
+		if got := importChoiceColor(index); got != color {
+			t.Errorf("color %d = %q, want %q", index, got, color)
+		}
+	}
+}
+
 func TestImportFileCSVHeaderEncodingAndDecimals(t *testing.T) {
 	for _, test := range []struct {
 		name, input, encoding string

@@ -147,11 +147,8 @@
       "loading": "正在加载视图设置…"
     },
     "ux09": {
-      "blankCreateHint": "请使用“新建条目”填写必填值或其他唯一值。",
+      "blankCreateHint": "请使用“新建”填写必填值或其他唯一值。",
       "createdMayBeHidden": "已创建行。筛选、排序或折叠的分组可能影响其显示位置。"
-    },
-    "ux10": {
-      "newEntry": "新建条目"
     }
   },
   "nav": {
@@ -277,8 +274,6 @@
     "formatPackage": "PandaTable 数据包",
     "analyzed": "检测到{format}；已采样 {count} 行。",
     "encoding": "编码：{encoding}",
-    "packageAppendNotice": "将追加数据行；不会还原数据包中的字段和共享视图。",
-    "packageDataWarning": "映射到附件字段的文件名无法恢复，将报告为无效；Excel 时间戳可能损失精度。",
     "tableName": "新表名称",
     "header": "首行包含列名",
     "mapping": "列映射",
@@ -616,7 +611,6 @@
     "untitled": "未命名行 {id}",
     "plus": "+",
     "newRow": "新建记录",
-    "create": "创建行",
     "createLimit": "草稿超过 5,000 个单元格或 512 KiB 的创建请求限制，未发送任何内容。",
     "uncertain": "尚未确认创建成功。连接失败后，请先检查行列表再重试，以免重复创建。"
   },

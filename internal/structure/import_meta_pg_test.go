@@ -335,6 +335,99 @@ func TestImportXLSXMetaRoundTripRestoresTypesAndRelations(t *testing.T) {
 	})
 }
 
+func TestImportXLSXMetaFallbackTypeOverrides(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		removeSheet bool
+		source      string
+	}{
+		{name: "manifest", source: "manifest"},
+		{name: "inferred", removeSheet: true, source: "inferred"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f := newFixture(t)
+			owner := f.user("user", "active", "en")
+			owner.Timezone = "UTC"
+			book := f.book(owner, f.workspace(owner).ID)
+			source, err := f.service.CreateTable(f.ctx, owner, book.ID, "Fallback source")
+			if err != nil {
+				t.Fatal(err)
+			}
+			score, err := f.service.CreateField(f.ctx, owner, source.Table.ID, FieldInput{
+				Name: "Score", UIType: "integer", Options: json.RawMessage(`{"size":"big"}`),
+			})
+			if err != nil || score.Field == nil {
+				t.Fatalf("create score: %v", err)
+			}
+			rows, err := f.service.CreateRows(f.ctx, owner, source.Table.ID, []RowInsert{{
+				Fields: map[string]json.RawMessage{
+					source.Fields[0].ID: json.RawMessage(`"Item"`),
+					score.Field.ID:      json.RawMessage(`4`),
+				},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := exportImportTestPackage(t, f, owner, source.Table.ID)
+			path := editImportWorkbook(t, data, func(workbook *excelize.File) {
+				setImportMetaCell(t, workbook, "Score", "ui_type", "invalid_type")
+				if test.removeSheet {
+					if err := workbook.DeleteSheet("_pandatable"); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+			file, err := AnalyzeImportFile(f.ctx, path, "fallback.xlsx", owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := ImportTarget{Kind: "book", ID: book.ID}
+			if err := f.service.PrepareImport(f.ctx, owner, target, file); err != nil {
+				t.Fatal(err)
+			}
+			if file.Analysis.Format != "package" || file.Analysis.MetaVersion != "v2" {
+				t.Fatalf("fallback analysis = %+v", file.Analysis)
+			}
+			request := ImportRequest{Name: "Fallback imported", HasHeader: true}
+			for _, column := range file.Analysis.Columns {
+				mapping := ImportMapping{Index: column.Index}
+				if column.Name == "Score" {
+					if column.TypeSource != test.source {
+						t.Fatalf("score source = %q, want %q", column.TypeSource, test.source)
+					}
+					mapping.UIType, mapping.Options = "text", json.RawMessage(`{}`)
+				} else if test.source == "manifest" && column.Name == source.Fields[0].Name {
+					if column.TypeSource != "meta" {
+						t.Fatalf("display source = %q, want meta", column.TypeSource)
+					}
+					mapping.UIType, mapping.Options = "integer", json.RawMessage(`{"size":"big"}`)
+				}
+				request.Columns = append(request.Columns, mapping)
+			}
+			result, err := f.service.RunImport(f.ctx, owner, target, file, request, nil)
+			if err != nil {
+				t.Fatalf("import fallback: %#v", err)
+			}
+			fields := importFieldsByName(t, f, owner, result.TableID)
+			if fields["Score"].UIType != "text" || fields[source.Fields[0].Name].UIType != "text" {
+				t.Fatalf("imported types = %+v", fields)
+			}
+			row, err := f.service.GetRow(f.ctx, owner, result.TableID, rows[0].ID)
+			if err != nil || string(row.Fields[fields["Score"].ID]) != `"4"` {
+				t.Fatalf("imported score = %s, error = %v", row.Fields[fields["Score"].ID], err)
+			}
+			for index := range request.Columns {
+				if request.Columns[index].UIType == "text" {
+					request.Columns[index].UIType = "attachment"
+				}
+			}
+			if _, err := f.service.RunImport(f.ctx, owner, target, file, request, nil); err == nil {
+				t.Fatal("structural fallback override unexpectedly succeeded")
+			}
+		})
+	}
+}
+
 // GP-07.2: same-instance attachment references relink to new attachment rows
 // sharing the stored file, only for importers who can read the source table.
 func TestImportXLSXMetaRelinksReadableAttachments(t *testing.T) {

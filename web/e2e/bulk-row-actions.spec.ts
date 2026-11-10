@@ -232,6 +232,7 @@ test('WG-07: selected rows support typed atomic edits, delete and undo', async (
   await dialog
     .getByLabel(en.field.editor.value, { exact: true })
     .fill('2026-06-15')
+  await dialog.getByLabel(en.field.editor.value, { exact: true }).press('Enter')
   await previewAndApply(dialog)
   expect((await readRow(later.id)).fields[fields.get('Due')!]).toBe(
     '2026-06-15',

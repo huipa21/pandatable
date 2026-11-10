@@ -108,8 +108,8 @@ it('analyzes a file, lets the user adjust and skip fields, and downloads the rep
           uiType: 'single_select',
           options: {
             choices: [
-              { id: 'c1', label: '甲', color: 'gray' },
-              { id: 'c2', label: '乙', color: 'gray' },
+              { id: 'c1', label: '甲', color: 'red' },
+              { id: 'c2', label: '乙', color: 'orange' },
             ],
           },
         },
@@ -164,8 +164,15 @@ it('rejects CSV files before uploading', async () => {
   }
 })
 
-it('shows v2 workbook types as read-only and keeps column naming editable', async () => {
-  const analysis: ImportAnalysis = { ...plain, metaVersion: 'v2' }
+it('keeps metadata types read-only while allowing inferred types to be changed', async () => {
+  const analysis: ImportAnalysis = {
+    ...plain,
+    metaVersion: 'v2',
+    columns: [
+      { ...plain.columns[0]!, typeSource: 'meta' },
+      { ...plain.columns[1]!, typeSource: 'inferred' },
+    ],
+  }
   vi.stubGlobal('fetch', fetchImport(analysis, done))
   const wrapper = mount(ImportDialog, {
     props: { targetKind: 'book', targetId: 'book-1' },
@@ -175,10 +182,165 @@ it('shows v2 workbook types as read-only and keeps column naming editable', asyn
     await upload(wrapper)
     expect(wrapper.text()).toContain('Field types from workbook')
     expect(wrapper.text()).not.toContain('Type for Name')
+    expect(wrapper.text()).toContain('Type for Amount')
     expect(wrapper.text()).toContain('Name for Name')
     expect(
       wrapper.find('.import-column input:not([type="checkbox"])').exists(),
     ).toBe(true)
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('submits editable v2 fallback types without allowing metadata or structural types to change', async () => {
+  const analysis: ImportAnalysis = {
+    format: 'package',
+    metaVersion: 'v2',
+    hasHeader: true,
+    sampledRows: 1,
+    columns: [
+      {
+        index: 1,
+        name: 'Meta',
+        uiType: 'text',
+        options: {},
+        typeSource: 'meta',
+      },
+      {
+        index: 2,
+        name: 'Fallback',
+        uiType: 'integer',
+        options: { size: 'big' },
+        typeSource: 'manifest',
+      },
+      {
+        index: 3,
+        name: 'Inferred',
+        uiType: 'text',
+        options: {},
+        typeSource: 'inferred',
+      },
+      {
+        index: 4,
+        name: 'Files',
+        uiType: 'attachment',
+        options: {},
+        typeSource: 'manifest',
+      },
+    ],
+  }
+  const fetcher = fetchImport(analysis, done)
+  vi.stubGlobal('fetch', fetcher)
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'book', targetId: 'book-1' },
+    global: { plugins: [i18n] },
+  })
+  try {
+    await upload(wrapper)
+    const columns = wrapper.findAll('.import-column')
+    expect(columns[0]!.find('select').exists()).toBe(false)
+    expect(columns[3]!.find('select').exists()).toBe(false)
+    await columns[1]!.get('select').setValue('text')
+    await columns[2]!.get('select').setValue('long_text')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Start import')!
+      .trigger('click')
+    await flushPromises()
+    const start = fetcher.mock.calls.find(
+      ([path, init]) =>
+        String(path).endsWith('/imports/job-1') && init?.method === 'POST',
+    )?.[1]
+    expect(JSON.parse(String(start?.body)).columns).toMatchObject([
+      { index: 1, uiType: 'text' },
+      { index: 2, uiType: 'text', options: {} },
+      { index: 3, uiType: 'long_text', options: {} },
+      { index: 4, uiType: 'attachment' },
+    ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('preserves imported fallback choice colors when editing other choices', async () => {
+  const analysis: ImportAnalysis = {
+    format: 'package',
+    metaVersion: 'v2',
+    hasHeader: true,
+    sampledRows: 1,
+    columns: [
+      {
+        index: 1,
+        name: 'Status',
+        uiType: 'single_select',
+        options: {
+          choices: [{ id: 'existing', label: 'Existing', color: 'pink' }],
+        },
+        typeSource: 'manifest',
+      },
+    ],
+  }
+  const fetcher = fetchImport(analysis, done)
+  vi.stubGlobal('fetch', fetcher)
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'book', targetId: 'book-1' },
+    global: { plugins: [i18n] },
+  })
+  try {
+    await upload(wrapper)
+    await wrapper.get('.import-column textarea').setValue('Existing\nNew')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Start import')!
+      .trigger('click')
+    await flushPromises()
+    const start = fetcher.mock.calls.find(
+      ([path, init]) =>
+        String(path).endsWith('/imports/job-1') && init?.method === 'POST',
+    )?.[1]
+    expect(JSON.parse(String(start?.body)).columns[0].options.choices).toEqual([
+      { id: 'existing', label: 'Existing', color: 'pink' },
+      { id: 'c1', label: 'New', color: 'red' },
+    ])
+  } finally {
+    wrapper.unmount()
+  }
+})
+
+it('blocks invalid imported choices until the field type changes', async () => {
+  const analysis: ImportAnalysis = {
+    format: 'package',
+    metaVersion: 'v2',
+    hasHeader: true,
+    sampledRows: 1,
+    columns: [
+      {
+        index: 1,
+        name: 'Status',
+        uiType: 'single_select',
+        options: {
+          choices: [{ id: 'existing', label: 'Existing', color: 'invalid' }],
+        },
+        typeSource: 'manifest',
+      },
+    ],
+  }
+  vi.stubGlobal('fetch', fetchImport(analysis, done))
+  const wrapper = mount(ImportDialog, {
+    props: { targetKind: 'book', targetId: 'book-1' },
+    global: { plugins: [i18n] },
+  })
+  try {
+    await upload(wrapper)
+    await wrapper.get('.import-column textarea').setValue('Existing\nNew')
+    const start = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'Start import')!
+    expect(start.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    await wrapper.get('.import-column select').setValue('text')
+    expect(start.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
   } finally {
     wrapper.unmount()
   }
@@ -225,7 +387,7 @@ it('prefills append mappings and reports partially committed failures', async ()
   }
 })
 
-it('explains that package append does not restore fields or views', async () => {
+it('maps package append fields without the obsolete package notice', async () => {
   const analysis: ImportAnalysis = {
     ...plain,
     format: 'package',
@@ -238,19 +400,19 @@ it('explains that package append does not restore fields or views', async () => 
   })
   try {
     await upload(wrapper)
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'Rows are appended; package fields and shared views are not restored.',
     )
     expect(wrapper.text()).not.toContain('Restored shared views are unlocked.')
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'Attachment file names mapped to attachment fields cannot be restored',
     )
     i18n.global.locale.value = 'zh-CN'
     await flushPromises()
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       '将追加数据行；不会还原数据包中的字段和共享视图。',
     )
-    expect(wrapper.text()).toContain('Excel 时间戳可能损失精度。')
+    expect(wrapper.text()).not.toContain('Excel 时间戳可能损失精度。')
   } finally {
     wrapper.unmount()
   }
@@ -338,7 +500,7 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
   })
   try {
     await upload(wrapper)
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'Attachment file names mapped to attachment fields cannot be restored and are reported as invalid; Excel timestamps may lose precision.',
     )
     expect(wrapper.text()).not.toContain('Restored shared views are unlocked.')
@@ -351,7 +513,7 @@ it('offers only eligible package re-linking and keeps other links as text', asyn
     expect(wrapper.text()).toContain(
       '关联字段转为文本后，依赖它们的查找、汇总和公式字段会显示错误，直到修复。',
     )
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       '映射到附件字段的文件名无法恢复，将报告为无效；Excel 时间戳可能损失精度。',
     )
     i18n.global.locale.value = 'en'

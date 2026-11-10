@@ -481,8 +481,22 @@ const showRowDialog = computed(
     (typeof route.params.rowId === 'string' || newRow.value),
 )
 
-function openNewRow() {
-  if (!canCreateRow.value || typeof route.params.rowId === 'string') return
+let closingRow: Promise<void> | undefined
+
+async function openNewRow() {
+  const tableId = route.params.tableId
+  const currentViewId = view.value?.id
+  const identity = auth.user?.id
+  if (closingRow) await closingRow
+  await nextTick()
+  if (
+    tableId !== route.params.tableId ||
+    currentViewId !== view.value?.id ||
+    identity !== auth.user?.id ||
+    !canCreateRow.value ||
+    typeof route.params.rowId === 'string'
+  )
+    return
   closeToolbarMenus(gridWorkspace.value?.querySelector('.grid-toolbar'))
   fieldsOpen.value = false
   filterOpen.value = false
@@ -493,8 +507,28 @@ function openNewRow() {
 
 function closeRowDialog() {
   newRow.value = false
-  if (typeof route.params.rowId === 'string' && schema.value && view.value)
-    void router.replace(`/t/${schema.value.table.id}/v/${view.value.id}`)
+  const rowId = route.params.rowId
+  if (typeof rowId === 'string' && schema.value && view.value) {
+    const tableId = schema.value.table.id
+    const pending = router.replace(`/t/${tableId}/v/${view.value.id}`).then(
+      (failure) => {
+        if (
+          failure &&
+          route.params.tableId === tableId &&
+          route.params.rowId === rowId
+        )
+          error.value = failure
+      },
+      (cause: unknown) => {
+        if (route.params.tableId === tableId && route.params.rowId === rowId)
+          error.value = cause
+      },
+    )
+    closingRow = pending
+    void pending.then(() => {
+      if (closingRow === pending) closingRow = undefined
+    })
+  }
 }
 
 const canSaveAsPersonalView = computed(() => {

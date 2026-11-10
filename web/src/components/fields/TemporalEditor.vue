@@ -27,6 +27,7 @@ const props = withDefaults(
     required?: boolean
     autoFocus?: boolean
     live?: boolean
+    gridCommitOnLeave?: boolean
     initialDraft?: string
     defaultPlaceholder?: string
   }>(),
@@ -34,12 +35,13 @@ const props = withDefaults(
     required: false,
     autoFocus: true,
     live: false,
+    gridCommitOnLeave: false,
     initialDraft: undefined,
     defaultPlaceholder: undefined,
   },
 )
 const emit = defineEmits<{
-  commit: [value: WireValue]
+  commit: [value: WireValue, retainFocus?: boolean]
   preview: [value: WireValue]
   invalidValue: []
   invalidDraft: [text: string, reason: Reason, message?: string]
@@ -206,8 +208,12 @@ watch([() => props.label, () => props.required, error], syncInputAttributes)
 
 onMounted(async () => {
   const fullscreen = document.fullscreenElement
+  const dialog = host.value?.closest('dialog')
   portalDestination.value =
-    host.value?.closest('dialog') ??
+    dialog?.querySelector<HTMLElement>(
+      ':scope > [data-temporal-portal-root]',
+    ) ??
+    dialog ??
     (fullscreen instanceof HTMLElement ? fullscreen : document.body)
   await nextTick()
   syncInputAttributes()
@@ -303,7 +309,11 @@ function currentDraft() {
   return dirty.value ? draft.value : baselineCopy
 }
 
-function commitResult(result: Result<WireValue>, text: string) {
+function commitResult(
+  result: Result<WireValue>,
+  text: string,
+  retainFocus = false,
+) {
   if (!validate(result, text, true) || !result.ok) return false
   setBaseline(result.value)
   dirty.value = false
@@ -319,11 +329,12 @@ function commitResult(result: Result<WireValue>, text: string) {
       if (browserGap.value && !dirty.value) writeInput(draft.value)
     })
   emit('draftChanged')
-  emit('commit', result.value)
+  if (retainFocus) emit('commit', result.value, true)
+  else emit('commit', result.value)
   return true
 }
 
-function commitDraft() {
+function commitDraft(retainFocus = false) {
   if (panelPending.value && props.field.kind === 'datetime') {
     const date = panelDateText()
     if (date && panelWallTime && !panelTimeError)
@@ -339,6 +350,7 @@ function commitDraft() {
       ? parseText(text)
       : props.field.normalize(baselineValue),
     text,
+    retainFocus,
   )
 }
 
@@ -355,9 +367,6 @@ function inputChanged(event: Event) {
   )
     return
   typing = true
-  queueMicrotask(() => {
-    typing = false
-  })
   if (initializing) return
   draft.value = event.target.value
   dirty.value = true
@@ -368,7 +377,34 @@ function inputChanged(event: Event) {
   panelTimeError = null
   panelPending.value = false
   emit('draftChanged')
+}
+
+function inputFinished(event: Event) {
+  if (
+    event.target !== inputElement() ||
+    !(event.target instanceof HTMLInputElement)
+  )
+    return
+  typing = false
+  if (initializing) return
+  const input = event.target
+  const text = draft.value
+  const start = input.selectionStart
+  const end = input.selectionEnd
+  const direction = input.selectionDirection
   if (props.live && !composing.value) previewDraft()
+  void nextTick(() => {
+    if (
+      dirty.value &&
+      draft.value === text &&
+      inputElement() === input &&
+      input.value !== text
+    ) {
+      input.value = text
+      if (document.activeElement === input && start !== null && end !== null)
+        input.setSelectionRange(start, end, direction ?? undefined)
+    }
+  })
 }
 
 function pickerUpdated(value: string | string[] | null) {
@@ -381,6 +417,7 @@ function pickerUpdated(value: string | string[] | null) {
     emit('invalidValue')
     return
   }
+  if (!typing && dirty.value && !panelInteracted) return
   pickerValue.value = value
   if (typing) return
   if (value === null) {
@@ -681,10 +718,9 @@ function panelInput(event: Event) {
 
 function updateShow(value: boolean) {
   show.value = value && !inputElement()?.matches(':disabled')
-  if (!show.value && panelPending.value && dirty.value)
+  if (!show.value && dirty.value)
     void nextTick(() => {
-      if (!show.value && panelPending.value && dirty.value)
-        writeInput(draft.value)
+      if (!show.value && dirty.value) writeInput(draft.value)
     })
 }
 
@@ -701,12 +737,16 @@ function keydown(event: KeyboardEvent, inPanel = false) {
   }
   if (event.key !== 'Enter' || event.shiftKey) return
   event.preventDefault()
-  event.stopPropagation()
   if (inPanel || panelInteracted) {
+    event.stopPropagation()
     if (commitDraft()) show.value = false
     return
   }
-  commitDraft()
+  const hadDraft = dirty.value || panelPending.value
+  if (commitDraft(!hadDraft && props.gridCommitOnLeave)) {
+    show.value = false
+    if (!hadDraft) event.stopPropagation()
+  } else event.stopPropagation()
 }
 
 function compositionEnded() {
@@ -732,6 +772,7 @@ defineExpose({
     ref="host"
     class="temporal-editor"
     @input.capture="inputChanged"
+    @input="inputFinished"
     @keydown.capture="keydown($event)"
     @compositionstart.capture="composing = true"
     @compositionend.capture="compositionEnded"

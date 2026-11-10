@@ -54,6 +54,9 @@ const fields = computed(() =>
     }
   }),
 )
+function fieldRequired(item: (typeof fields.value)[number]) {
+  return item.config.required || item.field?.isRequired === true
+}
 function fieldSubmitLabel(uiType: string) {
   return uiType === 'attachment' || uiType === 'multi_select'
     ? t('form.applyField')
@@ -143,8 +146,8 @@ async function submit() {
   }
   for (const item of fields.value) {
     if (
-      item.config.required &&
       item.field &&
+      fieldRequired(item) &&
       (item.field.uiType === 'checkbox'
         ? draft.value[item.field.id] !== true
         : empty(draft.value[item.field.id]))
@@ -225,7 +228,7 @@ onBeforeUnmount(() => controller?.abort())
           >
             <h3>
               {{ item.config.label || item.field.name }}
-              <span v-if="item.config.required" class="required-mark">
+              <span v-if="fieldRequired(item)" class="required-mark">
                 {{ t('form.required') }}
               </span>
             </h3>
@@ -237,7 +240,7 @@ onBeforeUnmount(() => controller?.abort())
               :value="draft[item.field.id] ?? item.field.default"
               :env="env"
               :label="item.config.label || item.field.name"
-              :required="item.config.required"
+              :required="fieldRequired(item)"
               :live="true"
               :auto-focus="false"
               :submit-label="fieldSubmitLabel(item.field.uiType)"

@@ -1013,7 +1013,7 @@ test('first-click editing survives direct, sidebar and New Entry navigation', as
       new URL(response.url()).pathname === rowsPath,
   )
   await dialog
-    .getByRole('button', { name: en.mobileRows.create, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   expect((await createdResponse).status()).toBe(201)
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)

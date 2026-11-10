@@ -96,11 +96,17 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     },
     {
       path: `/t/${schema.table.id}`,
-      names: [workspaceName, bookName, schema.table.name],
+      names: [
+        workspaceName,
+        bookName,
+        schema.table.name,
+        schema.views[0]!.name,
+      ],
       hrefs: [
         `/w/${workspace.id}`,
         `/w/${workspace.id}/b/${book.id}`,
         `/t/${schema.table.id}`,
+        `/t/${schema.table.id}/v/${views[0]!.id}`,
       ],
     },
     {
@@ -120,6 +126,10 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
     },
   ]) {
     await page.goto(route.path)
+    if (route.path === `/t/${schema.table.id}`)
+      await expect(page).toHaveURL(
+        new RegExp(`/t/${schema.table.id}/v/${views[0]!.id}$`),
+      )
     const links = page.locator('.breadcrumbs a')
     await expect(links).toHaveCount(route.names.length)
     for (const [index, name] of route.names.entries()) {
@@ -248,16 +258,16 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
       await bounded(page, exportMenu.locator('.view-export-panel'))
       await expect(
         exportMenu.getByRole('button', {
-          name: labels.import.append,
+          name: labels.gridPolish.gp06.import,
           exact: true,
         }),
       ).toBeVisible()
       await expect(
         exportMenu.getByRole('button', {
-          name: labels.export.csv,
+          name: labels.gridPolish.gp06.export,
           exact: true,
         }),
-      ).toHaveCount(view.type === 'grid' ? 1 : 0)
+      ).toHaveCount(1)
       await page.keyboard.press('Escape')
       await expect(exportTrigger).toBeFocused()
 
@@ -354,7 +364,10 @@ test('UX-06 consolidates the header across routes, views and narrow layouts', as
         })
         await exportTrigger.click()
         await exportMenu
-          .getByRole('button', { name: labels.export.package, exact: true })
+          .getByRole('button', {
+            name: labels.gridPolish.gp06.export,
+            exact: true,
+          })
           .click()
         await expect(
           toolbar.locator('.table-export-feedback[role="status"]'),

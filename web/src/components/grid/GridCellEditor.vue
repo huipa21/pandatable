@@ -86,7 +86,7 @@ let leaveAfterComposition = false
 let committedText: string | undefined
 let baselineText = initialText
 
-async function commit(next: WireValue) {
+async function commit(next: WireValue, retainFocus = false) {
   if (scalar.value) {
     if (finished) return
     finished = true
@@ -99,7 +99,7 @@ async function commit(next: WireValue) {
     committedText = text
     baselineText = text
     props.saveDraft(text, true)
-    props.save(next, leaving)
+    props.save(next, leaving || retainFocus)
     if (leaving) props.close()
     return
   }

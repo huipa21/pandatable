@@ -175,7 +175,7 @@ test('GP-11 selects a heart checkbox and persists a grid toggle', async ({
   })
   await expect(picker.getByRole('radio')).toHaveCount(7)
   await expect(
-    picker.getByRole('radio', { name: en.gridPolish.gp11.check }),
+    picker.getByRole('radio', { name: en.gridPolish.gp11.check, exact: true }),
   ).toHaveAttribute('aria-checked', 'true')
   await picker.getByRole('radio', { name: en.gridPolish.gp11.heart }).click()
   await expect(

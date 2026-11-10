@@ -625,6 +625,15 @@ export interface ImportColumn {
   linkTarget?: string
   relinkTargetId?: string
   targetFieldId?: string
+  typeSource?: 'meta' | 'manifest' | 'inferred'
+}
+
+export interface ImportIssue {
+  row: number
+  column: string
+  value: string
+  reason?:
+    'meta_edited' | 'meta_invalid' | 'file_unavailable' | 'link_unmatched'
 }
 
 export interface ImportAnalysis {
@@ -636,6 +645,7 @@ export interface ImportAnalysis {
   sampledRows: number
   tableName?: string
   columns: ImportColumn[]
+  notes?: ImportIssue[]
 }
 
 export interface ImportMapping {

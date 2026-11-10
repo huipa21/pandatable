@@ -860,10 +860,6 @@ watch(
 watch(
   () => props.schema.myLevel,
   (next, previous) => {
-    if (loading.value) {
-      void load()
-      return
-    }
     const lostWrite =
       (previous === 'write' || previous === 'owner') &&
       next !== 'write' &&
@@ -871,10 +867,13 @@ watch(
       (!!editing.value ||
         saving.value ||
         !!relationEditing.value ||
-        (creating.value &&
-          (Object.keys(draft.value).length > 0 ||
-            invalidDraftFields.value.size > 0 ||
-            hasPendingDrafts())))
+        creating.value)
+    if (loading.value) {
+      void load()
+      if (lostWrite)
+        error.value = new RequestError('ERR_PERMISSION_DENIED', 403)
+      return
+    }
     generation++
     controller?.abort()
     if (realtimeController) {
@@ -1209,6 +1208,7 @@ function leaveField(event: FocusEvent) {
                     :env="env"
                     :default-placeholder="defaultPlaceholder(item)"
                     :label="item.field.name"
+                    :required="item.field.isRequired"
                     :auto-focus="false"
                     :live="true"
                     :table-id="schema.table.id"
@@ -1237,6 +1237,7 @@ function leaveField(event: FocusEvent) {
                     :field="item.result.value"
                     :value="item.value.value"
                     :env="env"
+                    :required="item.field.isRequired"
                     :table-id="schema.table.id"
                     :field-id="item.field.id"
                     :preserve-uploads="preserveUploads"
@@ -1321,6 +1322,7 @@ function leaveField(event: FocusEvent) {
         />
       </div>
     </template>
+    <div data-temporal-portal-root />
   </dialog>
   <dialog
     ref="deleteDialog"

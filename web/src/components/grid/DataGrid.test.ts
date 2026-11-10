@@ -830,6 +830,24 @@ it('omits system, relation, and attachment fields from the bulk editor', async (
   )
 })
 
+it('keeps the bulk temporal picker in its dialog and removes it when switching fields', async () => {
+  const schema = schemaFor('date')
+  addField(schema, 'text', 'text')
+  await mountGrid(schema, navUser.id, '/', true)
+  expect(await selectRow('9007199254740993')).toBe(true)
+  await wrapper!.get('.grid-row-actions button').trigger('click')
+
+  const dialog = wrapper!.get('dialog[aria-label="Edit selected rows"]')
+  const field = dialog.get('select')
+  await field.setValue('name')
+  await flushPromises()
+  expect(dialog.find('.temporal-picker-portal').exists()).toBe(true)
+  await field.setValue('text')
+  await flushPromises()
+  expect(dialog.find('.temporal-picker-portal').exists()).toBe(false)
+  expect(dialog.find('.field-editor input').exists()).toBe(true)
+})
+
 it('deletes only selected row IDs across pages and retains selection on cancel', async () => {
   gridState.rowCount = 205
   const fetch = await mountGrid(schemaFor('text'))
@@ -1514,8 +1532,7 @@ it.each([
     i18n.global.mergeLocaleMessage('en', {
       workspaceGrid: {
         ux09: {
-          blankCreateHint:
-            'Use New Entry to provide the required or unique values.',
+          blankCreateHint: 'Use New to provide the required or unique values.',
         },
       },
     })
@@ -1537,7 +1554,7 @@ it.each([
         : i18n.global.t('errors.ERR_UNIQUE_CONFLICT')
     expect(wrapper!.get('[role="alert"]').text()).toContain(message)
     expect(wrapper!.get('[role="alert"]').text()).toContain(
-      'Use New Entry to provide the required or unique values.',
+      'Use New to provide the required or unique values.',
     )
     expect(wrapper!.find('dialog[open]').exists()).toBe(false)
     expect(useUndoStore().undoStack).toHaveLength(0)

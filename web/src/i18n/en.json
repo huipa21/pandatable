@@ -147,11 +147,8 @@
       "loading": "Loading view settings…"
     },
     "ux09": {
-      "blankCreateHint": "Use New Entry to provide the required or unique values.",
+      "blankCreateHint": "Use New to provide the required or unique values.",
       "createdMayBeHidden": "Row created. Filters, sorting, or collapsed groups may affect where it appears."
-    },
-    "ux10": {
-      "newEntry": "New Entry"
     }
   },
   "nav": {
@@ -277,8 +274,6 @@
     "formatPackage": "PandaTable package",
     "analyzed": "{format} detected; {count} rows sampled.",
     "encoding": "Encoding: {encoding}",
-    "packageAppendNotice": "Rows are appended; package fields and shared views are not restored.",
-    "packageDataWarning": "Attachment file names mapped to attachment fields cannot be restored and are reported as invalid; Excel timestamps may lose precision.",
     "tableName": "New table name",
     "header": "First row contains column names",
     "mapping": "Column mapping",
@@ -616,7 +611,6 @@
     "untitled": "Untitled row {id}",
     "plus": "+",
     "newRow": "New entry",
-    "create": "Create row",
     "createLimit": "The draft exceeds the 5,000-cell or 512 KiB create-request limit. Nothing was sent.",
     "uncertain": "Creation has not been confirmed. After a connection failure, check the row list before retrying to avoid a duplicate."
   },

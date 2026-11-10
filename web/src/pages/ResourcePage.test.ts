@@ -352,6 +352,40 @@ it('opens a new row from the rightmost grid action, preserves the route on cance
   }
 })
 
+it('opens a new row when Add follows closing a row before navigation finishes', async () => {
+  useAuthStore().setUser(navUser)
+  media.matches = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(Response.json(tableSchema()))),
+  )
+  const dialogStub = {
+    props: { rowId: { type: String, default: null } },
+    emits: ['close'],
+    template: `
+      <div data-testid="row-dialog" :data-row-id="rowId">
+        <button data-testid="close-row" @click="$emit('close')">Close</button>
+      </div>`,
+  }
+  const { wrapper, router } = await setup('/t/t/v/v/r/47', {
+    RowExpandDialog: dialogStub,
+  })
+  try {
+    const closing = wrapper.get('[data-testid="close-row"]').trigger('click')
+    const adding = wrapper
+      .get('[data-testid="mobile-cards"] button')
+      .trigger('click')
+    await Promise.all([closing, adding])
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/t/t/v/v')
+    expect(
+      wrapper.get('[data-testid="row-dialog"]').attributes('data-row-id'),
+    ).toBeUndefined()
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('discards the new-row dialog on view and identity changes', async () => {
   const auth = useAuthStore()
   auth.setUser(navUser)

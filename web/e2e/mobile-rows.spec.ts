@@ -231,10 +231,12 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     width: 390,
     height: 844,
   })
-  await expect(dialog.locator('.row-field')).toHaveCount(18)
+  await expect(dialog.locator('.row-field')).toHaveCount(
+    schema.fields.filter((field) => !field.isSystem).length,
+  )
   expectHTTPFailure(page, 'POST', apiRows, 400)
   await dialog
-    .getByRole('button', { name: en.mobileRows.create, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   await expect(dialog.getByRole('alert')).toHaveText(
     en.errors.ERR_REQUIRED_FIELD,
@@ -242,31 +244,20 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
   for (const spec of specs) {
     const field = schema.fields.find((field) => field.name === spec.name)!
     const section = dialog.locator(`[data-field-id="${field.id}"]`)
-    await section
-      .getByRole('button', {
-        name: en.rowExpand.edit.replace('{name}', spec.name),
-        exact: true,
-      })
-      .click()
     if (spec.kind === 'checkbox') await section.getByRole('checkbox').click()
     else if (spec.kind === 'single_select')
       await section.locator('select').selectOption(spec.input)
-    else if (spec.kind === 'multi_select') {
+    else if (spec.kind === 'multi_select')
       await section.locator('select').selectOption(['Beta', 'Alpha'])
+    else
       await section
-        .getByRole('button', { name: en.field.editor.apply, exact: true })
-        .click()
-    } else {
-      await section.locator('input, textarea').fill(spec.input)
-      await section
-        .getByRole('button', { name: en.field.editor.apply, exact: true })
-        .click()
-    }
-    await expect(section.locator('.field-editor')).toHaveCount(0)
+        .locator('.field-editor input, .field-editor textarea')
+        .fill(spec.input)
+    await expect(section.locator('.field-editor')).toBeVisible()
   }
   expect(mutations).toHaveLength(1)
   await dialog
-    .getByRole('button', { name: en.mobileRows.create, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   const rowId = new URL(page.url()).pathname.split('/').at(-1)!
@@ -562,7 +553,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
       .click()
     await expect(
       readerDialog.getByRole('button', {
-        name: en.mobileRows.create,
+        name: en.gridPolish.gp05.save,
         exact: true,
       }),
     ).toBeVisible()
@@ -574,11 +565,13 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
         })
       ).status(),
     ).toBe(200)
-    // Realtime may deliver the downgrade first; the dialog then denies locally.
     allowHTTPFailure(reader, 'POST', apiRows, 403)
-    await readerDialog
-      .getByRole('button', { name: en.mobileRows.create, exact: true })
-      .click()
+    await expect(
+      readerDialog.getByRole('button', {
+        name: en.gridPolish.gp05.save,
+        exact: true,
+      }),
+    ).toBeDisabled()
     await expect(readerDialog.getByRole('alert')).toHaveText(
       en.errors.ERR_PERMISSION_DENIED,
     )

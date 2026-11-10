@@ -16,6 +16,12 @@ import type {
   TableField,
   TableSchema,
 } from '../../api/types'
+import {
+  isChoiceColor,
+  nextChoiceColor,
+  type ChoiceColor,
+} from '../../fields/choice'
+import { isPlainObject } from '../../fields/common'
 import { fieldKindLabel } from '../../fields/messages'
 import { isKind } from '../../fields/registry'
 import { USER_KINDS } from '../fields/fieldForm'
@@ -36,6 +42,7 @@ const selected = ref<File | null>(null)
 const analysis = ref<ImportAnalysis | null>(null)
 const mappings = ref<ImportMapping[]>([])
 const choiceText = ref<Record<number, string>>({})
+const invalidChoices = ref(new Set<number>())
 const name = ref('')
 const invalidFile = ref(false)
 const hasHeader = ref(true)
@@ -51,7 +58,10 @@ let completed = false
 
 const packageFile = computed(() => analysis.value?.format === 'package')
 const workbookTypesFromFile = computed(
-  () => props.targetKind === 'book' && analysis.value?.metaVersion === 'v2',
+  () =>
+    props.targetKind === 'book' &&
+    analysis.value?.metaVersion === 'v2' &&
+    analysis.value.columns.some((column) => column.typeSource === 'meta'),
 )
 const hasUnlinkedPackageFields = computed(
   () =>
@@ -66,6 +76,19 @@ const active = computed(() => job.value?.status === 'running')
 const kinds = USER_KINDS.filter(
   (kind) => kind !== 'autonumber' && kind !== 'attachment',
 )
+function canChangeType(column: ImportColumn) {
+  if (analysis.value?.metaVersion !== 'v2') return !packageFile.value
+  return (
+    (column.typeSource === 'manifest' || column.typeSource === 'inferred') &&
+    (!packageFile.value || kinds.some((kind) => kind === column.uiType))
+  )
+}
+function canEditChoices(column: ImportColumn, mapping: ImportMapping) {
+  return (
+    canChangeType(column) &&
+    ['single_select', 'multi_select'].includes(mapping.uiType)
+  )
+}
 const formatLabel = computed(() => {
   switch (analysis.value?.format) {
     case 'xlsx':
@@ -77,7 +100,7 @@ const formatLabel = computed(() => {
   }
 })
 const invalidMapping = computed(() => {
-  if (!analysis.value) return true
+  if (!analysis.value || invalidChoices.value.size > 0) return true
   if (props.targetKind === 'book') {
     if (!name.value.trim()) return true
     if (packageFile.value) return false
@@ -187,6 +210,7 @@ async function analyze() {
       return
     }
     analysis.value = result.analysis
+    invalidChoices.value.clear()
     hasHeader.value = result.analysis.hasHeader
     name.value =
       result.analysis.tableName ?? selected.value.name.replace(/\.[^.]+$/, '')
@@ -214,6 +238,7 @@ async function analyze() {
 }
 
 function changeType(mapping: ImportMapping, column: ImportColumn) {
+  if (invalidChoices.value.delete(mapping.index)) error.value = null
   if (mapping.uiType === column.uiType) {
     mapping.options = column.options ?? {}
     choiceText.value[column.index] = choices(column.options)
@@ -237,12 +262,54 @@ function updateChoices(mapping: ImportMapping) {
     .split(/\r?\n/)
     .map((value) => value.trim())
     .filter(Boolean)
+  const previous = mapping.options?.choices ?? []
+  const existing = new Map<string, { id: string; color: ChoiceColor }>()
+  const ids = new Set<string>()
+  if (!Array.isArray(previous)) {
+    invalidChoices.value.add(mapping.index)
+    error.value = new Error('Invalid imported choice options')
+    return
+  }
+  for (const choice of previous) {
+    if (
+      !isPlainObject(choice) ||
+      typeof choice.id !== 'string' ||
+      typeof choice.label !== 'string' ||
+      (choice.color != null && typeof choice.color !== 'string')
+    ) {
+      invalidChoices.value.add(mapping.index)
+      error.value = new Error('Invalid imported choice options')
+      return
+    }
+    const color = choice.color || 'gray'
+    if (!isChoiceColor(color)) {
+      invalidChoices.value.add(mapping.index)
+      error.value = new Error('Invalid imported choice options')
+      return
+    }
+    existing.set(choice.label, { id: choice.id, color })
+    ids.add(choice.id)
+  }
+  if (invalidChoices.value.delete(mapping.index)) error.value = null
+  const colors = labels.flatMap((label) => {
+    const choice = existing.get(label)
+    return choice ? [choice.color] : []
+  })
+  let nextId = 1
   mapping.options = {
-    choices: labels.map((label, index) => ({
-      id: `c${index + 1}`,
-      label,
-      color: 'gray',
-    })),
+    choices: labels.map((label) => {
+      const choice = existing.get(label)
+      if (choice) {
+        existing.delete(label)
+        return { ...choice, label }
+      }
+      let id = `c${nextId++}`
+      while (ids.has(id)) id = `c${nextId++}`
+      ids.add(id)
+      const color = nextChoiceColor(colors)
+      colors.push(color)
+      return { id, label, color }
+    }),
   }
 }
 
@@ -394,12 +461,6 @@ async function close() {
       <p v-if="analysis.encoding">
         {{ t('import.encoding', { encoding: analysis.encoding }) }}
       </p>
-      <template v-if="packageFile">
-        <p v-if="targetKind === 'table'">
-          {{ t('import.packageAppendNotice') }}
-        </p>
-        <p>{{ t('import.packageDataWarning') }}</p>
-      </template>
       <label v-if="targetKind === 'book'" class="import-field">
         <span>{{ t('import.tableName') }}</span>
         <input v-model="name" maxlength="100" />
@@ -422,7 +483,7 @@ async function close() {
           class="import-column"
         >
           <strong>{{ column.name }}</strong>
-          <span>{{ label(column.uiType) }}</span>
+          <span>{{ label(mappings[position]!.uiType) }}</span>
           <p v-if="column.examples?.length" class="import-examples">
             {{ t('import.examples', { values: column.examples.join(' · ') }) }}
           </p>
@@ -449,17 +510,19 @@ async function close() {
               </select>
             </label>
           </template>
-          <template v-else-if="!packageFile">
-            <label class="import-field">
-              <input v-model="mappings[position]!.skip" type="checkbox" />
-              {{ t('import.skip') }}
-            </label>
-            <template v-if="!mappings[position]!.skip">
+          <template v-else>
+            <template v-if="!packageFile">
               <label class="import-field">
+                <input v-model="mappings[position]!.skip" type="checkbox" />
+                {{ t('import.skip') }}
+              </label>
+            </template>
+            <template v-if="packageFile || !mappings[position]!.skip">
+              <label v-if="!packageFile" class="import-field">
                 <span>{{ t('import.columnName', { name: column.name }) }}</span>
                 <input v-model="mappings[position]!.name" maxlength="100" />
               </label>
-              <label v-if="!workbookTypesFromFile" class="import-field">
+              <label v-if="canChangeType(column)" class="import-field">
                 <span>{{ t('import.columnType', { name: column.name }) }}</span>
                 <select
                   v-model="mappings[position]!.uiType"
@@ -471,11 +534,7 @@ async function close() {
                 </select>
               </label>
               <label
-                v-if="
-                  ['single_select', 'multi_select'].includes(
-                    mappings[position]!.uiType,
-                  )
-                "
+                v-if="canEditChoices(column, mappings[position]!)"
                 class="import-field"
               >
                 <span>{{ t('import.choiceLabels') }}</span>
@@ -486,15 +545,15 @@ async function close() {
                 />
               </label>
             </template>
-          </template>
-          <template v-else-if="column.uiType === 'link'">
-            <label v-if="column.relinkTargetId" class="import-field">
-              <input v-model="mappings[position]!.relink" type="checkbox" />
-              {{ t('import.relink', { table: column.linkTarget ?? '' }) }}
-            </label>
-            <p v-else>
-              {{ t('import.linkAsText', { table: column.linkTarget ?? '' }) }}
-            </p>
+            <template v-if="packageFile && column.uiType === 'link'">
+              <label v-if="column.relinkTargetId" class="import-field">
+                <input v-model="mappings[position]!.relink" type="checkbox" />
+                {{ t('import.relink', { table: column.linkTarget ?? '' }) }}
+              </label>
+              <p v-else>
+                {{ t('import.linkAsText', { table: column.linkTarget ?? '' }) }}
+              </p>
+            </template>
           </template>
         </section>
       </div>

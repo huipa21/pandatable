@@ -170,6 +170,73 @@ describe('temporal editor', () => {
     expect(wrapper.emitted('commit')).toEqual([['09:35:00']])
   })
 
+  it('keeps a live typed date when the picker reports a stale empty value', async () => {
+    const wrapper = mountTemporal('date', null)
+    await wrapper.setProps({ live: true, autoFocus: false })
+    await flushPromises()
+    await wrapper.get('input').setValue('2026-10-27')
+    wrapper
+      .findComponent({ name: 'DatePicker' })
+      .vm.$emit('update:formattedValue', null)
+    await flushPromises()
+    expect(wrapper.emitted('preview')).toEqual([['2026-10-27']])
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    expect(wrapper.vm.currentDraft()).toBe('2026-10-27')
+    expect(wrapper.vm.commitDraft()).toBe(true)
+    expect(wrapper.emitted('commit')).toEqual([['2026-10-27']])
+  })
+
+  it('keeps an unconfirmed datetime draft visible after leaving the picker', async () => {
+    const wrapper = mountTemporal('datetime', null)
+    await wrapper.setProps({ live: true, autoFocus: false })
+    await flushPromises()
+    const input = wrapper.get<HTMLInputElement>('input')
+    input.element.focus()
+    const text = '2026-10-27T15:00:00.123456+08:00'
+    await input.setValue(text)
+    input.element.blur()
+    await flushPromises()
+    expect(input.element.value).toBe(text)
+    expect(wrapper.vm.currentDraft()).toBe(text)
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    expect(wrapper.vm.commitDraft()).toBe(true)
+    expect(wrapper.emitted('commit')).toEqual([['2026-10-27T07:00:00.123456Z']])
+  })
+
+  it('closes the picker and lets a valid typed Enter reach grid navigation', async () => {
+    const wrapper = mountTemporal('date', null)
+    const onKeydown = vi.fn()
+    document.body.addEventListener('keydown', onKeydown)
+    try {
+      await flushPromises()
+      await wrapper.get('input').setValue('2026-10-27')
+      await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+      expect(wrapper.emitted('commit')).toEqual([['2026-10-27']])
+      expect(wrapper.findComponent({ name: 'DatePicker' }).props('show')).toBe(
+        false,
+      )
+      expect(onKeydown).toHaveBeenCalledOnce()
+    } finally {
+      document.body.removeEventListener('keydown', onKeydown)
+    }
+  })
+
+  it('keeps invalid typed Enter inside the picker', async () => {
+    const wrapper = mountTemporal('date', null)
+    const onKeydown = vi.fn()
+    document.body.addEventListener('keydown', onKeydown)
+    try {
+      await flushPromises()
+      await wrapper.get('input').setValue('not a date')
+      await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+      expect(wrapper.emitted('commit')).toBeUndefined()
+      expect(wrapper.emitted('invalidDraft')).toHaveLength(1)
+      expect(onKeydown).not.toHaveBeenCalled()
+    } finally {
+      document.body.removeEventListener('keydown', onKeydown)
+    }
+  })
+
   it('uses the configured 12-hour time format', async () => {
     const wrapper = mountTemporal('time', '23:05:07', { format: '12h' })
     await flushPromises()
