@@ -7,6 +7,7 @@ import { bindField } from '../../fields/registry'
 import { useAuthStore } from '../../stores/auth'
 import { useNavStore } from '../../stores/nav'
 import { useRealtimeStore } from '../../stores/realtime'
+import { useUndoStore } from '../../stores/undo'
 import { navUser, tableSchema } from '../../test/navigation'
 import type { DataRow } from '../../api/types'
 import FieldEditor from '../fields/FieldEditor.vue'
@@ -592,9 +593,156 @@ it('opens the relation picker by clicking the linked value', async () => {
   stored.fields.linked = [{ id: '2', label: 'Related row' }]
   const { wrapper } = await setup(schema)
   const section = wrapper.get('[data-field-id="linked"]')
-  expect(section.find('.relation-edit').exists()).toBe(false)
+  expect(section.get('.relation-edit').attributes('aria-label')).toBe(
+    'Edit links',
+  )
   await section.get('.relation-chip').trigger('click')
   expect(wrapper.get('.relation-picker').attributes('open')).toBeDefined()
+})
+
+function relationSchema() {
+  const schema = tableSchema()
+  schema.fields.push({
+    ...schema.fields[0]!,
+    id: 'linked',
+    name: 'Linked',
+    uiType: 'link',
+    position: 2048,
+  })
+  stored.fields.linked = [
+    { id: '2', label: 'Related row' },
+    { id: '3', label: 'Another row' },
+  ]
+  return schema
+}
+
+it('unlinks only the chosen expanded-row tag and records undo without opening the picker', async () => {
+  const schema = relationSchema()
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method !== 'POST') return Response.json(stored)
+    stored = {
+      ...stored,
+      fields: { ...stored.fields, linked: [{ id: '3', label: 'Another row' }] },
+    }
+    return Response.json({
+      row: stored,
+      eventId: 'event',
+      changes: [
+        {
+          tableId: 't',
+          rowId: id,
+          fieldId: 'linked',
+          targetId: '2',
+          action: 'unlink',
+        },
+      ],
+    })
+  })
+  const { wrapper } = await setup(schema, fetcher)
+  await wrapper
+    .get('button[aria-label="Unlink “Related row”"]')
+    .trigger('click')
+  await flushPromises()
+
+  const mutation = fetcher.mock.calls.find(
+    ([, init]) => init?.method === 'POST',
+  )
+  expect(mutation?.[0]).toBe(`/api/v1/tables/t/rows/${id}/links/linked`)
+  expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
+    add: [],
+    remove: ['2'],
+  })
+  expect(wrapper.find('[aria-label="Unlink “Related row”"]').exists()).toBe(
+    false,
+  )
+  expect(wrapper.find('[aria-label="Unlink “Another row”"]').exists()).toBe(
+    true,
+  )
+  expect(wrapper.get('.relation-picker').attributes('open')).toBeUndefined()
+  expect(wrapper.emitted('saved')).toHaveLength(1)
+  expect(useUndoStore().undoStack[0]?.steps).toEqual([
+    {
+      kind: 'link',
+      tableId: 't',
+      rowId: id,
+      fieldId: 'linked',
+      add: ['2'],
+      remove: [],
+    },
+  ])
+})
+
+it('keeps the expanded-row tag and reports an unlink failure', async () => {
+  const schema = relationSchema()
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) =>
+    init?.method === 'POST'
+      ? Response.json({ error: { code: 'ERR_INTERNAL' } }, { status: 500 })
+      : Response.json(stored),
+  )
+  const { wrapper } = await setup(schema, fetcher)
+  await wrapper
+    .get('button[aria-label="Unlink “Related row”"]')
+    .trigger('click')
+  await flushPromises()
+
+  expect(wrapper.get('[role="alert"]').text()).toBe(
+    i18n.global.t('errors.ERR_INTERNAL'),
+  )
+  expect(wrapper.find('[aria-label="Unlink “Related row”"]').exists()).toBe(
+    true,
+  )
+  expect(wrapper.emitted('saved')).toBeUndefined()
+  expect(useUndoStore().undoStack).toHaveLength(0)
+})
+
+it('disables unlinking while saving and ignores a late result after permission is revoked', async () => {
+  const schema = relationSchema()
+  let release!: (response: Response) => void
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) =>
+    init?.method === 'POST'
+      ? new Promise<Response>((resolve) => {
+          release = resolve
+        })
+      : Response.json(stored),
+  )
+  const { wrapper } = await setup(schema, fetcher)
+  await wrapper
+    .get('button[aria-label="Unlink “Related row”"]')
+    .trigger('click')
+  expect(
+    wrapper
+      .get('button[aria-label="Unlink “Another row”"]')
+      .attributes('disabled'),
+  ).toBeDefined()
+  expect(
+    wrapper.get('button[aria-label="Edit links"]').attributes('disabled'),
+  ).toBeDefined()
+
+  await wrapper.setProps({ schema: { ...schema, myLevel: 'read' } })
+  release(
+    Response.json({
+      row: { ...stored, fields: { ...stored.fields, linked: [] } },
+      changes: [
+        {
+          tableId: 't',
+          rowId: id,
+          fieldId: 'linked',
+          targetId: '2',
+          action: 'unlink',
+        },
+      ],
+    }),
+  )
+  await flushPromises()
+
+  expect(wrapper.find('.relation-remove').exists()).toBe(false)
+  expect(wrapper.find('.relation-edit').exists()).toBe(false)
+  expect(wrapper.get('.relation-chip').text()).toBe('Related row')
+  expect(wrapper.get('[role="alert"]').text()).toContain(
+    'You do not have permission',
+  )
+  expect(wrapper.emitted('saved')).toBeUndefined()
+  expect(useUndoStore().undoStack).toHaveLength(0)
 })
 
 it('overlays comments and history, returns to fields, and preserves the active draft', async () => {

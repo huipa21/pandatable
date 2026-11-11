@@ -13,8 +13,9 @@ import type {
 import { bindField } from '../../fields/registry'
 import { isWireValue, type FieldEnv } from '../../fields/types'
 import { useAuthStore } from '../../stores/auth'
-import { linkUndoSteps, useUndoStore } from '../../stores/undo'
+import { useUndoStore } from '../../stores/undo'
 import AppIcon from '../AppIcon.vue'
+import { relationLinkPath, relationLinkUndoSteps } from './mutation'
 
 const PAGE_SIZE = 100
 const SEARCH_DELAY = 250
@@ -210,11 +211,9 @@ function searchNow() {
   void loadPage(0)
 }
 
-function applied(result: LinkMutation) {
-  if (!Array.isArray(result.changes))
-    throw new Error('Link mutation returned an unsupported response')
-  if (props.identity === auth.user?.id)
-    undo.record(linkUndoSteps(result.changes))
+function applied(result: LinkMutation, rowId: string) {
+  const steps = relationLinkUndoSteps(result, rowId)
+  if (props.identity === auth.user?.id) undo.record(steps)
   emit('updated', result.row)
 }
 
@@ -235,11 +234,10 @@ async function toggle(item: RelationLink) {
       }
   pendingId.value = item.id
   error.value = null
-  const path =
-    `/tables/${encodeURIComponent(props.schema.table.id)}/rows/` +
-    `${encodeURIComponent(props.rowId)}/links/${encodeURIComponent(props.field.id)}`
+  const rowId = props.rowId
+  const path = relationLinkPath(props.schema.table.id, rowId, props.field.id)
   try {
-    applied(await request<LinkMutation>(path, 'POST', change))
+    applied(await request<LinkMutation>(path, 'POST', change), rowId)
   } catch (cause) {
     const relatedRowId =
       cause instanceof RequestError && cause.code === 'ERR_RELATION_CONFLICT'
@@ -270,6 +268,7 @@ async function toggle(item: RelationLink) {
             ...change,
             replace: true,
           }),
+          rowId,
         )
       } catch (replacementError) {
         error.value = replacementError

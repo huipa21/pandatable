@@ -19,6 +19,8 @@ import {
 } from '../../api/client'
 import type {
   DataRow,
+  LinkMutation,
+  RelationLink,
   RowMutation,
   RowPatchMutation,
   TableSchema,
@@ -34,6 +36,7 @@ import FieldEditor from '../fields/FieldEditor.vue'
 import FieldRenderer from '../fields/FieldRenderer.vue'
 import RelationLinks from '../relations/RelationLinks.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
+import { relationLinkPath, relationLinkUndoSteps } from '../relations/mutation'
 import CellPresence from '../presence/CellPresence.vue'
 import CommentPanel from './CommentPanel.vue'
 import HistoryPanel from './HistoryPanel.vue'
@@ -535,10 +538,34 @@ function activateField(event: MouseEvent | KeyboardEvent, item: DialogField) {
   startEditing(item.field.id)
 }
 
-function activateRelation(event: MouseEvent | KeyboardEvent, id: string) {
-  if (!canWrite.value || saving.value) return
-  if (event instanceof KeyboardEvent) event.preventDefault()
+function activateRelation(id: string) {
+  if (!canWrite.value || actionsBlocked.value) return
   relationEditing.value = id
+}
+
+async function removeRelationLink(fieldId: string, link: RelationLink) {
+  if (!canWrite.value || actionsBlocked.value || creating.value || !row.value)
+    return
+  const tableId = props.schema.table.id
+  const rowId = row.value.id
+  const { token, signal } = begin()
+  saving.value = true
+  error.value = null
+  try {
+    const result = await request<LinkMutation>(
+      relationLinkPath(tableId, rowId, fieldId),
+      'POST',
+      { add: [], remove: [link.id] },
+      signal,
+    )
+    if (!current(token)) return
+    undo.record(relationLinkUndoSteps(result, rowId))
+    relationUpdated(result.row)
+  } catch (cause) {
+    if (current(token)) failure(cause)
+  } finally {
+    if (current(token)) saving.value = false
+  }
 }
 
 async function discardDraftAttachments() {
@@ -1177,15 +1204,15 @@ function leaveField(event: FocusEvent) {
                 <div
                   class="row-field-value"
                   :class="{ 'row-field-editable': canWrite }"
-                  :role="canWrite ? 'button' : undefined"
-                  :tabindex="canWrite ? 0 : undefined"
-                  :aria-label="canWrite ? t('relation.edit') : undefined"
-                  :aria-disabled="saving || undefined"
-                  @click="activateRelation($event, item.field.id)"
-                  @keydown.enter="activateRelation($event, item.field.id)"
-                  @keydown.space="activateRelation($event, item.field.id)"
+                  @click="activateRelation(item.field.id)"
                 >
-                  <RelationLinks :links="item.value.value" />
+                  <RelationLinks
+                    :links="item.value.value"
+                    :editable="canWrite"
+                    :disabled="actionsBlocked"
+                    @edit="activateRelation(item.field.id)"
+                    @remove="removeRelationLink(item.field.id, $event)"
+                  />
                 </div>
               </template>
               <template v-else-if="item.result.ok && item.value.ok">

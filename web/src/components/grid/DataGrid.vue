@@ -42,6 +42,8 @@ import type {
   FilterNode,
   HighlightColor,
   HighlightRule,
+  LinkMutation,
+  RelationLink,
   RowMutation,
   RowPatchMutation,
   RowQueryRequest,
@@ -79,6 +81,7 @@ import AppIcon from '../AppIcon.vue'
 import FilterBuilder from '../filters/FilterBuilder.vue'
 import GridRelationCell from '../relations/GridRelationCell.vue'
 import RelationPicker from '../relations/RelationPicker.vue'
+import { relationLinkPath, relationLinkUndoSteps } from '../relations/mutation'
 import { RemoteRowsWindow, remotePageSize } from './remoteWindow'
 import { RealtimeRowSync } from './realtimeRows'
 import { GroupedRowsWindow, type GroupNode } from './groupedRows'
@@ -1637,7 +1640,7 @@ function supportedColumn(id: string) {
 }
 
 function openRelationPicker(field: TableField, rowId: string) {
-  if (!canWrite.value) return
+  if (!canWrite.value || saving.value) return
   const index = rows.indexOfRow(rowId)
   const row = index < 0 ? null : rows.rowAt(index)
   if (!row) return
@@ -1655,6 +1658,76 @@ function updateRelationRow(row: DataRow) {
 function closeRelationPicker() {
   relationField.value = null
   relationRow.value = null
+}
+
+async function removeRelationLink(
+  field: TableField,
+  rowId: string,
+  link: RelationLink,
+) {
+  const origin = componentEditOrigin
+  if (!editOriginCurrent(origin) || saving.value) return
+  if (rows.indexOfRow(rowId) < 0) {
+    error.value = new Error(t('grid.saveFailed'))
+    return
+  }
+  const predecessor = cellWriteTail
+  let release = () => {}
+  cellWriteTail = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  pendingCellWrites.value++
+  saving.value = true
+  error.value = null
+  const controller = new AbortController()
+  cellControllers.add(controller)
+  try {
+    await predecessor
+    if (!editOriginCurrent(origin)) {
+      if (sameEditScope(origin)) error.value = editUnavailableMessage(origin)
+      return
+    }
+    const result = await mutate<LinkMutation>(
+      relationLinkPath(origin.tableId, rowId, field.id),
+      'POST',
+      { add: [], remove: [link.id] },
+      controller.signal,
+    )
+    if (!editOriginCurrent(origin)) {
+      if (sameEditScope(origin)) error.value = editUnavailableMessage(origin)
+      return
+    }
+    undo.record(relationLinkUndoSteps(result, rowId))
+    if (activeEdit.value || pendingCellWrites.value > 1)
+      deferredRows.set(rowId, result.row)
+    else {
+      deferredRows.delete(rowId)
+      const index = rows.indexOfRow(rowId)
+      if (index >= 0) rows.updateRow(index, result.row)
+    }
+    if (
+      groupedMode.value ||
+      sortCriteria.value.length ||
+      props.filter ||
+      searchTerm.value ||
+      columnState.config.value.highlight?.length
+    )
+      remoteReloadPending = true
+  } catch (cause) {
+    if (disposed.value || !sameEditScope(origin)) return
+    if (!editOriginCurrent(origin)) {
+      error.value = editUnavailableMessage(origin)
+      return
+    }
+    if (cause instanceof RequestError && [401, 403, 404].includes(cause.status))
+      handleAccessFailure(cause)
+    error.value = cause
+  } finally {
+    cellControllers.delete(controller)
+    pendingCellWrites.value--
+    release()
+    if (!disposed.value && pendingCellWrites.value === 0) saving.value = false
+  }
 }
 
 function openHeaderMenu(field: TableField, anchor: HTMLButtonElement) {
@@ -1861,7 +1934,8 @@ const columns = computed<ColumnRegular[]>(() => {
         cellTemplate: template<CellTemplateProp>(GridRelationCell, {
           props: (context) => ({
             links: context.value,
-            editable: canWrite.value,
+            editable: canWrite.value && !!context.model.__rowId,
+            disabled: () => saving.value,
             rowHighlight: rowHighlight(context.model),
             cellHighlight: cellHighlight(context.model, relationField.id),
             tableId: props.schema.table.id,
@@ -1872,6 +1946,12 @@ const columns = computed<ColumnRegular[]>(() => {
               openRelationPicker(
                 relationField,
                 String(context.model.__rowId ?? ''),
+              ),
+            remove: (link: RelationLink) =>
+              removeRelationLink(
+                relationField,
+                String(context.model.__rowId ?? ''),
+                link,
               ),
           }),
           key: (context) =>

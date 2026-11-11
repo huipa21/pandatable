@@ -92,7 +92,9 @@ owners can change a field's type there when a safe conversion
 exists. For single-select and multi-select fields, new options receive
 different preset colors automatically. Choose a swatch to change a color, and
 drag an option's handle, press Alt+Up/Down on it, or use its move controls to
-reorder the options. Attachment fields support file selection and
+reorder the options. Linked records appear as colored tags. Use **Edit links**
+to choose records, or the **×** on a tag to unlink that record without deleting
+it. Unlinking can be undone. Attachment fields support file selection and
 drag-and-drop; the administrator's upload limit applies. When creating or
 editing a checkbox field, choose its **Icon** (including a heart or star).
 Date fields provide a calendar; time and date-time fields provide pickers with

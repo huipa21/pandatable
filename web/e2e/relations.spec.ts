@@ -1,6 +1,6 @@
 import { expect, test, paceLogin, expectHTTPFailure } from './fixtures'
 import type { DataRow, TableSchema } from '../src/api/types'
-import { setLocale } from './app-shell'
+import { setLocale, setTheme } from './app-shell'
 import { openFieldTypeActions } from './table-controls'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
@@ -145,6 +145,185 @@ async function openPicker(
   await expect(picker).toBeVisible()
   return picker
 }
+
+test('linked record tags can be removed directly and undone', async ({
+  page,
+  isMobile,
+}) => {
+  test.setTimeout(90_000)
+  if (!isMobile) await page.setViewportSize({ width: 1440, height: 900 })
+  await login(page)
+  const workspaceId = await createWorkspace(page)
+  const bookId = await createBook(page, workspaceId, 'Tag book')
+  const source = await createTable(page, bookId, 'Sources')
+  const target = await createTable(page, bookId, 'Targets')
+  const relation = await createRelation(page, source, target, {
+    name: 'Targets',
+    reverseName: 'Sources',
+    kind: 'many_many',
+  })
+  const alpha = 'A linked record with a long label'
+  const targetRows = await createRows(page, target, [alpha, 'Beta'])
+  const sourceRows = await createRows(page, source, ['Source'])
+  const sourceId = sourceRows[0]!.id
+  await changeLinks(
+    page,
+    source.table.id,
+    sourceId,
+    relation.field.id,
+    targetRows.map((row) => row.id),
+  )
+
+  await page.goto(`/t/${source.table.id}/v/${source.views[0]!.id}`)
+  const label = (name: string) =>
+    en.relation.unlinkRecord.replace('{label}', name)
+  const grid = page.locator('revo-grid')
+  const alphaTag = (
+    isMobile
+      ? page.locator(`[data-row-id="${sourceId}"] button.mobile-card`)
+      : grid
+  )
+    .locator('.relation-chip')
+    .filter({ hasText: alpha })
+  await expect(alphaTag).toBeVisible()
+  const alphaColor = await alphaTag.getAttribute('style')
+  if (!alphaColor) throw new Error('Linked tag has no color')
+  expect(alphaColor).toContain('--relation-color:')
+  if (!isMobile) {
+    expect(
+      await alphaTag.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      ),
+    ).not.toBe('rgba(0, 0, 0, 0)')
+
+    await grid.getByRole('button', { name: label(alpha), exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await expect
+      .poll(
+        async () =>
+          (await getRow(page, source.table.id, sourceId)).fields[
+            relation.field.id
+          ],
+      )
+      .toEqual([{ id: targetRows[1]!.id, label: 'Beta' }])
+    await expect(page.locator('.relation-picker[open]')).toHaveCount(0)
+    expect(
+      (await getRow(page, target.table.id, targetRows[0]!.id)).fields[
+        relation.relation.childFieldId
+      ],
+    ).toEqual([])
+
+    const undo = page.getByRole('button', { name: en.undo.undo, exact: true })
+    await expect(undo).toBeEnabled()
+    await undo.click()
+    await expect
+      .poll(
+        async () =>
+          (await getRow(page, source.table.id, sourceId)).fields[
+            relation.field.id
+          ],
+      )
+      .toEqual([
+        { id: targetRows[0]!.id, label: alpha },
+        { id: targetRows[1]!.id, label: 'Beta' },
+      ])
+    await expect(alphaTag).toHaveAttribute('style', alphaColor)
+    const redo = page.getByRole('button', { name: en.undo.redo, exact: true })
+    await expect(redo).toBeEnabled()
+    await redo.click()
+    await expect
+      .poll(
+        async () =>
+          (await getRow(page, source.table.id, sourceId)).fields[
+            relation.field.id
+          ],
+      )
+      .toEqual([{ id: targetRows[1]!.id, label: 'Beta' }])
+  }
+
+  await setTheme(page, 'dark')
+  if (isMobile) {
+    await page.locator(`[data-row-id="${sourceId}"] button.mobile-card`).click()
+  } else {
+    await page
+      .getByRole('button', {
+        name: en.rowExpand.open.replace('{id}', sourceId),
+        exact: true,
+      })
+      .click()
+  }
+  const dialog = page.locator('dialog.row-expand')
+  await expect(dialog).toBeVisible()
+  if (isMobile) {
+    const alphaTag = dialog.locator('.relation-chip').filter({ hasText: alpha })
+    await expect(alphaTag).toHaveAttribute('style', alphaColor)
+    await dialog
+      .getByRole('button', { name: label(alpha), exact: true })
+      .click()
+    await expect
+      .poll(
+        async () =>
+          (await getRow(page, source.table.id, sourceId)).fields[
+            relation.field.id
+          ],
+      )
+      .toEqual([{ id: targetRows[1]!.id, label: 'Beta' }])
+  }
+  const betaTag = dialog.locator('.relation-chip').filter({ hasText: 'Beta' })
+  await expect(betaTag).toBeVisible()
+  expect(
+    await betaTag.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    ),
+  ).not.toBe('rgba(0, 0, 0, 0)')
+  await dialog.getByRole('button', { name: label('Beta'), exact: true }).click()
+  await expect
+    .poll(
+      async () =>
+        (await getRow(page, source.table.id, sourceId)).fields[
+          relation.field.id
+        ],
+    )
+    .toEqual([])
+  await expect(page.locator('.relation-picker[open]')).toHaveCount(0)
+  await expect(
+    dialog.getByText(en.relation.empty, { exact: true }),
+  ).toBeVisible()
+  expect(
+    (await getRow(page, target.table.id, targetRows[1]!.id)).fields[
+      relation.relation.childFieldId
+    ],
+  ).toEqual([])
+
+  await dialog
+    .getByRole('button', { name: en.rowExpand.close, exact: true })
+    .click()
+  await setTheme(page, 'light')
+  if (!isMobile) {
+    const undo = page.getByRole('button', { name: en.undo.undo, exact: true })
+    await expect(undo).toBeEnabled()
+    await undo.click()
+    await expect
+      .poll(
+        async () =>
+          (await getRow(page, source.table.id, sourceId)).fields[
+            relation.field.id
+          ],
+      )
+      .toEqual([{ id: targetRows[1]!.id, label: 'Beta' }])
+    await page.getByRole('button', { name: en.undo.redo, exact: true }).click()
+    await expect
+      .poll(
+        async () =>
+          (await getRow(page, source.table.id, sourceId)).fields[
+            relation.field.id
+          ],
+      )
+      .toEqual([])
+  }
+  await page.reload()
+  await expect(page.getByText(en.relation.empty, { exact: true })).toBeVisible()
+})
 
 test('AT-401..406 relation fields, linked rows, replacement, delete policies and scope', async ({
   page,

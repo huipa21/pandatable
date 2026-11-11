@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import RelationLinks from './RelationLinks.vue'
-import type { HighlightColor } from '../../api/types'
+import type { HighlightColor, RelationLink } from '../../api/types'
 import CellPresence from '../presence/CellPresence.vue'
 
 defineProps<{
   links: unknown
   editable: boolean
+  disabled: () => boolean
   open: () => void
+  remove: (link: RelationLink) => void
   tableId: string
   rowId: string
   fieldId: string
@@ -22,7 +24,13 @@ defineProps<{
     :data-row-highlight="rowHighlight"
     :data-cell-highlight="cellHighlight"
   >
-    <RelationLinks :links="links" :editable="editable" @edit="open" />
+    <RelationLinks
+      :links="links"
+      :editable="editable"
+      :disabled="disabled()"
+      @edit="open"
+      @remove="remove"
+    />
     <CellPresence
       :table-id="tableId"
       :row-id="rowId"

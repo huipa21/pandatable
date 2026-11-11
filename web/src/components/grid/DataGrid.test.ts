@@ -9,7 +9,12 @@ import type {
   Providers,
 } from '@revolist/revogrid'
 import { i18n, loadLocale } from '../../i18n'
-import type { RowQueryRequest, TableSchema, ViewColumns } from '../../api/types'
+import type {
+  RelationLink,
+  RowQueryRequest,
+  TableSchema,
+  ViewColumns,
+} from '../../api/types'
 import { useAuthStore } from '../../stores/auth'
 import { useRealtimeStore, type RealtimeEvent } from '../../stores/realtime'
 import { useUndoStore } from '../../stores/undo'
@@ -40,6 +45,7 @@ const gridState = vi.hoisted(() => ({
   scrollColumn: vi.fn(),
   editorComponent: undefined as Component | undefined,
   renderHeaders: false,
+  relationCellProps: undefined as Record<string, unknown> | undefined,
 }))
 
 vi.mock('@revolist/vue3-datagrid', async () => {
@@ -47,13 +53,20 @@ vi.mock('@revolist/vue3-datagrid', async () => {
   return {
     useTemplates: () => ({
       template: (
-        component: { name?: string },
+        component: { name?: string; __name?: string },
         options?: { props?: (context: unknown) => Record<string, unknown> },
-      ) =>
-        component.name === 'GridColumnHeader'
-          ? (_render: unknown, context: unknown) =>
-              vue.h(component as Component, options?.props?.(context))
-          : () => null,
+      ) => {
+        const name = component.name ?? component.__name
+        if (name === 'GridColumnHeader')
+          return (_render: unknown, context: unknown) =>
+            vue.h(component as Component, options?.props?.(context))
+        if (name === 'GridRelationCell')
+          return (_render: unknown, context: unknown) => {
+            gridState.relationCellProps = options?.props?.(context)
+            return null
+          }
+        return () => null
+      },
     }),
     default: vue.defineComponent({
       name: 'RevoGrid',
@@ -376,6 +389,7 @@ function addField(
 beforeEach(async () => {
   gridState.footerFailuresRemaining = 0
   gridState.renderHeaders = false
+  gridState.relationCellProps = undefined
   pinia = createPinia()
   setActivePinia(pinia)
   useAuthStore().setUser(navUser)
@@ -676,6 +690,137 @@ async function selectRow(id: string) {
   await nextTick()
   return true
 }
+
+function captureRelationCell() {
+  const grid = wrapper!.getComponent({ name: 'RevoGrid' })
+  const columns = grid.props('columns') as ColumnRegular[]
+  const column = columns.find((item) => item.prop === 'linked')
+  const model = (grid.props('source') as Record<string, unknown>[])[0]
+  if (!column?.cellTemplate || !model) throw new Error('Missing relation cell')
+  const render = (() => null as never) as Parameters<
+    NonNullable<ColumnRegular['cellTemplate']>
+  >[0]
+  column.cellTemplate(render, {
+    prop: 'linked',
+    value: model.linked,
+    model,
+    column,
+    rowIndex: 0,
+    colIndex: 1,
+    colType: 'rgCol',
+    type: 'rgRow',
+    data: [model],
+    providers: {} as Providers,
+  } as CellTemplateProp)
+  const props = gridState.relationCellProps
+  if (
+    !props ||
+    typeof props.remove !== 'function' ||
+    typeof props.disabled !== 'function'
+  )
+    throw new Error('Missing relation cell callbacks')
+  const remove = props.remove
+  const disabled = props.disabled
+  return {
+    editable: props.editable,
+    disabled: () => Boolean(disabled()),
+    remove: (link: RelationLink) => Promise.resolve(remove(link)),
+  }
+}
+
+function gridRelationSchema(level: TableSchema['myLevel'] = 'owner') {
+  const schema = schemaFor('text', level)
+  addField(schema, 'linked', 'link')
+  gridState.visibleFieldIds = ['name', 'linked']
+  gridState.rowFields = [
+    {
+      name: 'before',
+      linked: [
+        { id: '2', label: 'Related row' },
+        { id: '3', label: 'Another row' },
+      ],
+    },
+  ]
+  return schema
+}
+
+it('unlinks a grid tag, disables duplicate actions, and records the inverse', async () => {
+  const schema = gridRelationSchema()
+  const fetcher = await mountGrid(schema)
+  let release!: (response: Response) => void
+  fetcher.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        release = resolve
+      }),
+  )
+  const cell = captureRelationCell()
+  const pending = cell.remove({ id: '2', label: 'Related row' })
+  await flushPromises()
+  expect(cell.disabled()).toBe(true)
+  const mutation = fetcher.mock.calls.find(([url]) =>
+    String(url).endsWith('/links/linked'),
+  )
+  expect(mutation?.[0]).toBe(
+    '/api/v1/tables/t/rows/9007199254740993/links/linked',
+  )
+  expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
+    add: [],
+    remove: ['2'],
+  })
+  release(
+    Response.json({
+      row: {
+        id: '9007199254740993',
+        fields: { name: 'before', linked: [{ id: '3', label: 'Another row' }] },
+      },
+      changes: [
+        {
+          tableId: 't',
+          rowId: '9007199254740993',
+          fieldId: 'linked',
+          targetId: '2',
+          action: 'unlink',
+        },
+      ],
+    }),
+  )
+  await pending
+  await flushPromises()
+
+  const source = wrapper!.getComponent({ name: 'RevoGrid' }).props('source') as
+    Record<string, unknown>[] | undefined
+  expect(source?.[0]?.linked).toEqual([{ id: '3', label: 'Another row' }])
+  expect(cell.disabled()).toBe(false)
+  expect(useUndoStore().undoStack[0]?.steps).toEqual([
+    {
+      kind: 'link',
+      tableId: 't',
+      rowId: '9007199254740993',
+      fieldId: 'linked',
+      add: ['2'],
+      remove: [],
+    },
+  ])
+})
+
+it('reports grid unlink failures and hides relation actions from readers', async () => {
+  const schema = gridRelationSchema()
+  const fetcher = await mountGrid(schema)
+  fetcher.mockImplementationOnce(async () =>
+    Response.json({ error: { code: 'ERR_INTERNAL' } }, { status: 500 }),
+  )
+  const cell = captureRelationCell()
+  await cell.remove({ id: '2', label: 'Related row' })
+  await flushPromises()
+  expect(wrapper!.get('[role="alert"]').text()).toContain(
+    i18n.global.t('errors.ERR_INTERNAL'),
+  )
+  expect(useUndoStore().undoStack).toHaveLength(0)
+  expect(cell.disabled()).toBe(false)
+  await wrapper!.setProps({ schema: { ...schema, myLevel: 'read' } })
+  expect(captureRelationCell().editable).toBe(false)
+})
 
 it('allows editing when the route resolves its default view', async () => {
   const schema = schemaFor('text')
