@@ -58,6 +58,27 @@ function getTextarea() {
   return textarea
 }
 
+function getDialog() {
+  const dialog = document.querySelector<HTMLDialogElement>('.long-text-dialog')
+  if (!dialog) throw new Error('Long-text dialog was not mounted')
+  vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(
+    new DOMRect(100, 100, 600, 400),
+  )
+  return dialog
+}
+
+function pointerClick(
+  start: Element,
+  end: Element,
+  startPosition: { clientX: number; clientY: number },
+  endPosition = startPosition,
+) {
+  start.dispatchEvent(
+    new MouseEvent('pointerdown', { bubbles: true, ...startPosition }),
+  )
+  end.dispatchEvent(new MouseEvent('click', { bubbles: true, ...endPosition }))
+}
+
 describe('long-text dialog', () => {
   it('seeds and focuses the textarea, then applies Bold to its selection', async () => {
     mountDialog()
@@ -104,11 +125,44 @@ describe('long-text dialog', () => {
   it('applies when the dialog backdrop is clicked', async () => {
     const wrapper = mountDialog('backdrop text')
     await flushPromises()
-    const dialog =
-      document.querySelector<HTMLDialogElement>('.long-text-dialog')
-    if (!dialog) throw new Error('Long-text dialog was not mounted')
-    dialog.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const dialog = getDialog()
+    pointerClick(dialog, dialog, { clientX: 10, clientY: 10 })
     expect(wrapper.emitted('apply')).toEqual([['backdrop text']])
+  })
+
+  it('does not apply on dialog chrome or selection drags out of the textarea', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const dialog = getDialog()
+    const textarea = getTextarea()
+    textarea.value = 'draft selection'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+
+    pointerClick(textarea, textarea, { clientX: 200, clientY: 200 })
+    pointerClick(dialog, dialog, { clientX: 110, clientY: 200 })
+    pointerClick(textarea, dialog, { clientX: 200, clientY: 200 })
+    pointerClick(
+      textarea,
+      dialog,
+      { clientX: 200, clientY: 200 },
+      { clientX: 10, clientY: 10 },
+    )
+    pointerClick(
+      dialog,
+      dialog,
+      { clientX: 10, clientY: 10 },
+      { clientX: 110, clientY: 200 },
+    )
+
+    expect(dialog.open).toBe(true)
+    expect(textarea.value).toBe('draft selection')
+    expect(wrapper.emitted('apply')).toBeUndefined()
+    expect(wrapper.emitted('cancel')).toBeUndefined()
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
+    )
+    await nextTick()
+    expect(document.body.textContent).toContain('Discard changes?')
   })
 
   it('cancels on clean Escape', async () => {

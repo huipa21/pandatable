@@ -1,7 +1,7 @@
 import { expect, paceLogin, test } from './fixtures'
 import { setLocale } from './app-shell'
 import type { Components } from '@revolist/revogrid'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import type { FieldMutation, TableSchema } from '../src/api/types'
 import en from '../src/i18n/en.json' with { type: 'json' }
 
@@ -46,6 +46,28 @@ async function gridCell(page: Page, fieldId: string, row: number) {
   )
   await expect(cell).toBeVisible()
   return cell
+}
+
+async function editExpandedText(page: Page, dialog: Locator, value: string) {
+  const textarea = dialog.locator('.long-text-dialog__textarea')
+  await textarea.click()
+  await expect(textarea).toBeFocused()
+  await textarea.fill(value)
+  const bounds = await textarea.boundingBox()
+  if (!bounds) throw new Error('Expanded textarea is not visible')
+
+  // A selection ending in the margin produces a click targeted at the dialog.
+  await page.mouse.move(bounds.x + 40, bounds.y + 20)
+  await page.mouse.down()
+  await page.mouse.move(bounds.x - 6, bounds.y + 20, { steps: 5 })
+  await page.mouse.up()
+  await expect(dialog).toBeVisible()
+  await expect(textarea).toHaveValue(value)
+  await page.mouse.click(bounds.x - 6, bounds.y + 40)
+  await expect(dialog).toBeVisible()
+  await textarea.click()
+  await expect(textarea).toBeFocused()
+  return textarea
 }
 
 test('long-text expand applies markdown in the grid and draft in the row dialog', async ({
@@ -134,8 +156,7 @@ test('long-text expand applies markdown in the grid and draft in the row dialog'
     .click()
   const expanded = page.locator('dialog.long-text-dialog')
   await expect(expanded).toBeVisible()
-  const expandedArea = expanded.locator('.long-text-dialog__textarea')
-  await expandedArea.fill('grid text')
+  const expandedArea = await editExpandedText(page, expanded, 'grid text')
   await expandedArea.evaluate((element) => {
     const textarea = element as HTMLTextAreaElement
     textarea.setSelectionRange(0, textarea.value.length)
@@ -178,8 +199,12 @@ test('long-text expand applies markdown in the grid and draft in the row dialog'
     .click()
   const rowTextDialog = page.locator('dialog.long-text-dialog')
   await expect(rowTextDialog).toBeVisible()
-  const rowText = rowTextDialog.locator('.long-text-dialog__textarea')
-  await rowText.fill('row dialog draft')
+  const rowText = await editExpandedText(
+    page,
+    rowTextDialog,
+    'row dialog draft',
+  )
+  await expect(rowEditor).toHaveValue('**grid text**')
   await rowText.press('Control+Enter')
   await expect(rowEditor).toHaveValue('row dialog draft')
   const rowSave = page.waitForResponse(
