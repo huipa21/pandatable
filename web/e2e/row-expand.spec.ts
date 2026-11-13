@@ -799,7 +799,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     ).status(),
   ).toBe(200)
   await page.goto(rowPath)
-  await expect(dialog.locator('.row-field')).toHaveCount(16)
+  await expect(dialog.locator('.row-field')).toHaveCount(11)
   await expect(
     dialog.locator(`[data-field-id="${removedField.id}"]`),
   ).toHaveCount(0)

@@ -105,7 +105,9 @@ You can also type dates, times and date-times directly (for example, `11/15`,
 focused; use the calendar or time scroller to choose a value instead.
 Long-text cells include an expand control for a larger editor. Its toolbar
 inserts Markdown syntax into plain text (images use a URL); close or apply to
-keep the draft, or press Escape to discard it.
+keep the draft, or press Escape to discard it. Clicking or selecting text inside
+the larger editor keeps it open. In a row form, Ctrl/Command+Enter applies the
+expanded text to the local draft; use the row header's **Save** to submit it.
 
 Hover or focus a column header and open its arrow menu to hide, sort, filter,
 or group by that field. Owners can also edit its settings or description,

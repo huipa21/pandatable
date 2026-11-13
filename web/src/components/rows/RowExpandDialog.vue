@@ -600,6 +600,8 @@ async function create() {
 
 function saveShortcut(event: KeyboardEvent) {
   if (
+    (event.target instanceof Element &&
+      event.target.closest('dialog') !== dialog.value) ||
     event.isComposing ||
     event.key !== 'Enter' ||
     !(event.ctrlKey || event.metaKey) ||

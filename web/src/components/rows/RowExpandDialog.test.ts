@@ -2050,6 +2050,39 @@ it('rejects UTF-8 oversized single-row bodies without truncation or a request', 
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
 
+it.each(['Control', 'Meta'])(
+  'applies expanded long text with %s+Enter without submitting the row',
+  async (modifier) => {
+    const { wrapper, fetcher } = await setup(schemaWith('long_text'))
+    await wrapper.get('.field-expand').trigger('click')
+    await flushPromises()
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      '.long-text-dialog[open] textarea',
+    )
+    if (!textarea) throw new Error('Expanded long-text editor did not open')
+    textarea.value = 'Expanded local draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        key: 'Enter',
+        ctrlKey: modifier === 'Control',
+        metaKey: modifier === 'Meta',
+      }),
+    )
+    await flushPromises()
+    expect(
+      (wrapper.get('.field-editor textarea').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('Expanded local draft')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(wrapper.emitted('saved')).toBeUndefined()
+    await wrapper.get('.row-actions [aria-label="Save"]').trigger('click')
+    await flushPromises()
+    expect(stored.fields.name).toBe('Expanded local draft')
+  },
+)
+
 it.each([65536, 65537])(
   'enforces the exact %i-byte single-row boundary',
   async (bytes) => {

@@ -383,6 +383,7 @@ defineExpose({ contains, focus })
 
 <template>
   <span ref="host" class="long-text-dialog-host"></span>
+  <!-- Portaled modal gestures must not clear the host grid's edit focus. -->
   <Teleport :to="portalDestination">
     <dialog
       ref="dialog"
@@ -393,6 +394,10 @@ defineExpose({ contains, focus })
       @pointerdown="onDialogPointerDown"
       @pointercancel="pointerStartedOnBackdrop = false"
       @click="onDialogClick"
+      @mousedown.stop
+      @mouseup.stop
+      @touchstart.stop
+      @touchend.stop
       @keydown.stop="onKeydown"
       @cancel.prevent="handleEscape"
     >
