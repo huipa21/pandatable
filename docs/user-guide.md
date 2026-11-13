@@ -137,10 +137,13 @@ Typing a value and moving to another field keeps it in the local row draft;
 there are no separate field Save or Cancel buttons. Use **Save** in the top
 header (or Ctrl/Command+Enter) to submit all changed fields together. Save
 becomes active when changes are detected. Closing without saving discards the
-draft. System and computed fields remain read-only.
+draft. System fields are hidden; computed fields remain read-only. Fields use
+neutral borders until focused.
 
 The top header also contains field search and a control to collapse or expand
-the comments/history side panel. Switch between **Comments** and **History**
+the comments/history side panel. On desktop, collapsing the panel also narrows
+the popup, and expanding it restores the width (fullscreen remains the size of
+the table area). Switch between **Comments** and **History**
 in that panel without leaving or losing the field draft.
 
 ### 4. Use views and forms
@@ -191,9 +194,12 @@ to your access. Other participants' row changes refresh the gallery.
 ### 5. Collaborate
 
 The grid's **#** column is the row position, not its unique database ID (hidden
-by default). Use its expand icon to open a row. The first data column supplies
-the popup title. Search fields by name or value, or expand the popup to fill only
-the table area. Edit values directly and submit the row with the header's
+by default). Use its expand icon to open a row. The display field supplies
+the popup title; if it is a checkbox or unavailable, the first text field is
+used instead, falling back to the row ID when no label is available.
+Search fields by name or value, or expand the popup to fill only
+the table area; its inward-corner icon restores the smaller popup.
+Edit values directly and submit the row with the header's
 **Save** button. Up/down navigate in view order
 (Kanban uses displayed cards). Save the row draft before navigating.
 **Duplicate row** creates an unsaved draft: review unique values and choose

@@ -132,7 +132,7 @@ it('reports field focus in the row dialog and clears it on blur', async () => {
   expect(setFocus).toHaveBeenLastCalledWith('t', null)
 })
 
-it('uses column one as the title and searches every field by name and displayed value', async () => {
+it('uses the display field as the title and searches every field by name and displayed value', async () => {
   const schema = tableSchema()
   schema.fields.push({
     ...schema.fields[0]!,
@@ -156,6 +156,30 @@ it('uses column one as the title and searches every field by name and displayed 
   ).toHaveLength(1)
   await wrapper.get('.row-search input').setValue('missing')
   expect(wrapper.text()).toContain('No matching fields.')
+})
+
+it('uses the configured display field even when a checkbox is the first column', async () => {
+  const schema = tableSchema()
+  schema.fields.unshift({
+    ...schema.fields[0]!,
+    id: 'status',
+    name: 'Status',
+    uiType: 'checkbox',
+    position: 0,
+  })
+  stored.fields.status = true
+  const { wrapper } = await setup(schema)
+  expect(wrapper.get('header h2').text()).toBe('Original')
+  await wrapper.setProps({
+    schema: { ...schema, table: { ...schema.table, displayFieldId: 'status' } },
+  })
+  expect(wrapper.get('header h2').text()).toBe('Original')
+})
+
+it('falls back to the row identity rather than a boolean title without a text field', async () => {
+  stored.fields.name = true
+  const { wrapper } = await setup(schemaWith('checkbox'))
+  expect(wrapper.get('header h2').text()).toBe(`Row ${id}`)
 })
 
 it('keeps an existing field visible while editing a value matched by search', async () => {
@@ -1070,6 +1094,9 @@ it('keeps fields visible alongside activity tabs and preserves the active draft'
   expect(wrapper.get('[id^="row-comments-panel"]').isVisible()).toBe(true)
   await wrapper.get('[aria-label="Collapse activity"]').trigger('click')
   expect(wrapper.get('.row-activity').isVisible()).toBe(false)
+  expect(wrapper.get('.row-expand').classes()).toContain(
+    'row-expand-no-activity',
+  )
   expect(wrapper.get('.row-form').isVisible()).toBe(true)
   expect(
     (wrapper.get('.field-editor input').element as HTMLInputElement).value,
@@ -1078,6 +1105,9 @@ it('keeps fields visible alongside activity tabs and preserves the active draft'
   await wrapper.get('[id^="row-comments-tab"]').trigger('click')
   expect(wrapper.get('.row-form').isVisible()).toBe(true)
   expect(wrapper.get('.row-activity').isVisible()).toBe(true)
+  expect(wrapper.get('.row-expand').classes()).not.toContain(
+    'row-expand-no-activity',
+  )
   expect(wrapper.emitted('close')).toBeUndefined()
 })
 
@@ -1102,7 +1132,11 @@ it('omits compact presentation and toggles fullscreen only inside the table work
   expect(wrapper.find('[aria-label="Toggle compact view"]').exists()).toBe(
     false,
   )
+  const fullscreenButton = wrapper.get('[aria-label="Toggle table fullscreen"]')
+  const expandPath = fullscreenButton.get('svg path').attributes('d')
   await wrapper.get('[aria-label="Toggle table fullscreen"]').trigger('click')
+  expect(fullscreenButton.get('svg path').attributes('d')).not.toBe(expandPath)
+  expect(fullscreenButton.attributes('aria-pressed')).toBe('true')
   const dialog = wrapper.get('dialog.row-expand').element as HTMLDialogElement
   expect([
     dialog.style.left,
@@ -1112,6 +1146,8 @@ it('omits compact presentation and toggles fullscreen only inside the table work
   ]).toEqual(['220px', '120px', '900px', '500px'])
   await wrapper.get('[aria-label="Toggle table fullscreen"]').trigger('click')
   expect(dialog.style.width).toBe('')
+  expect(fullscreenButton.get('svg path').attributes('d')).toBe(expandPath)
+  expect(fullscreenButton.attributes('aria-pressed')).toBe('false')
 })
 
 it('keeps duplication entirely local until Save duplicate and generates a new identity', async () => {
@@ -1932,7 +1968,7 @@ it.each(['checkbox', 'single_select', 'multi_select'])(
   },
 )
 
-it('shows live fields in metadata order and resolves system user labels through the table directory', async () => {
+it('shows non-system fields in metadata order and omits system fields and their directory requests', async () => {
   const schema = tableSchema()
   for (const [index, kind] of [
     'id',
@@ -1965,19 +2001,14 @@ it('shows live fields in metadata order and resolves system user labels through 
   })
   stored.fields.hidden = 'Removed'
   const { wrapper, fetcher } = await setup(schema)
-  expect(wrapper.findAll('.row-field')).toHaveLength(7)
+  expect(wrapper.findAll('.row-field')).toHaveLength(2)
   expect(wrapper.findAll('.row-field h3').map((item) => item.text())).toEqual([
     'Name',
     'Hidden',
-    'id',
-    'created_at',
-    'created_by',
-    'updated_at',
-    'updated_by',
   ])
   expect(wrapper.findAll('.row-field-editor')).toHaveLength(2)
   expect(wrapper.find('[data-field-id="hidden"] select').exists()).toBe(true)
-  expect(fetcher).toHaveBeenCalledWith(
+  expect(fetcher).not.toHaveBeenCalledWith(
     '/api/v1/tables/t/directory/user-labels',
     expect.objectContaining({
       method: 'POST',
@@ -1988,7 +2019,11 @@ it('shows live fields in metadata order and resolves system user labels through 
   )
   i18n.global.locale.value = 'zh-CN'
   await flushPromises()
-  expect(wrapper.text()).toContain('只读系统字段')
+  expect(wrapper.text()).not.toContain('只读系统字段')
+  await wrapper.get('.row-search input').setValue('created')
+  expect(
+    wrapper.findAll('.row-field').filter((field) => field.isVisible()),
+  ).toHaveLength(0)
 })
 
 it.each([

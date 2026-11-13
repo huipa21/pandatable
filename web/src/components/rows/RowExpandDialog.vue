@@ -121,7 +121,15 @@ const blocked = ref(false)
 const creating = computed(() => props.rowId === null || duplicating.value)
 const title = computed(() => {
   if (creating.value) return t('mobileRows.newRow')
-  const primary = fields.value.find((item) => !item.field.isSystem)
+  const primary =
+    availableFields.value.find(
+      (item) =>
+        item.field.id === props.schema.table.displayFieldId &&
+        item.field.uiType !== 'checkbox',
+    ) ??
+    availableFields.value.find((item) =>
+      ['text', 'long_text'].includes(item.field.uiType),
+    )
   const label =
     primary?.result.ok && primary.value.ok
       ? primary.result.value.formatDisplay(primary.value.value, env.value)
@@ -203,9 +211,7 @@ const fields = computed(() =>
 )
 type DialogField = (typeof fields.value)[number]
 const availableFields = computed(() =>
-  creating.value
-    ? fields.value.filter((item) => !item.field.isSystem)
-    : fields.value,
+  fields.value.filter((item) => !item.field.isSystem),
 )
 const filteredFields = computed(() => {
   const query = search.value.trim().toLocaleLowerCase(locale.value)
@@ -1068,7 +1074,10 @@ function leaveField(event: FocusEvent) {
   <dialog
     ref="dialog"
     class="row-expand"
-    :class="{ 'row-expand-fullscreen': fullscreen }"
+    :class="{
+      'row-expand-fullscreen': fullscreen,
+      'row-expand-no-activity': !creating && !activityExpanded,
+    }"
     :style="dialogStyle"
     :aria-label="creating ? title : t('rowExpand.title', { id: rowId })"
     @keydown.capture="saveShortcut"
@@ -1166,7 +1175,7 @@ function leaveField(event: FocusEvent) {
           :disabled="!workspace"
           @click="fullscreen = !fullscreen"
         >
-          <AppIcon name="fullscreen" />
+          <AppIcon :name="fullscreen ? 'exitFullscreen' : 'fullscreen'" />
         </button>
         <button
           type="button"
@@ -1422,6 +1431,9 @@ function leaveField(event: FocusEvent) {
 .row-expand[open] {
   display: flex;
   flex-direction: column;
+}
+.row-expand-no-activity {
+  width: min(740px, calc((100vw - 32px) * 0.66));
 }
 .row-expand-fullscreen {
   position: fixed;

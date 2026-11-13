@@ -64,6 +64,7 @@ const paths = {
   'square-check': ['M4 4h16v16H4z', 'M8 12l3 3 5-6'],
   expand: ['M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7'],
   fullscreen: ['M8 4H4v4M16 4h4v4M20 16v4h-4M8 20H4v-4'],
+  exitFullscreen: ['M4 8h4V4M20 8h-4V4M16 20v-4h4M8 20v-4H4'],
   close: ['M6 6l12 12M18 6L6 18'],
   checkMark: ['M4 12l5 5L20 6'],
   duplicate: ['M9 9h11v11H9z', 'M15 9V4H4v11h5'],

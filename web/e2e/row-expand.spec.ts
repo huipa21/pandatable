@@ -167,7 +167,26 @@ test('row workspace controls, side activity and unsaved duplication persist only
   await search.fill('Name')
   await expect(dialog.locator('.row-field:visible')).toHaveCount(1)
   await search.fill('')
-  await expect(dialog.locator('.row-field')).toHaveCount(schema.fields.length)
+  await expect(dialog.locator('.row-field')).toHaveCount(
+    schema.fields.filter((field) => !field.isSystem).length,
+  )
+  for (const field of schema.fields.filter((field) => field.isSystem))
+    await expect(dialog.locator(`[data-field-id="${field.id}"]`)).toHaveCount(0)
+  await dialog.locator(':scope > header h2').click()
+  const idleBorder = await nameInput.evaluate(
+    (element) => getComputedStyle(element).borderColor,
+  )
+  await nameInput.focus()
+  const focusedBorder = await nameInput.evaluate(
+    (element) => getComputedStyle(element).borderColor,
+  )
+  expect(focusedBorder).not.toBe(idleBorder)
+  await dialog.locator(':scope > header h2').click()
+  await expect
+    .poll(() =>
+      nameInput.evaluate((element) => getComputedStyle(element).borderColor),
+    )
+    .toBe(idleBorder)
   await expect(
     dialog.getByRole('button', { name: 'Toggle compact view', exact: true }),
   ).toHaveCount(0)
@@ -190,27 +209,45 @@ test('row workspace controls, side activity and unsaved duplication persist only
       (element) => element.scrollWidth <= element.clientWidth,
     ),
   ).toBe(true)
+  const expandedBox = await dialog.boundingBox()
   await dialog
     .getByRole('button', { name: en.rowExpand.collapseActivity, exact: true })
     .click()
   await expect(dialog.locator('.row-activity')).not.toBeVisible()
+  if (!isMobile) {
+    const collapsedBox = await dialog.boundingBox()
+    expect(collapsedBox!.width).toBeLessThan(expandedBox!.width - 100)
+  }
   await dialog
     .getByRole('button', { name: en.rowExpand.expandActivity, exact: true })
     .click()
   await expect(dialog.locator('.row-activity')).toBeVisible()
+  expect((await dialog.boundingBox())!.width).toBeCloseTo(expandedBox!.width, 0)
   if (!isMobile) {
-    await dialog
-      .getByRole('button', { name: en.rowExpand.fullscreen, exact: true })
-      .click()
+    const fullscreenButton = dialog.getByRole('button', {
+      name: en.rowExpand.fullscreen,
+      exact: true,
+    })
+    const expandPath = await fullscreenButton
+      .locator('svg path')
+      .getAttribute('d')
+    await fullscreenButton.click()
+    await expect(fullscreenButton).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      await fullscreenButton.locator('svg path').getAttribute('d'),
+    ).not.toBe(expandPath)
     const area = await page.locator('.row-workspace').boundingBox()
     const popup = await dialog.boundingBox()
     expect(area).not.toBeNull()
     expect(popup).not.toBeNull()
     for (const key of ['x', 'y', 'width', 'height'] as const)
       expect(Math.abs(area![key] - popup![key])).toBeLessThan(2)
-    await dialog
-      .getByRole('button', { name: en.rowExpand.fullscreen, exact: true })
-      .click()
+    await fullscreenButton.click()
+    await expect(fullscreenButton).toHaveAttribute('aria-pressed', 'false')
+    await expect(fullscreenButton.locator('svg path')).toHaveAttribute(
+      'd',
+      expandPath!,
+    )
   }
   await dialog
     .getByRole('button', { name: en.rowExpand.next, exact: true })
@@ -420,10 +457,10 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   await expect(page).toHaveURL(new RegExp(`/r/${row.id}$`))
   const dialog = page.locator('dialog.row-expand')
   await expect(dialog).toBeVisible()
-  await expect(dialog.locator('.row-field')).toHaveCount(17)
+  await expect(dialog.locator('.row-field')).toHaveCount(12)
   await expect(
     dialog.getByText(en.rowExpand.system, { exact: true }),
-  ).toHaveCount(5)
+  ).toHaveCount(0)
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await expect(dialog).not.toBeVisible()
 
@@ -521,7 +558,7 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   await expect(
     dialog.locator(`[data-field-id="${nameField.id}"] input`),
   ).toHaveValue('Row 中文')
-  await expect(dialog.locator('.row-field')).toHaveCount(17)
+  await expect(dialog.locator('.row-field')).toHaveCount(12)
   const exactField = schema.fields.find((field) => field.name === 'Exact')!
   section = edit(exactField.id)
   await expect(section.locator('input')).toHaveValue(
