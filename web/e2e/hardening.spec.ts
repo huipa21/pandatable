@@ -701,9 +701,10 @@ test('AT-806 table dialogs at 390px in both languages', async ({
       await usableDialog(page, expanded, 'row dialog')
       const value = locale === en ? 'Responsive English' : 'Responsive Chinese'
       const name = expanded.locator(`[data-field-id="${data.fieldId}"]`)
-      await name.getByRole('button').click()
       await name.locator('input').fill(value)
-      await name.locator('input').press('Enter')
+      await expanded
+        .getByRole('button', { name: locale.gridPolish.gp05.save, exact: true })
+        .click()
       await expect(
         expanded.getByText(locale.rowExpand.saved, { exact: true }),
       ).toBeVisible()

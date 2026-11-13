@@ -274,26 +274,25 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     ).toEqual(spec.value)
   expect(savedRow.fields[defaulted.id]).toBe(7)
   const nameSection = dialog.locator(`[data-field-id="${name.id}"]`)
-  await nameSection.getByRole('button').click()
   await nameSection.locator('input').fill('Saved mobile')
-  await nameSection.locator('input').press('Enter')
+  await dialog
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
+    .click()
   await expect(
     dialog.getByText(en.rowExpand.saved, { exact: true }),
   ).toBeVisible()
   await page.reload()
-  await expect(nameSection).toContainText('Saved mobile')
+  await expect(nameSection.locator('input')).toHaveValue('Saved mobile')
   const bigSection = dialog.locator(
     `[data-field-id="${schema.fields.find((field) => field.name === 'Big')!.id}"]`,
   )
-  await bigSection.getByRole('button').click()
   await bigSection.locator('input').fill('invalid')
-  await bigSection
-    .getByRole('button', { name: en.rowExpand.save, exact: true })
+  await dialog
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   await expect(bigSection.getByRole('alert')).toHaveText(
     en.field.error.invalid_integer,
   )
-  await bigSection.locator('input').press('Escape')
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await expect(page.locator('.mobile-card')).toHaveCount(1)
   await expect(page.locator('.card-title')).toContainText('Saved mobile')
@@ -404,11 +403,10 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
       exact: true,
     })
     .click()
-  await nameSection.getByRole('button').click()
   await nameSection.locator('input').fill('Late committed')
   await holdResponse(page, apiRow, 'PATCH')
-  await nameSection
-    .getByRole('button', { name: en.rowExpand.save, exact: true })
+  await dialog
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   await expect
     .poll(() => page.evaluate(() => (window as HeldWindow).held))
@@ -539,10 +537,9 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
     ).toBe(200)
     await reader.reload()
     const readerName = readerDialog.locator(`[data-field-id="${name.id}"]`)
-    await readerName.getByRole('button').click()
     await readerName.locator('input').fill('Writer mobile')
-    await readerName
-      .getByRole('button', { name: en.rowExpand.save, exact: true })
+    await readerDialog
+      .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
       .click()
     await expect(
       readerDialog.getByText(en.rowExpand.saved, { exact: true }),
@@ -571,7 +568,7 @@ test('AT-313 real 390x844 cards, full-screen exact editors, defaults, paging, AC
         name: en.gridPolish.gp05.save,
         exact: true,
       }),
-    ).toBeDisabled()
+    ).toHaveCount(0)
     await expect(readerDialog.getByRole('alert')).toHaveText(
       en.errors.ERR_PERMISSION_DENIED,
     )

@@ -1173,7 +1173,7 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 	}
 	var result RowRecord
 	err = s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
-		record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input, nil)
+		record, changes, err := s.patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, id, input, nil, false)
 		if err != nil {
 			return err
 		}
@@ -1197,8 +1197,8 @@ func (s *Service) PatchRow(ctx context.Context, actor Actor, tableID, rowID stri
 	return result, err
 }
 
-func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
-	id int64, input, expected map[string]json.RawMessage) (RowRecord, map[string]HistoryChange, error) {
+func (s *Service) patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, table rowTable, actor Actor,
+	id int64, input, expected map[string]json.RawMessage, validateOnly bool) (RowRecord, map[string]HistoryChange, error) {
 	if len(input) == 0 {
 		return RowRecord{}, nil, validation("At least one field value is required")
 	}
@@ -1215,6 +1215,33 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 	} else if err != nil {
 		return RowRecord{}, nil, fmt.Errorf("lock row for patch: %w", err)
 	}
+	ordinary := make(map[string]json.RawMessage, len(input))
+	relations := make(map[string][]int64)
+	for fieldID, value := range input {
+		field, found := table.byID[fieldID]
+		if found && field.relation != nil {
+			ids, err := patchLinkIDs(value)
+			if err != nil {
+				return RowRecord{}, nil, err
+			}
+			if (field.relation.kind == "one_one" || field.relation.kind == "one_many" && field.relationSide == "child") && len(ids) > 1 {
+				return RowRecord{}, nil, validation("This relation field accepts one linked row")
+			}
+			relations[fieldID] = ids
+		} else {
+			ordinary[fieldID] = value
+		}
+	}
+	previousLinks := make(map[string]json.RawMessage, len(relations))
+	if len(relations) > 0 {
+		record := RowRecord{ID: strconv.FormatInt(id, 10), Fields: make(map[string]json.RawMessage)}
+		if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+			return RowRecord{}, nil, err
+		}
+		for fieldID := range relations {
+			previousLinks[fieldID] = record.Fields[fieldID]
+		}
+	}
 	if expected != nil {
 		if len(expected) != len(input) {
 			return RowRecord{}, nil, validation("Expected values must cover all patched fields")
@@ -1224,35 +1251,58 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 				return RowRecord{}, nil, validation("Expected values must cover all patched fields")
 			}
 		}
-		expectedFields, expectedValues, err := sortedFieldValues(ctx, queries, table, expected)
+		expectedOrdinary := make(map[string]json.RawMessage, len(ordinary))
+		for fieldID, value := range expected {
+			if _, relation := relations[fieldID]; relation {
+				want, err := patchLinkIDs(value)
+				if err != nil {
+					return RowRecord{}, nil, err
+				}
+				current, err := patchLinkIDs(previousLinks[fieldID])
+				if err != nil {
+					return RowRecord{}, nil, err
+				}
+				if !equalLinkIDs(current, want) {
+					return RowRecord{}, nil, undoConflict()
+				}
+			} else {
+				expectedOrdinary[fieldID] = value
+			}
+		}
+		expectedFields, expectedValues, err := sortedFieldValues(ctx, queries, table, expectedOrdinary)
 		if err != nil {
 			return RowRecord{}, nil, err
 		}
-		check := sq.Select().From(table.qualifiedName()).PlaceholderFormat(sq.Dollar)
-		for index, field := range expectedFields {
-			check = check.Column(sq.Expr(field.sqlColumn()+" IS NOT DISTINCT FROM ?", expectedValues[index]))
-		}
-		query, args, err := check.Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): id}).ToSql()
-		if err != nil {
-			return RowRecord{}, nil, fmt.Errorf("build expected row values query: %w", err)
-		}
-		matches := make([]bool, len(expectedFields))
-		destinations := make([]any, len(matches))
-		for index := range matches {
-			destinations[index] = &matches[index]
-		}
-		if err := tx.QueryRow(ctx, query, args...).Scan(destinations...); err != nil {
-			return RowRecord{}, nil, fmt.Errorf("check expected row values: %w", err)
-		}
-		for _, match := range matches {
-			if !match {
-				return RowRecord{}, nil, apperr.New(409, "ERR_UNDO_CONFLICT", "The row changed; review and retry")
+		if len(expectedFields) > 0 {
+			check := sq.Select().From(table.qualifiedName()).PlaceholderFormat(sq.Dollar)
+			for index, field := range expectedFields {
+				check = check.Column(sq.Expr(field.sqlColumn()+" IS NOT DISTINCT FROM ?", expectedValues[index]))
+			}
+			query, args, err := check.Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): id}).ToSql()
+			if err != nil {
+				return RowRecord{}, nil, fmt.Errorf("build expected row values query: %w", err)
+			}
+			matches := make([]bool, len(expectedFields))
+			destinations := make([]any, len(matches))
+			for index := range matches {
+				destinations[index] = &matches[index]
+			}
+			if err := tx.QueryRow(ctx, query, args...).Scan(destinations...); err != nil {
+				return RowRecord{}, nil, fmt.Errorf("check expected row values: %w", err)
+			}
+			for _, match := range matches {
+				if !match {
+					return RowRecord{}, nil, undoConflict()
+				}
 			}
 		}
 	}
-	fields, values, err := sortedFieldValues(ctx, queries, table, input)
+	fields, values, err := sortedFieldValues(ctx, queries, table, ordinary)
 	if err != nil {
 		return RowRecord{}, nil, err
+	}
+	if validateOnly {
+		return RowRecord{Previous: previousLinks}, nil, nil
 	}
 	builder := sq.Update(table.qualifiedName()).PlaceholderFormat(sq.Dollar)
 	for index, field := range fields {
@@ -1279,7 +1329,44 @@ func patchRow(ctx context.Context, tx pgx.Tx, queries *structuresql.Queries, tab
 	for fieldID, change := range changes {
 		record.Previous[fieldID] = change.Old
 	}
+	relationFields := make([]string, 0, len(relations))
+	for fieldID := range relations {
+		relationFields = append(relationFields, fieldID)
+	}
+	sort.Strings(relationFields)
+	currentLinkValues := previousLinks
+	for _, fieldID := range relationFields {
+		current, err := patchLinkIDs(currentLinkValues[fieldID])
+		if err != nil {
+			return RowRecord{}, nil, err
+		}
+		add, remove := linkIDDifference(relations[fieldID], current), linkIDDifference(current, relations[fieldID])
+		var linked RowRecord
+		if err := s.changeLinksTx(ctx, tx, actor, table, id, fieldID, LinkChange{Replace: true},
+			add, remove, &linked, false); err != nil {
+			return RowRecord{}, nil, err
+		}
+		record.LinkChanges = append(record.LinkChanges, linked.LinkChanges...)
+		record.Previous[fieldID] = previousLinks[fieldID]
+		currentLinkValues = linked.Fields
+	}
+	if len(relations) > 0 {
+		// Self-relations can also change the source row's foreign-key-backed fields.
+		query, args, err := sq.Select(table.selectColumnList(table.fields)...).From(table.qualifiedName()).
+			Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): id}).PlaceholderFormat(sq.Dollar).ToSql()
+		if err != nil {
+			return RowRecord{}, nil, err
+		}
+		updated, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
+		if err != nil {
+			return RowRecord{}, nil, err
+		}
+		record.Fields = updated.Fields
+	}
 	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+		return RowRecord{}, nil, err
+	}
+	if err := validatePatchedLinks(table, record, input); err != nil {
 		return RowRecord{}, nil, err
 	}
 	if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
@@ -1322,11 +1409,31 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 	})
 	err := s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
 		history := make([]historyWrite, 0, len(input))
+		// Check every guard before a relation mutation can displace another patched row.
+		previousLinks := make([]map[string]json.RawMessage, len(input))
 		for _, index := range order {
 			item := input[index]
-			record, changes, err := patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields, item.Expected)
+			hasLinks := false
+			for fieldID := range item.Fields {
+				hasLinks = hasLinks || table.byID[fieldID].relation != nil
+			}
+			if item.Expected != nil || hasLinks {
+				before, _, err := s.patchRow(ctx, tx, s.queries.WithTx(tx), table, actor,
+					ids[index], item.Fields, item.Expected, true)
+				if err != nil {
+					return err
+				}
+				previousLinks[index] = before.Previous
+			}
+		}
+		for _, index := range order {
+			item := input[index]
+			record, changes, err := s.patchRow(ctx, tx, s.queries.WithTx(tx), table, actor, ids[index], item.Fields, nil, false)
 			if err != nil {
 				return err
+			}
+			for fieldID, value := range previousLinks[index] {
+				record.Previous[fieldID] = value
 			}
 			result[index] = record
 			if len(changes) > 0 {
@@ -1334,6 +1441,20 @@ func (s *Service) PatchRows(ctx context.Context, actor Actor, tableID string, in
 					TableID: table.id.String(), RowID: ids[index], UserID: actor.ID, Action: "update", Changes: changes,
 				})
 			}
+		}
+		if err := enrichRowLinks(ctx, tx, table, table.fields, result); err != nil {
+			return err
+		}
+		for index, record := range result {
+			if err := validatePatchedLinks(table, record, input[index].Fields); err != nil {
+				return err
+			}
+		}
+		if err := enrichRowComputed(ctx, tx, actor, table, table.fields, result); err != nil {
+			return err
+		}
+		if err := enrichRowFormulas(ctx, tx, actor, table, table.fields, result); err != nil {
+			return err
 		}
 		if err := insertHistory(ctx, tx, history); err != nil {
 			return err

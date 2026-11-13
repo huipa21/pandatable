@@ -70,7 +70,6 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
   const taskName = schema.table.displayFieldId
   const projectName = projects.table.displayFieldId
   if (!taskName || !projectName) throw new Error('Missing display fields')
-  const field = schema.fields.find((item) => item.id === taskName)!
   const createRows = async (
     tableId: string,
     fieldId: string,
@@ -98,17 +97,16 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
   const dialog = page.locator('dialog.row-expand')
   await expect(dialog).toBeVisible()
   const nameSection = dialog.locator(`[data-field-id="${taskName}"]`)
-  await nameSection
-    .getByRole('button', {
-      name: en.rowExpand.edit.replace('{name}', field.name),
-      exact: true,
-    })
-    .click()
   await nameSection.locator('.field-editor input').fill('Edited A')
-  await nameSection
-    .getByRole('button', { name: en.rowExpand.save, exact: true })
+  await dialog
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
-  await expect(nameSection).toContainText('Edited A')
+  await expect(
+    dialog.getByText(en.rowExpand.saved, { exact: true }),
+  ).toBeVisible()
+  await expect(nameSection.locator('.field-editor input')).toHaveValue(
+    'Edited A',
+  )
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
 
   if (isMobile) {
@@ -198,8 +196,15 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
   ])
 
   await page.goto(`${base}/r/${first.id}`)
-  await dialog.getByRole('tab', { name: en.history.title, exact: true }).click()
-  const timeline = dialog.locator('.history')
+  const activity = dialog.locator('.row-activity')
+  await expect(activity).toBeVisible()
+  await activity
+    .getByRole('tab', { name: en.history.title, exact: true })
+    .click()
+  await expect(nameSection.locator('.field-editor input')).toHaveValue(
+    'Pasted A',
+  )
+  const timeline = activity.locator('.history')
   await expect(timeline).toContainText(history.items[0]!.authorName)
   await expect(timeline).toContainText('Original A → Edited A')
   await expect(timeline).toContainText('Edited A → Pasted A')
@@ -209,7 +214,9 @@ test('AT-607: edits, paste and links appear in the localized row timeline', asyn
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await setLocale(page, 'zh-CN')
   await page.goto(`${base}/r/${first.id}`)
-  await dialog.getByRole('tab', { name: zh.history.title, exact: true }).click()
+  await activity
+    .getByRole('tab', { name: zh.history.title, exact: true })
+    .click()
   await expect(timeline).toContainText(zh.history.actions.link)
   await expect(timeline).toContainText(`Apollo（行 ${project.id}）`)
 })

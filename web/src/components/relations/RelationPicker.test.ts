@@ -367,3 +367,59 @@ it('searches the target table by display field and links or unlinks a row immedi
   await flushPromises()
   expect(linkBodies.at(-1)).toEqual({ add: [], remove: ['2'] })
 })
+
+it.each(['many_many', 'one_one', 'one_many'] as const)(
+  'stages %s links without mutation or undo in draft mode',
+  async (kind) => {
+    const { schema, field, targetSchema } = manyFixture()
+    schema.relations[0]!.kind = kind
+    if (kind === 'one_many') field.options.side = 'child'
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith('/schema')) return Response.json(targetSchema)
+      if (url.endsWith('/query'))
+        return Response.json({
+          rows: [
+            { id: '1', fields: { 'target-name': 'China' } },
+            { id: '2', fields: { 'target-name': 'Hong Kong' } },
+          ],
+          total: 2,
+          schemaVersion: 1,
+        })
+      throw new Error(`Unexpected mutation: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const original = [{ id: '1', label: 'China' }]
+    wrapper = mount(RelationPicker, {
+      props: {
+        open: false,
+        schema,
+        field,
+        rowId: '10',
+        links: original,
+        identity: navUser.id,
+        draftMode: true,
+      },
+      global: { plugins: [pinia, i18n] },
+      attachTo: document.body,
+    })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    await wrapper.get('[aria-label="Link “Hong Kong”"]').trigger('click')
+    const changed = wrapper.emitted('draftChanged')?.[0]?.[0]
+    expect(changed).toEqual(
+      kind === 'many_many'
+        ? [...original, { id: '2', label: 'Hong Kong' }]
+        : [{ id: '2', label: 'Hong Kong' }],
+    )
+    await wrapper.setProps({ links: changed })
+    await wrapper.get('[aria-label="Unlink “Hong Kong”"]').trigger('click')
+    expect(wrapper.emitted('draftChanged')?.[1]?.[0]).toEqual(
+      kind === 'many_many' ? original : [],
+    )
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(wrapper.emitted('updated')).toBeUndefined()
+    expect(useUndoStore().undoStack).toHaveLength(0)
+    await wrapper.get('.relation-footer > button').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  },
+)

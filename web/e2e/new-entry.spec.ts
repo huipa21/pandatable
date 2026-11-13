@@ -311,20 +311,20 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
 
   await action.click()
   await expect(dialog).toBeVisible()
-  await expect(fieldSection(dialog, table.name)).not.toContainText(
-    'Discarded draft',
-  )
+  await expect(
+    fieldSection(dialog, table.name).locator('.field-editor input'),
+  ).not.toHaveValue('Discarded draft')
   await applyText(dialog, code, 'temporary')
   await applyText(dialog, code, '')
-  expectHTTPFailure(page, 'POST', rowsPath, 400)
   const submit = dialog.getByRole('button', {
     name: en.gridPolish.gp05.save,
     exact: true,
   })
   await submit.click()
-  await expect(dialog.getByRole('alert')).toHaveText(
+  await expect(fieldSection(dialog, code).getByRole('alert')).toHaveText(
     en.errors.ERR_REQUIRED_FIELD,
   )
+  expect(posts).toHaveLength(1)
   expect((await query(page, table.viewId)).total).toBe(1)
   await applyText(dialog, code, 'seed-code')
   expectHTTPFailure(page, 'POST', rowsPath, 409)
@@ -341,7 +341,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   const tagsSection = await editField(dialog, tags)
   await tagsSection.locator('select').selectOption(['Beta', 'Alpha'])
   await applyText(dialog, labels, 'alpha, beta')
-  expect(posts).toHaveLength(3)
+  expect(posts).toHaveLength(2)
 
   await page.evaluate((path) => {
     const original = window.fetch
@@ -366,7 +366,7 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await submit.click()
   await expect(dialog.getByRole('alert')).toHaveText(en.errors.ERR_INTERNAL)
   await expect(fieldSection(dialog, code).locator('input')).toBeEnabled()
-  expect(posts).toHaveLength(3)
+  expect(posts).toHaveLength(2)
 
   let release!: () => void
   const hold = new Promise<void>((resolve) => {
@@ -381,15 +381,15 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
     button.click()
     button.click()
   })
-  await expect.poll(() => posts.length).toBe(4)
+  await expect.poll(() => posts.length).toBe(3)
   await expect(submit).toBeDisabled()
   release()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   await page.unroute(routePattern)
   const rowId = new URL(page.url()).pathname.split('/').at(-1)!
   const rowPath = page.url()
-  expect(posts).toHaveLength(4)
-  expect(posts[3]).toEqual({
+  expect(posts).toHaveLength(3)
+  expect(posts[2]).toEqual({
     [table.name.id]: 'Created from form',
     [code.id]: 'unique-code',
     [check.id]: true,
@@ -397,12 +397,12 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
     [tags.id]: ['Alpha', 'Beta'],
     [labels.id]: ['alpha', 'beta'],
   })
-  expect(posts[3]).not.toHaveProperty(defaulted.id)
+  expect(posts[2]).not.toHaveProperty(defaulted.id)
   const response = await page.request.get(`${rowsPath}/${rowId}`)
   expect(response.status()).toBe(200)
   const saved = (await response.json()) as DataRow
   expect(saved.fields).toMatchObject({
-    ...posts[3],
+    ...posts[2],
     [defaulted.id]: 7,
   })
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
@@ -410,10 +410,12 @@ test('desktop New Entry and the grid plus use distinct creation paths', async ({
   await expect(action).toBeFocused()
   await page.goto(rowPath)
   await page.reload()
-  await expect(fieldSection(dialog, table.name)).toContainText(
-    'Created from form',
-  )
-  await expect(fieldSection(dialog, defaulted)).toContainText('7')
+  await expect(
+    fieldSection(dialog, table.name).locator('.field-editor input'),
+  ).toHaveValue('Created from form')
+  await expect(
+    fieldSection(dialog, defaulted).locator('.field-editor input'),
+  ).toHaveValue('7')
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
 
   await setTheme(page, 'dark')
@@ -606,7 +608,9 @@ test('readers cannot open New Entry, while writers can create through it', async
     await applyText(dialog, table.name, 'Writer entry')
     await dialog.getByRole('button', { name: en.gridPolish.gp05.save }).click()
     await expect(reader).toHaveURL(/\/r\/[1-9]\d*$/)
-    await expect(fieldSection(dialog, table.name)).toContainText('Writer entry')
+    await expect(
+      fieldSection(dialog, table.name).locator('.field-editor input'),
+    ).toHaveValue('Writer entry')
     await dialog.getByRole('button', { name: en.rowExpand.close }).click()
     await expect(action).toBeFocused()
     expectBrowserClean(reader, diagnostics)
@@ -663,14 +667,16 @@ test('390px mobile keeps one add action and its existing creation form', async (
   await setLocale(page, 'en')
   await setTheme(page, 'light')
   await add.click()
-  await expect(fieldSection(dialog, table.name)).not.toContainText(
-    'Discard mobile',
-  )
+  await expect(
+    fieldSection(dialog, table.name).locator('.field-editor input'),
+  ).not.toHaveValue('Discard mobile')
   await applyText(dialog, table.name, 'Mobile entry')
   await dialog.getByRole('button', { name: en.gridPolish.gp05.save }).click()
   await expect(page).toHaveURL(/\/r\/[1-9]\d*$/)
   expect(posts).toBe(1)
-  await expect(fieldSection(dialog, table.name)).toContainText('Mobile entry')
+  await expect(
+    fieldSection(dialog, table.name).locator('.field-editor input'),
+  ).toHaveValue('Mobile entry')
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
   await expect(page.locator('.mobile-card')).toContainText('Mobile entry')
   expect(

@@ -1053,6 +1053,8 @@
     "requestFailed": "Failed"
   },
   "rowExpand": {
+    "expandActivity": "Expand activity",
+    "collapseActivity": "Collapse activity",
     "search": "Search fields",
     "noFields": "No matching fields.",
     "previous": "Previous row",

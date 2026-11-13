@@ -132,6 +132,17 @@ or Ctrl+Y to undo or redo. An undo can ask for confirmation if another user
 changed the data. On a narrow screen, rows appear as cards; tap a card to open
 the row editor or use the single add-row control to open the creation form.
 
+In the expanded row editor, writable fields are ready to edit immediately.
+Typing a value and moving to another field keeps it in the local row draft;
+there are no separate field Save or Cancel buttons. Use **Save** in the top
+header (or Ctrl/Command+Enter) to submit all changed fields together. Save
+becomes active when changes are detected. Closing without saving discards the
+draft. System and computed fields remain read-only.
+
+The top header also contains field search and a control to collapse or expand
+the comments/history side panel. Switch between **Comments** and **History**
+in that panel without leaving or losing the field draft.
+
 ### 4. Use views and forms
 
 Expand a table in the sidebar to select a view. To create one, open the table's
@@ -182,13 +193,15 @@ to your access. Other participants' row changes refresh the gallery.
 The grid's **#** column is the row position, not its unique database ID (hidden
 by default). Use its expand icon to open a row. The first data column supplies
 the popup title. Search fields by name or value, or expand the popup to fill only
-the table area. Click a value to edit it. Up/down navigate in view order
-(Kanban uses displayed cards). Finish an active edit before navigating.
+the table area. Edit values directly and submit the row with the header's
+**Save** button. Up/down navigate in view order
+(Kanban uses displayed cards). Save the row draft before navigating.
 **Duplicate row** creates an unsaved draft: review unique values and choose
 the **Save** icon to insert it. System, calculated and linked fields are not
 copied. Closing the draft inserts nothing. **Delete row** asks for confirmation
-and supports Undo. Comments/history icons open overlays; their close button or
-Escape returns to the row fields without discarding an active field edit.
+and supports Undo. The header's activity control expands or collapses the
+comments/history side panel; switching its tabs keeps the row fields and
+their draft available.
 
 Table presence shows other participants and their focused cells. Open a row to
 see **Comments** and **History**. In a comment, type `@`, select an accessible

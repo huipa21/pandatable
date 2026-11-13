@@ -168,15 +168,11 @@ test('long-text expand applies markdown in the grid and draft in the row dialog'
     .click()
   const rowDialog = page.locator('dialog.row-expand')
   const section = rowDialog.locator(`[data-field-id="${notes.id}"]`)
-  await section.locator('.row-field-value').click()
   const rowEditor = section.locator('.field-editor textarea')
   await expect(rowEditor).toHaveValue('**grid text**')
   await section
     .getByRole('button', {
-      name: en.cellEditors.ces05.expand.replace(
-        '{field}',
-        en.field.editor.value,
-      ),
+      name: en.cellEditors.ces05.expand.replace('{field}', notes.name),
       exact: true,
     })
     .click()
@@ -186,10 +182,17 @@ test('long-text expand applies markdown in the grid and draft in the row dialog'
   await rowText.fill('row dialog draft')
   await rowText.press('Control+Enter')
   await expect(rowEditor).toHaveValue('row dialog draft')
-  await section
-    .getByRole('button', { name: en.rowExpand.save, exact: true })
+  const rowSave = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname ===
+        `/api/v1/tables/${tableId}/rows/${row.id}`,
+  )
+  await rowDialog
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
-  await expect(section.locator('.field-editor')).toHaveCount(0)
+  expect((await rowSave).status()).toBe(200)
+  await expect(rowEditor).toHaveValue('row dialog draft')
   const persisted = await page.request.get(
     `/api/v1/tables/${tableId}/rows/${row.id}`,
   )

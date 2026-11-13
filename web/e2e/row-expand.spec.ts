@@ -61,7 +61,7 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/\/home$/)
 }
 
-test('row workspace controls, overlays and unsaved duplication persist only on confirmation', async ({
+test('row workspace controls, side activity and unsaved duplication persist only on confirmation', async ({
   page,
   isMobile,
 }) => {
@@ -116,7 +116,6 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
       .locator(`[data-row-id="${originals[0]!.id}"] button.mobile-card`)
       .click()
   else {
-    await expect(page.locator('.grid-row-number').first()).toHaveText('1')
     await expect(
       page
         .locator('revo-grid')
@@ -130,11 +129,41 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
       .click()
   }
   const dialog = page.locator('dialog.row-expand')
-  await expect(dialog.locator('header h2')).toHaveText('First entry')
+  await expect(dialog.locator(':scope > header h2')).toHaveText('First entry')
+  const save = dialog.getByRole('button', {
+    name: en.gridPolish.gp05.save,
+    exact: true,
+  })
+  await expect(save).toBeDisabled()
+  await expect(dialog.locator('header .row-search')).toBeVisible()
+  await expect(dialog.locator('.row-toolbar')).toHaveCount(0)
+  const nameInput = dialog.locator(
+    `[data-field-id="${name.id}"] .field-editor input`,
+  )
+  const labelBox = await dialog
+    .locator(`[data-field-id="${name.id}"] h3`)
+    .boundingBox()
+  const inputBox = await nameInput.boundingBox()
+  expect(labelBox).not.toBeNull()
+  expect(inputBox).not.toBeNull()
+  expect(inputBox!.y).toBeGreaterThanOrEqual(labelBox!.y + labelBox!.height)
   const search = dialog.getByRole('searchbox', {
     name: en.rowExpand.search,
     exact: true,
   })
+  await search.fill('First entry')
+  await nameInput.fill('Unsaved entry')
+  await expect(nameInput).toBeVisible()
+  await dialog.locator(':scope > header h2').click()
+  await expect(save).toBeEnabled()
+  expect(
+    (await queryRows()).find((row) => row.id === originals[0]!.id)?.fields[
+      name.id
+    ],
+  ).toBe('First entry')
+  await nameInput.fill('First entry')
+  await dialog.locator(':scope > header h2').click()
+  await expect(save).toBeDisabled()
   await search.fill('Name')
   await expect(dialog.locator('.row-field:visible')).toHaveCount(1)
   await search.fill('')
@@ -144,12 +173,31 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
   ).toHaveCount(0)
   for (const label of [en.comments.title, en.history.title]) {
     await dialog.getByRole('tab', { name: label, exact: true }).click()
-    await expect(dialog.locator('.row-form')).not.toBeVisible()
-    await dialog
-      .getByRole('button', { name: en.rowExpand.returnToFields, exact: true })
-      .click()
     await expect(dialog.locator('.row-form')).toBeVisible()
+    await expect(dialog.locator('.row-activity')).toBeVisible()
   }
+  if (!isMobile) {
+    const formBox = await dialog.locator('.row-form').boundingBox()
+    const activityBox = await dialog.locator('.row-activity').boundingBox()
+    expect(formBox).not.toBeNull()
+    expect(activityBox).not.toBeNull()
+    expect(activityBox!.x).toBeGreaterThanOrEqual(
+      formBox!.x + formBox!.width - 1,
+    )
+  }
+  expect(
+    await dialog.evaluate(
+      (element) => element.scrollWidth <= element.clientWidth,
+    ),
+  ).toBe(true)
+  await dialog
+    .getByRole('button', { name: en.rowExpand.collapseActivity, exact: true })
+    .click()
+  await expect(dialog.locator('.row-activity')).not.toBeVisible()
+  await dialog
+    .getByRole('button', { name: en.rowExpand.expandActivity, exact: true })
+    .click()
+  await expect(dialog.locator('.row-activity')).toBeVisible()
   if (!isMobile) {
     await dialog
       .getByRole('button', { name: en.rowExpand.fullscreen, exact: true })
@@ -167,11 +215,11 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
   await dialog
     .getByRole('button', { name: en.rowExpand.next, exact: true })
     .click()
-  await expect(dialog.locator('header h2')).toHaveText('Second entry')
+  await expect(dialog.locator(':scope > header h2')).toHaveText('Second entry')
   await dialog
     .getByRole('button', { name: en.rowExpand.previous, exact: true })
     .click()
-  await expect(dialog.locator('header h2')).toHaveText('First entry')
+  await expect(dialog.locator(':scope > header h2')).toHaveText('First entry')
   await dialog
     .getByRole('button', { name: en.rowExpand.duplicate, exact: true })
     .click()
@@ -179,12 +227,9 @@ test('row workspace controls, overlays and unsaved duplication persist only on c
   const field = dialog.locator(`[data-field-id="${name.id}"]`)
   await field.locator('.field-editor input').fill('Draft copy')
   expect(await queryRows()).toHaveLength(2)
-  await dialog
-    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
-    .click()
-  await expect(
-    dialog.getByRole('button', { name: en.gridPolish.gp05.save, exact: true }),
-  ).toHaveCount(0)
+  await save.click()
+  await expect(dialog.locator(':scope > header h2')).toHaveText('Draft copy')
+  await expect(save).toBeDisabled()
   const rows = await queryRows()
   expect(rows).toHaveLength(3)
   const copy = rows.find((row) => row.fields[name.id] === 'Draft copy')!
@@ -424,20 +469,23 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     await expect(dialog).toBeVisible({ timeout: 1_500 })
   }).toPass({ timeout: 10_000 })
   const nameField = schema.fields.find((field) => field.uiType === 'text')!
-  const edit = async (fieldId: string) => {
-    const section = dialog.locator(`[data-field-id="${fieldId}"]`)
-    await section.locator('.row-field-value').click()
-    return section
-  }
-  let section = await edit(nameField.id)
+  const edit = (fieldId: string) =>
+    dialog.locator(`[data-field-id="${fieldId}"]`)
+  const save = dialog.getByRole('button', {
+    name: en.gridPolish.gp05.save,
+    exact: true,
+  })
+  await expect(save).toBeDisabled()
+  let section = edit(nameField.id)
   await section.locator('.field-editor input').fill('Row 中文')
-  await section.getByRole('button', { name: en.rowExpand.save }).click()
-  await expect(
-    dialog.getByText(en.rowExpand.saved, { exact: true }),
-  ).toBeVisible()
+  await dialog.locator(':scope > header h2').click()
+  await expect(save).toBeEnabled()
+  expect(
+    (await (await page.request.get(apiRowPath)).json()).fields[nameField.id],
+  ).not.toBe('Row 中文')
   for (const spec of specs) {
     const field = schema.fields.find((field) => field.name === spec.name)!
-    section = await edit(field.id)
+    section = edit(field.id)
     if (spec.uiType === 'checkbox') await section.getByRole('checkbox').check()
     else if (spec.uiType === 'single_select')
       await section.locator('select').selectOption('Beta')
@@ -448,9 +496,22 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
         await section
           .locator('.field-editor input, .field-editor textarea')
           .fill(spec.input)
-      await section.getByRole('button', { name: en.rowExpand.save }).click()
     }
-    await expect(section.locator('.field-editor')).toHaveCount(0)
+    await expect(section.locator('.field-editor')).toHaveCount(1)
+  }
+  const patches: Record<string, unknown>[] = []
+  page.on('request', (request) => {
+    if (
+      new URL(request.url()).pathname === apiRowPath &&
+      request.method() === 'PATCH'
+    )
+      patches.push(request.postDataJSON() as Record<string, unknown>)
+  })
+  await save.click()
+  await expect(save).toBeDisabled()
+  expect(patches).toHaveLength(1)
+  for (const spec of specs) {
+    const field = schema.fields.find((field) => field.name === spec.name)!
     const persisted = await page.request.get(apiRowPath)
     expect(persisted.status()).toBe(200)
     expect((await persisted.json()).fields[field.id]).toEqual(spec.value)
@@ -458,25 +519,22 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
   await page.reload()
   await expect(dialog).toBeVisible()
   await expect(
-    dialog.locator(`[data-field-id="${nameField.id}"]`),
-  ).toContainText('Row 中文')
+    dialog.locator(`[data-field-id="${nameField.id}"] input`),
+  ).toHaveValue('Row 中文')
   await expect(dialog.locator('.row-field')).toHaveCount(17)
   const exactField = schema.fields.find((field) => field.name === 'Exact')!
-  section = await edit(exactField.id)
+  section = edit(exactField.id)
   await expect(section.locator('input')).toHaveValue(
     '123456789012345678901234567890.123456',
   )
-  await section
-    .getByRole('button', { name: en.admin.cancel, exact: true })
-    .click()
   const bigField = schema.fields.find((field) => field.name === 'Big')!
-  section = await edit(bigField.id)
+  section = edit(bigField.id)
   await section.locator('input').fill('invalid')
-  await section.getByRole('button', { name: en.rowExpand.save }).click()
+  await save.click()
   await expect(section.getByRole('alert')).toBeVisible()
-  await section
-    .getByRole('button', { name: en.admin.cancel, exact: true })
-    .click()
+  expect(
+    (await (await page.request.get(apiRowPath)).json()).fields[bigField.id],
+  ).toBe('9223372036854775807')
   await dialog.getByRole('button', { name: en.rowExpand.close }).click()
 
   await setLocale(page, 'zh-CN')
@@ -639,14 +697,16 @@ test('AT-310 real row expand, exact editors, deep links, ACL and stale responses
     ).toBe(200)
     await reader.reload()
     const readerName = readerDialog.locator(`[data-field-id="${nameField.id}"]`)
-    await readerName.getByRole('button').click()
     await readerName.locator('input').fill('Writer saved')
-    await readerName.getByRole('button', { name: en.rowExpand.save }).click()
-    await expect(readerName.locator('.field-editor')).toHaveCount(0)
+    const readerSave = readerDialog.getByRole('button', {
+      name: en.gridPolish.gp05.save,
+      exact: true,
+    })
+    await readerSave.click()
+    await expect(readerSave).toBeDisabled()
     expect(
       (await (await page.request.get(apiRowPath)).json()).fields[nameField.id],
     ).toBe('Writer saved')
-    await readerName.getByRole('button').click()
     await readerName.locator('input').fill('must not save')
     expect(
       (

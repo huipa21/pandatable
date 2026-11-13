@@ -231,7 +231,6 @@ test('AT-604: collaborators enter, focus, switch views, and leave', async ({
         const field = bob
           .locator('dialog.row-expand')
           .locator(`[data-field-id="${fieldId}"]`)
-        await field.getByRole('button').click()
         await field.locator('.field-editor input').focus()
       } else {
         await expect(
@@ -598,8 +597,15 @@ test('AT-601: mobile cards receive live row changes', async ({
     await card.locator('button.mobile-card').click()
     const dialog = page.locator('dialog.row-expand')
     const field = dialog.locator(`[data-field-id="${fieldId}"]`)
-    await field.getByRole('button').click()
     const editor = field.locator('.field-editor input')
+    const closeRow = async () => {
+      await dialog
+        .getByRole('button', { name: en.rowExpand.close, exact: true })
+        .click()
+      await expect(page).toHaveURL(path)
+      await expect(dialog).toHaveCount(0)
+      await expect(page.locator('.mobile-rows')).toBeVisible()
+    }
     await editor.fill('Mobile draft')
     const remoteEdit = await other.request.patch(
       `/api/v1/tables/${tableId}/rows/${row.id}`,
@@ -609,18 +615,20 @@ test('AT-601: mobile cards receive live row changes', async ({
       },
     )
     expect(remoteEdit.status()).toBe(200)
-    await expect(field.getByRole('status')).toContainText(
-      'Changed by First Administrator',
-    )
+    await expect(
+      dialog.getByText(
+        en.realtime.changedBy.replace('{name}', 'First Administrator'),
+        { exact: true },
+      ),
+    ).toBeVisible()
     await expect(editor).toHaveValue('Mobile draft')
-    await field
-      .getByRole('button', { name: en.admin.cancel, exact: true })
-      .click()
-    await expect(field).toContainText('Mobile remote')
-    await dialog
-      .getByRole('button', { name: en.rowExpand.close, exact: true })
-      .click()
+    await closeRow()
     await expect(card).toContainText('Mobile remote')
+    await card.locator('button.mobile-card').click()
+    await expect(page).toHaveURL(`${path}/r/${row.id}`)
+    await expect(dialog).toBeVisible()
+    await expect(editor).toHaveValue('Mobile remote')
+    await closeRow()
     const added = await other.request.post(`/api/v1/tables/${tableId}/rows`, {
       headers: headers(),
       data: { rows: [{ fields: { [fieldId]: 'Mobile added' } }] },

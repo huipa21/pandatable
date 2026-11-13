@@ -60,6 +60,54 @@ func TestUndoGuardedPatchLargePayload(t *testing.T) {
 	}
 }
 
+func TestUndoMixedRowDraftPatchHTTP(t *testing.T) {
+	f := newACLFixture(t)
+	owner := f.user("user", false)
+	book := f.newBook(owner, f.newWorkspace(owner, "Mixed drafts").ID, "Book")
+	source := f.newTable(owner, book.ID, "Source")
+	target := f.newTable(owner, book.ID, "Target")
+	name := relationLabelField(source.TableSchema)
+	targetName := relationLabelField(target.TableSchema)
+	relation := decode[relationBody](f, f.api(owner, "POST", "/tables/"+source.Table.ID+"/relations",
+		fmt.Sprintf(`{"name":"Targets","reverseName":"Sources","targetTableId":%q,"kind":"many_many"}`,
+			target.Table.ID)), 201)
+	path := "/tables/" + source.Table.ID + "/rows"
+	row := decode[rowsResponse](f, f.api(owner, "POST", path,
+		undoBody(t, map[string]any{"rows": []any{map[string]any{"fields": map[string]any{name.ID: "Before"}}}})), 201).Rows[0]
+	linked := decode[rowsResponse](f, f.api(owner, "POST", "/tables/"+target.Table.ID+"/rows",
+		undoBody(t, map[string]any{"rows": []any{map[string]any{"fields": map[string]any{targetName.ID: "Real label"}}}})), 201).Rows[0]
+	patch := decode[struct {
+		Row      structure.RowRecord        `json:"row"`
+		Previous map[string]json.RawMessage `json:"previous"`
+		Changes  []structure.RelationDelta  `json:"changes"`
+		EventID  string                     `json:"eventId"`
+	}](f, f.api(owner, "PATCH", path+"/"+row.ID, undoBody(t, map[string]any{
+		"fields": map[string]any{name.ID: "After", relation.Relation.ParentFieldID: []structure.LinkValue{{
+			ID: linked.ID, Label: "forged",
+		}}},
+	})), 200)
+	if patch.EventID == "" || string(patch.Previous[name.ID]) != `"Before"` ||
+		string(patch.Previous[relation.Relation.ParentFieldID]) != `[]` ||
+		len(patch.Changes) != 1 || patch.Changes[0].Action != "link" ||
+		patch.Changes[0].TargetID != linked.ID ||
+		string(patch.Row.Fields[relation.Relation.ParentFieldID]) != fmt.Sprintf(`[{"id":%q,"label":"Real label"}]`, linked.ID) {
+		t.Fatalf("mixed draft HTTP response = %+v", patch)
+	}
+	undo := undoBody(t, map[string]any{"rows": []structure.RowPatch{{
+		ID: row.ID, Fields: patch.Previous, Expected: map[string]json.RawMessage{
+			name.ID:                         patch.Row.Fields[name.ID],
+			relation.Relation.ParentFieldID: json.RawMessage(fmt.Sprintf(`[{"id":%q,"label":"stale"}]`, linked.ID)),
+		},
+	}}})
+	f.expectStatus(f.api(owner, "PATCH", path+":guarded", undo), 200, "")
+	restored := decode[structure.RowRecord](f, f.api(owner, "GET", path+"/"+row.ID, ""), 200)
+	if string(restored.Fields[name.ID]) != `"Before"` ||
+		string(restored.Fields[relation.Relation.ParentFieldID]) != `[]` {
+		t.Fatalf("guarded draft HTTP undo = %+v", restored)
+	}
+	f.expectStatus(f.api(owner, "PATCH", path+":guarded", undo), 409, "ERR_UNDO_CONFLICT")
+}
+
 func TestUndoRestoreSnapshotsAndGuardedPatch(t *testing.T) {
 	f := newACLFixture(t)
 	owner, writer, reader, stranger := f.user("user", false), f.user("user", false),

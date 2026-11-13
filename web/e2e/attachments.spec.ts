@@ -90,7 +90,6 @@ async function openAttachmentEditor(
   page: import('@playwright/test').Page,
   viewId: string,
   fieldId: string,
-  fieldName: string,
 ) {
   const row = (await queryRows(page, viewId)).rows[0]
   if (!row) throw new Error('Attachment test row is missing')
@@ -103,17 +102,14 @@ async function openAttachmentEditor(
   const field = page
     .locator('.row-expand')
     .locator(`[data-field-id="${fieldId}"]`)
-  await field
-    .getByRole('button', {
-      name: en.rowExpand.edit.replace('{name}', fieldName),
-      exact: true,
-    })
-    .click()
-  await expect(field.locator('.field-attachment-editor')).toBeVisible()
+  const editor = field.locator('.field-attachment-editor')
+  await expect(editor).toBeVisible()
+  return editor
 }
 
 async function dropFile(
   page: import('@playwright/test').Page,
+  editor: import('@playwright/test').Locator,
   file: { name: string; mime: string; base64: string },
 ) {
   const transfer = await page.evaluateHandle((value) => {
@@ -125,7 +121,7 @@ async function dropFile(
     return data
   }, file)
   try {
-    await page.locator('.field-attachment-editor').dispatchEvent('drop', {
+    await editor.dispatchEvent('drop', {
       dataTransfer: transfer,
     })
   } finally {
@@ -233,7 +229,7 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
     return Array.from(new Uint8Array(await blob.arrayBuffer()))
   })
 
-  await openAttachmentEditor(page, viewId, field.id, field.name)
+  const attachmentEditor = await openAttachmentEditor(page, viewId, field.id)
   const imageUpload = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
@@ -241,13 +237,11 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
         .url()
         .includes(`/tables/${tableId}/fields/${field.id}/attachments`),
   )
-  await page
-    .locator('.field-attachment-editor input[type="file"]')
-    .setInputFiles({
-      name: 'pixel.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(pngBytes),
-    })
+  await attachmentEditor.locator('input[type="file"]').setInputFiles({
+    name: 'pixel.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(pngBytes),
+  })
   const imageResponse = await imageUpload
   expect(imageResponse.status()).toBe(201)
   const imageFile = (await imageResponse.json()) as AttachmentValue
@@ -264,7 +258,7 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
         .url()
         .includes(`/tables/${tableId}/fields/${field.id}/attachments`),
   )
-  await dropFile(page, {
+  await dropFile(page, attachmentEditor, {
     name: 'document.pdf',
     mime: 'application/pdf',
     base64: pdfBase64,
@@ -282,8 +276,7 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
   )
   await page
     .locator('.row-expand')
-    .locator(`[data-field-id="${field.id}"]`)
-    .getByRole('button', { name: en.rowExpand.save, exact: true })
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
     .click()
   expect((await save).status()).toBe(200)
   const rows = await queryRows(page, viewId)
@@ -291,10 +284,16 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
   await page.reload()
   const imageLinks = page.locator('.field-attachment[download="pixel.png"]')
   const pdfLinks = page.locator('.field-attachment[download="document.pdf"]')
-  await expect(imageLinks).toHaveCount(2)
+  await expect(imageLinks).toHaveCount(1)
   await expect(imageLinks.first().locator('img')).toBeVisible()
-  await expect(pdfLinks).toHaveCount(2)
+  await expect(pdfLinks).toHaveCount(1)
   await expect(pdfLinks.first()).toBeVisible()
+  const savedAttachments = attachmentEditor.locator('.field-attachment-list')
+  await expect(savedAttachments.locator('li')).toHaveCount(2)
+  await expect(
+    savedAttachments.getByRole('img', { name: 'pixel.png', exact: true }),
+  ).toBeVisible()
+  await expect(savedAttachments).toContainText('document.pdf')
   const download = await page.request.get(`/api/v1/attachments/${pdfFile.id}`)
   expect(download.status()).toBe(200)
   expect(download.headers()['content-disposition']).toContain('attachment')
@@ -334,7 +333,7 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
       data: { uploadMaxMb: 1 },
     })
     expect(changed.status()).toBe(200)
-    await openAttachmentEditor(page, viewId, limitField.id, limitField.name)
+    const limitEditor = await openAttachmentEditor(page, viewId, limitField.id)
     expectHTTPFailure(
       page,
       'POST',
@@ -348,15 +347,13 @@ test('AT-321/322 attachment field upload, serving, row persistence, and configur
           .url()
           .includes(`/tables/${tableId}/fields/${limitField.id}/attachments`),
     )
-    await page
-      .locator('.field-attachment-editor input[type="file"]')
-      .setInputFiles({
-        name: 'over-limit.pdf',
-        mimeType: 'application/pdf',
-        buffer: Buffer.alloc((1 << 20) + 1, 0x78),
-      })
+    await limitEditor.locator('input[type="file"]').setInputFiles({
+      name: 'over-limit.pdf',
+      mimeType: 'application/pdf',
+      buffer: Buffer.alloc((1 << 20) + 1, 0x78),
+    })
     expect((await tooLarge).status()).toBe(413)
-    await expect(page.getByRole('alert')).toContainText(
+    await expect(limitEditor.getByRole('alert')).toContainText(
       en.errors.ERR_UPLOAD_TOO_LARGE,
     )
   } finally {

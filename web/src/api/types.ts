@@ -773,6 +773,7 @@ export interface RowDeleteRequest {
 export interface RowMutation extends AuthMutation {
   rows: DataRow[]
   previous?: { id: string; fields: Record<string, RowValue> }[]
+  changes?: RelationDelta[]
 }
 
 export interface RelationDelta {
@@ -797,6 +798,7 @@ export interface RelationMutation extends AuthMutation {
 export interface RowPatchMutation extends AuthMutation {
   row: DataRow
   previous?: Record<string, RowValue>
+  changes?: RelationDelta[]
 }
 
 export interface SystemMetric<T> {

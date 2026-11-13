@@ -146,10 +146,17 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
         .click()
     }
     const aliceDialog = page.locator('dialog.row-expand')
-    await aliceDialog
+    const aliceActivity = aliceDialog.locator('.row-activity')
+    await expect(aliceActivity).toBeVisible()
+    await aliceActivity
       .getByRole('tab', { name: en.comments.title, exact: true })
       .click()
-    const draft = aliceDialog.getByLabel(en.comments.compose, { exact: true })
+    await expect(
+      aliceDialog
+        .locator(`[data-field-id="${fieldId}"]`)
+        .locator('.field-editor input'),
+    ).toHaveValue('Review this')
+    const draft = aliceActivity.getByLabel(en.comments.compose, { exact: true })
     await draft.fill('@bo')
     const choices = aliceDialog.locator('[role="option"]')
     await expect(choices.filter({ hasText: 'Bob (' })).toHaveCount(1)
@@ -162,7 +169,7 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
     await aliceDialog
       .getByRole('button', { name: en.comments.post, exact: true })
       .click()
-    const aliceComment = aliceDialog
+    const aliceComment = aliceActivity
       .locator('.comment-list [data-comment-id]')
       .first()
     await expect(aliceComment.locator('.comment-body a')).toHaveText(
@@ -208,7 +215,9 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
     )
     const bobDialog = bob.locator('dialog.row-expand')
     await expect(bobDialog).toBeVisible()
-    const focused = bobDialog.locator(`[data-comment-id="${commentId}"]`)
+    const bobActivity = bobDialog.locator('.row-activity')
+    await expect(bobActivity).toBeVisible()
+    const focused = bobActivity.locator(`[data-comment-id="${commentId}"]`)
     await expect(focused).toBeFocused()
     await expect(focused).toContainText(`@${bobName} please check`)
     // The row dialog is modal, so read the avatar's unread summary instead.
@@ -219,13 +228,13 @@ test('AT-606: accessible mentions arrive live and open the exact row comment', a
     const notifications = await bob.request.get('/api/v1/notifications')
     expect((await notifications.json()).unreadCount).toBe(0)
 
-    await bobDialog
+    await bobActivity
       .getByLabel(en.comments.compose, { exact: true })
       .fill('Thanks')
-    await bobDialog
+    await bobActivity
       .getByRole('button', { name: en.comments.post, exact: true })
       .click()
-    await expect(aliceDialog.locator('.comment-list')).toContainText('Thanks')
+    await expect(aliceActivity.locator('.comment-list')).toContainText('Thanks')
     await expect(
       page.locator(
         `[aria-label="${en.comments.count.replace('{count}', '2')}"]`,

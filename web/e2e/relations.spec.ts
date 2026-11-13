@@ -254,20 +254,35 @@ test('linked record tags can be removed directly and undone', async ({
   }
   const dialog = page.locator('dialog.row-expand')
   await expect(dialog).toBeVisible()
+  const rowApiPath = `/api/v1/tables/${source.table.id}/rows/${sourceId}`
+  const relationMutations: { method: string; fields?: unknown }[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (
+      ['PATCH', 'POST'].includes(request.method()) &&
+      (path === rowApiPath || path.startsWith(`${rowApiPath}/links/`))
+    )
+      relationMutations.push({
+        method: request.method(),
+        fields: request.postDataJSON()?.fields,
+      })
+  })
+  const persistedLinks = isMobile
+    ? [
+        { id: targetRows[0]!.id, label: alpha },
+        { id: targetRows[1]!.id, label: 'Beta' },
+      ]
+    : [{ id: targetRows[1]!.id, label: 'Beta' }]
   if (isMobile) {
     const alphaTag = dialog.locator('.relation-chip').filter({ hasText: alpha })
     await expect(alphaTag).toHaveAttribute('style', alphaColor)
     await dialog
       .getByRole('button', { name: label(alpha), exact: true })
       .click()
-    await expect
-      .poll(
-        async () =>
-          (await getRow(page, source.table.id, sourceId)).fields[
-            relation.field.id
-          ],
-      )
-      .toEqual([{ id: targetRows[1]!.id, label: 'Beta' }])
+    await expect(alphaTag).toHaveCount(0)
+    expect(
+      (await getRow(page, source.table.id, sourceId)).fields[relation.field.id],
+    ).toEqual(persistedLinks)
   }
   const betaTag = dialog.locator('.relation-chip').filter({ hasText: 'Beta' })
   await expect(betaTag).toBeVisible()
@@ -277,6 +292,33 @@ test('linked record tags can be removed directly and undone', async ({
     ),
   ).not.toBe('rgba(0, 0, 0, 0)')
   await dialog.getByRole('button', { name: label('Beta'), exact: true }).click()
+  await expect(betaTag).toHaveCount(0)
+  await expect(page.locator('.relation-picker[open]')).toHaveCount(0)
+  await expect(
+    dialog.getByText(en.relation.empty, { exact: true }),
+  ).toBeVisible()
+  expect(
+    (await getRow(page, source.table.id, sourceId)).fields[relation.field.id],
+  ).toEqual(persistedLinks)
+  expect(
+    (await getRow(page, target.table.id, targetRows[1]!.id)).fields[
+      relation.relation.childFieldId
+    ],
+  ).toEqual([{ id: sourceId, label: 'Source' }])
+  expect(relationMutations).toEqual([])
+
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === rowApiPath,
+  )
+  await dialog
+    .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
+    .click()
+  expect((await saved).status()).toBe(200)
+  expect(relationMutations).toEqual([
+    { method: 'PATCH', fields: { [relation.field.id]: [] } },
+  ])
   await expect
     .poll(
       async () =>
@@ -285,10 +327,6 @@ test('linked record tags can be removed directly and undone', async ({
         ],
     )
     .toEqual([])
-  await expect(page.locator('.relation-picker[open]')).toHaveCount(0)
-  await expect(
-    dialog.getByText(en.relation.empty, { exact: true }),
-  ).toBeVisible()
   expect(
     (await getRow(page, target.table.id, targetRows[1]!.id)).fields[
       relation.relation.childFieldId
@@ -311,6 +349,11 @@ test('linked record tags can be removed directly and undone', async ({
           ],
       )
       .toEqual([{ id: targetRows[1]!.id, label: 'Beta' }])
+    expect(
+      (await getRow(page, target.table.id, targetRows[1]!.id)).fields[
+        relation.relation.childFieldId
+      ],
+    ).toEqual([{ id: sourceId, label: 'Source' }])
     await page.getByRole('button', { name: en.undo.redo, exact: true }).click()
     await expect
       .poll(

@@ -149,10 +149,11 @@ func (api *authHTTP) patchRowsWithLimit(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, http.StatusOK, struct {
-		Rows     []structure.RowRecord `json:"rows"`
-		Previous []structure.RowPatch  `json:"previous"`
-		EventID  string                `json:"eventId"`
-	}{rows, previousRows(rows), eventID(r)})
+		Rows     []structure.RowRecord     `json:"rows"`
+		Previous []structure.RowPatch      `json:"previous"`
+		Changes  []structure.RelationDelta `json:"changes,omitempty"`
+		EventID  string                    `json:"eventId"`
+	}{rows, previousRows(rows), rowLinkChanges(rows), eventID(r)})
 }
 
 func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.User) {
@@ -172,8 +173,17 @@ func (api *authHTTP) patchRow(w http.ResponseWriter, r *http.Request, user auth.
 	writeJSON(w, http.StatusOK, struct {
 		Row      structure.RowRecord        `json:"row"`
 		Previous map[string]json.RawMessage `json:"previous"`
+		Changes  []structure.RelationDelta  `json:"changes,omitempty"`
 		EventID  string                     `json:"eventId"`
-	}{row, row.Previous, eventID(r)})
+	}{row, row.Previous, row.LinkChanges, eventID(r)})
+}
+
+func rowLinkChanges(rows []structure.RowRecord) []structure.RelationDelta {
+	var changes []structure.RelationDelta
+	for _, row := range rows {
+		changes = append(changes, row.LinkChanges...)
+	}
+	return changes
 }
 
 func previousRows(rows []structure.RowRecord) []structure.RowPatch {

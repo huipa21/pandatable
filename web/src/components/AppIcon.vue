@@ -6,6 +6,8 @@ const props = withDefaults(defineProps<{ name: IconName; size?: number }>(), {
 
 <script lang="ts">
 const paths = {
+  activityClose: ['M4 4h16v16H4z', 'M15 4v16', 'M8 9l3 3-3 3'],
+  activityOpen: ['M4 4h16v16H4z', 'M15 4v16', 'M11 9l-3 3 3 3'],
   panelClose: ['M4 4h16v16H4z', 'M9 4v16', 'M16 9l-3 3 3 3'],
   panelOpen: ['M4 4h16v16H4z', 'M9 4v16', 'M13 9l3 3-3 3'],
   language: [

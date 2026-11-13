@@ -395,7 +395,6 @@ test('AT-609: a collaborator conflict can be cancelled or confirmed', async ({
   )
   const fieldId = source.table.displayFieldId
   if (!fieldId) throw new Error('Missing display field')
-  const field = source.fields.find((item) => item.id === fieldId)!
   const row = (await createRows(page, source, ['Before']))[0]!
   const username = `undo-bob-${Date.now()}-${isMobile ? 'm' : 'd'}`
   const created = await page.request.post('/api/v1/admin/users', {
@@ -462,15 +461,9 @@ test('AT-609: a collaborator conflict can be cancelled or confirmed', async ({
     const dialog = page.locator('dialog.row-expand')
     await expect(dialog).toBeVisible()
     const section = dialog.locator(`[data-field-id="${fieldId}"]`)
-    await section
-      .getByRole('button', {
-        name: en.rowExpand.edit.replace('{name}', field.name),
-        exact: true,
-      })
-      .click()
     await section.locator('.field-editor input').fill('Alice edit')
-    await section
-      .getByRole('button', { name: en.rowExpand.save, exact: true })
+    await dialog
+      .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
       .click()
     await expect
       .poll(

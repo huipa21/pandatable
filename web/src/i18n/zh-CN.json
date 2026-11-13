@@ -1053,6 +1053,8 @@
     "requestFailed": "失败"
   },
   "rowExpand": {
+    "expandActivity": "展开动态",
+    "collapseActivity": "收起动态",
     "search": "搜索字段",
     "noFields": "没有匹配的字段。",
     "previous": "上一行",

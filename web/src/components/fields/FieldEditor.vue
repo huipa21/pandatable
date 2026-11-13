@@ -87,6 +87,7 @@ const temporal = computed(() =>
 )
 const attachmentInput = ref<HTMLInputElement>()
 const reason = ref<Reason | null>(null)
+const requiredError = ref(false)
 const draft = ref(
   props.initialDraft ??
     (props.field.readOnly
@@ -146,6 +147,7 @@ const acceptAttribute = computed(() =>
 )
 const showSubmitButton = computed(() =>
   Boolean(
+    !props.live &&
     (props.submitLabel ||
       (props.field.presentation === 'select' && multiple.value) ||
       props.field.presentation === 'attachment') &&
@@ -164,7 +166,11 @@ const placeholder = computed(() => {
   }
 })
 const error = computed(() =>
-  reason.value ? fieldErrorMessage(reason.value) : '',
+  requiredError.value
+    ? t('errors.ERR_REQUIRED_FIELD')
+    : reason.value
+      ? fieldErrorMessage(reason.value)
+      : '',
 )
 
 onMounted(() => {
@@ -219,8 +225,14 @@ watch(
 )
 
 function finish(result: Result<WireValue>) {
+  requiredError.value = result.ok && props.required && result.value === null
+  if (requiredError.value) {
+    if (props.live) emit('invalidValue')
+    return false
+  }
   if (!result.ok) {
     reason.value = result.reason
+    if (props.live) emit('invalidValue')
     if (props.gridCommitOnLeave)
       emit('invalidDraft', currentDraft(), result.reason)
     return false
@@ -336,6 +348,11 @@ function applyLongText(text: string) {
 function previewText() {
   if (!props.live) return
   const result = props.field.parsePaste(draft.value, props.env)
+  requiredError.value = result.ok && props.required && result.value === null
+  if (requiredError.value) {
+    emit('invalidValue')
+    return
+  }
   if (!result.ok) {
     reason.value = result.reason
     emit('invalidValue')
@@ -417,6 +434,7 @@ async function addAttachmentFiles(files: FileList | File[]) {
     }
   } finally {
     uploadingAttachments.value = false
+    if (props.live && !unmounted) commitAttachments()
     emit('draftChanged')
     if (attachmentInput.value) attachmentInput.value.value = ''
   }
@@ -430,6 +448,7 @@ function removeAttachment(file: AttachmentValue) {
   removedAttachmentIds.add(file.id)
   attachmentPending.value = true
   emit('draftChanged')
+  if (props.live) commitAttachments()
 }
 
 function dropAttachments(event: DragEvent) {
@@ -480,6 +499,7 @@ function chooseUser(user: DirectoryPrincipal) {
     selectedUsers.value = [...selectedUsers.value, user.id]
     userPending.value = true
     emit('draftChanged')
+    if (props.live) commitUsers()
   }
 }
 
@@ -487,6 +507,29 @@ function removeUser(id: string) {
   selectedUsers.value = selectedUsers.value.filter((item) => item !== id)
   userPending.value = true
   emit('draftChanged')
+  if (props.live) commitUsers()
+}
+
+function liveBlur(event: FocusEvent) {
+  if (
+    !props.live ||
+    composing.value ||
+    temporal.value ||
+    ['user', 'attachment', 'select', 'checkbox'].includes(
+      props.field.presentation,
+    ) ||
+    currentDraft() === props.field.formatCopy(props.value, props.env)
+  )
+    return
+  const next = event.relatedTarget
+  if (
+    (next instanceof Node &&
+      (event.currentTarget as HTMLElement).contains(next)) ||
+    contains(next) ||
+    isPointerInPanel()
+  )
+    return
+  commitDraft()
 }
 
 async function searchUsers() {
@@ -555,7 +598,12 @@ function keydown(event: KeyboardEvent) {
 </script>
 
 <template>
-  <div v-if="!field.readOnly" class="field-editor" @keydown="keydown">
+  <div
+    v-if="!field.readOnly"
+    class="field-editor"
+    @keydown="keydown"
+    @focusout="liveBlur"
+  >
     <button
       v-if="field.presentation === 'checkbox'"
       ref="checkboxButton"
@@ -605,7 +653,7 @@ function keydown(event: KeyboardEvent) {
       multiple
       :size="Math.min(8, Math.max(2, choices.length))"
       :aria-label="label ?? t('field.editor.value')"
-      :aria-invalid="reason !== null"
+      :aria-invalid="reason !== null || requiredError"
       :required="required"
       @change="live ? commitSelect() : undefined"
     >
@@ -618,7 +666,7 @@ function keydown(event: KeyboardEvent) {
       ref="input"
       v-model="single"
       :aria-label="label ?? t('field.editor.value')"
-      :aria-invalid="reason !== null"
+      :aria-invalid="reason !== null || requiredError"
       :required="required"
       @change="commitSelect"
     >
@@ -636,7 +684,7 @@ function keydown(event: KeyboardEvent) {
         ref="input"
         v-model="draft"
         :aria-label="label ?? t('field.editor.value')"
-        :aria-invalid="reason !== null"
+        :aria-invalid="reason !== null || requiredError"
         :placeholder="defaultPlaceholder ?? t('field.editor.multilineHint')"
         :required="required"
         @input="previewText"
@@ -695,7 +743,7 @@ function keydown(event: KeyboardEvent) {
         </li>
       </ul>
       <button
-        v-if="multipleUsers"
+        v-if="multipleUsers && !live"
         type="button"
         :disabled="selectedUsers.length === 0 && !userPending"
         @click="commitUsers"
@@ -758,7 +806,7 @@ function keydown(event: KeyboardEvent) {
       type="text"
       :inputmode="field.presentation === 'number' ? 'decimal' : undefined"
       :aria-label="label ?? t('field.editor.value')"
-      :aria-invalid="reason !== null"
+      :aria-invalid="reason !== null || requiredError"
       :placeholder="placeholder"
       :required="required"
       @input="previewText"
@@ -768,7 +816,9 @@ function keydown(event: KeyboardEvent) {
     <button v-if="showSubmitButton" type="button" @click="commit">
       {{ submitLabel ?? t('field.editor.apply') }}
     </button>
-    <p v-if="reason" class="field-editor-error" role="alert">{{ error }}</p>
+    <p v-if="reason || requiredError" class="field-editor-error" role="alert">
+      {{ error }}
+    </p>
     <LongTextDialog
       v-if="field.presentation === 'multiline'"
       ref="longTextDialog"

@@ -109,18 +109,14 @@ async function editDateTime(
       exact: true,
     })
     const section = dialog.locator(`[data-field-id="${fieldId}"]`)
-    await section
-      .getByRole('button', {
-        name: en.rowExpand.edit.replace('{name}', 'Moment'),
-        exact: true,
-      })
-      .click()
     const input = section.getByRole('textbox', {
-      name: en.field.editor.value,
+      name: 'Moment',
       exact: true,
     })
     await input.fill('2026-01-01 00:30')
-    await input.press('Enter')
+    await dialog
+      .getByRole('button', { name: en.gridPolish.gp05.save, exact: true })
+      .click()
     await expect(
       dialog.getByText(en.rowExpand.saved, { exact: true }),
     ).toBeVisible()

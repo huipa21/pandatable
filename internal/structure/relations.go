@@ -616,128 +616,135 @@ func (s *Service) ChangeLinks(ctx context.Context, actor Actor, tableID, rowID, 
 
 	var result RowRecord
 	err = s.withWritableTable(ctx, actor, tableID, func(tx pgx.Tx, table rowTable) error {
-		field, found := table.byID[fieldID]
-		if !found || field.relation == nil {
-			return validation("Field is not a live relation on this table")
-		}
-		relation := *field.relation
-		if (relation.kind == "one_one" || relation.kind == "one_many" && field.relationSide == "child") && len(add) > 1 {
-			return validation("This relation field accepts one linked row")
-		}
-		targetTableID := relation.parentTable
-		if field.relationSide == "parent" {
-			targetTableID = relation.childTable
-		}
-		targetTable := table
-		if targetTableID != table.id {
-			target := acl.Resource{Type: acl.Table, ID: targetTableID}
-			if _, err := acl.LockPath(ctx, tx, target); err != nil {
-				return err
-			}
-			user, valid := acl.ParseUUID(actor.ID)
-			if !valid {
-				return acl.ErrValidation()
-			}
-			if err := s.authorizeRows(ctx, tx, user, target, acl.Write); err != nil {
-				return err
-			}
-			targetMeta, err := structuresql.New(tx).LockRowTable(ctx, targetTableID)
-			if err != nil {
-				return notFoundIfNoRows(err, "lock related row table")
-			}
-			targetTable, err = loadRowTable(ctx, structuresql.New(tx), tx, targetTableID,
-				targetMeta.PgSchema, targetMeta.PgName, targetMeta.SchemaVersion)
-			if err != nil {
-				return err
-			}
-		}
-		if relation.kind == "many_many" && !relation.junction.Valid ||
-			relation.kind != "many_many" && !relation.fkColumn.Valid {
-			return errors.New("relation metadata has invalid physical storage")
-		}
+		return s.changeLinksTx(ctx, tx, actor, table, sourceID, fieldID, change, add, remove, &result, true)
+	})
+	return result, err
+}
 
-		otherIDs := append(append([]int64{}, add...), remove...)
-		if table.id == targetTable.id {
-			otherIDs = append(otherIDs, sourceID)
-			otherIDs = uniqueSortedIDs(otherIDs)
-			if err := lockRelationRows(ctx, tx, table, otherIDs); err != nil {
-				return err
-			}
-		} else if table.id.String() < targetTable.id.String() {
-			if err := lockRelationRows(ctx, tx, table, []int64{sourceID}); err != nil {
-				return err
-			}
-			if err := lockRelationRows(ctx, tx, targetTable, otherIDs); err != nil {
-				return err
-			}
-		} else {
-			if err := lockRelationRows(ctx, tx, targetTable, otherIDs); err != nil {
-				return err
-			}
-			if err := lockRelationRows(ctx, tx, table, []int64{sourceID}); err != nil {
-				return err
-			}
+func (s *Service) changeLinksTx(ctx context.Context, tx pgx.Tx, actor Actor, table rowTable,
+	sourceID int64, fieldID string, change LinkChange, add, remove []int64, result *RowRecord, emit bool) error {
+	field, found := table.byID[fieldID]
+	if !found || field.relation == nil {
+		return validation("Field is not a live relation on this table")
+	}
+	relation := *field.relation
+	if (relation.kind == "one_one" || relation.kind == "one_many" && field.relationSide == "child") && len(add) > 1 {
+		return validation("This relation field accepts one linked row")
+	}
+	targetTableID := relation.parentTable
+	if field.relationSide == "parent" {
+		targetTableID = relation.childTable
+	}
+	targetTable := table
+	if targetTableID != table.id {
+		target := acl.Resource{Type: acl.Table, ID: targetTableID}
+		if _, err := acl.LockPath(ctx, tx, target); err != nil {
+			return err
 		}
-
 		user, valid := acl.ParseUUID(actor.ID)
 		if !valid {
 			return acl.ErrValidation()
 		}
-		var historyEdges []relationEdge
-		if relation.kind == "many_many" {
-			if err := changeJunctionLinks(ctx, tx, relation, field.relationSide, sourceID, add, remove, user, &historyEdges); err != nil {
-				return err
-			}
-		} else if relation.kind == "one_one" {
-			if err := changeOneToOneLinks(ctx, tx, table, targetTable, relation, field.relationSide,
-				sourceID, add, remove, change.Replace, user, &historyEdges); err != nil {
-				return err
-			}
-		} else if err := changeOneToManyLinks(ctx, tx, table, relation, field.relationSide,
-			sourceID, add, remove, user, &historyEdges); err != nil {
+		if err := s.authorizeRows(ctx, tx, user, target, acl.Write); err != nil {
 			return err
 		}
-		if err := recordRelationHistory(ctx, tx, actor, relation, historyEdges); err != nil {
+		targetMeta, err := structuresql.New(tx).LockRowTable(ctx, targetTableID)
+		if err != nil {
+			return notFoundIfNoRows(err, "lock related row table")
+		}
+		targetTable, err = loadRowTable(ctx, structuresql.New(tx), tx, targetTableID,
+			targetMeta.PgSchema, targetMeta.PgName, targetMeta.SchemaVersion)
+		if err != nil {
 			return err
 		}
+	}
+	if relation.kind == "many_many" && !relation.junction.Valid ||
+		relation.kind != "many_many" && !relation.fkColumn.Valid {
+		return errors.New("relation metadata has invalid physical storage")
+	}
 
-		query, args, err := sq.Select(table.selectColumnList(table.fields)...).From(table.qualifiedName()).
-			Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): sourceID}).
-			PlaceholderFormat(sq.Dollar).ToSql()
-		if err != nil {
-			return fmt.Errorf("build updated relation row query: %w", err)
-		}
-		record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return acl.ErrNotFound()
-		}
-		if err != nil {
-			return fmt.Errorf("read updated relation row: %w", err)
-		}
-		if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+	otherIDs := append(append([]int64{}, add...), remove...)
+	if table.id == targetTable.id {
+		otherIDs = append(otherIDs, sourceID)
+		otherIDs = uniqueSortedIDs(otherIDs)
+		if err := lockRelationRows(ctx, tx, table, otherIDs); err != nil {
 			return err
 		}
-		if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
+	} else if table.id.String() < targetTable.id.String() {
+		if err := lockRelationRows(ctx, tx, table, []int64{sourceID}); err != nil {
 			return err
 		}
-		if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
+		if err := lockRelationRows(ctx, tx, targetTable, otherIDs); err != nil {
 			return err
 		}
-		record.LinkChanges = make([]RelationDelta, 0, len(historyEdges))
-		for _, edge := range historyEdges {
-			record.LinkChanges = append(record.LinkChanges, RelationDelta{
-				TableID: relation.parentTable.String(), RowID: strconv.FormatInt(edge.parent, 10),
-				FieldID: relation.parentField.String(), TargetID: strconv.FormatInt(edge.child, 10),
-				Action: edge.action,
-			})
+	} else {
+		if err := lockRelationRows(ctx, tx, targetTable, otherIDs); err != nil {
+			return err
 		}
-		result = record
+		if err := lockRelationRows(ctx, tx, table, []int64{sourceID}); err != nil {
+			return err
+		}
+	}
+
+	user, valid := acl.ParseUUID(actor.ID)
+	if !valid {
+		return acl.ErrValidation()
+	}
+	var historyEdges []relationEdge
+	if relation.kind == "many_many" {
+		if err := changeJunctionLinks(ctx, tx, relation, field.relationSide, sourceID, add, remove, user, &historyEdges); err != nil {
+			return err
+		}
+	} else if relation.kind == "one_one" {
+		if err := changeOneToOneLinks(ctx, tx, table, targetTable, relation, field.relationSide,
+			sourceID, add, remove, change.Replace, user, &historyEdges); err != nil {
+			return err
+		}
+	} else if err := changeOneToManyLinks(ctx, tx, table, relation, field.relationSide,
+		sourceID, add, remove, user, &historyEdges); err != nil {
+		return err
+	}
+	if err := recordRelationHistory(ctx, tx, actor, relation, historyEdges); err != nil {
+		return err
+	}
+
+	query, args, err := sq.Select(table.selectColumnList(table.fields)...).From(table.qualifiedName()).
+		Where(sq.Eq{pgx.Identifier{"id"}.Sanitize(): sourceID}).
+		PlaceholderFormat(sq.Dollar).ToSql()
+	if err != nil {
+		return fmt.Errorf("build updated relation row query: %w", err)
+	}
+	record, err := scanRow(queryUncachedRow(ctx, tx, query, args...), table, table.fields)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return acl.ErrNotFound()
+	}
+	if err != nil {
+		return fmt.Errorf("read updated relation row: %w", err)
+	}
+	if err := enrichRowLinks(ctx, tx, table, table.fields, []RowRecord{record}); err != nil {
+		return err
+	}
+	if err := enrichRowComputed(ctx, tx, actor, table, table.fields, []RowRecord{record}); err != nil {
+		return err
+	}
+	if err := enrichSingleCommentCount(ctx, tx, table.id, &record); err != nil {
+		return err
+	}
+	record.LinkChanges = make([]RelationDelta, 0, len(historyEdges))
+	for _, edge := range historyEdges {
+		record.LinkChanges = append(record.LinkChanges, RelationDelta{
+			TableID: relation.parentTable.String(), RowID: strconv.FormatInt(edge.parent, 10),
+			FieldID: relation.parentField.String(), TargetID: strconv.FormatInt(edge.child, 10),
+			Action: edge.action,
+		})
+	}
+	*result = record
+	if emit {
 		if err := emitRows(ctx, tx, actor, table.id.String(), "row.updated", []RowRecord{record}, []string{fieldID}); err != nil {
 			return err
 		}
-		return emitRelatedRowInvalidation(ctx, tx, targetTable.id, table.id)
-	})
-	return result, err
+	}
+	return emitRelatedRowInvalidation(ctx, tx, targetTable.id, table.id)
 }
 
 func uniqueSortedIDs(ids []int64) []int64 {

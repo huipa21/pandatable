@@ -27,10 +27,12 @@ const props = defineProps<{
   rowId: string | null
   links: unknown
   identity: string
+  draftMode?: boolean
 }>()
 const emit = defineEmits<{
   close: []
   updated: [row: DataRow]
+  draftChanged: [links: RelationLink[]]
 }>()
 const { t, locale } = useI18n()
 const auth = useAuthStore()
@@ -86,6 +88,11 @@ const single = computed(
     (relation.value?.kind === 'one_many' && side.value === 'child'),
 )
 const saving = computed(() => pendingId.value !== null)
+const canWrite = computed(
+  () =>
+    props.identity === auth.user?.id &&
+    (props.schema.myLevel === 'write' || props.schema.myLevel === 'owner'),
+)
 const page = computed(() => Math.floor(offset.value / PAGE_SIZE) + 1)
 const pageCount = computed(() =>
   Math.max(1, Math.ceil(total.value / PAGE_SIZE)),
@@ -219,11 +226,21 @@ function applied(result: LinkMutation, rowId: string) {
 
 async function toggle(item: RelationLink) {
   if (saving.value) return
+  if (!canWrite.value) return
   if (!props.field || !props.rowId || !relation.value) {
     error.value = t('relation.invalid')
     return
   }
   const linked = linkedIds.value.has(item.id)
+  if (props.draftMode) {
+    const next = linked
+      ? links.value.filter((link) => link.id !== item.id)
+      : single.value
+        ? [item]
+        : [...links.value, item]
+    emit('draftChanged', next)
+    return
+  }
   const change = linked
     ? { add: [], remove: [item.id] }
     : {
@@ -328,6 +345,9 @@ watch(
     if (props.open) close()
   },
 )
+watch(canWrite, (allowed) => {
+  if (!allowed && props.draftMode && props.open) finishClose()
+})
 onBeforeUnmount(() => {
   controller?.abort()
   if (searchTimer) clearTimeout(searchTimer)
@@ -385,7 +405,7 @@ onBeforeUnmount(() => {
           :title="
             linkedIds.has(item.id) ? t('relation.unlink') : t('relation.link')
           "
-          :disabled="saving"
+          :disabled="saving || !canWrite"
           @click="toggle(item)"
         >
           <AppIcon
