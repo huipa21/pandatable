@@ -300,8 +300,7 @@ function contains(target: EventTarget | null) {
 
 function isPointerInPanel() {
   return (
-    (temporalEditor.value?.isPointerInPanel() ?? false) ||
-    (longTextDialog.value?.contains(document.activeElement) ?? false)
+    (temporalEditor.value?.isPointerInPanel() ?? false) || longTextOpen.value
   )
 }
 
@@ -857,7 +856,13 @@ function keydown(event: KeyboardEvent) {
   padding: 4px 6px;
   background: var(--surface);
   color: var(--text);
-  border: 2px solid var(--accent);
+  border: 2px solid var(--border);
+}
+.field-editor input[type='text']:focus,
+.field-editor textarea:focus,
+.field-editor select:focus,
+.field-attachment-editor:focus-within {
+  border-color: var(--accent);
 }
 .field-editor textarea {
   min-height: 90px;

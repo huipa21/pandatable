@@ -32,6 +32,7 @@ const confirmDiscard = ref(false)
 const selection = ref({ start: 0, end: 0 })
 let initialValue = ''
 let opener: HTMLElement | null = null
+let pointerStartedOnBackdrop = false
 
 const toolbarGroups: {
   commands: { command: MdCommand; icon: IconName; label: CommandLabel }[]
@@ -184,12 +185,14 @@ function seedAndOpen() {
     .join('')
   draft.value = initialValue
   confirmDiscard.value = false
+  pointerStartedOnBackdrop = false
   selection.value = { start: 0, end: 0 }
   element.showModal()
   void nextTick(() => textarea.value?.focus({ preventScroll: true }))
 }
 
 function closeNativeDialog() {
+  pointerStartedOnBackdrop = false
   if (dialog.value?.open) dialog.value.close()
   confirmDiscard.value = false
   restoreFocus()
@@ -317,8 +320,27 @@ function runCommand(command: MdCommand) {
   syncSelection()
 }
 
+function isBackdrop(event: MouseEvent) {
+  const element = dialog.value
+  if (!element || event.target !== element) return false
+  const bounds = element.getBoundingClientRect()
+  return (
+    event.clientX < bounds.left ||
+    event.clientX >= bounds.right ||
+    event.clientY < bounds.top ||
+    event.clientY >= bounds.bottom
+  )
+}
+
+function onDialogPointerDown(event: PointerEvent) {
+  pointerStartedOnBackdrop = isBackdrop(event)
+}
+
 function onDialogClick(event: MouseEvent) {
-  if (event.target === event.currentTarget) apply()
+  // Selection drags can retarget clicks to the dialog, just like its backdrop.
+  const clickedBackdrop = pointerStartedOnBackdrop && isBackdrop(event)
+  pointerStartedOnBackdrop = false
+  if (clickedBackdrop) apply()
 }
 
 watch(
@@ -368,7 +390,9 @@ defineExpose({ contains, focus })
       :aria-label="
         t('cellEditors.ces04.dialogLabel', { fieldName: props.fieldName })
       "
-      @click.self="onDialogClick"
+      @pointerdown="onDialogPointerDown"
+      @pointercancel="pointerStartedOnBackdrop = false"
+      @click="onDialogClick"
       @keydown.stop="onKeydown"
       @cancel.prevent="handleEscape"
     >
@@ -558,7 +582,7 @@ defineExpose({ contains, focus })
   margin: 12px;
   padding: 12px;
   resize: none;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--surface);
   color: var(--text);
@@ -566,6 +590,7 @@ defineExpose({ contains, focus })
   line-height: 1.55;
 }
 .long-text-dialog__textarea:focus {
+  border-color: var(--accent);
   outline: 1px solid var(--accent);
   outline-offset: 1px;
 }

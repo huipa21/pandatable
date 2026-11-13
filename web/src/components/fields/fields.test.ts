@@ -342,40 +342,94 @@ describe('FieldEditor', () => {
     expect(long.emitted('commit')).toEqual([['a\nb']])
   })
 
-  it('opens the long text dialog with the draft and applies it in form mode', async () => {
+  it.each([false, true])(
+    'applies expanded long text with grid mode %s',
+    async (gridCommitOnLeave) => {
+      const wrapper = mount(FieldEditor, {
+        attachTo: document.body,
+        props: {
+          field: field('long_text'),
+          value: 'stored value',
+          label: 'Notes',
+          gridCommitOnLeave,
+        },
+      })
+      const area = wrapper.get('textarea')
+      await area.setValue('current draft')
+      const expand = wrapper.get('.field-expand')
+      expect(expand.attributes('aria-label')).toBe('Expand Notes')
+      await expand.trigger('click')
+      await flushPromises()
+
+      const dialogArea = document.querySelector<HTMLTextAreaElement>(
+        'dialog.long-text-dialog[open] .long-text-dialog__textarea',
+      )
+      expect(dialogArea?.value).toBe('current draft')
+      if (!dialogArea) throw new Error('Long-text dialog was not mounted')
+      dialogArea.value = 'applied draft'
+      dialogArea.dispatchEvent(new Event('input', { bubbles: true }))
+      dialogArea.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Enter',
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      )
+
+      expect((area.element as HTMLTextAreaElement).value).toBe('applied draft')
+      if (gridCommitOnLeave) {
+        expect(wrapper.emitted('commit')).toEqual([['applied draft']])
+      } else {
+        expect(wrapper.emitted('draftChanged')).toHaveLength(1)
+        expect(wrapper.emitted('commit')).toBeUndefined()
+      }
+      wrapper.unmount()
+    },
+  )
+
+  it('keeps opening-modal blur inside a live field and restores its draft on discard', async () => {
     const wrapper = mount(FieldEditor, {
       attachTo: document.body,
-      props: {
-        field: field('long_text'),
-        value: 'stored value',
-        label: 'Notes',
-      },
+      props: { field: field('long_text'), value: 'stored value', live: true },
     })
     const area = wrapper.get('textarea')
-    await area.setValue('current draft')
-    const expand = wrapper.get('.field-expand')
-    expect(expand.attributes('aria-label')).toBe('Expand Notes')
-    await expand.trigger('click')
+    await area.setValue('inline draft')
+    const inline = area.element as HTMLTextAreaElement
+    inline.focus()
+    inline.setSelectionRange(2, 6)
+    wrapper
+      .get('.field-expand')
+      .element.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    // Native modal focus transfer can blur the opener before setting a target.
+    inline.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    expect(wrapper.emitted('commit')).toBeUndefined()
     await flushPromises()
 
-    const dialogArea = document.querySelector<HTMLTextAreaElement>(
+    const expanded = document.querySelector<HTMLTextAreaElement>(
       'dialog.long-text-dialog[open] .long-text-dialog__textarea',
     )
-    expect(dialogArea?.value).toBe('current draft')
-    if (!dialogArea) throw new Error('Long-text dialog was not mounted')
-    dialogArea.value = 'applied draft'
-    dialogArea.dispatchEvent(new Event('input', { bubbles: true }))
-    dialogArea.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'Enter',
-        ctrlKey: true,
-        bubbles: true,
-      }),
+    if (!expanded) throw new Error('Long-text dialog was not mounted')
+    expanded.value = 'discard this draft'
+    expanded.dispatchEvent(new Event('input', { bubbles: true }))
+    expanded.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
     )
-
-    expect((area.element as HTMLTextAreaElement).value).toBe('applied draft')
-    expect(wrapper.emitted('draftChanged')).toHaveLength(1)
+    await flushPromises()
     expect(wrapper.emitted('commit')).toBeUndefined()
+    expect(wrapper.emitted('cancel')).toBeUndefined()
+    const discard = [...document.querySelectorAll('dialog button')].find(
+      (button) => button.textContent?.trim() === 'Discard',
+    ) as HTMLButtonElement | undefined
+    if (!discard) throw new Error('Discard button was not mounted')
+    discard.click()
+    await flushPromises()
+
+    expect(document.querySelector('dialog.long-text-dialog[open]')).toBeNull()
+    expect(inline.value).toBe('inline draft')
+    expect([inline.selectionStart, inline.selectionEnd]).toEqual([2, 6])
+    expect(document.activeElement).toBe(inline)
+    expect(wrapper.emitted('commit')).toBeUndefined()
+    expect(wrapper.emitted('cancel')).toBeUndefined()
     wrapper.unmount()
   })
 
